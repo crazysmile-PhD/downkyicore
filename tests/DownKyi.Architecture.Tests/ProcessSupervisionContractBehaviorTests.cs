@@ -4,6 +4,52 @@ namespace DownKyi.Architecture.Tests;
 
 public sealed class ProcessSupervisionContractBehaviorTests
 {
+    public static TheoryData<
+        ProcessTerminalCandidateKind,
+        int,
+        ProcessInvariantState,
+        bool,
+        bool> SuccessMatrix
+    {
+        get
+        {
+            var data = new TheoryData<
+                ProcessTerminalCandidateKind,
+                int,
+                ProcessInvariantState,
+                bool,
+                bool>();
+            (ProcessTerminalCandidateKind Kind, int ExitCode)[] terminals =
+            [
+                (ProcessTerminalCandidateKind.TargetTerminal, 0),
+                (ProcessTerminalCandidateKind.TargetTerminal, 7),
+                (ProcessTerminalCandidateKind.ExecutionFailure, 0)
+            ];
+            foreach (var terminal in terminals)
+            {
+                foreach (var proofState in Enum.GetValues<ProcessInvariantState>())
+                {
+                    foreach (var hasCleanupFailure in new[] { false, true })
+                    {
+                        var expected =
+                            terminal.Kind == ProcessTerminalCandidateKind.TargetTerminal &&
+                            terminal.ExitCode == 0 &&
+                            proofState == ProcessInvariantState.Proven &&
+                            !hasCleanupFailure;
+                        data.Add(
+                            terminal.Kind,
+                            terminal.ExitCode,
+                            proofState,
+                            hasCleanupFailure,
+                            expected);
+                    }
+                }
+            }
+
+            return data;
+        }
+    }
+
     [Fact]
     public void UnknownAndViolatedRequiredInvariantsFailClosed()
     {
@@ -186,6 +232,36 @@ public sealed class ProcessSupervisionContractBehaviorTests
             ProcessTerminalSelectionPolicy.Select(publications.Reverse()));
     }
 
+    [Theory]
+    [MemberData(nameof(SuccessMatrix))]
+    public void SucceededRequiresTargetZeroFormalProofAndCleanCleanup(
+        ProcessTerminalCandidateKind terminalKind,
+        int exitCode,
+        ProcessInvariantState proofState,
+        bool hasCleanupFailure,
+        bool expected)
+    {
+        var terminal = terminalKind == ProcessTerminalCandidateKind.TargetTerminal
+            ? ProcessTerminalCandidateFactory.TargetTerminal(1, exitCode)
+            : Primary(ProcessPrimaryFailureKind.ExecutionFailure, 1);
+        ProcessCleanupFailure[] cleanupFailures = hasCleanupFailure
+            ?
+            [
+                new ProcessCleanupFailure(
+                    ProcessCleanupFailureKind.ResourceReleaseFailure,
+                    nameof(InvalidOperationException),
+                    "fixture cleanup failure")
+            ]
+            : [];
+
+        var outcome = new ProcessSupervisionOutcome(
+            terminal,
+            ProofInState(proofState),
+            cleanupFailures);
+
+        Assert.Equal(expected, outcome.Succeeded);
+    }
+
     [Fact]
     public void CleanupFailureCannotOverwritePrimaryTerminalChannel()
     {
@@ -264,6 +340,28 @@ public sealed class ProcessSupervisionContractBehaviorTests
         }
 
         return builder;
+    }
+
+    private static ProcessSupervisionProof ProofInState(
+        ProcessInvariantState state)
+    {
+        return state switch
+        {
+            ProcessInvariantState.Proven => ProveAll().Build(),
+            ProcessInvariantState.Unknown =>
+                ProveAllExcept(RequiredProcessInvariantKind.StreamDrain).Build(),
+            ProcessInvariantState.Violated => ViolatedProof(),
+            _ => throw new ArgumentOutOfRangeException(nameof(state), state, null)
+        };
+    }
+
+    private static ProcessSupervisionProof ViolatedProof()
+    {
+        var builder = ProveAll();
+        builder.Violate(
+            RequiredProcessInvariantKind.StreamDrain,
+            "stream drain violated");
+        return builder.Build();
     }
 
     private static IEnumerable<ProcessCleanupFailure> UndefinedCleanupFailures()

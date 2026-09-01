@@ -2,9 +2,9 @@ using System.Collections.ObjectModel;
 
 namespace DownKyi.ProcessSupervision;
 
-internal abstract class ProcessContainmentPrimaryFailure
+internal abstract class ProcessContainmentOperationFailure
 {
-    private protected ProcessContainmentPrimaryFailure(
+    private protected ProcessContainmentOperationFailure(
         string errorType,
         string detail)
     {
@@ -20,7 +20,7 @@ internal abstract class ProcessContainmentPrimaryFailure
 }
 
 internal abstract class ProcessContainmentBackendFailure
-    : ProcessContainmentPrimaryFailure
+    : ProcessContainmentOperationFailure
 {
     private protected ProcessContainmentBackendFailure(
         object authorityIdentity,
@@ -42,7 +42,7 @@ internal enum ProcessContainmentCallerFailureKind
 }
 
 internal sealed class ProcessContainmentCallerFailure
-    : ProcessContainmentPrimaryFailure
+    : ProcessContainmentOperationFailure
 {
     private readonly object _authorityIdentity;
 
@@ -107,7 +107,7 @@ internal sealed class ProcessContainmentCallerFailure
 }
 
 internal abstract class ProcessContainmentContractFailure
-    : ProcessContainmentPrimaryFailure
+    : ProcessContainmentOperationFailure
 {
     private protected ProcessContainmentContractFailure(
         object authorityIdentity,
@@ -291,15 +291,15 @@ internal abstract record ProcessContainmentOperationRejected
     : ProcessContainmentOperationResult
 {
     private protected ProcessContainmentOperationRejected(
-        ProcessContainmentPrimaryFailure primaryFailure,
+        ProcessContainmentOperationFailure failure,
         IEnumerable<ProcessCleanupFailure> cleanupFailures)
         : base(cleanupFailures)
     {
-        ArgumentNullException.ThrowIfNull(primaryFailure);
-        PrimaryFailure = primaryFailure;
+        ArgumentNullException.ThrowIfNull(failure);
+        Failure = failure;
     }
 
-    public ProcessContainmentPrimaryFailure PrimaryFailure { get; }
+    public ProcessContainmentOperationFailure Failure { get; }
 }
 
 internal sealed class ProcessContainmentOperationAuthority
@@ -361,24 +361,24 @@ internal sealed class ProcessContainmentOperationAuthority
     }
 
     internal ProcessContainmentOperationResult Rejected(
-        ProcessContainmentCallerFailure primaryFailure,
+        ProcessContainmentCallerFailure failure,
         IEnumerable<ProcessCleanupFailure> cleanupFailures)
     {
-        ArgumentNullException.ThrowIfNull(primaryFailure);
-        return Caller.Owns(primaryFailure)
-            ? new PublishedOperationRejected(primaryFailure, cleanupFailures)
+        ArgumentNullException.ThrowIfNull(failure);
+        return Caller.Owns(failure)
+            ? new PublishedOperationRejected(failure, cleanupFailures)
             : new PublishedOperationRejected(
                 ContractGuard.AuthoritySubstitution(),
                 cleanupFailures);
     }
 
     internal ProcessContainmentOperationResult Rejected(
-        ProcessContainmentContractFailure primaryFailure,
+        ProcessContainmentContractFailure failure,
         IEnumerable<ProcessCleanupFailure> cleanupFailures)
     {
-        ArgumentNullException.ThrowIfNull(primaryFailure);
-        return ContractGuard.Owns(primaryFailure)
-            ? new PublishedOperationRejected(primaryFailure, cleanupFailures)
+        ArgumentNullException.ThrowIfNull(failure);
+        return ContractGuard.Owns(failure)
+            ? new PublishedOperationRejected(failure, cleanupFailures)
             : new PublishedOperationRejected(
                 ContractGuard.AuthoritySubstitution(),
                 cleanupFailures);
@@ -472,9 +472,9 @@ file sealed record PublishedOperationRejected
     : ProcessContainmentOperationRejected
 {
     internal PublishedOperationRejected(
-        ProcessContainmentPrimaryFailure primaryFailure,
+        ProcessContainmentOperationFailure failure,
         IEnumerable<ProcessCleanupFailure> cleanupFailures)
-        : base(primaryFailure, cleanupFailures)
+        : base(failure, cleanupFailures)
     {
     }
 }

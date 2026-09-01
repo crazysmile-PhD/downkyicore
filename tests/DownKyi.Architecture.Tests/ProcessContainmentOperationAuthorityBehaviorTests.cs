@@ -56,14 +56,14 @@ public sealed class ProcessContainmentOperationAuthorityBehaviorTests
             []));
 
         Assert.IsAssignableFrom<ProcessContainmentBackendFailure>(
-            rejected.PrimaryFailure);
+            rejected.Failure);
         Assert.IsNotAssignableFrom<ProcessContainmentCallerFailure>(
-            rejected.PrimaryFailure);
+            rejected.Failure);
         Assert.IsNotAssignableFrom<ProcessContainmentContractFailure>(
-            rejected.PrimaryFailure);
+            rejected.Failure);
         Assert.Equal(
             nameof(InvalidOperationException),
-            rejected.PrimaryFailure.ErrorType);
+            rejected.Failure.ErrorType);
     }
 
     [Fact]
@@ -98,7 +98,7 @@ public sealed class ProcessContainmentOperationAuthorityBehaviorTests
             operationB.ContractGuard.IllegalTransition("guard B failure"),
             []));
 
-        Assert.Same(ownCaller, ownResult.PrimaryFailure);
+        Assert.Same(ownCaller, ownResult.Failure);
         Assert.All(
         [
             foreignCallerResult,
@@ -109,10 +109,10 @@ public sealed class ProcessContainmentOperationAuthorityBehaviorTests
             rejected =>
             {
                 Assert.IsAssignableFrom<ProcessContainmentContractFailure>(
-                    rejected.PrimaryFailure);
+                    rejected.Failure);
                 Assert.Contains(
                     "does not own this operation lifetime",
-                    rejected.PrimaryFailure.Detail,
+                    rejected.Failure.Detail,
                     StringComparison.Ordinal);
             });
     }
@@ -159,23 +159,23 @@ public sealed class ProcessContainmentOperationAuthorityBehaviorTests
         Assert.All([rejected, foreignRejected], candidate =>
         {
             Assert.IsAssignableFrom<ProcessContainmentContractFailure>(
-                candidate.PrimaryFailure);
+                candidate.Failure);
             Assert.Contains(
                 "does not own this operation lifetime",
-                candidate.PrimaryFailure.Detail,
+                candidate.Failure.Detail,
                 StringComparison.Ordinal);
         });
         Assert.IsType<ArgumentOutOfRangeException>(invalidKind.InnerException);
     }
 
     [Fact]
-    public void CleanupSnapshotCannotReplacePrimaryFailure()
+    public void CleanupSnapshotCannotReplaceOperationFailure()
     {
         var clock = new ManualMonotonicTimeProvider();
         using var cancellation = new CancellationTokenSource();
         var operation = Operation(clock, cancellation.Token);
         cancellation.Cancel();
-        var primary = operation.Caller.PublishCancellation("caller canceled");
+        var operationFailure = operation.Caller.PublishCancellation("caller canceled");
         var cleanup = new List<ProcessCleanupFailure>
         {
             Cleanup(
@@ -183,15 +183,15 @@ public sealed class ProcessContainmentOperationAuthorityBehaviorTests
                 "resource release failed")
         };
 
-        var rejected = AssertRejected(operation.Rejected(primary, cleanup));
+        var rejected = AssertRejected(operation.Rejected(operationFailure, cleanup));
         cleanup.Clear();
         cleanup.Add(Cleanup(
             ProcessCleanupFailureKind.StreamDrainFailure,
             "replacement cleanup failure"));
 
-        Assert.Same(primary, rejected.PrimaryFailure);
+        Assert.Same(operationFailure, rejected.Failure);
         Assert.IsAssignableFrom<ProcessContainmentCallerFailure>(
-            rejected.PrimaryFailure);
+            rejected.Failure);
         Assert.Equal(
             ProcessCleanupFailureKind.ResourceReleaseFailure,
             Assert.Single(rejected.CleanupFailures).Kind);
@@ -213,7 +213,7 @@ public sealed class ProcessContainmentOperationAuthorityBehaviorTests
         var backendResult = operation.BackendResults.Failed(
                 new IOException("fixture backend failure"),
                 "backend failed");
-        var publishedPrimary = Assert.IsAssignableFrom<
+        var publishedFailure = Assert.IsAssignableFrom<
             ProcessContainmentBackendFailure>(backendResult.GetType()
                 .GetProperty("Failure")!
                 .GetValue(backendResult));
@@ -225,8 +225,8 @@ public sealed class ProcessContainmentOperationAuthorityBehaviorTests
             ProcessCleanupFailureKind.StreamDrainFailure,
             "replacement cleanup failure"));
 
-        Assert.Same(publishedPrimary, rejected.PrimaryFailure);
-        Assert.Equal(nameof(IOException), publishedPrimary.ErrorType);
+        Assert.Same(publishedFailure, rejected.Failure);
+        Assert.Equal(nameof(IOException), publishedFailure.ErrorType);
         Assert.Equal(
             ProcessCleanupFailureKind.ResourceReleaseFailure,
             Assert.Single(rejected.CleanupFailures).Kind);
@@ -267,7 +267,7 @@ public sealed class ProcessContainmentOperationAuthorityBehaviorTests
             ProcessCleanupFailureKind.StreamDrainFailure,
             Assert.Single(completed.CleanupFailures).Kind);
         Assert.IsAssignableFrom<ProcessContainmentContractFailure>(
-            guarded.PrimaryFailure);
+            guarded.Failure);
         Assert.Equal(
             ProcessCleanupFailureKind.ResourceReleaseFailure,
             Assert.Single(guarded.CleanupFailures).Kind);
@@ -299,7 +299,7 @@ public sealed class ProcessContainmentOperationAuthorityBehaviorTests
             operation.BackendResults.Failed(
                 new IOException("fixture backend failure"),
                 "backend failed"),
-            [])).PrimaryFailure;
+            [])).Failure;
         var contract = operation.ContractGuard.IllegalTransition(
             "illegal transition");
 
@@ -321,7 +321,7 @@ public sealed class ProcessContainmentOperationAuthorityBehaviorTests
         using var cancellation = new CancellationTokenSource();
         var operation = Operation(clock, cancellation.Token);
         await cancellation.CancelAsync();
-        var primary = operation.Caller.PublishCancellation("caller canceled");
+        var operationFailure = operation.Caller.PublishCancellation("caller canceled");
         var cleanup = new List<ProcessCleanupFailure>
         {
             Cleanup(
@@ -331,14 +331,14 @@ public sealed class ProcessContainmentOperationAuthorityBehaviorTests
                 ProcessCleanupFailureKind.StreamDrainFailure,
                 "second cleanup failure")
         };
-        var rejected = AssertRejected(operation.Rejected(primary, cleanup));
+        var rejected = AssertRejected(operation.Rejected(operationFailure, cleanup));
 
         cleanup.Reverse();
         cleanup.Clear();
         clock.Advance(TimeSpan.FromSeconds(20));
         await Task.Yield();
 
-        Assert.Same(primary, rejected.PrimaryFailure);
+        Assert.Same(operationFailure, rejected.Failure);
         Assert.Equal(
             [
                 ProcessCleanupFailureKind.ResourceReleaseFailure,

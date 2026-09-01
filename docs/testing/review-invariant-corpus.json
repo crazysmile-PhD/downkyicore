@@ -30,6 +30,46 @@
       ]
     },
     {
+      "id": "process-terminal-success-authority",
+      "historicalRoots": ["PR #208", "PR #213"],
+      "guards": "ProcessSupervisionOutcome alone derives final success from target-terminal exit zero, formal proof and an empty cleanup-failure snapshot; proof and containment-operation facts cannot independently report final success or gain an active production consumer before OwnedProcessLease integration.",
+      "testClasses": [
+        { "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj", "class": "DownKyi.Architecture.Tests.ProcessSupervisionContractBehaviorTests" },
+        { "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj", "class": "DownKyi.Architecture.Tests.ProcessTerminalSuccessAuthorityArchitectureTests" }
+      ],
+      "proofRequirements": [
+        "deterministic-generative",
+        "semantic-architecture",
+        "adversarial-mutation"
+      ],
+      "adversarialProofs": [
+        {
+          "kind": "adversarial-mutation",
+          "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+          "class": "DownKyi.Architecture.Tests.ProcessTerminalSuccessAuthorityArchitectureTests",
+          "environmentVariable": "DOWNKYI_TEST_MUTATE_TERMINAL_SUCCESS_AUTHORITY",
+          "environmentValue": "direct-formal-gate",
+          "expectedOutcome": "test-failure"
+        },
+        {
+          "kind": "adversarial-mutation",
+          "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+          "class": "DownKyi.Architecture.Tests.ProcessTerminalSuccessAuthorityArchitectureTests",
+          "environmentVariable": "DOWNKYI_TEST_MUTATE_TERMINAL_SUCCESS_AUTHORITY",
+          "environmentValue": "second-success-authority",
+          "expectedOutcome": "test-failure"
+        },
+        {
+          "kind": "adversarial-mutation",
+          "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+          "class": "DownKyi.Architecture.Tests.ProcessTerminalSuccessAuthorityArchitectureTests",
+          "environmentVariable": "DOWNKYI_TEST_MUTATE_TERMINAL_SUCCESS_AUTHORITY",
+          "environmentValue": "operation-completed-final-success",
+          "expectedOutcome": "test-failure"
+        }
+      ]
+    },
+    {
       "id": "output-cleanup-ownership",
       "historicalRoots": ["PR #85", "PR #120"],
       "guards": "Task rows, transfer inputs, resume state, generated files and sidecars are changed through their existing owners; retry checkpoints survive every pre-commit failure and transfer inputs are cleaned only after durable completion.",

@@ -160,7 +160,7 @@ public sealed class ProcessSupervisionContractArchitectureTests
             typeof(ProcessCleanupFailure),
             typeof(ProcessTerminalCandidate),
             typeof(ProcessSupervisionOutcome),
-            typeof(ProcessContainmentPrimaryFailure),
+            typeof(ProcessContainmentOperationFailure),
             typeof(ProcessContainmentBackendResult),
             typeof(ProcessContainmentBackendFailure),
             typeof(ProcessContainmentCallerFailure),
@@ -296,7 +296,7 @@ public sealed class ProcessSupervisionContractArchitectureTests
                 .OrderBy(type => type.FullName, StringComparer.Ordinal));
         Assert.DoesNotContain(resultEntries, method =>
             method.GetParameters()[0].ParameterType ==
-                typeof(ProcessContainmentPrimaryFailure));
+                typeof(ProcessContainmentOperationFailure));
         Assert.All(resultEntries, method => Assert.Equal(
             typeof(IEnumerable<ProcessCleanupFailure>),
             method.GetParameters()[1].ParameterType));
@@ -305,6 +305,16 @@ public sealed class ProcessSupervisionContractArchitectureTests
             typeof(ProcessContainmentOperationResult)
                 .GetProperty(nameof(ProcessContainmentOperationResult.CleanupFailures))!
                 .PropertyType);
+        Assert.Equal(
+            typeof(ProcessContainmentOperationFailure),
+            typeof(ProcessContainmentOperationRejected)
+                .GetProperty(nameof(ProcessContainmentOperationRejected.Failure))!
+                .PropertyType);
+        Assert.Null(typeof(ProcessContainmentOperationRejected).GetProperty(
+            "PrimaryFailure",
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic));
+        Assert.Null(typeof(ProcessContainmentOperationFailure).Assembly.GetType(
+            "DownKyi.ProcessSupervision.ProcessContainmentPrimaryFailure"));
         Assert.Equal(
             [
                 nameof(ProcessContainmentOperationAuthority.BackendResults),
@@ -320,7 +330,7 @@ public sealed class ProcessSupervisionContractArchitectureTests
     [Fact]
     public void OperationAuthorityContractsRemainInertAndAreNotRuntimeProof()
     {
-        var assembly = typeof(ProcessContainmentPrimaryFailure).Assembly;
+        var assembly = typeof(ProcessContainmentOperationFailure).Assembly;
         var callerFailures = assembly.GetTypes()
             .Where(type => type != typeof(ProcessContainmentCallerFailure) &&
                            typeof(ProcessContainmentCallerFailure)
@@ -402,7 +412,7 @@ public sealed class ProcessSupervisionContractArchitectureTests
         Type[] authorityContractTypes =
         [
             typeof(ProcessContainmentCallerAuthority),
-            typeof(ProcessContainmentPrimaryFailure),
+            typeof(ProcessContainmentOperationFailure),
             typeof(ProcessContainmentBackendResult),
             typeof(ProcessContainmentBackendFailure),
             typeof(ProcessContainmentCallerFailure),

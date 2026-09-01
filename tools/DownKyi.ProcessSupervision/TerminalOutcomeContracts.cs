@@ -186,6 +186,12 @@ public sealed class ProcessSupervisionOutcome
     public ProcessSupervisionProof Proof { get; }
 
     public IReadOnlyList<ProcessCleanupFailure> CleanupFailures { get; }
+
+    public bool Succeeded =>
+        Terminal.Kind == ProcessTerminalCandidateKind.TargetTerminal &&
+        Terminal.ExitCode == 0 &&
+        Proof.FormalGatePassed &&
+        CleanupFailures.Count == 0;
 }
 
 internal static class ProcessTerminalCandidateFactory
