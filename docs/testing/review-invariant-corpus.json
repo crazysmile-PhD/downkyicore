@@ -66,6 +66,46 @@
           "environmentVariable": "DOWNKYI_TEST_MUTATE_TERMINAL_SUCCESS_AUTHORITY",
           "environmentValue": "operation-completed-final-success",
           "expectedOutcome": "test-failure"
+        },
+        {
+          "kind": "adversarial-mutation",
+          "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+          "class": "DownKyi.Architecture.Tests.ProcessTerminalSuccessAuthorityArchitectureTests",
+          "environmentVariable": "DOWNKYI_TEST_MUTATE_TERMINAL_SUCCESS_AUTHORITY",
+          "environmentValue": "target-typed-outcome-constructor",
+          "expectedOutcome": "test-failure"
+        },
+        {
+          "kind": "adversarial-mutation",
+          "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+          "class": "DownKyi.Architecture.Tests.ProcessTerminalSuccessAuthorityArchitectureTests",
+          "environmentVariable": "DOWNKYI_TEST_MUTATE_TERMINAL_SUCCESS_AUTHORITY",
+          "environmentValue": "qualified-bool-success-authority",
+          "expectedOutcome": "test-failure"
+        },
+        {
+          "kind": "adversarial-mutation",
+          "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+          "class": "DownKyi.Architecture.Tests.ProcessTerminalSuccessAuthorityArchitectureTests",
+          "environmentVariable": "DOWNKYI_TEST_MUTATE_TERMINAL_SUCCESS_AUTHORITY",
+          "environmentValue": "positional-record-success-authority",
+          "expectedOutcome": "test-failure"
+        },
+        {
+          "kind": "adversarial-mutation",
+          "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+          "class": "DownKyi.Architecture.Tests.ProcessTerminalSuccessAuthorityArchitectureTests",
+          "environmentVariable": "DOWNKYI_TEST_MUTATE_TERMINAL_SUCCESS_AUTHORITY",
+          "environmentValue": "contract-operation-consumer",
+          "expectedOutcome": "test-failure"
+        },
+        {
+          "kind": "adversarial-mutation",
+          "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+          "class": "DownKyi.Architecture.Tests.ProcessTerminalSuccessAuthorityArchitectureTests",
+          "environmentVariable": "DOWNKYI_TEST_MUTATE_TERMINAL_SUCCESS_AUTHORITY",
+          "environmentValue": "dynamic-success-access",
+          "expectedOutcome": "test-failure"
         }
       ]
     },
