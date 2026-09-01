@@ -64,6 +64,14 @@
           "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
           "class": "DownKyi.Architecture.Tests.ProcessTerminalSuccessAuthorityArchitectureTests",
           "environmentVariable": "DOWNKYI_TEST_MUTATE_TERMINAL_SUCCESS_AUTHORITY",
+          "environmentValue": "subnamespace-record-success-authority",
+          "expectedOutcome": "test-failure"
+        },
+        {
+          "kind": "adversarial-mutation",
+          "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+          "class": "DownKyi.Architecture.Tests.ProcessTerminalSuccessAuthorityArchitectureTests",
+          "environmentVariable": "DOWNKYI_TEST_MUTATE_TERMINAL_SUCCESS_AUTHORITY",
           "environmentValue": "operation-completed-final-success",
           "expectedOutcome": "test-failure"
         },

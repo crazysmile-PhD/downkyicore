@@ -133,8 +133,9 @@ internal static class ProcessTerminalSuccessSemanticGate
     {
         var successMembers = AllTypes(compilation.Assembly.GlobalNamespace)
             .Where(type => allowContractMembers ||
-                           type.ContainingNamespace.ToDisplayString() ==
-                           ContractNamespace)
+                           (type.ContainingNamespace.ToDisplayString() + ".")
+                           .StartsWith(
+                               ContractNamespace + ".", StringComparison.Ordinal))
             .SelectMany(type => type.GetMembers())
             .Where(IsBooleanSuccessMember)
             .ToArray();
@@ -492,7 +493,6 @@ internal static class ProcessTerminalSuccessSemanticGate
             : Path.GetRelativePath(repositoryRoot, tree.FilePath);
         return $"{path}:{line} {detail}";
     }
-
     private sealed record SemanticReference(
         SyntaxNode Node,
         ISymbol? Symbol,

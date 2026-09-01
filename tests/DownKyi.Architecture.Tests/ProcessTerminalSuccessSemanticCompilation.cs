@@ -137,6 +137,9 @@ internal static class ProcessTerminalSuccessSemanticCompilation
             "second-success-authority" =>
                 "namespace DownKyi.ProcessSupervision; public sealed class " +
                 "InjectedSecondSuccessAuthority { public bool Succeeded => true; }",
+            "subnamespace-record-success-authority" =>
+                "namespace DownKyi.ProcessSupervision.Terminal; public sealed record " +
+                "InjectedSubnamespaceAuthority(System.Boolean Succeeded);",
             "operation-completed-final-success" =>
                 "using DownKyi.ProcessSupervision; namespace MutatedProduction; " +
                 "internal static class OperationCompletedConsumer { internal static bool " +
