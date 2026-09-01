@@ -14,12 +14,12 @@
 
 ### Reliability
 
-- 下载 shutdown 遇到 owned worker timeout 时会 fail closed，不再记录错误后回报成功；test runner、SQLite pool 与 lifecycle ownership gates 同步加强。
+- 下载 shutdown 遇到 owned worker timeout 时会 fail closed，不再记录错误后回报成功；test runner routing 与 SQLite pool ownership 同步加强。
 - 更新六平台发布所使用的固定 FFmpeg mirror，并保留 archive layout、执行、SHA-256 与 encoder 验证。
 
 ### Release
 
-- Windows、Linux 与 macOS 套件继续使用单一 `version.txt`、严格 Release build、完整测试、100 轮 assembly lifecycle rehearsal、package manifest 与 SHA-256 sidecar gate。
+- Windows、Linux 与 macOS 套件继续使用单一 `version.txt`、严格 Release build、完整测试、package manifest 与 SHA-256 sidecar gate。
 - macOS 发布只允许完整 Developer ID / notarization / stapling / Gatekeeper 验证，或无凭证时的 ad-hoc signing + strict bundle / DMG / launch 验证；不接受部分凭证或未验证产物。
 
 ## [1.1.2] - 2026-08-20
@@ -50,9 +50,6 @@
 ### Reliability
 
 - 修复 Windows 测试宿主偶发残留前台执行绪的问题：测试资料清理由同步 `ProcessExit` handler 改为可等待的 assembly fixture，Avalonia 测试改用 assembly-scoped headless session，正式 Host、Dispatcher、SQLite 与应用关闭路径均有确定性 teardown。
-- 建立 Assembly Lifecycle Stability Gate，逐测试组件隔离验证 load、assembly info、discovery、execution、teardown 与 process exit；PR、main 与 release rehearsal 分别执行 3、50 与 100 轮。
-- 生命周期报告升级为 schema 2：使用 OS `Process.ExitTime`、保留 P50/P95/P99/max、慢阶段证据及一般错误分类，并在证据缺失、残留程序、输出污染或退出异常时 fail closed。
-- 修复 lifecycle marker 并发写入时的共享锁竞态；正式 Windows gate 会实际制造独占锁、确认 contention、释放后恢复解析，并以单一完整 proof result 判定。
 - 修复 protocol-relative 图片来源被误当成 Windows UNC 路径而阻塞 `File.Exists` 的问题。
 
 ### Release

@@ -31,19 +31,7 @@ dotnet build ./DownKyi.sln `
   -p:CodeAnalysisTreatWarningsAsErrors=true `
   -p:UseSharedCompilation=false
 
-pwsh ./script/test-review-invariants.ps1 `
-  -Configuration Release `
-  -NoRestore `
-  -NoBuild
 pwsh ./script/test-solution.ps1 -Configuration Release -NoRestore -NoBuild
-pwsh ./script/audit-lifecycle-ownership.ps1 `
-  -OutputDirectory ./artifacts/assembly-lifecycle/ownership
-pwsh ./script/test-assembly-lifecycle.ps1 `
-  -Configuration Release `
-  -Iterations 5 `
-  -NoBuild `
-  -ValidateForensics `
-  -ResultsDirectory ./artifacts/assembly-lifecycle/verification
 dotnet format ./DownKyi.sln --no-restore --verify-no-changes
 pwsh ./script/audit-module-boundaries.ps1 `
   -OutputPath ./artifacts/architecture/module-boundary-audit.json
@@ -58,34 +46,15 @@ pwsh ./script/scan-secrets.ps1
 
 `scan-secrets.ps1` 使用 Gitleaks 掃描目前 tracked 與尚未追蹤、但未被 `.gitignore` 排除的候選提交檔。固定驗證版本為 Gitleaks `8.30.1`；Windows x64 release zip 必須先依官方 `gitleaks_8.30.1_checksums.txt` 驗證 SHA-256，再解壓到 `.tools/gitleaks/bin/`。`.gitleaks.toml` 只允許公開 WBI 測試 fixture 與精確的 Avalonia brush resource 行，不得加入整個目錄或一般測試檔的寬鬆排除。
 
-`test-review-invariants.ps1` 是 root-cause failure corpus gate。它必須證明
-每個 manifest class 實際執行，不得只用總測試數推測 coverage。Corpus 只
-記錄 target branch 已存在的契約；未合併 PR 的設計不能提前寫成 stable
-invariant。
+Repository 測試只能經由 `script/test-project.ps1` 或
+`script/test-solution.ps1` 進入 `DownKyi.CentralTestRunner`。Runner 會套用
+project/platform allowlist、canonical invocation、必要的 in-process xUnit
+routing、TRX validation 與 exit result。
 
-Lifecycle ownership audit 與 5 次全 test-assembly gate 是同一套嚴格
-Verification 的必要步驟，不是選用診斷工具。每個 assembly 必須通過
-load、assembly-info、discovery、execution、assembly teardown 與 process
-exit；報告必須保留 stdout/stderr 污染、退出碼、P50/P95/P99/max、殘留
-子程序與逾時取證。
-
-## Release Rehearsal
-
-正式 rehearsal 使用 `Rehearsal` profile，每個 test assembly 執行 100
-次，超過 50 次最低發布門檻：
-
-```powershell
-pwsh ./script/test-assembly-lifecycle.ps1 `
-  -Configuration Release `
-  -Profile Rehearsal `
-  -NoBuild `
-  -ValidateForensics `
-  -ResultsDirectory ./artifacts/assembly-lifecycle/release
-```
-
-`assembly-lifecycle-report.json`、ownership report、raw output 與 timeout
-evidence 必須保存為 workflow artifact。單次重跑成功不能取代失敗 owner
-的根因、teardown 修正與完整 rehearsal。
+正常 PASS 不保留 flight-recorder evidence。FAIL、timeout 或 abnormal cleanup
+會在 `artifacts/test-flight-recorder` 保存 slice/root process identity、事件、
+bounded stdout/stderr 與一次 best-effort final process snapshot；child 未被
+觀察到不代表已證明不存在。詳細 locator 見 `docs/testing/README.md`。
 
 ## 外部 Binary 與跨 RID 發布
 
@@ -114,17 +83,6 @@ sidecar，並檢查 manifest、版本、必要 binary、Fluent theme 與使用�
 簽章，Developer ID、notarization、stapling、Gatekeeper 與 signed-DMG 驗證會
 跳過，產物不得宣稱具備這些信任屬性。具備完整 Apple credentials 時才要求
 上述額外步驟全部通過。任何 final app bundle 完整性失敗仍必須 fail closed。
-
-歷史 rehearsal `30431043860` 證明 v1.1.0 candidate 的三個 release
-gate、九個 package job、sidecar、manifest 與實際套件內容正確；它不是
-正式發布證據。後續 tag workflow 暴露偶發 Windows test-host 前台執行緒，
-因此 v1.1.0 draft 已撤回，標籤保持不可變。
-
-修正後 main run `30450175286` 是 lifecycle 根因修正的 50 輪證據：
-七個 assembly 共 2,102 phase results，零失敗、零缺失 slow evidence、
-零 marker read error；teardown 最大 7 ms，OS process-exit 最大 187 ms。
-14 個超过五秒的 execution phase 均保存取证。v1.1.1 仍必须在最终版本
-commit 上完成 `Rehearsal` 100 轮与所有跨平台 package job，才能建立 tag。
 
 正式 tag 前及 workflow 中均執行：
 

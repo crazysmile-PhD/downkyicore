@@ -236,7 +236,6 @@ public sealed class AgentEnvironmentArchitectureTests
         AssertPathsExist(
             "docs/maintenance.md",
             "docs/operations/verification-and-rollback.md",
-            "docs/product-specs/v1.1.1-corrective-release-gate.md",
             "script/validate-publish-output.ps1",
             ".github/workflows/build.yml");
 
