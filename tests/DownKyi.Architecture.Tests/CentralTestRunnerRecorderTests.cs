@@ -63,7 +63,9 @@ public sealed class CentralTestRunnerRecorderTests
             Assert.Contains("bounded_stop_requested", events);
             Assert.Contains("process_exit", events);
             Assert.Contains("cleanup_completed", events);
-            Assert.Contains("final_snapshot", events);
+            Assert.Contains(
+                events,
+                eventName => eventName is "final_snapshot" or "final_snapshot_failed");
             Assert.Contains(
                 report.GetProperty("Events").EnumerateArray(),
                 item => string.Equals(
@@ -78,6 +80,10 @@ public sealed class CentralTestRunnerRecorderTests
                 "absence is not proof",
                 snapshot.GetProperty("Completeness").GetString(),
                 StringComparison.Ordinal);
+            if (events.Contains("final_snapshot_failed", StringComparer.Ordinal))
+            {
+                Assert.False(string.IsNullOrWhiteSpace(snapshot.GetProperty("Error").GetString()));
+            }
             Assert.Equal(
                 FlightRecorder.DiagnosticGuidance,
                 report.GetProperty("DiagnosticGuidance").GetString());
