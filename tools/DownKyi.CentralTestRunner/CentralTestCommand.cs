@@ -222,9 +222,18 @@ internal static class CentralTestCommand
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            if (!process.HasExited)
+            try
             {
-                process.Kill(entireProcessTree: true);
+                if (!process.HasExited)
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+            }
+            catch (Exception exception) when (
+                (exception is InvalidOperationException or System.ComponentModel.Win32Exception) &&
+                process.HasExited)
+            {
+                // The build exited between the liveness check and the kill request.
             }
 
             await process.WaitForExitAsync()
@@ -452,6 +461,15 @@ internal static class CentralTestCommand
         {
             throw new InvalidDataException(
                 $"Test project '{projectIdentity}' has invalid DownKyiTestPlatforms metadata.");
+        }
+
+        var unknownPlatforms = platforms
+            .Where(platform => platform is not ("Windows" or "Linux" or "macOS"))
+            .ToArray();
+        if (unknownPlatforms.Length > 0)
+        {
+            throw new InvalidDataException(
+                $"Test project '{projectIdentity}' declares unknown platform(s): {string.Join(", ", unknownPlatforms)}.");
         }
 
         return platforms;

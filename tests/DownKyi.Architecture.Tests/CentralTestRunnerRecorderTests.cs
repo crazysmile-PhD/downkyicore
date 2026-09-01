@@ -322,6 +322,41 @@ public sealed class CentralTestRunnerRecorderTests
     }
 
     [Fact]
+    public async Task MetadataDiscoveryRejectsUnknownPlatformName()
+    {
+        var repositoryRoot = CreateEvidenceDirectory();
+        try
+        {
+            var projectDirectory = Path.Combine(repositoryRoot, "tests", "Fixture.Tests");
+            var policyDirectory = Path.Combine(repositoryRoot, "docs", "testing");
+            Directory.CreateDirectory(projectDirectory);
+            Directory.CreateDirectory(policyDirectory);
+            await File.WriteAllTextAsync(
+                Path.Combine(projectDirectory, "Fixture.Tests.csproj"),
+                """
+                <Project>
+                  <PropertyGroup>
+                    <DownKyiTestPlatforms>Windows;Linuz;macOS</DownKyiTestPlatforms>
+                  </PropertyGroup>
+                </Project>
+                """,
+                TestContext.Current.CancellationToken);
+            await File.WriteAllTextAsync(
+                Path.Combine(policyDirectory, "test-runner-policy.json"),
+                """{"schemaVersion":1,"projects":[]}""",
+                TestContext.Current.CancellationToken);
+
+            var exception = Assert.Throws<InvalidDataException>(
+                () => CentralTestCommand.DiscoverProjects(repositoryRoot));
+            Assert.Contains("Linuz", exception.Message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(repositoryRoot, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task PassingTestProcessDiscardsRecorderArtifact()
     {
         var evidenceDirectory = CreateEvidenceDirectory();
@@ -377,14 +412,23 @@ public sealed class CentralTestRunnerRecorderTests
         var deadline = DateTimeOffset.UtcNow.AddSeconds(5);
         while (DateTimeOffset.UtcNow < deadline)
         {
-            if (File.Exists(markerPath) &&
-                int.TryParse(
-                    await File.ReadAllTextAsync(markerPath, TestContext.Current.CancellationToken)
-                        .ConfigureAwait(false),
-                    CultureInfo.InvariantCulture,
-                    out var processId))
+            if (File.Exists(markerPath))
             {
-                return processId;
+                try
+                {
+                    if (int.TryParse(
+                        await File.ReadAllTextAsync(markerPath, TestContext.Current.CancellationToken)
+                            .ConfigureAwait(false),
+                        CultureInfo.InvariantCulture,
+                        out var processId))
+                    {
+                        return processId;
+                    }
+                }
+                catch (IOException)
+                {
+                    // The fixture created the marker but has not closed its write handle yet.
+                }
             }
 
             await Task.Delay(20, TestContext.Current.CancellationToken).ConfigureAwait(false);
