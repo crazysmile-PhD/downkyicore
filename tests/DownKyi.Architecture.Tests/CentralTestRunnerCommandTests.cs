@@ -47,13 +47,26 @@ public sealed class CentralTestRunnerCommandTests
                 ],
                 cancellation.Token);
             processId = await WaitForProcessMarkerAsync(markerPath);
+            var fixtureLineage = CaptureWindowsProcessLineage(processId.Value);
 
             await cancellation.CancelAsync();
             var exitCode = await run.ConfigureAwait(true);
 
             Assert.Equal(130, exitCode);
             Assert.False(IsProcessAlive(processId.Value));
-            Directory.Delete(projectDirectory, recursive: true);
+            try
+            {
+                Directory.Delete(projectDirectory, recursive: true);
+            }
+            catch (IOException exception) when (OperatingSystem.IsWindows())
+            {
+                throw new IOException(
+                    $"{exception.Message}{Environment.NewLine}" +
+                    $"Fixture lineage before cancellation:{Environment.NewLine}{fixtureLineage}{Environment.NewLine}" +
+                    $"Fixture-process snapshot after cancellation:{Environment.NewLine}" +
+                    CaptureWindowsFixtureProcesses(projectDirectory, markerPath),
+                    exception);
+            }
             Assert.False(Directory.Exists(projectDirectory));
         }
         finally
@@ -235,6 +248,85 @@ public sealed class CentralTestRunnerCommandTests
         {
             return false;
         }
+    }
+
+    private static string CaptureWindowsProcessLineage(int processId)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return "not applicable";
+        }
+
+        return RunPowerShellProcessQuery(
+            """
+            param([int] $processId)
+            $process = Get-CimInstance Win32_Process -Filter "ProcessId = $processId"
+            while ($null -ne $process -and $process.ProcessId -gt 0) {
+              '{0}|{1}|{2}|{3}' -f $process.ProcessId,$process.ParentProcessId,$process.Name,$process.CommandLine
+              if ($process.ParentProcessId -le 0 -or $process.ParentProcessId -eq $process.ProcessId) {
+                break
+              }
+              $process = Get-CimInstance Win32_Process -Filter "ProcessId = $($process.ParentProcessId)"
+            }
+            """,
+            processId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    private static string CaptureWindowsFixtureProcesses(string projectDirectory, string markerPath)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return "not applicable";
+        }
+
+        return RunPowerShellProcessQuery(
+            """
+            param([string] $projectDirectory, [string] $markerPath)
+            Get-CimInstance Win32_Process |
+              Where-Object {
+                $_.CommandLine -like "*$projectDirectory*" -or
+                $_.CommandLine -like "*$markerPath*"
+              } |
+              ForEach-Object {
+                '{0}|{1}|{2}|{3}' -f $_.ProcessId,$_.ParentProcessId,$_.Name,$_.CommandLine
+              }
+            """,
+            projectDirectory,
+            markerPath);
+    }
+
+    private static string RunPowerShellProcessQuery(string script, params string[] arguments)
+    {
+        var startInfo = new ProcessStartInfo("powershell.exe")
+        {
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true
+        };
+        startInfo.ArgumentList.Add("-NoProfile");
+        startInfo.ArgumentList.Add("-NonInteractive");
+        startInfo.ArgumentList.Add("-Command");
+        startInfo.ArgumentList.Add(script);
+        foreach (var argument in arguments)
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        using var query = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("The Windows process query did not start.");
+        var standardOutput = query.StandardOutput.ReadToEnd();
+        var standardError = query.StandardError.ReadToEnd();
+        if (!query.WaitForExit(3000))
+        {
+            throw new TimeoutException("The Windows process query did not exit.");
+        }
+        if (query.ExitCode != 0)
+        {
+            throw new InvalidOperationException($"The Windows process query failed: {standardError.Trim()}");
+        }
+
+        return string.IsNullOrWhiteSpace(standardOutput) ? "<none>" : standardOutput.Trim();
     }
 
     private static void StopProcessIfAlive(int processId)
