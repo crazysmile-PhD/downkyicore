@@ -263,6 +263,9 @@ internal static class CentralTestCommand
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            var cleanupWindow = cleanupTimeout ?? TimeSpan.FromSeconds(5);
+            var ownedProcesses = await ProcessTreeSnapshot.CaptureAsync(process.Id, cleanupWindow)
+                .ConfigureAwait(false);
             try
             {
                 if (!process.HasExited)
@@ -278,12 +281,41 @@ internal static class CentralTestCommand
             }
 
             await process.WaitForExitAsync()
-                .WaitAsync(cleanupTimeout ?? TimeSpan.FromSeconds(5))
+                .WaitAsync(cleanupWindow)
+                .ConfigureAwait(false);
+            await WaitForOwnedProcessesToExitAsync(ownedProcesses.Processes, cleanupWindow)
                 .ConfigureAwait(false);
             throw;
         }
 
         return process.ExitCode;
+    }
+
+    private static async Task WaitForOwnedProcessesToExitAsync(
+        IReadOnlyList<ObservedProcess> ownedProcesses,
+        TimeSpan cleanupTimeout)
+    {
+        var waits = ownedProcesses.Select(WaitForObservedProcessExitAsync);
+        await Task.WhenAll(waits).WaitAsync(cleanupTimeout).ConfigureAwait(false);
+    }
+
+    private static async Task WaitForObservedProcessExitAsync(ObservedProcess observedProcess)
+    {
+        try
+        {
+            using var process = Process.GetProcessById(observedProcess.Pid);
+            if (observedProcess.StartTimeUtc is { } expectedStartTime &&
+                process.StartTime.ToUniversalTime() != expectedStartTime)
+            {
+                return;
+            }
+
+            await process.WaitForExitAsync().ConfigureAwait(false);
+        }
+        catch (ArgumentException)
+        {
+            // The observed process exited before its identity could be opened.
+        }
     }
 
     private static ProcessStartInfo CreateVstestStartInfo(
