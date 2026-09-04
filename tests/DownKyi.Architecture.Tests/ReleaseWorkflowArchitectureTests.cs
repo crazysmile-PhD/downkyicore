@@ -491,6 +491,15 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.Contains("ref: ${{ inputs.subject_sha }}", workflow, StringComparison.Ordinal);
         Assert.Contains("dotnet publish ./subject/DownKyi/DownKyi.csproj", workflow, StringComparison.Ordinal);
         Assert.Contains("working-directory: subject", workflow, StringComparison.Ordinal);
+        var criticalPathsStart = workflow.IndexOf("critical_paths=(", StringComparison.Ordinal);
+        Assert.InRange(criticalPathsStart, 0, workflow.Length - 1);
+        var criticalPathsEnd = workflow.IndexOf(')', criticalPathsStart);
+        Assert.InRange(criticalPathsEnd, criticalPathsStart + 1, workflow.Length - 1);
+        var criticalPaths = workflow[criticalPathsStart..criticalPathsEnd];
+        Assert.Contains("script/test-project.ps1", criticalPaths, StringComparison.Ordinal);
+        Assert.Contains("script/test-project-runner.ps1", criticalPaths, StringComparison.Ordinal);
+        Assert.Contains("docs/testing/test-runner-policy.json", criticalPaths, StringComparison.Ordinal);
+        Assert.Contains("tools/DownKyi.CentralTestRunner", criticalPaths, StringComparison.Ordinal);
         Assert.Contains("Resolve macOS release trust mode", workflow, StringComparison.Ordinal);
         Assert.Contains("macos_trust_mode: ${{ steps.macos_trust.outputs.macos_trust_mode }}", workflow, StringComparison.Ordinal);
         Assert.Contains("HAS_MACOS_SIGNING: ${{ needs.authority.outputs.has_macos_signing }}", workflow, StringComparison.Ordinal);

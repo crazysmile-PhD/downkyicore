@@ -112,8 +112,8 @@ public sealed partial class TestPlatformOwnershipArchitectureTests
 
         var declaration = declarations[0];
         Assert.False(
-            declaration.Attributes().Any(attribute => attribute.Name.LocalName == "Condition") ||
-            declaration.Parent?.Attributes().Any(attribute => attribute.Name.LocalName == "Condition") == true,
+            declaration.AncestorsAndSelf().Any(element =>
+                element.Attributes().Any(attribute => attribute.Name.LocalName == "Condition")),
             $"{relativePath} must declare DownKyiTestPlatforms unconditionally.");
 
         var tokens = declaration.Value.Split(';');

@@ -163,7 +163,7 @@ public sealed class CentralTestRunnerRecorderTests
             var result = await FlightRecorderExecution.RunAsync(
                 new ProcessExecutionRequest(
                     "fixture.redaction.slice",
-                    "fixture.redaction.test",
+                    "fixture.redaction.test token=fixture-identity-secret",
                     startInfo,
                     TimeSpan.FromSeconds(1),
                     TimeSpan.FromSeconds(3),
@@ -188,7 +188,8 @@ public sealed class CentralTestRunnerRecorderTests
                          "fixture-snapshot-secret",
                          "fixture-query-secret",
                          "fixture-event-account-secret",
-                         "fixture-event-token-secret"
+                         "fixture-event-token-secret",
+                         "fixture-identity-secret"
                      })
             {
                 Assert.DoesNotContain(secret, artifact, StringComparison.Ordinal);
@@ -196,6 +197,10 @@ public sealed class CentralTestRunnerRecorderTests
             Assert.DoesNotContain(userProfile, artifact, StringComparison.OrdinalIgnoreCase);
             using var document = JsonDocument.Parse(artifact);
             var report = document.RootElement;
+            Assert.Contains(
+                "token=<redacted>",
+                report.GetProperty("TestIdentity").GetString(),
+                StringComparison.Ordinal);
             var redactedEvidence = string.Join(
                 Environment.NewLine,
                 new[]
@@ -349,6 +354,45 @@ public sealed class CentralTestRunnerRecorderTests
             var exception = Assert.Throws<InvalidDataException>(
                 () => CentralTestCommand.DiscoverProjects(repositoryRoot));
             Assert.Contains("Linuz", exception.Message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(repositoryRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task MetadataDiscoveryRejectsNestedConditionalPlatformDeclaration()
+    {
+        var repositoryRoot = CreateEvidenceDirectory();
+        try
+        {
+            var projectDirectory = Path.Combine(repositoryRoot, "tests", "Fixture.Tests");
+            var policyDirectory = Path.Combine(repositoryRoot, "docs", "testing");
+            Directory.CreateDirectory(projectDirectory);
+            Directory.CreateDirectory(policyDirectory);
+            await File.WriteAllTextAsync(
+                Path.Combine(projectDirectory, "Fixture.Tests.csproj"),
+                """
+                <Project>
+                  <Choose>
+                    <When Condition="'$(OS)' == 'Windows_NT'">
+                      <PropertyGroup>
+                        <DownKyiTestPlatforms>Windows</DownKyiTestPlatforms>
+                      </PropertyGroup>
+                    </When>
+                  </Choose>
+                </Project>
+                """,
+                TestContext.Current.CancellationToken);
+            await File.WriteAllTextAsync(
+                Path.Combine(policyDirectory, "test-runner-policy.json"),
+                """{"schemaVersion":1,"projects":[]}""",
+                TestContext.Current.CancellationToken);
+
+            var exception = Assert.Throws<InvalidDataException>(
+                () => CentralTestCommand.DiscoverProjects(repositoryRoot));
+            Assert.Contains("unconditionally", exception.Message, StringComparison.Ordinal);
         }
         finally
         {

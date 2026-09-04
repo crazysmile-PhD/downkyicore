@@ -100,6 +100,8 @@ jobs:
             docs/operations/v1.1.2-release-notes.md
             script/resolve-v112-macos-trust.ps1
             script/render-v112-recovery-release-notes.ps1
+            script/test-project.ps1
+            script/test-project-runner.ps1
             script/macos/codesign-common.sh
             script/macos/prepare-app-layout.sh
             script/macos/sign.sh
@@ -108,6 +110,8 @@ jobs:
             script/macos/sign-dmg.sh
             script/macos/verify-dmg.sh
             script/macos/verify-dmg-contents.sh
+            docs/testing/test-runner-policy.json
+            tools/DownKyi.CentralTestRunner
             tests/DownKyi.MacOS.Tests/DownKyi.MacOS.Tests.csproj
             tests/DownKyi.MacOS.Tests/MacBundleLayoutTests.cs
             tests/DownKyi.MacOS.Tests/MacSigningScriptTests.cs

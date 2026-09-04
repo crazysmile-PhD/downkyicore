@@ -346,8 +346,12 @@ internal sealed class FlightRecorder
             $"{safeSlice}-{Guid.NewGuid():N}.json");
         var report = new RecorderReport
         {
-            SliceIdentity = request.SliceIdentity,
-            TestIdentity = request.TestIdentity,
+            SliceIdentity = RedactSensitiveEvidence(
+                request.SliceIdentity,
+                request.StartInfo.WorkingDirectory),
+            TestIdentity = RedactSensitiveEvidence(
+                request.TestIdentity,
+                request.StartInfo.WorkingDirectory),
             RecorderStartedAtUtc = DateTimeOffset.UtcNow,
             Events = []
         };
@@ -449,6 +453,11 @@ internal sealed class FlightRecorder
     }
 
     internal string RedactSensitiveEvidence(string value)
+    {
+        return RedactSensitiveEvidence(value, workingDirectory);
+    }
+
+    private static string RedactSensitiveEvidence(string value, string workingDirectory)
     {
         var redacted = ReplacePath(value, workingDirectory, "<repository-root>");
         var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);

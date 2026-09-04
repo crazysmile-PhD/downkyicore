@@ -443,10 +443,11 @@ internal static class CentralTestCommand
         }
 
         var declaration = declarations[0];
-        if (declaration.Attributes().Any(attribute =>
-                string.Equals(attribute.Name.LocalName, "Condition", StringComparison.Ordinal)) ||
-            declaration.Parent?.Attributes().Any(attribute =>
-                string.Equals(attribute.Name.LocalName, "Condition", StringComparison.Ordinal)) == true)
+        if (declaration.AncestorsAndSelf().Any(element =>
+                element.Attributes().Any(attribute => string.Equals(
+                    attribute.Name.LocalName,
+                    "Condition",
+                    StringComparison.Ordinal))))
         {
             throw new InvalidDataException(
                 $"Test project '{projectIdentity}' must declare DownKyiTestPlatforms unconditionally.");
