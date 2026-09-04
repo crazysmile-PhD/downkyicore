@@ -52,22 +52,8 @@ public sealed class CentralTestRunnerCommandTests
             var exitCode = await run.ConfigureAwait(true);
 
             Assert.Equal(130, exitCode);
-            var isProcessAlive = IsProcessAlive(processId.Value);
-            Assert.False(
-                isProcessAlive,
-                isProcessAlive ? DescribeUnixProcessState(processId.Value) : string.Empty);
-            try
-            {
-                Directory.Delete(projectDirectory, recursive: true);
-            }
-            catch (IOException exception) when (OperatingSystem.IsWindows())
-            {
-                throw new IOException(
-                    $"{exception.Message}{Environment.NewLine}" +
-                    $"Fixture-process snapshot after cancellation:{Environment.NewLine}" +
-                    CaptureWindowsFixtureProcesses(projectDirectory, markerPath),
-                    exception);
-            }
+            Assert.False(IsProcessAlive(processId.Value));
+            Directory.Delete(projectDirectory, recursive: true);
             Assert.False(Directory.Exists(projectDirectory));
         }
         finally
@@ -249,97 +235,6 @@ public sealed class CentralTestRunnerCommandTests
         {
             return false;
         }
-    }
-
-    private static string DescribeUnixProcessState(int processId)
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return "The marker process is still alive on Windows.";
-        }
-
-        var startInfo = new ProcessStartInfo("/bin/ps")
-        {
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true
-        };
-        startInfo.ArgumentList.Add("-o");
-        startInfo.ArgumentList.Add("pid=,ppid=,stat=,comm=");
-        startInfo.ArgumentList.Add("-p");
-        startInfo.ArgumentList.Add(processId.ToString(System.Globalization.CultureInfo.InvariantCulture));
-
-        using var state = Process.Start(startInfo)
-            ?? throw new InvalidOperationException("The Unix process-state probe did not start.");
-        var standardOutput = state.StandardOutput.ReadToEnd();
-        var standardError = state.StandardError.ReadToEnd();
-        if (!state.WaitForExit(3000))
-        {
-            throw new TimeoutException("The Unix process-state probe did not exit.");
-        }
-        if (state.ExitCode != 0)
-        {
-            throw new InvalidOperationException($"The Unix process-state probe failed: {standardError.Trim()}");
-        }
-
-        return string.IsNullOrWhiteSpace(standardOutput) ? "The marker process was not listed." : standardOutput.Trim();
-    }
-
-    private static string CaptureWindowsFixtureProcesses(string projectDirectory, string markerPath)
-    {
-        if (!OperatingSystem.IsWindows())
-        {
-            return "not applicable";
-        }
-
-        return RunPowerShellProcessQuery(
-            """
-            param([string] $projectDirectory, [string] $markerPath)
-            Get-CimInstance Win32_Process |
-              Where-Object {
-                $_.CommandLine -like "*$projectDirectory*" -or
-                $_.CommandLine -like "*$markerPath*"
-              } |
-              ForEach-Object {
-                '{0}|{1}|{2}|{3}' -f $_.ProcessId,$_.ParentProcessId,$_.Name,$_.CommandLine
-              }
-            """,
-            projectDirectory,
-            markerPath);
-    }
-
-    private static string RunPowerShellProcessQuery(string script, params string[] arguments)
-    {
-        var startInfo = new ProcessStartInfo("powershell.exe")
-        {
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true
-        };
-        startInfo.ArgumentList.Add("-NoProfile");
-        startInfo.ArgumentList.Add("-NonInteractive");
-        startInfo.ArgumentList.Add("-Command");
-        startInfo.ArgumentList.Add(script);
-        foreach (var argument in arguments)
-        {
-            startInfo.ArgumentList.Add(argument);
-        }
-
-        using var query = Process.Start(startInfo)
-            ?? throw new InvalidOperationException("The Windows process query did not start.");
-        var standardOutput = query.StandardOutput.ReadToEnd();
-        var standardError = query.StandardError.ReadToEnd();
-        if (!query.WaitForExit(3000))
-        {
-            throw new TimeoutException("The Windows process query did not exit.");
-        }
-        if (query.ExitCode != 0)
-        {
-            throw new InvalidOperationException($"The Windows process query failed: {standardError.Trim()}");
-        }
-
-        return string.IsNullOrWhiteSpace(standardOutput) ? "<none>" : standardOutput.Trim();
     }
 
     private static void StopProcessIfAlive(int processId)
