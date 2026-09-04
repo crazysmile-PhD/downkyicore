@@ -100,6 +100,8 @@ jobs:
             docs/operations/v1.1.2-release-notes.md
             script/resolve-v112-macos-trust.ps1
             script/render-v112-recovery-release-notes.ps1
+            script/test-project.ps1
+            script/test-project-runner.ps1
             script/macos/codesign-common.sh
             script/macos/prepare-app-layout.sh
             script/macos/sign.sh
@@ -108,6 +110,8 @@ jobs:
             script/macos/sign-dmg.sh
             script/macos/verify-dmg.sh
             script/macos/verify-dmg-contents.sh
+            docs/testing/test-runner-policy.json
+            tools/DownKyi.CentralTestRunner
             tests/DownKyi.MacOS.Tests/DownKyi.MacOS.Tests.csproj
             tests/DownKyi.MacOS.Tests/MacBundleLayoutTests.cs
             tests/DownKyi.MacOS.Tests/MacSigningScriptTests.cs
@@ -386,7 +390,21 @@ jobs:
         with:
           dotnet-version: 10.0.x
       - name: Run native recovery tooling regressions
-        run: dotnet test tooling/tests/DownKyi.MacOS.Tests/DownKyi.MacOS.Tests.csproj -c Release
+        shell: pwsh
+        run: >
+          ./tooling/script/test-project.ps1
+          -ProjectPath ./tests/DownKyi.MacOS.Tests/DownKyi.MacOS.Tests.csproj
+          -Configuration Release
+          -ResultsDirectory ./artifacts/test-results/macos-recovery-${{ matrix.cpu }}
+      - name: Upload recovery tooling test results and failure diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: recovery-tooling-test-results-${{ matrix.cpu }}
+          path: |
+            tooling/artifacts/test-results/macos-recovery-${{ matrix.cpu }}
+            tooling/artifacts/test-flight-recorder
+          if-no-files-found: ignore
       - name: Install Python
         uses: actions/setup-python@v6
         with:

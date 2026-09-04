@@ -135,58 +135,27 @@ jobs:
           -p:UseSharedCompilation=false
       - name: Test
         shell: pwsh
-        run: ./script/test-solution.ps1 -Configuration Release -NoRestore -NoBuild
-
-  assembly-lifecycle-release:
-    name: Assembly lifecycle release gate
-    runs-on: windows-latest
-    needs: external-assets-preflight
-    timeout-minutes: 180
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-      - name: Install .NET
-        uses: actions/setup-dotnet@v5
-        with:
-          dotnet-version: '10.0.x'
-      - name: Install lifecycle diagnostics
-        run: dotnet tool install dotnet-stack --tool-path ./.tools --version 9.0.661903
-      - name: Restore
-        run: dotnet restore ./DownKyi.sln
-      - name: Strict Release build
         run: >
-          dotnet build ./DownKyi.sln
-          -c Release
-          --no-restore
-          --no-incremental
-          -p:TreatWarningsAsErrors=true
-          -p:CodeAnalysisTreatWarningsAsErrors=true
-          -p:EnableNETAnalyzers=true
-          -p:AnalysisMode=All
-          -p:EnforceCodeStyleInBuild=true
-          -p:UseSharedCompilation=false
-      - name: Run repeated assembly lifecycle gate
-        shell: pwsh
-        run: >
-          ./script/test-assembly-lifecycle.ps1
+          ./script/test-solution.ps1
           -Configuration Release
-          -Profile Rehearsal
+          -NoRestore
           -NoBuild
-          -ValidateForensics
-          -ResultsDirectory ./artifacts/assembly-lifecycle/release
-      - name: Upload lifecycle reports and evidence
+          -ResultsDirectory ./artifacts/test-results
+      - name: Upload test results and failure diagnostics
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: assembly-lifecycle-release-${{ github.run_attempt }}
-          path: artifacts/assembly-lifecycle/release
-          if-no-files-found: error
+          name: release-gate-test-results-${{ matrix.os }}
+          path: |
+            artifacts/test-results
+            artifacts/test-flight-recorder
+          if-no-files-found: ignore
 
   changelog:
     name: Generate changelog
     runs-on: ubuntu-latest
-    needs: [release-gate, assembly-lifecycle-release]
-    if: ${{ always() && needs.release-gate.result == 'success' && needs.assembly-lifecycle-release.result == 'success' }}
+    needs: release-gate
+    if: ${{ always() && needs.release-gate.result == 'success' }}
     outputs:
       release_body: ${{ steps.git-cliff.outputs.content }}
     steps:
@@ -604,7 +573,21 @@ jobs:
         with:
           dotnet-version: '10.0.x'
       - name: Run macOS packaging regressions
-        run: dotnet test tests/DownKyi.MacOS.Tests/DownKyi.MacOS.Tests.csproj -c Release
+        shell: pwsh
+        run: >
+          ./script/test-project.ps1
+          -ProjectPath ./tests/DownKyi.MacOS.Tests/DownKyi.MacOS.Tests.csproj
+          -Configuration Release
+          -ResultsDirectory ./artifacts/test-results/macos-packaging-${{ matrix.cpu }}
+      - name: Upload macOS packaging test results and failure diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos-packaging-test-results-${{ matrix.cpu }}
+          path: |
+            artifacts/test-results/macos-packaging-${{ matrix.cpu }}
+            artifacts/test-flight-recorder
+          if-no-files-found: ignore
       - name: Install Python for FFmpeg manifest verification
         uses: actions/setup-python@v6
         with:

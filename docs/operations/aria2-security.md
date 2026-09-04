@@ -120,8 +120,11 @@ For a local packaged binary:
 $env:DOWNKYI_ARIA2_BINARY = '<absolute aria2c path>'
 $env:DOWNKYI_ARIA2_RID = 'win-x64'
 $env:DOWNKYI_ARIA2_TLS_REPORT = './artifacts/aria2-tls/win-x64.json'
-dotnet test ./tests/DownKyi.Tests/DownKyi.Tests.csproj -c Release `
-  --filter Category=Aria2TlsIntegration
+pwsh ./script/test-project.ps1 `
+  -ProjectPath ./tests/DownKyi.Tests/DownKyi.Tests.csproj `
+  -Configuration Release `
+  -ClassName DownKyi.Tests.Aria2TlsIntegrationTests `
+  -ResultsDirectory ./artifacts/test-results/aria2-local
 ```
 
 ## External Binary Evidence

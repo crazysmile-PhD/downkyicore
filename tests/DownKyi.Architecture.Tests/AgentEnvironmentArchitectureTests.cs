@@ -39,8 +39,9 @@ public sealed class AgentEnvironmentArchitectureTests
             "version.txt",
             "Directory.Packages.props",
             "script/test-solution.ps1",
+            "script/test-project.ps1",
             "script/test-project-runner.ps1",
-            "docs/testing/test-runner-policy.json",
+            "tools/DownKyi.CentralTestRunner/DownKyi.CentralTestRunner.csproj",
             "docs/maintenance.md",
             "docs/operations/verification-and-rollback.md");
 
@@ -61,29 +62,21 @@ public sealed class AgentEnvironmentArchitectureTests
         Assert.Contains("macos-latest", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("--no-incremental", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("AnalysisMode=All", qualityWorkflow, StringComparison.Ordinal);
-        Assert.Contains("Enforce architecture policy", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("./script/test-solution.ps1", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("--vulnerable", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("--deprecated", qualityWorkflow, StringComparison.Ordinal);
         Assert.DoesNotContain("LogFileName=test-results-${{ matrix.os }}.trx", qualityWorkflow, StringComparison.Ordinal);
 
         var testScript = Read("script/test-solution.ps1");
-        Assert.Contains("Get-ChildItem", testScript, StringComparison.Ordinal);
-        Assert.Contains("Sort-Object FullName", testScript, StringComparison.Ordinal);
-        Assert.Contains("Invoke-DownKyiTestProject", testScript, StringComparison.Ordinal);
-        Assert.Contains("throw \"Test project failed:", testScript, StringComparison.Ordinal);
+        Assert.Contains("Invoke-DownKyiTestSolution", testScript, StringComparison.Ordinal);
+        Assert.Contains("CentralTestRunner failed", testScript, StringComparison.Ordinal);
 
         var runnerScript = Read("script/test-project-runner.ps1");
-        Assert.Contains("test-runner-policy.json", runnerScript, StringComparison.Ordinal);
-        Assert.Contains("xunit-in-process", runnerScript, StringComparison.Ordinal);
-        Assert.Contains("-class", runnerScript, StringComparison.Ordinal);
-
-        var runnerPolicy = Read("docs/testing/test-runner-policy.json");
-        Assert.Contains("DownKyi.Desktop.Tests.csproj", runnerPolicy, StringComparison.Ordinal);
-        Assert.Contains("xunit/xunit#3576", runnerPolicy, StringComparison.Ordinal);
-
-        var lifecycleScript = Read("script/test-assembly-lifecycle.ps1");
-        Assert.Contains("-assemblyInfo", lifecycleScript, StringComparison.Ordinal);
+        Assert.Contains("DownKyi.CentralTestRunner.csproj", runnerScript, StringComparison.Ordinal);
+        Assert.Contains("-nodeReuse:false", runnerScript, StringComparison.Ordinal);
+        Assert.Contains("-p:UseSharedCompilation=false", runnerScript, StringComparison.Ordinal);
+        Assert.Contains("run-project", runnerScript, StringComparison.Ordinal);
+        Assert.Contains("run-solution", runnerScript, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -243,7 +236,6 @@ public sealed class AgentEnvironmentArchitectureTests
         AssertPathsExist(
             "docs/maintenance.md",
             "docs/operations/verification-and-rollback.md",
-            "docs/product-specs/v1.1.1-corrective-release-gate.md",
             "script/validate-publish-output.ps1",
             ".github/workflows/build.yml");
 

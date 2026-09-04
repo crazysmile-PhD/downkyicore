@@ -1,0 +1,814 @@
+using System.Diagnostics;
+using System.Globalization;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
+
+namespace DownKyi.CentralTestRunner;
+
+internal sealed record ProcessExecutionRequest(
+    string SliceIdentity,
+    string TestIdentity,
+    ProcessStartInfo StartInfo,
+    TimeSpan Timeout,
+    TimeSpan CleanupTimeout,
+    string EvidenceDirectory,
+    Func<int, TimeSpan, Task<FinalProcessSnapshot>>? SnapshotCapture = null);
+
+internal sealed record ProcessExecutionResult(
+    int ExitCode,
+    int RootPid,
+    DateTimeOffset RootStartTimeUtc,
+    string EvidencePath,
+    FlightRecorder Recorder);
+
+internal static class FlightRecorderExecution
+{
+    private const int MaximumOutputLineCharacters = 8192;
+    private const string TruncatedOutputLine = "[output line exceeded 8192 characters and was discarded]";
+
+    public static async Task<ProcessExecutionResult> RunAsync(
+        ProcessExecutionRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.SliceIdentity);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.TestIdentity);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.EvidenceDirectory);
+
+        var recorder = await FlightRecorder.CreateAsync(request).ConfigureAwait(false);
+        using var process = new Process { StartInfo = request.StartInfo };
+        var standardOutput = new TailBuffer(8192);
+        var standardError = new TailBuffer(8192);
+
+        try
+        {
+            process.Start();
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            await recorder.RecordAsync("process_start_failed", detail: exception.Message).ConfigureAwait(false);
+            await recorder.CaptureFinalSnapshotOnceAsync().ConfigureAwait(false);
+            await recorder.FinalizeFailureAsync("start_failed", standardOutput, standardError).ConfigureAwait(false);
+            return new ProcessExecutionResult(2, 0, default, recorder.EvidencePath, recorder);
+        }
+
+        var rootPid = process.Id;
+        DateTimeOffset rootStartTime;
+        try
+        {
+            rootStartTime = process.StartTime.ToUniversalTime();
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            await recorder.RecordAsync(
+                "root_identity_failed",
+                pid: rootPid,
+                detail: exception.Message).ConfigureAwait(false);
+            await recorder.CaptureFinalSnapshotOnceAsync().ConfigureAwait(false);
+            await StopAsync(process, request.CleanupTimeout, recorder).ConfigureAwait(false);
+            await recorder.FinalizeFailureAsync("root_identity_failed", standardOutput, standardError)
+                .ConfigureAwait(false);
+            return new ProcessExecutionResult(2, rootPid, default, recorder.EvidencePath, recorder);
+        }
+
+        recorder.SetRootIdentity(rootPid, rootStartTime);
+        await recorder.RecordAsync(
+            "process_start",
+            pid: rootPid,
+            startTimeUtc: rootStartTime).ConfigureAwait(false);
+
+        using var outputCapture = new CancellationTokenSource();
+        var outputTask = CaptureOutputAsync(
+            process.StandardOutput,
+            standardOutput,
+            Console.Out,
+            recorder,
+            outputCapture.Token);
+        var errorTask = CaptureOutputAsync(
+            process.StandardError,
+            standardError,
+            Console.Error,
+            recorder,
+            outputCapture.Token);
+        using var timeout = new CancellationTokenSource(request.Timeout);
+        using var waitCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            timeout.Token);
+
+        try
+        {
+            await process.WaitForExitAsync(waitCancellation.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            var eventName = cancellationToken.IsCancellationRequested ? "cancellation" : "timeout";
+            await recorder.RecordAsync(eventName, pid: rootPid).ConfigureAwait(false);
+            await recorder.CaptureFinalSnapshotOnceAsync().ConfigureAwait(false);
+            await StopAsync(process, request.CleanupTimeout, recorder).ConfigureAwait(false);
+            await DrainOutputAsync(
+                outputTask,
+                errorTask,
+                outputCapture,
+                request.CleanupTimeout,
+                recorder,
+                rootPid).ConfigureAwait(false);
+            await recorder.FinalizeFailureAsync(eventName, standardOutput, standardError)
+                .ConfigureAwait(false);
+            var exitCode = string.Equals(eventName, "timeout", StringComparison.Ordinal) ? 124 : 130;
+            return new ProcessExecutionResult(
+                exitCode,
+                rootPid,
+                rootStartTime,
+                recorder.EvidencePath,
+                recorder);
+        }
+
+        var processExitCode = process.ExitCode;
+        await recorder.RecordAsync(
+            "process_exit",
+            pid: rootPid,
+            exitCode: processExitCode).ConfigureAwait(false);
+        if (processExitCode != 0)
+        {
+            await recorder.CaptureFinalSnapshotOnceAsync().ConfigureAwait(false);
+        }
+
+        var streamsDrained = await DrainOutputAsync(
+            outputTask,
+            errorTask,
+            outputCapture,
+            request.CleanupTimeout,
+            recorder,
+            rootPid).ConfigureAwait(false);
+        if (!streamsDrained)
+        {
+            await recorder.CaptureFinalSnapshotOnceAsync().ConfigureAwait(false);
+            await recorder.FinalizeFailureAsync("stream_drain_failed", standardOutput, standardError)
+                .ConfigureAwait(false);
+            processExitCode = 2;
+        }
+        else if (processExitCode != 0)
+        {
+            await recorder.RecordAsync(
+                "cleanup_completed",
+                pid: rootPid,
+                detail: "natural process exit and stream drain observed").ConfigureAwait(false);
+            await recorder.FinalizeFailureAsync("process_exit", standardOutput, standardError)
+                .ConfigureAwait(false);
+        }
+        else
+        {
+            recorder.SetOutputTails(standardOutput.Value, standardError.Value);
+            await recorder.RecordAsync("cleanup_completed", pid: rootPid, detail: "natural process exit observed")
+                .ConfigureAwait(false);
+        }
+
+        return new ProcessExecutionResult(
+            processExitCode,
+            rootPid,
+            rootStartTime,
+            recorder.EvidencePath,
+            recorder);
+    }
+
+    public static async Task PreservePostExitFailureAsync(
+        ProcessExecutionResult result,
+        string eventName,
+        string detail)
+    {
+        await result.Recorder.RecordAsync(
+            eventName,
+            pid: result.RootPid,
+            detail: detail).ConfigureAwait(false);
+        await result.Recorder.CaptureFinalSnapshotOnceAsync().ConfigureAwait(false);
+        await result.Recorder.FinalizeFailureAsync(
+            eventName,
+            new TailBuffer(1),
+            new TailBuffer(1)).ConfigureAwait(false);
+    }
+
+    public static Task DiscardAsync(ProcessExecutionResult result)
+    {
+        File.Delete(result.EvidencePath);
+        return Task.CompletedTask;
+    }
+
+    private static async Task StopAsync(
+        Process process,
+        TimeSpan cleanupTimeout,
+        FlightRecorder recorder)
+    {
+        await recorder.RecordAsync("bounded_stop_requested", pid: process.Id).ConfigureAwait(false);
+        try
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+
+            using var cleanup = new CancellationTokenSource(cleanupTimeout);
+            await process.WaitForExitAsync(cleanup.Token).ConfigureAwait(false);
+            await recorder.RecordAsync(
+                "process_exit",
+                pid: process.Id,
+                exitCode: process.ExitCode).ConfigureAwait(false);
+            await recorder.RecordAsync("cleanup_completed", pid: process.Id).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception or OperationCanceledException)
+        {
+            await recorder.RecordAsync(
+                "cleanup_failed",
+                pid: process.Id,
+                detail: exception.Message).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task CaptureOutputAsync(
+        StreamReader reader,
+        TailBuffer tail,
+        TextWriter destination,
+        FlightRecorder recorder,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var buffer = new char[4096];
+            var line = new StringBuilder(MaximumOutputLineCharacters);
+            var discardingLine = false;
+            var previousWasCarriageReturn = false;
+
+            async Task FlushLineAsync()
+            {
+                var redacted = discardingLine
+                    ? TruncatedOutputLine
+                    : recorder.RedactSensitiveEvidence(line.ToString());
+                tail.Add(redacted);
+                await destination.WriteLineAsync(redacted).ConfigureAwait(false);
+                line.Clear();
+                discardingLine = false;
+            }
+
+            while (true)
+            {
+                var count = await reader.ReadAsync(buffer.AsMemory(), cancellationToken).ConfigureAwait(false);
+                if (count == 0)
+                {
+                    break;
+                }
+
+                for (var index = 0; index < count; index++)
+                {
+                    var character = buffer[index];
+                    if (character == '\n')
+                    {
+                        if (!previousWasCarriageReturn)
+                        {
+                            await FlushLineAsync().ConfigureAwait(false);
+                        }
+                        previousWasCarriageReturn = false;
+                        continue;
+                    }
+
+                    if (character == '\r')
+                    {
+                        await FlushLineAsync().ConfigureAwait(false);
+                        previousWasCarriageReturn = true;
+                        continue;
+                    }
+
+                    previousWasCarriageReturn = false;
+                    if (discardingLine)
+                    {
+                        continue;
+                    }
+
+                    if (line.Length == MaximumOutputLineCharacters)
+                    {
+                        line.Clear();
+                        discardingLine = true;
+                        continue;
+                    }
+
+                    line.Append(character);
+                }
+            }
+
+            if (line.Length > 0 || discardingLine)
+            {
+                await FlushLineAsync().ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The existing cleanup bound ended stream collection.
+        }
+        catch (ObjectDisposedException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Process disposal closes redirected streams after bounded cleanup.
+        }
+    }
+
+    private static async Task<bool> DrainOutputAsync(
+        Task outputTask,
+        Task errorTask,
+        CancellationTokenSource outputCapture,
+        TimeSpan cleanupTimeout,
+        FlightRecorder recorder,
+        int rootPid)
+    {
+        var drain = Task.WhenAll(outputTask, errorTask);
+        try
+        {
+            await drain.WaitAsync(cleanupTimeout).ConfigureAwait(false);
+            return true;
+        }
+        catch (TimeoutException)
+        {
+            await outputCapture.CancelAsync().ConfigureAwait(false);
+            await recorder.RecordAsync(
+                "cleanup_failed",
+                pid: rootPid,
+                detail: "stdout/stderr drain exceeded the bounded cleanup window")
+                .ConfigureAwait(false);
+            return false;
+        }
+        catch (Exception exception) when (exception is IOException or InvalidOperationException or ObjectDisposedException)
+        {
+            await recorder.RecordAsync(
+                "cleanup_failed",
+                pid: rootPid,
+                detail: $"stdout/stderr drain failed: {exception.Message}")
+                .ConfigureAwait(false);
+            return false;
+        }
+    }
+}
+
+internal sealed class FlightRecorder
+{
+    internal const string SnapshotNotice =
+        "Best-effort failure-time snapshot only. Short-lived or orphaned descendants may be absent; absence is not proof that no descendant existed.";
+
+    internal const string DiagnosticGuidance =
+        "先根據本報告中的 slice identity、root process identity、child snapshot、timeout、cleanup、stdout/stderr 等 evidence 定位問題。\n\n" +
+        "如果約 5 分鐘內仍無法確認問題所在，不要優先增加更多 lifecycle verifier、polling、containment 或監控。\n\n" +
+        "這通常代表目前的 process topology、ownership boundary 或 module responsibility 已經複雜到不利於維護。\n\n" +
+        "將該區域標記為 maintainability refactor candidate，優先考慮拆成更小、責任更單一、可以獨立診斷的單元。";
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        WriteIndented = true,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
+
+    private static readonly Regex SensitiveHeaderPattern = new(
+        @"\b(?<name>authorization|proxy-authorization|cookie|set-cookie)\s*[:=]\s*[^\r\n]+",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    private static readonly Regex SensitiveValuePattern = new(
+        @"\b(?<name>access[_-]?token|refresh[_-]?token|token|api[_-]?key|secret|password|sessdata|bili_jct|dedeuserid|account(?:id)?|user(?:id)?|uid|mid)\b(?<separator>\s*[:=]\s*)(?<value>[^&;\s,]+)",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    private static readonly Regex UrlPattern = new(
+        "\\bhttps?://[^\\s\\\"'<>]+",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    private readonly RecorderReport report;
+    private readonly TimeSpan snapshotTimeout;
+    private readonly string workingDirectory;
+    private readonly Func<int, TimeSpan, Task<FinalProcessSnapshot>> snapshotCapture;
+
+    private FlightRecorder(
+        string evidencePath,
+        RecorderReport report,
+        TimeSpan snapshotTimeout,
+        string workingDirectory,
+        Func<int, TimeSpan, Task<FinalProcessSnapshot>> snapshotCapture)
+    {
+        EvidencePath = evidencePath;
+        this.report = report;
+        this.snapshotTimeout = snapshotTimeout;
+        this.workingDirectory = workingDirectory;
+        this.snapshotCapture = snapshotCapture;
+    }
+
+    public string EvidencePath { get; }
+
+    public static async Task<FlightRecorder> CreateAsync(ProcessExecutionRequest request)
+    {
+        Directory.CreateDirectory(request.EvidenceDirectory);
+        var safeSlice = string.Concat(request.SliceIdentity.Select(character =>
+            char.IsLetterOrDigit(character) ? character : '-')).Trim('-');
+        if (safeSlice.Length > 80)
+        {
+            safeSlice = safeSlice[..80];
+        }
+        var evidencePath = Path.Combine(
+            request.EvidenceDirectory,
+            $"{safeSlice}-{Guid.NewGuid():N}.json");
+        var report = new RecorderReport
+        {
+            SliceIdentity = RedactSensitiveEvidence(
+                request.SliceIdentity,
+                request.StartInfo.WorkingDirectory),
+            TestIdentity = RedactSensitiveEvidence(
+                request.TestIdentity,
+                request.StartInfo.WorkingDirectory),
+            RecorderStartedAtUtc = DateTimeOffset.UtcNow,
+            Events = []
+        };
+        var recorder = new FlightRecorder(
+            evidencePath,
+            report,
+            request.CleanupTimeout,
+            request.StartInfo.WorkingDirectory,
+            request.SnapshotCapture ?? ProcessTreeSnapshot.CaptureAsync);
+        await recorder.RecordAsync("recorder_start").ConfigureAwait(false);
+        return recorder;
+    }
+
+    public void SetRootIdentity(int pid, DateTimeOffset startTimeUtc)
+    {
+        report.RootProcess = new RootProcessIdentity
+        {
+            Pid = pid,
+            StartTimeUtc = startTimeUtc
+        };
+    }
+
+    public void SetOutputTails(string standardOutput, string standardError)
+    {
+        report.StdoutTail = RedactSensitiveEvidence(standardOutput);
+        report.StderrTail = RedactSensitiveEvidence(standardError);
+    }
+
+    public async Task RecordAsync(
+        string eventName,
+        int? pid = null,
+        DateTimeOffset? startTimeUtc = null,
+        int? exitCode = null,
+        string? detail = null)
+    {
+        report.Events.Add(new RecorderEvent
+        {
+            TimestampUtc = DateTimeOffset.UtcNow,
+            Event = eventName,
+            Pid = pid,
+            StartTimeUtc = startTimeUtc,
+            ExitCode = exitCode,
+            Detail = detail is null ? null : RedactSensitiveEvidence(detail)
+        });
+        await PersistAsync().ConfigureAwait(false);
+    }
+
+    public async Task CaptureFinalSnapshotOnceAsync()
+    {
+        if (report.FinalSnapshot is not null)
+        {
+            return;
+        }
+
+        var rootPid = report.RootProcess?.Pid ?? 0;
+        try
+        {
+            report.FinalSnapshot = await snapshotCapture(rootPid, snapshotTimeout).ConfigureAwait(false);
+            await RecordAsync("final_snapshot", pid: rootPid).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is IOException or InvalidOperationException or
+                                          System.ComponentModel.Win32Exception or TimeoutException or
+                                          UnauthorizedAccessException or NotSupportedException)
+        {
+            var error = RedactSensitiveEvidence(exception.Message);
+            report.FinalSnapshot = new FinalProcessSnapshot
+            {
+                CapturedAtUtc = DateTimeOffset.UtcNow,
+                Completeness = SnapshotNotice,
+                Processes = [],
+                Error = error
+            };
+            await RecordAsync(
+                "final_snapshot_failed",
+                pid: rootPid,
+                detail: error).ConfigureAwait(false);
+        }
+    }
+
+    public async Task FinalizeFailureAsync(
+        string outcome,
+        TailBuffer standardOutput,
+        TailBuffer standardError)
+    {
+        await CaptureFinalSnapshotOnceAsync().ConfigureAwait(false);
+
+        report.Outcome = outcome;
+        if (standardOutput.Value.Length > 0 || report.StdoutTail is null)
+        {
+            report.StdoutTail = RedactSensitiveEvidence(standardOutput.Value);
+        }
+        if (standardError.Value.Length > 0 || report.StderrTail is null)
+        {
+            report.StderrTail = RedactSensitiveEvidence(standardError.Value);
+        }
+
+        report.DiagnosticGuidance = DiagnosticGuidance;
+        await PersistAsync().ConfigureAwait(false);
+    }
+
+    internal string RedactSensitiveEvidence(string value)
+    {
+        return RedactSensitiveEvidence(value, workingDirectory);
+    }
+
+    private static string RedactSensitiveEvidence(string value, string workingDirectory)
+    {
+        var redacted = ReplacePath(value, workingDirectory, "<repository-root>");
+        var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        redacted = ReplacePath(redacted, userProfile, "<user-profile>");
+        redacted = SensitiveHeaderPattern.Replace(
+            redacted,
+            match => $"{match.Groups["name"].Value}: <redacted>");
+        redacted = UrlPattern.Replace(redacted, "<redacted-url>");
+        return SensitiveValuePattern.Replace(
+            redacted,
+            match => $"{match.Groups["name"].Value}{match.Groups["separator"].Value}<redacted>");
+    }
+
+    private static string ReplacePath(string value, string path, string replacement)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return value;
+        }
+
+        var trimmed = Path.TrimEndingDirectorySeparator(path);
+        var redacted = value.Replace(trimmed, replacement, StringComparison.OrdinalIgnoreCase);
+        var alternate = trimmed.Contains('\\', StringComparison.Ordinal)
+            ? trimmed.Replace('\\', '/')
+            : trimmed.Replace('/', '\\');
+        return redacted.Replace(alternate, replacement, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private Task PersistAsync()
+    {
+        var json = JsonSerializer.Serialize(report, JsonOptions);
+        return File.WriteAllTextAsync(EvidencePath, json);
+    }
+}
+
+internal sealed class TailBuffer
+{
+    private readonly int maximumCharacters;
+    private readonly Queue<string> lines = new();
+    private readonly object synchronization = new();
+    private int characters;
+
+    public TailBuffer(int maximumCharacters)
+    {
+        this.maximumCharacters = maximumCharacters;
+    }
+
+    public string Value
+    {
+        get
+        {
+            lock (synchronization)
+            {
+                return string.Join(Environment.NewLine, lines);
+            }
+        }
+    }
+
+    public void Add(string line)
+    {
+        lock (synchronization)
+        {
+            var retained = line.Length > maximumCharacters
+                ? line[^maximumCharacters..]
+                : line;
+            lines.Enqueue(retained);
+            characters += retained.Length + Environment.NewLine.Length;
+            while (characters > maximumCharacters && lines.Count > 1)
+            {
+                characters -= lines.Dequeue().Length + Environment.NewLine.Length;
+            }
+            if (characters > maximumCharacters && lines.Count == 1)
+            {
+                var onlyLine = lines.Dequeue();
+                var keep = Math.Max(0, maximumCharacters - Environment.NewLine.Length);
+                retained = keep == 0 ? string.Empty : onlyLine[^Math.Min(keep, onlyLine.Length)..];
+                lines.Enqueue(retained);
+                characters = retained.Length + Environment.NewLine.Length;
+            }
+        }
+    }
+}
+
+internal static class ProcessTreeSnapshot
+{
+    public static async Task<FinalProcessSnapshot> CaptureAsync(
+        int rootPid,
+        TimeSpan timeout)
+    {
+        var parentIds = await ReadParentIdsAsync(timeout).ConfigureAwait(false);
+        var included = new HashSet<int>();
+        if (rootPid > 0)
+        {
+            included.Add(rootPid);
+        }
+
+        var added = true;
+        while (added)
+        {
+            added = false;
+            foreach (var pair in parentIds)
+            {
+                if (included.Contains(pair.Value) && included.Add(pair.Key))
+                {
+                    added = true;
+                }
+            }
+        }
+
+        var processes = new List<ObservedProcess>();
+        foreach (var pid in included.Where(parentIds.ContainsKey).Order())
+        {
+            DateTimeOffset? startTimeUtc = null;
+            try
+            {
+                using var process = Process.GetProcessById(pid);
+                startTimeUtc = process.StartTime.ToUniversalTime();
+            }
+            catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception)
+            {
+                // The process may exit between the point-in-time relationship snapshot and identity read.
+            }
+
+            processes.Add(new ObservedProcess
+            {
+                Pid = pid,
+                ParentPid = parentIds[pid],
+                StartTimeUtc = startTimeUtc
+            });
+        }
+
+        return new FinalProcessSnapshot
+        {
+            CapturedAtUtc = DateTimeOffset.UtcNow,
+            Completeness = FlightRecorder.SnapshotNotice,
+            Processes = processes
+        };
+    }
+
+    private static async Task<Dictionary<int, int>> ReadParentIdsAsync(TimeSpan timeout)
+    {
+        var startInfo = OperatingSystem.IsWindows()
+            ? CreateWindowsSnapshotStartInfo()
+            : CreateUnixSnapshotStartInfo();
+        using var process = new Process { StartInfo = startInfo };
+        process.Start();
+        var outputTask = process.StandardOutput.ReadToEndAsync();
+        var errorTask = process.StandardError.ReadToEndAsync();
+        try
+        {
+            await process.WaitForExitAsync().WaitAsync(timeout).ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            try
+            {
+                process.Kill(entireProcessTree: true);
+            }
+            catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception)
+            {
+                // The snapshot helper may have exited while the bound elapsed.
+            }
+            throw new TimeoutException("Process relationship snapshot exceeded the bounded cleanup window.");
+        }
+        var output = await outputTask.ConfigureAwait(false);
+        var error = await errorTask.ConfigureAwait(false);
+        if (process.ExitCode != 0)
+        {
+            throw new InvalidOperationException($"Process relationship snapshot failed: {error.Trim()}");
+        }
+
+        return ParseParentIds(output);
+    }
+
+    internal static Dictionary<int, int> ParseParentIds(string output)
+    {
+        var result = new Dictionary<int, int>();
+        foreach (var line in output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            var values = line.Contains('|', StringComparison.Ordinal)
+                ? line.Split('|', StringSplitOptions.TrimEntries)
+                : line.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (values.Length == 2 &&
+                int.TryParse(values[0], NumberStyles.None, CultureInfo.InvariantCulture, out var pid) &&
+                int.TryParse(values[1], NumberStyles.None, CultureInfo.InvariantCulture, out var parentPid) &&
+                pid > 0 &&
+                parentPid >= 0)
+            {
+                result[pid] = parentPid;
+            }
+        }
+
+        return result;
+    }
+
+    private static ProcessStartInfo CreateWindowsSnapshotStartInfo()
+    {
+        var startInfo = new ProcessStartInfo("powershell.exe")
+        {
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true
+        };
+        startInfo.ArgumentList.Add("-NoProfile");
+        startInfo.ArgumentList.Add("-NonInteractive");
+        startInfo.ArgumentList.Add("-Command");
+        startInfo.ArgumentList.Add(
+            "Get-CimInstance Win32_Process | ForEach-Object { '{0}|{1}' -f $_.ProcessId,$_.ParentProcessId }");
+        return startInfo;
+    }
+
+    private static ProcessStartInfo CreateUnixSnapshotStartInfo()
+    {
+        var startInfo = new ProcessStartInfo("/bin/ps")
+        {
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true
+        };
+        startInfo.ArgumentList.Add("-axo");
+        startInfo.ArgumentList.Add("pid=,ppid=");
+        return startInfo;
+    }
+}
+
+internal sealed class RecorderReport
+{
+    public required string SliceIdentity { get; init; }
+
+    public required string TestIdentity { get; init; }
+
+    public DateTimeOffset RecorderStartedAtUtc { get; init; }
+
+    public RootProcessIdentity? RootProcess { get; set; }
+
+    public string? Outcome { get; set; }
+
+    public required List<RecorderEvent> Events { get; init; }
+
+    public string? StdoutTail { get; set; }
+
+    public string? StderrTail { get; set; }
+
+    public FinalProcessSnapshot? FinalSnapshot { get; set; }
+
+    public string? DiagnosticGuidance { get; set; }
+}
+
+internal sealed class RootProcessIdentity
+{
+    public int Pid { get; init; }
+
+    public DateTimeOffset StartTimeUtc { get; init; }
+}
+
+internal sealed class RecorderEvent
+{
+    public DateTimeOffset TimestampUtc { get; init; }
+
+    public required string Event { get; init; }
+
+    public int? Pid { get; init; }
+
+    public DateTimeOffset? StartTimeUtc { get; init; }
+
+    public int? ExitCode { get; init; }
+
+    public string? Detail { get; init; }
+}
+
+internal sealed class FinalProcessSnapshot
+{
+    public DateTimeOffset CapturedAtUtc { get; init; }
+
+    public required string Completeness { get; init; }
+
+    public required IReadOnlyList<ObservedProcess> Processes { get; init; }
+
+    public string? Error { get; init; }
+}
+
+internal sealed class ObservedProcess
+{
+    public int Pid { get; init; }
+
+    public int ParentPid { get; init; }
+
+    public DateTimeOffset? StartTimeUtc { get; init; }
+}

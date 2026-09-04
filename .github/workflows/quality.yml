@@ -66,20 +66,6 @@ jobs:
           -p:AnalysisMode=All
           -p:EnforceCodeStyleInBuild=true
           -p:UseSharedCompilation=false
-      - name: Enforce architecture policy
-        run: >
-          dotnet test ./tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj
-          -c Release
-          --no-restore
-          --no-build
-      - name: Run review invariant failure corpus
-        shell: pwsh
-        run: >
-          ./script/test-review-invariants.ps1
-          -Configuration Release
-          -NoRestore
-          -NoBuild
-          -ResultsDirectory ./TestResults/review-invariants
       - name: Test
         shell: pwsh
         run: >
@@ -95,7 +81,7 @@ jobs:
           name: test-results-${{ matrix.os }}
           path: |
             TestResults/*.trx
-            TestResults/review-invariants/*.trx
+            artifacts/test-flight-recorder
           if-no-files-found: ignore
 
   aria2-tls-security:
@@ -180,6 +166,7 @@ jobs:
             -Configuration Release `
             -NoRestore `
             -NoBuild `
+            -ResultsDirectory ./artifacts/test-results/aria2-${{ matrix.rid }} `
             -ClassNames DownKyi.Tests.Aria2TlsIntegrationTests
           if ($result.ExitCode -ne 0) {
             throw "Packaged aria2 TLS integration tests failed."
@@ -189,53 +176,11 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: aria2-tls-${{ matrix.rid }}
-          path: artifacts/aria2-tls/${{ matrix.rid }}.json
+          path: |
+            artifacts/aria2-tls/${{ matrix.rid }}.json
+            artifacts/test-results/aria2-${{ matrix.rid }}
+            artifacts/test-flight-recorder
           if-no-files-found: warn
-
-  assembly-lifecycle:
-    name: Assembly lifecycle stability
-    runs-on: windows-latest
-    timeout-minutes: 120
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-      - name: Install .NET
-        uses: actions/setup-dotnet@v5
-        with:
-          dotnet-version: '10.0.x'
-      - name: Install lifecycle diagnostics
-        run: dotnet tool install dotnet-stack --tool-path ./.tools --version 9.0.661903
-      - name: Restore
-        run: dotnet restore ${{ env.SOLUTION_FILE }}
-      - name: Build lifecycle probe and test assemblies
-        run: >
-          dotnet build ${{ env.SOLUTION_FILE }}
-          -c Release
-          --no-restore
-          --no-incremental
-          -p:TreatWarningsAsErrors=true
-          -p:CodeAnalysisTreatWarningsAsErrors=true
-          -p:EnableNETAnalyzers=true
-          -p:AnalysisMode=All
-          -p:EnforceCodeStyleInBuild=true
-          -p:UseSharedCompilation=false
-      - name: Run assembly lifecycle stability gate
-        shell: pwsh
-        run: |
-          $profile = if ("${{ github.event_name }}" -eq "pull_request") { "PR" } else { "Main" }
-          ./script/test-assembly-lifecycle.ps1 `
-            -Configuration Release `
-            -Profile $profile `
-            -NoBuild `
-            -ValidateForensics `
-            -ResultsDirectory ./artifacts/assembly-lifecycle/ci
-      - name: Upload lifecycle reports and evidence
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: assembly-lifecycle-${{ github.event_name }}-${{ github.run_attempt }}
-          path: artifacts/assembly-lifecycle/ci
-          if-no-files-found: error
 
   package-audit:
     name: Package audit

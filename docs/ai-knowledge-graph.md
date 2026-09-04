@@ -145,14 +145,13 @@ flowchart TD
     Benchmarks["test.performance-baseline\nBenchmarkCases + runner"]
     SystemBenchmarks["test.system-performance\nisolated system scenarios"]
     CI["workflow.strict-pr-ci\n.github/workflows/quality.yml"]
-    ReviewInvariants["test.review-invariant-corpus\nroot-cause failure corpus"]
+    CentralRunner["tool.central-test-runner\nallowlist + canonical test invocation"]
+    FlightRecorder["tool.test-flight-recorder\nfailure-only process evidence"]
     AriaTlsCI["workflow.aria2-tls-security\nsix RID real-binary gate"]
     Release["workflow.release-packaging\n.github/workflows/build.yml"]
     FFmpegAssetUpdate["workflow.ffmpeg-asset-update\nimmutable mirror + manifest PR"]
     Nightly["workflow.system-baselines\nnightly cross-platform reports"]
     AnalyzerInventory["workflow.analyzer-inventory\nscript/analyzer-inventory.ps1"]
-    LifecycleGate["workflow.assembly-lifecycle\nload + discovery + execution + teardown + exit"]
-    LifecycleOwners["doc.lifecycle-owners\nmachine-readable start/stop/teardown policy"]
 
     Program -->|calls| App
     App -->|creates| Host
@@ -180,16 +179,12 @@ flowchart TD
     SystemBenchmarks -->|measures| DownloadService
     SystemBenchmarks -->|measures| FFmpeg
     Nightly -->|runs| SystemBenchmarks
-    CI -->|runs PR and main profiles| LifecycleGate
-    CI -->|runs deterministic corpus| ReviewInvariants
-    ReviewInvariants -->|guards| Tests
-    Release -->|runs rehearsal profile| LifecycleGate
+    CI -->|executes through| CentralRunner
+    Release -->|executes through| CentralRunner
+    CentralRunner -->|runs| Tests
+    CentralRunner -->|records failures with| FlightRecorder
     FFmpegAssetUpdate -->|updates through PR| Release
     FFmpegAssetUpdate -->|guards manifest assets| FFmpeg
-    LifecycleOwners -->|governs| LifecycleGate
-    LifecycleGate -->|guards| Tests
-    LifecycleGate -->|guards| Host
-    LifecycleGate -->|guards| SqliteStore
     MainWindow -->|binds| MainVm
     MainVm -->|navigates through| Navigation
     MainWindow -->|awaits close cleanup| Lifecycle
@@ -2469,17 +2464,16 @@ type: workflow
 paths:
   - .github/workflows/quality.yml
   - .github/workflows/build.yml
+  - script/test-project.ps1
   - script/test-project-runner.ps1
-  - script/test-platform-selector.ps1
   - script/test-solution.ps1
-  - script/test-review-invariants.ps1
-  - docs/testing/review-invariant-corpus.json
-responsibility: Blocks PRs that break formatting, restore, Release build, warnings-as-errors, unit tests, root-cause review invariants, or vulnerable package policy.
+  - tools/DownKyi.CentralTestRunner
+responsibility: Blocks PRs that break formatting, restore, Release build, warnings-as-errors, unit tests, or vulnerable package policy.
 inbound:
   - github.pull_request
 outbound:
   - test.suites
-  - workflow.assembly-lifecycle
+  - tool.central-test-runner
 contracts:
   - PR CI should block definite failures.
   - Nightly/release workflows should own heavy or noisy regression discovery.
@@ -2487,22 +2481,53 @@ contracts:
   - Windows, Linux, and macOS builds expose the same analyzer diagnostics.
   - Compiler and CA warnings block every PR on Windows, Linux, and macOS with the repository default `CodeAnalysisTreatWarningsAsErrors=true`.
   - Cleaned analyzer rules are promoted to errors and cannot regress.
-  - Test projects run in stable path order so one constrained runner cannot make independent xUnit hosts starve one another during discovery or shutdown.
-  - Every test project explicitly lists its supported subset of Windows, Linux and macOS; shared runners reject missing or unknown declarations and select only projects that include the current OS.
+  - Repository test execution enters through CentralTestRunner's project/platform allowlist and canonical invocation.
+  - Every test project explicitly lists its supported subset of Windows, Linux and macOS; CentralTestRunner rejects unknown declarations and selects only projects that include the current OS.
   - Every test project writes a distinct assembly-named TRX; no solution-level logger filename may overwrite earlier project evidence.
-  - Windows PR and main jobs must run the Assembly Lifecycle Stability Gate and upload its reports even when a phase fails.
   - Every PR runs the six-RID real-binary aria2 TLS security matrix; a unit-test-only pass cannot replace it.
-  - A review finding is symptom evidence, not a patch instruction. Remediation identifies the violated invariant, traces the complete failure path and sibling callers, and fixes the earliest shared semantic or transition boundary.
-  - A repeated failure family in the same PR blocks further local patches and requires a typed-result, state-machine, commit-boundary, ownership or transaction review.
-  - Investigation may widen analysis, but only sibling paths sharing the same root cause and required to close the same failure family may widen the current PR diff; unrelated findings move to backlog or a separate PR.
-  - The review corpus references only contracts present on its target branch and fails unless every declared class actually executes on Windows, Linux and macOS.
 hazards:
   - Turning every historical analyzer suggestion into PR failure makes unrelated PRs impossible.
   - Broad NoWarn, global suppressions, nullable disable, or analyzer exclusions hide new defects.
   - Restoring one parallel solution-level `dotnet test` command can reintroduce Windows foreground-thread timeouts and TRX overwrite.
 tests:
-  - test.review-invariant-corpus
   - github.actions
+```
+
+### tool.central-test-runner
+
+```yaml
+id: tool.central-test-runner
+type: tool
+paths:
+  - tools/DownKyi.CentralTestRunner
+  - script/test-project.ps1
+  - script/test-project-runner.ps1
+  - script/test-solution.ps1
+  - docs/testing/test-runner-policy.json
+responsibility: Owns the explicit project/platform allowlist, canonical test invocation, slice identity, required xUnit routing, TRX validation and target exit result.
+outbound:
+  - test.suites
+  - tool.test-flight-recorder
+contracts:
+  - Formal PowerShell entries build the current CentralTestRunner before execution.
+  - Unknown projects or platform declarations fail before a test process starts.
+  - Successful execution requires a valid, non-empty per-project TRX and target exit code zero.
+```
+
+### tool.test-flight-recorder
+
+```yaml
+id: tool.test-flight-recorder
+type: diagnostic
+paths:
+  - tools/DownKyi.CentralTestRunner/FlightRecorder.cs
+  - tests/DownKyi.Architecture.Tests/CentralTestRunnerRecorderTests.cs
+responsibility: Records lightweight root-process events and preserves bounded evidence only when a test fails, times out or cleans up abnormally.
+contracts:
+  - Root evidence includes slice identity, PID, start time, exit or timeout state, cleanup state and bounded stdout/stderr.
+  - Failure capture adds one best-effort final PID/PPID/start-time snapshot; absence is not proof that no child existed.
+  - Normal PASS deletes recorder evidence.
+  - The recorder does not select a PrimaryFailure, causal winner or complete descendant history.
 ```
 
 ### workflow.ffmpeg-asset-update
@@ -2564,54 +2589,6 @@ hazards:
   - A pinned digest proves artifact identity, not source reproducibility or publisher integrity.
 tests:
   - github.actions
-```
-
-### workflow.assembly-lifecycle
-
-```yaml
-id: workflow.assembly-lifecycle
-type: workflow
-paths:
-  - script/audit-lifecycle-ownership.ps1
-  - script/test-assembly-lifecycle.ps1
-  - tools/DownKyi.AssemblyLifecycleProbe
-  - tests/TestInfrastructure
-  - tests/DownKyi.Architecture.Tests/AssemblyLifecycleArchitectureTests.cs
-  - docs/testing/assembly-lifecycle-owners.json
-  - docs/testing/assembly-lifecycle-stability.md
-responsibility: Proves that every test assembly can load, report metadata, discover, execute, tear down and exit in isolated child processes without protocol pollution, unknown lifecycle ownership or residual work.
-inbound:
-  - workflow.strict-pr-ci
-  - workflow.release-packaging
-outbound:
-  - test.suites
-  - app.application
-  - storage.sqlite-download-task-store
-contracts:
-  - Formal local Verification runs the ownership audit and five iterations per assembly with timeout forensics validated.
-  - PR, main and release-rehearsal profiles run 3, 5 and 100 iterations per assembly; tag release evidence uses the 100-iteration Rehearsal profile.
-  - Every report identifies runtime, OS, architecture, commit SHA, dirty-worktree state, thresholds, phase exit codes, slow-evidence status and P50/P95/P99/max durations.
-  - Every phase exposes general failure/error type; slow-evidence error type is reserved for the diagnostic capture path.
-  - Execution duration includes runner startup through OS process exit; teardown uses fixture marker timestamps, while process-exit uses the child's OS ExitTime and excludes collector overhead.
-  - Marker-aware execution phases are sampled at the unchanged slow threshold; missing slow evidence is a gate failure rather than an unexplained empty array.
-  - Forensics is armed 1,000 ms before the unchanged classification threshold to survive hosted-runner scheduling gaps; reports disclose the lead and per-phase pre-threshold capture state.
-  - The held-child forensics self-test uses a 1.25-second synthetic threshold and must report `forensicsSelfTestCaptureLeadValidated=true`, proving the one-second proactive capture lead executed without a zero-clamped arm.
-  - Lifecycle marker reads tolerate bounded writer contention and report contention/retry-exhaustion counts; only Windows sharing/lock error codes are contention, while access and other I/O errors retain a separate count/type; the final marker contract remains blocking.
-  - Diagnostic capture wall time is reported separately because managed-stack collection perturbs the instrumented phase; slow execution evidence cannot be presented as post-teardown exit evidence.
-  - Unexpected stdout/stderr, timeout, residual child process, missing teardown marker or failed process exit blocks the gate.
-  - Slow and timed-out Windows processes preserve thread state, wait reason, process tree and a managed stack when `dotnet-stack` is available.
-  - Residual children preserve PID, parent PID, process name, creation time, tree depth and a redacted command line in the phase result plus `residual-children.json`; live managed children also receive thread/tree/stack evidence.
-  - Child processes are classified by bounded liveness, not executable name: identity observed after parent exit is transient when it drains inside the 500 ms quiescence window and residual only when the same PID-plus-creation-time identity survives the boundary. Confirmed residual evidence never changes failure into success.
-  - `ValidateForensics` creates both transient and persistent synthetic children. It fails unless the transient identity is observed and drains without failing the phase, while the persistent identity produces a manifest, `ResidualChildProcess` classification and PID-plus-creation-time cleanup.
-  - `ValidateForensics` proves both marker-aware managed-stack capture and exclusive marker-lock recovery; formal Windows profiles fail closed unless the detailed self-test reports execution, positive contention count, recovery, parsing, null error and success, and mutation checks reject inconsistent nominally-passed states.
-  - Marker self-test phase status, report summary and formal gate consume one complete proof result rather than re-expanding equivalent predicates.
-  - Every scanned lifecycle mechanism, including external process creation, maps to a declared owner with explicit start, stop and teardown behavior.
-hazards:
-  - A green rerun can hide a race and does not replace owner identification or deterministic teardown.
-  - Comparing timing from different runner metadata creates invalid performance conclusions.
-tests:
-  - test.assembly-lifecycle-architecture
-  - workflow-generated assembly lifecycle report
 ```
 
 ### workflow.analyzer-inventory
@@ -2720,7 +2697,6 @@ outbound:
   - github.release
 contracts:
   - Windows, Linux, and macOS run strict Release build and all tests before changelog or package jobs can start.
-  - Changelog and package jobs also require the Windows `Rehearsal` lifecycle profile to pass and upload evidence.
   - Manual dispatch builds and uploads the same packages without publishing a GitHub Release; tag execution alone may create the Release.
   - `script/validate-release-version.ps1` requires stable `major.minor.patch` text and blocks a tag whose `refs/tags/v<version>` value differs from `version.txt`.
   - Each Windows and Linux RID performs one dotnet publish into a fixed canonical directory containing non-empty DownKyi, aria2, FFmpeg, ffprobe, dependency-manifest, and LICENSE files; every Linux package kind restores the same immutable RID transport, and PupNet standalone packaging copies that validated payload into its package staging directory.
@@ -3377,32 +3353,14 @@ test.application-lifetime:
     - single-instance names are stable per install, do not expose the install path, and can be reacquired after disposal
     - ViewModels cannot regain App, desktop lifetime, or process-restart ownership
 
-test.assembly-lifecycle-architecture:
+test.central-test-runner-recorder:
   paths:
-    - tests/DownKyi.Architecture.Tests/AssemblyLifecycleArchitectureTests.cs
-    - tests/TestInfrastructure/TestDataIsolation.cs
-    - tests/TestInfrastructure/TestDataIsolationRegistration.cs
+    - tests/DownKyi.Architecture.Tests/CentralTestRunnerRecorderTests.cs
+    - tests/DownKyi.Architecture.Tests/AgentEnvironmentArchitectureTests.cs
   guards:
-    - every test assembly receives async fixture-owned data isolation without ModuleInitializer or ProcessExit cleanup
-    - the lifecycle gate retains all six process phases, timing statistics, output-pollution checks and timeout forensics
-    - residual-child failures retain sanitized identity and evidence, stay fail-closed, and execute a deterministic observation/classification/cleanup self-test
-    - PR, main and release workflows cannot drop their lifecycle profiles or managed-stack diagnostics
-    - formal Verification cannot omit the ownership audit, five-iteration local gate or Rehearsal report
-    - Desktop main-loop teardown awaits async App and Host disposal
-    - every declared lifecycle owner documents start, stop, teardown, paths and allowed mechanisms
-
-test.review-invariant-corpus:
-  paths:
-    - docs/testing/review-invariant-policy.md
-    - docs/testing/review-invariant-corpus.json
-    - script/test-review-invariants.ps1
-    - tests/DownKyi.Architecture.Tests/ReviewInvariantCorpusTests.cs
-  guards:
-    - review findings trigger violated-invariant, full failure-path, sibling-path and earliest-boundary analysis before production edits
-    - repeated failure families in one PR stop local patches and escalate to shared typed-result, state, ownership or transaction remediation
-    - scope containment keeps unrelated invariants and incidental product defects out of the active PR
-    - deterministic PR coverage resolves to existing classes across every platform-eligible test project and proves each class executed
-    - Main/rehearsal retains lifecycle stress and real-binary transfer evidence
+    - formal scripts enter through the compiled CentralTestRunner
+    - timeout evidence records the correct slice and root process identity
+    - normal PASS deletes recorder evidence
 
 test.infrastructure-clock:
   paths:

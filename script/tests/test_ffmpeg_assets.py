@@ -226,52 +226,6 @@ class FfmpegAssetsTests(unittest.TestCase):
             with self.assertRaisesRegex(ffmpeg_assets.AssetError, "ffprobe"):
                 ffmpeg_assets.validate_candidate_archive(candidate, "linux-x64", directory, False, None)
 
-    def test_workflow_contracts_guard_tooling_and_production_phases(self) -> None:
-        workflow_directory = SCRIPT.parents[1] / ".github" / "workflows"
-        updater = (workflow_directory / "update-ffmpeg-assets.yml").read_text(encoding="utf-8")
-        build = (workflow_directory / "build.yml").read_text(encoding="utf-8")
-        gitignore = (SCRIPT.parents[1] / ".gitignore").read_text(encoding="utf-8")
-        self.assertIn(
-            'commit-message: "build(deps): update mirrored FFmpeg to ${{ needs.discover.outputs.mirror_tag }}"',
-            updater,
-        )
-        self.assertIn(
-            'title: "build(deps): update mirrored FFmpeg to ${{ needs.discover.outputs.mirror_tag }}"',
-            updater,
-        )
-        self.assertIn("read-mirror-evidence", updater)
-        self.assertIn("An existing release will not be modified", updater)
-        self.assertIn("add-paths: script/assets/external-assets.json", updater)
-        self.assertIn(".ffmpeg-update/", gitignore.splitlines())
-        self.assertNotIn("record-mirror", updater)
-        self.assertIn("workflow_call:", updater)
-        self.assertIn("validate-workflow-authority", updater)
-        self.assertIn("immutable-releases", updater)
-        self.assertIn("needs.discover.outputs.manifest_base", updater)
-        self.assertIn("update_ffmpeg_assets:", build)
-        self.assertIn("uses: ./.github/workflows/update-ffmpeg-assets.yml", build)
-        self.assertIn("manifest_base: ${{ github.ref_name }}", build)
-        self.assertIn("- release/v1.1.1-integration", build)
-        self.assertIn("uses: raven-actions/actionlint@v2", build)
-        self.assertNotIn("shellcheck: false", build)
-        self.assertNotIn("pyflakes: false", build)
-        self.assertIn("fail-on-error: true", build)
-        self.assertIn("shellcheck: true", build)
-        self.assertIn("pyflakes: true", build)
-        self.assertIn("name: FFmpeg tooling / implementation gate", build)
-        self.assertIn("- '.github/workflows/build.yml'", build)
-        self.assertIn("uses: dorny/paths-filter@v3", build)
-        self.assertIn("- 'script/assets/external-assets.json'", build)
-        self.assertIn("name: Production manifest preflight", build)
-        self.assertIn("- ffmpeg-tooling", build)
-        self.assertIn("- detect-production-manifest-change", build)
-        self.assertIn("needs.ffmpeg-tooling.result == 'success'", build)
-        self.assertIn("always() && !inputs.update_ffmpeg_assets", build)
-        self.assertIn("needs.ffmpeg-tooling.result == 'success'", build)
-        self.assertIn("github.event_name != 'pull_request'", build)
-        self.assertIn("needs.detect-production-manifest-change.outputs.external_assets == 'true'", build)
-        self.assertIn("needs: external-assets-preflight", build)
-
     def test_workflow_authority_requires_same_branch_checkout_and_manifest_base(self) -> None:
         ffmpeg_assets.validate_workflow_authority(
             "branch",

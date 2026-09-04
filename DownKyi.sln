@@ -56,15 +56,13 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DownKyi.TestInfrastructure"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tools", "tools", "{07C2787E-EAC7-C090-1BA3-A61EC2A24D84}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DownKyi.AssemblyLifecycleProbe", "tools\DownKyi.AssemblyLifecycleProbe\DownKyi.AssemblyLifecycleProbe.csproj", "{14208581-8B0E-4E8F-988A-19ADB2EDFCE8}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DownKyi.CentralTestRunner", "tools\DownKyi.CentralTestRunner\DownKyi.CentralTestRunner.csproj", "{14208581-8B0E-4E8F-988A-19ADB2EDFCE8}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DownKyi.MacOS.Tests", "tests\DownKyi.MacOS.Tests\DownKyi.MacOS.Tests.csproj", "{55B2C90F-9EF8-40BE-9156-EF7384B2601B}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DownKyi.Windows.Tests", "tests\DownKyi.Windows.Tests\DownKyi.Windows.Tests.csproj", "{D1F36CA9-2EF9-433F-8AA6-0D89077B2458}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DownKyi.Linux.Tests", "tests\DownKyi.Linux.Tests\DownKyi.Linux.Tests.csproj", "{AE63391B-6A4B-4FB3-9452-FE2C3D505FD8}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DownKyi.ProcessSupervision", "tools\DownKyi.ProcessSupervision\DownKyi.ProcessSupervision.csproj", "{5A7D758A-BFD0-4E55-A037-9C63DC5A7751}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -328,18 +326,6 @@ Global
 		{AE63391B-6A4B-4FB3-9452-FE2C3D505FD8}.Release|x64.Build.0 = Release|Any CPU
 		{AE63391B-6A4B-4FB3-9452-FE2C3D505FD8}.Release|x86.ActiveCfg = Release|Any CPU
 		{AE63391B-6A4B-4FB3-9452-FE2C3D505FD8}.Release|x86.Build.0 = Release|Any CPU
-		{5A7D758A-BFD0-4E55-A037-9C63DC5A7751}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{5A7D758A-BFD0-4E55-A037-9C63DC5A7751}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{5A7D758A-BFD0-4E55-A037-9C63DC5A7751}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{5A7D758A-BFD0-4E55-A037-9C63DC5A7751}.Debug|x64.Build.0 = Debug|Any CPU
-		{5A7D758A-BFD0-4E55-A037-9C63DC5A7751}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{5A7D758A-BFD0-4E55-A037-9C63DC5A7751}.Debug|x86.Build.0 = Debug|Any CPU
-		{5A7D758A-BFD0-4E55-A037-9C63DC5A7751}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{5A7D758A-BFD0-4E55-A037-9C63DC5A7751}.Release|Any CPU.Build.0 = Release|Any CPU
-		{5A7D758A-BFD0-4E55-A037-9C63DC5A7751}.Release|x64.ActiveCfg = Release|Any CPU
-		{5A7D758A-BFD0-4E55-A037-9C63DC5A7751}.Release|x64.Build.0 = Release|Any CPU
-		{5A7D758A-BFD0-4E55-A037-9C63DC5A7751}.Release|x86.ActiveCfg = Release|Any CPU
-		{5A7D758A-BFD0-4E55-A037-9C63DC5A7751}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -364,6 +350,5 @@ Global
 		{55B2C90F-9EF8-40BE-9156-EF7384B2601B} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{D1F36CA9-2EF9-433F-8AA6-0D89077B2458} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{AE63391B-6A4B-4FB3-9452-FE2C3D505FD8} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
-		{5A7D758A-BFD0-4E55-A037-9C63DC5A7751} = {07C2787E-EAC7-C090-1BA3-A61EC2A24D84}
 	EndGlobalSection
 EndGlobal

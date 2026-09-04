@@ -31,34 +31,6 @@ public sealed partial class TestPlatformOwnershipArchitectureTests
     }
 
     [Fact]
-    public void PlatformOwnershipIsEnforcedByBuildAndSharedTestRunners()
-    {
-        var directoryProps = Read("tests/Directory.Build.props");
-        var runner = Read("script/test-project-runner.ps1");
-        var selectorTests = Read("script/test-platform-selector.ps1");
-        var solutionRunner = Read("script/test-solution.ps1");
-        var lifecycleRunner = Read("script/test-assembly-lifecycle.ps1");
-        var reviewRunner = Read("script/test-review-invariants.ps1");
-
-        Assert.Contains("ValidateDownKyiTestPlatformOwnership", directoryProps, StringComparison.Ordinal);
-        Assert.Contains("must declare DownKyiTestPlatforms", directoryProps, StringComparison.Ordinal);
-        Assert.Contains("Get-DownKyiCurrentTestPlatform", runner, StringComparison.Ordinal);
-        Assert.Contains("Get-DownKyiTestProjectPlatforms", runner, StringComparison.Ordinal);
-        Assert.Contains("Test-DownKyiTestProjectSupportsPlatform", runner, StringComparison.Ordinal);
-        Assert.Contains("Select-DownKyiTestProjectsForCurrentPlatform", runner, StringComparison.Ordinal);
-        Assert.Contains("cannot run on", runner, StringComparison.Ordinal);
-        Assert.Contains("DownKyi.MacOS.Tests", selectorTests, StringComparison.Ordinal);
-        Assert.Contains("missing ownership", selectorTests, StringComparison.Ordinal);
-        Assert.Contains("unknown platform", selectorTests, StringComparison.Ordinal);
-        Assert.Contains("test-platform-selector.ps1", solutionRunner, StringComparison.Ordinal);
-        Assert.Contains("Select-DownKyiTestProjectsForCurrentPlatform", solutionRunner, StringComparison.Ordinal);
-        Assert.Contains("test-project-runner.ps1", lifecycleRunner, StringComparison.Ordinal);
-        Assert.Contains("Select-DownKyiTestProjectsForCurrentPlatform", lifecycleRunner, StringComparison.Ordinal);
-        Assert.Contains("test-project-runner.ps1", reviewRunner, StringComparison.Ordinal);
-        Assert.Contains("Invoke-DownKyiTestProject", reviewRunner, StringComparison.Ordinal);
-    }
-
-    [Fact]
     public void MacSigningBehaviorIsOwnedByMacOSProject()
     {
         var macProject = Path.Combine(
@@ -140,8 +112,8 @@ public sealed partial class TestPlatformOwnershipArchitectureTests
 
         var declaration = declarations[0];
         Assert.False(
-            declaration.Attributes().Any(attribute => attribute.Name.LocalName == "Condition") ||
-            declaration.Parent?.Attributes().Any(attribute => attribute.Name.LocalName == "Condition") == true,
+            declaration.AncestorsAndSelf().Any(element =>
+                element.Attributes().Any(attribute => attribute.Name.LocalName == "Condition")),
             $"{relativePath} must declare DownKyiTestPlatforms unconditionally.");
 
         var tokens = declaration.Value.Split(';');

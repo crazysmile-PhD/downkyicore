@@ -18,9 +18,8 @@ PRs do not update this file merely because their work state changed.
   but do not grow an unmerged release stack beyond roughly two or three layers
   or material divergence from `main`. Consolidate accepted semantics onto one
   clean current-main integration branch and validate that exact head.
-- Publish only from one clean final commit after strict quality, CodeQL, Main
-  lifecycle, release rehearsal and Windows/Linux/macOS package validation pass
-  for that exact commit.
+- Publish only from one clean final commit after strict quality, CodeQL and
+  Windows/Linux/macOS package validation pass for that exact commit.
 - Preserve settings JSON, legacy SQLite, unfinished tasks, GID, partial-file
   maps, completed keys and resume fixtures unless an approved migration with
   rollback evidence explicitly changes them.
@@ -40,14 +39,7 @@ dotnet build ./DownKyi.sln -c Release --no-restore --no-incremental `
   -p:EnableNETAnalyzers=true -p:AnalysisMode=All `
   -p:EnforceCodeStyleInBuild=true -p:TreatWarningsAsErrors=true `
   -p:CodeAnalysisTreatWarningsAsErrors=true -p:UseSharedCompilation=false
-pwsh ./script/test-review-invariants.ps1 `
-  -Configuration Release -NoRestore -NoBuild
 pwsh ./script/test-solution.ps1 -Configuration Release -NoRestore -NoBuild
-pwsh ./script/audit-lifecycle-ownership.ps1 `
-  -OutputDirectory ./artifacts/assembly-lifecycle/ownership
-pwsh ./script/test-assembly-lifecycle.ps1 `
-  -Configuration Release -Iterations 5 -NoBuild -ValidateForensics `
-  -ResultsDirectory ./artifacts/assembly-lifecycle/verification
 dotnet format ./DownKyi.sln --verify-no-changes --no-restore
 pwsh ./script/audit-module-boundaries.ps1 `
   -OutputPath ./artifacts/architecture/module-boundary-audit.json
@@ -75,7 +67,3 @@ Before merge, rollback means closing the draft and deleting only the feature
 branch. After merge, revert the complete change range without modifying user
 data formats or reintroducing a security bypass. A migration requires its own
 backup, rollback and reopen evidence.
-
-Gate 10 is complete only when formal local lifecycle verification, the exact
-Main profile and release rehearsal all remain green. A successful rerun does
-not by itself prove that an intermittent lifecycle owner was fixed.

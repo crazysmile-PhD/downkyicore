@@ -33,11 +33,8 @@ change.
   and `docs/operations/verification-and-rollback.md`.
 - Bilibili endpoints, WBI and JSON contracts:
   `docs/operations/bilibili-api-audit.md`.
-- Review findings, invariant derivation and scope containment:
-  `docs/testing/review-invariant-policy.md` and
-  `docs/testing/review-invariant-corpus.json`.
-- Thread, process, Host, Dispatcher or test-fixture teardown:
-  `docs/testing/assembly-lifecycle-stability.md`.
+- Test projects, the formal runner and failure diagnostics:
+  `docs/testing/README.md`.
 - External binaries, dependencies and release maintenance:
   `docs/maintenance.md`.
 - Accepted target designs: `docs/design-docs/`; task-specific execution plans:
@@ -83,17 +80,12 @@ must not be reported as already implemented.
   A different invariant goes to the owner-requested backlog 或 separate PR;
   do not opportunistically add it to the active change.
 - Follow `finding -> root cause -> invariant -> sibling-path search ->
-  generator/state space -> adversarial proof -> production fix`. Derive
-  regression tests from the invariant or external protocol; a single example
-  is only a counterexample when the failure family has a generatable state
-  space. Retry, cleanup, lifecycle and persistence work needs a
-  failure/transition matrix.
+  production fix`. Add the smallest behavioral regression that reproduces the
+  real failure and proves the repaired owner; do not build a verifier for a
+  hypothetical bypass.
 - Any operation-created file must be recorded in durable task state before its
   first write, or be observably removed before the operation returns. Do not
   leave physical output without a durable owner or add a second path registry.
-- Important invariant gates need an adversarial or mutation fixture proving an
-  intentionally broken owner, transition or contract makes CI fail. Checking
-  only for a source string does not establish a fail-closed gate.
 
 ## Change Locality
 
@@ -109,10 +101,10 @@ must not be reported as already implemented.
 
 Use the smallest focused test while iterating. Before push, run the formal
 commands in `docs/refactoring-live-plan.md` sequentially in one worktree. At
-minimum, behavioral changes require strict Release build, all seven test
-projects, review invariants, format and `git diff --check`; lifecycle/process
-changes also require the documented ownership and repeated process gates.
+minimum, behavioral changes require strict Release build, the applicable test
+projects through `DownKyi.CentralTestRunner`, format and `git diff --check`.
+Process failures retain the runner's lightweight flight-recorder evidence.
 
-Do not weaken analyzers, architecture tests, lifecycle gates, secret scanning
-or platform checks to make a change green. A passing build alone does not prove
+Do not weaken analyzers, relevant architecture tests, secret scanning or
+platform checks to make a change green. A passing build alone does not prove
 runtime behavior.
