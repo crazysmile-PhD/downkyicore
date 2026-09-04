@@ -227,12 +227,46 @@ public sealed class CentralTestRunnerCommandTests
         try
         {
             using var process = Process.GetProcessById(processId);
-            return !process.HasExited;
+            return !process.HasExited && !IsUnixZombie(processId);
         }
         catch (ArgumentException)
         {
             return false;
         }
+    }
+
+    private static bool IsUnixZombie(int processId)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return false;
+        }
+
+        var startInfo = new ProcessStartInfo("/bin/ps")
+        {
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
+        };
+        startInfo.ArgumentList.Add("-o");
+        startInfo.ArgumentList.Add("stat=");
+        startInfo.ArgumentList.Add("-p");
+        startInfo.ArgumentList.Add(processId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+        using var state = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("The Unix process-state probe did not start.");
+        var standardOutput = state.StandardOutput.ReadToEnd();
+        var standardError = state.StandardError.ReadToEnd();
+        if (!state.WaitForExit(3000))
+        {
+            throw new TimeoutException("The Unix process-state probe did not exit.");
+        }
+        if (state.ExitCode != 0)
+        {
+            throw new InvalidOperationException($"The Unix process-state probe failed: {standardError.Trim()}");
+        }
+
+        return standardOutput.TrimStart().StartsWith('Z');
     }
 
     private static void StopProcessIfAlive(int processId)
