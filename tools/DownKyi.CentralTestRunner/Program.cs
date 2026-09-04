@@ -46,6 +46,13 @@ internal static class Program
             return 0;
         }
 
+        if (args.Length > 1 && string.Equals(args[0], "fixture-long-line", StringComparison.Ordinal))
+        {
+            await Console.Out.WriteAsync($"token={args[1]}{new string('x', 32768)}").ConfigureAwait(false);
+            await Console.Out.FlushAsync().ConfigureAwait(false);
+            return 1;
+        }
+
         using var cancellation = new CancellationTokenSource();
         Console.CancelKeyPress += (_, eventArgs) =>
         {
@@ -53,14 +60,25 @@ internal static class Program
             cancellation.Cancel();
         };
 
+        return await RunCommandAsync(args, cancellation.Token).ConfigureAwait(false);
+    }
+
+    internal static async Task<int> RunCommandAsync(
+        string[] args,
+        CancellationToken cancellationToken)
+    {
         try
         {
-            return await CentralTestCommand.RunAsync(args, cancellation.Token).ConfigureAwait(false);
+            return await CentralTestCommand.RunAsync(args, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             await Console.Error.WriteLineAsync(exception.Message).ConfigureAwait(false);
             return 2;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return 130;
         }
     }
 }

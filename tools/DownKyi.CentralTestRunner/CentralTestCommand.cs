@@ -51,10 +51,29 @@ internal static class CentralTestCommand
     {
         var repositoryRoot = Path.GetFullPath(options.RepositoryRoot);
         var projects = DiscoverProjects(repositoryRoot);
+        if (projects.Length == 0)
+        {
+            throw new InvalidDataException("No runnable test projects were discovered.");
+        }
+
         var platform = GetCurrentPlatform();
         var selected = projects
             .Where(project => project.Platforms.Contains(platform, StringComparer.Ordinal))
             .ToArray();
+        if (selected.Length == 0)
+        {
+            throw new InvalidDataException($"No test projects support the current platform '{platform}'.");
+        }
+
+        foreach (var project in selected)
+        {
+            var trxOutput = ResolveTrxOutput(
+                repositoryRoot,
+                options.ResultsDirectory,
+                $"{Path.GetFileNameWithoutExtension(project.Project)}.trx",
+                project.Project);
+            ClearStaleTrx(trxOutput);
+        }
 
         Console.WriteLine($"Selected {selected.Length} of {projects.Length} test projects for '{platform}'.");
         foreach (var project in selected)
@@ -108,15 +127,15 @@ internal static class CentralTestCommand
             throw new FileNotFoundException("Allowlisted test project is missing.", relativeProject);
         }
 
-        var resultsDirectory = string.IsNullOrWhiteSpace(options.ResultsDirectory)
-            ? Path.Combine(repositoryRoot, "artifacts", "test-results")
-            : Path.GetFullPath(options.ResultsDirectory, repositoryRoot);
-        var trxName = string.IsNullOrWhiteSpace(options.TrxName)
-            ? $"{Path.GetFileNameWithoutExtension(relativeProject)}.trx"
-            : ValidateTrxName(options.TrxName);
-        var trxPath = Path.Combine(resultsDirectory, trxName);
-        Directory.CreateDirectory(resultsDirectory);
-        File.Delete(trxPath);
+        var trxOutput = ResolveTrxOutput(
+            repositoryRoot,
+            options.ResultsDirectory,
+            options.TrxName,
+            relativeProject);
+        ClearStaleTrx(trxOutput);
+        var resultsDirectory = trxOutput.ResultsDirectory;
+        var trxName = trxOutput.TrxName;
+        var trxPath = trxOutput.TrxPath;
 
         if (!options.NoBuild)
         {
@@ -183,6 +202,28 @@ internal static class CentralTestCommand
 
         await FlightRecorderExecution.DiscardAsync(result).ConfigureAwait(false);
         return 0;
+    }
+
+    private static (string ResultsDirectory, string TrxName, string TrxPath) ResolveTrxOutput(
+        string repositoryRoot,
+        string? requestedResultsDirectory,
+        string? requestedTrxName,
+        string relativeProject)
+    {
+        var resultsDirectory = string.IsNullOrWhiteSpace(requestedResultsDirectory)
+            ? Path.Combine(repositoryRoot, "artifacts", "test-results")
+            : Path.GetFullPath(requestedResultsDirectory, repositoryRoot);
+        var trxName = string.IsNullOrWhiteSpace(requestedTrxName)
+            ? $"{Path.GetFileNameWithoutExtension(relativeProject)}.trx"
+            : ValidateTrxName(requestedTrxName);
+        return (resultsDirectory, trxName, Path.Combine(resultsDirectory, trxName));
+    }
+
+    private static void ClearStaleTrx(
+        (string ResultsDirectory, string TrxName, string TrxPath) trxOutput)
+    {
+        Directory.CreateDirectory(trxOutput.ResultsDirectory);
+        File.Delete(trxOutput.TrxPath);
     }
 
     private static async Task<int> BuildProjectAsync(

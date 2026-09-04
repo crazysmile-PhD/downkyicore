@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
@@ -24,6 +25,9 @@ internal sealed record ProcessExecutionResult(
 
 internal static class FlightRecorderExecution
 {
+    private const int MaximumOutputLineCharacters = 8192;
+    private const string TruncatedOutputLine = "[output line exceeded 8192 characters and was discarded]";
+
     public static async Task<ProcessExecutionResult> RunAsync(
         ProcessExecutionRequest request,
         CancellationToken cancellationToken)
@@ -229,11 +233,70 @@ internal static class FlightRecorderExecution
     {
         try
         {
-            while (await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false) is { } line)
+            var buffer = new char[4096];
+            var line = new StringBuilder(MaximumOutputLineCharacters);
+            var discardingLine = false;
+            var previousWasCarriageReturn = false;
+
+            async Task FlushLineAsync()
             {
-                var redacted = recorder.RedactSensitiveEvidence(line);
+                var redacted = discardingLine
+                    ? TruncatedOutputLine
+                    : recorder.RedactSensitiveEvidence(line.ToString());
                 tail.Add(redacted);
                 await destination.WriteLineAsync(redacted).ConfigureAwait(false);
+                line.Clear();
+                discardingLine = false;
+            }
+
+            while (true)
+            {
+                var count = await reader.ReadAsync(buffer.AsMemory(), cancellationToken).ConfigureAwait(false);
+                if (count == 0)
+                {
+                    break;
+                }
+
+                for (var index = 0; index < count; index++)
+                {
+                    var character = buffer[index];
+                    if (character == '\n')
+                    {
+                        if (!previousWasCarriageReturn)
+                        {
+                            await FlushLineAsync().ConfigureAwait(false);
+                        }
+                        previousWasCarriageReturn = false;
+                        continue;
+                    }
+
+                    if (character == '\r')
+                    {
+                        await FlushLineAsync().ConfigureAwait(false);
+                        previousWasCarriageReturn = true;
+                        continue;
+                    }
+
+                    previousWasCarriageReturn = false;
+                    if (discardingLine)
+                    {
+                        continue;
+                    }
+
+                    if (line.Length == MaximumOutputLineCharacters)
+                    {
+                        line.Clear();
+                        discardingLine = true;
+                        continue;
+                    }
+
+                    line.Append(character);
+                }
+            }
+
+            if (line.Length > 0 || discardingLine)
+            {
+                await FlushLineAsync().ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
