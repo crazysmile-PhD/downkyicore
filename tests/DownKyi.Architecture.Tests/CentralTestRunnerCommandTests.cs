@@ -44,16 +44,18 @@ public sealed class CentralTestRunnerCommandTests
                     "--project", "tests/Fixture.Tests/Fixture.Tests.csproj",
                     "--configuration", "Release",
                     "--no-restore"
-                ],
+            ],
                 cancellation.Token);
             processId = await WaitForProcessMarkerAsync(markerPath);
-            var fixtureLineage = CaptureWindowsProcessLineage(processId.Value);
 
             await cancellation.CancelAsync();
             var exitCode = await run.ConfigureAwait(true);
 
             Assert.Equal(130, exitCode);
-            Assert.False(IsProcessAlive(processId.Value));
+            var isProcessAlive = IsProcessAlive(processId.Value);
+            Assert.False(
+                isProcessAlive,
+                isProcessAlive ? DescribeUnixProcessState(processId.Value) : string.Empty);
             try
             {
                 Directory.Delete(projectDirectory, recursive: true);
@@ -62,7 +64,6 @@ public sealed class CentralTestRunnerCommandTests
             {
                 throw new IOException(
                     $"{exception.Message}{Environment.NewLine}" +
-                    $"Fixture lineage before cancellation:{Environment.NewLine}{fixtureLineage}{Environment.NewLine}" +
                     $"Fixture-process snapshot after cancellation:{Environment.NewLine}" +
                     CaptureWindowsFixtureProcesses(projectDirectory, markerPath),
                     exception);
@@ -250,26 +251,38 @@ public sealed class CentralTestRunnerCommandTests
         }
     }
 
-    private static string CaptureWindowsProcessLineage(int processId)
+    private static string DescribeUnixProcessState(int processId)
     {
-        if (!OperatingSystem.IsWindows())
+        if (OperatingSystem.IsWindows())
         {
-            return "not applicable";
+            return "The marker process is still alive on Windows.";
         }
 
-        return RunPowerShellProcessQuery(
-            """
-            param([int] $processId)
-            $process = Get-CimInstance Win32_Process -Filter "ProcessId = $processId"
-            while ($null -ne $process -and $process.ProcessId -gt 0) {
-              '{0}|{1}|{2}|{3}' -f $process.ProcessId,$process.ParentProcessId,$process.Name,$process.CommandLine
-              if ($process.ParentProcessId -le 0 -or $process.ParentProcessId -eq $process.ProcessId) {
-                break
-              }
-              $process = Get-CimInstance Win32_Process -Filter "ProcessId = $($process.ParentProcessId)"
-            }
-            """,
-            processId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        var startInfo = new ProcessStartInfo("/bin/ps")
+        {
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
+        };
+        startInfo.ArgumentList.Add("-o");
+        startInfo.ArgumentList.Add("pid=,ppid=,stat=,comm=");
+        startInfo.ArgumentList.Add("-p");
+        startInfo.ArgumentList.Add(processId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+        using var state = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("The Unix process-state probe did not start.");
+        var standardOutput = state.StandardOutput.ReadToEnd();
+        var standardError = state.StandardError.ReadToEnd();
+        if (!state.WaitForExit(3000))
+        {
+            throw new TimeoutException("The Unix process-state probe did not exit.");
+        }
+        if (state.ExitCode != 0)
+        {
+            throw new InvalidOperationException($"The Unix process-state probe failed: {standardError.Trim()}");
+        }
+
+        return string.IsNullOrWhiteSpace(standardOutput) ? "The marker process was not listed." : standardOutput.Trim();
     }
 
     private static string CaptureWindowsFixtureProcesses(string projectDirectory, string markerPath)
