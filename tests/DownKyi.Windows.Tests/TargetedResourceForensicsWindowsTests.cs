@@ -1,7 +1,10 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
+using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using DownKyi.TestInfrastructure;
+using Microsoft.Win32.SafeHandles;
 
 namespace DownKyi.Windows.Tests;
 
@@ -27,6 +30,56 @@ public sealed class TargetedResourceForensicsWindowsTests
         finally
         {
             Directory.Delete(targetDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task DeleteAccessProbeTracksAKnownDirectoryOwnerUntilRelease()
+    {
+        var targetDirectory = Path.Combine(
+            Path.GetTempPath(),
+            $"downkyi-delete-owner-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(targetDirectory);
+        Process? owner = null;
+        try
+        {
+            owner = StartDirectoryOwner(targetDirectory);
+            var ready = await owner.StandardOutput.ReadLineAsync(
+                    TestContext.Current.CancellationToken).AsTask()
+                .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+            Assert.StartsWith("fixture-ready pid=", ready, StringComparison.Ordinal);
+            DuplicateDirectoryHandleIntoProcess(targetDirectory, owner);
+
+            Assert.Equal(
+                DeleteAccessState.SharingViolation,
+                TargetedResourceForensics.ProbeDeleteAccess(targetDirectory).State);
+
+            owner.Kill(entireProcessTree: true);
+            await owner.WaitForExitAsync(TestContext.Current.CancellationToken)
+                .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+            Assert.True(
+                SpinWait.SpinUntil(
+                    () => TargetedResourceForensics.ProbeDeleteAccess(targetDirectory).State ==
+                        DeleteAccessState.Allowed,
+                    TimeSpan.FromSeconds(1)),
+                "The controlled directory owner exited without releasing DELETE access.");
+        }
+        finally
+        {
+            if (owner is { HasExited: false })
+            {
+                owner.Kill(entireProcessTree: true);
+                await owner.WaitForExitAsync(TestContext.Current.CancellationToken).ConfigureAwait(true);
+            }
+
+            owner?.Dispose();
+            if (Directory.Exists(targetDirectory) &&
+                TargetedResourceForensics.ProbeDeleteAccess(targetDirectory).State == DeleteAccessState.Allowed)
+            {
+                Directory.Delete(targetDirectory);
+            }
         }
     }
 
@@ -60,6 +113,7 @@ public sealed class TargetedResourceForensicsWindowsTests
                 .ConfigureAwait(true);
             Assert.StartsWith("fixture-ready pid=", ready, StringComparison.Ordinal);
             forensics.AddKnownProcessId(owner.Id, "root-owner");
+            DuplicateDirectoryHandleIntoProcess(targetDirectory, owner);
 
             Assert.Equal(
                 DeleteAccessState.SharingViolation,
@@ -157,5 +211,73 @@ public sealed class TargetedResourceForensicsWindowsTests
         startInfo.ArgumentList.Add("fixture-hold");
         return Process.Start(startInfo) ??
             throw new InvalidOperationException("Unable to start the controlled directory owner.");
+    }
+
+    private static void DuplicateDirectoryHandleIntoProcess(
+        string directory,
+        Process targetProcess)
+    {
+        using var sourceProcess = Process.GetCurrentProcess();
+        using var sourceHandle = NativeMethods.CreateFile(
+            directory,
+            desiredAccess: 0,
+            NativeMethods.ShareRead | NativeMethods.ShareWrite,
+            IntPtr.Zero,
+            NativeMethods.OpenExisting,
+            NativeMethods.BackupSemantics,
+            IntPtr.Zero);
+        if (sourceHandle.IsInvalid)
+        {
+            throw new Win32Exception(Marshal.GetLastPInvokeError());
+        }
+
+        if (!NativeMethods.DuplicateHandle(
+                sourceProcess.Handle,
+                sourceHandle.DangerousGetHandle(),
+                targetProcess.Handle,
+                out _,
+                desiredAccess: 0,
+                inheritHandle: false,
+                NativeMethods.DuplicateSameAccess))
+        {
+            throw new Win32Exception(Marshal.GetLastPInvokeError());
+        }
+    }
+
+    private static class NativeMethods
+    {
+        internal const uint ShareRead = 0x00000001;
+        internal const uint ShareWrite = 0x00000002;
+        internal const uint OpenExisting = 3;
+        internal const uint BackupSemantics = 0x02000000;
+        internal const uint DuplicateSameAccess = 0x00000002;
+
+        [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+        [DllImport(
+            "kernel32.dll",
+            EntryPoint = "CreateFileW",
+            ExactSpelling = true,
+            CharSet = CharSet.Unicode,
+            SetLastError = true)]
+        internal static extern SafeFileHandle CreateFile(
+            string fileName,
+            uint desiredAccess,
+            uint shareMode,
+            IntPtr securityAttributes,
+            uint creationDisposition,
+            uint flagsAndAttributes,
+            IntPtr templateFile);
+
+        [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool DuplicateHandle(
+            IntPtr sourceProcessHandle,
+            IntPtr sourceHandle,
+            IntPtr targetProcessHandle,
+            out IntPtr targetHandle,
+            uint desiredAccess,
+            [MarshalAs(UnmanagedType.Bool)] bool inheritHandle,
+            uint options);
     }
 }
