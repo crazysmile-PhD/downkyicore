@@ -239,7 +239,8 @@ internal static class BuildProcessRunner
         Func<Process, DateTimeOffset>? readStartTimeUtc = null,
         Func<Process, bool>? readHasExited = null,
         Func<int, bool>? isProcessPresent = null,
-        CancellationCleanupDiagnostic? diagnostic = null)
+        CancellationCleanupDiagnostic? diagnostic = null,
+        Func<int, Task<MacOsProcessStateProbeResult>>? macOsStateProbeAsync = null)
     {
         Process process;
         diagnostic?.Record("observed-process-open-start", observedProcess.Pid);
@@ -285,12 +286,48 @@ internal static class BuildProcessRunner
                         isProcessPresent ?? IsProcessPresent,
                         diagnostic))
                 {
+                    await RecordMacOsProcessStateAsync(
+                            observedProcess.Pid,
+                            diagnostic,
+                            macOsStateProbeAsync)
+                        .ConfigureAwait(false);
                     throw;
                 }
 
                 diagnostic?.Record("observed-process-terminal-after-identity-failure", observedProcess.Pid);
                 // The observed process exited between opening it and reading or waiting on its identity.
             }
+        }
+    }
+
+    [SuppressMessage(
+        "Design",
+        "CA1031:Do not catch general exception types",
+        Justification = "Failure-only diagnostics must never replace the original process identity failure.")]
+    private static async Task RecordMacOsProcessStateAsync(
+        int processId,
+        CancellationCleanupDiagnostic? diagnostic,
+        Func<int, Task<MacOsProcessStateProbeResult>>? macOsStateProbeAsync)
+    {
+        if (!OperatingSystem.IsMacOS() && macOsStateProbeAsync is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var result = await (macOsStateProbeAsync ?? MacOsProcessStateProbe.ProbeAsync)(processId)
+                .ConfigureAwait(false);
+            diagnostic?.Record("observed-process-os-state", processId, result.ToDiagnosticDetail());
+        }
+        catch (Exception exception)
+        {
+            diagnostic?.Record(
+                "observed-process-os-state",
+                processId,
+                $"targetPid={processId} ppid=unavailable rawState=unavailable " +
+                $"canonicalState=unavailable exitCode=unavailable " +
+                $"result=probe-exception:{exception.GetType().FullName}");
         }
     }
 

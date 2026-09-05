@@ -30,12 +30,18 @@ public sealed class CentralTestRunnerCancellationComponentTests
                 var identityRead = new TaskCompletionSource(
                     TaskCreationOptions.RunContinuationsAsynchronously);
                 var expectedStartTime = fixture.StartTime.ToUniversalTime();
+                var probeCalls = 0;
                 var wait = BuildProcessRunner.WaitForObservedProcessExitAsync(
                     CreateObservedProcess(fixture, expectedStartTime),
                     process =>
                     {
                         identityRead.TrySetResult();
                         return process.StartTime.ToUniversalTime();
+                    },
+                    macOsStateProbeAsync: _ =>
+                    {
+                        Interlocked.Increment(ref probeCalls);
+                        throw new InvalidOperationException("The failure-only probe ran on the success path.");
                     });
 
                 await identityRead.Task.WaitAsync(TestTimeout).ConfigureAwait(true);
@@ -43,6 +49,7 @@ public sealed class CentralTestRunnerCancellationComponentTests
                 await wait.WaitAsync(TestTimeout).ConfigureAwait(true);
 
                 Assert.True(fixture.HasExited);
+                Assert.Equal(0, probeCalls);
             },
             () => StopFixtureAsync(fixture)).ConfigureAwait(true);
     }
@@ -343,6 +350,52 @@ public sealed class CentralTestRunnerCancellationComponentTests
             .ConfigureAwait(true);
 
         Assert.Equal(2, exitCode);
+    }
+
+    [Fact]
+    public async Task OsStateProbeFailureDoesNotReplaceTheIdentityFailure()
+    {
+        Process? fixture = null;
+        await FailurePreservingTestCleanup.RunAsync(
+            async () =>
+            {
+                fixture = await StartHoldingFixtureAsync().ConfigureAwait(true);
+                var expectedStartTime = fixture.StartTime.ToUniversalTime();
+                var identityFailure = new Win32Exception("identity unavailable");
+
+                var exception = await Record.ExceptionAsync(
+                    () => BuildProcessRunner.WaitForObservedProcessExitAsync(
+                        CreateObservedProcess(fixture, expectedStartTime),
+                        _ => throw identityFailure,
+                        _ => false,
+                        _ => true,
+                        macOsStateProbeAsync: _ => throw new IOException("probe unavailable")))
+                    .ConfigureAwait(true);
+
+                Assert.Same(identityFailure, exception);
+                Assert.False(fixture.HasExited);
+            },
+            () => StopFixtureAsync(fixture)).ConfigureAwait(true);
+    }
+
+    [Theory]
+    [InlineData("2963 2962 Z+", "Z+", "zombie")]
+    [InlineData("2963 2962 R", "R", "runnable")]
+    [InlineData("2963 2962 S+", "S+", "sleeping")]
+    [InlineData("2963 2962 T", "T", "stopped")]
+    public void MacOsProcessStateParserCanonicalizesState(
+        string output,
+        string expectedRawState,
+        string expectedCanonicalState)
+    {
+        var result = MacOsProcessStateProbe.Parse(2963, output, 0);
+
+        Assert.Equal(2963, result.TargetPid);
+        Assert.Equal(2962, result.ParentPid);
+        Assert.Equal(expectedRawState, result.RawState);
+        Assert.Equal(expectedCanonicalState, result.CanonicalState);
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal("success", result.Result);
     }
 
     [Fact]
