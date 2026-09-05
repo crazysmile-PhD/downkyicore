@@ -123,14 +123,6 @@ jobs:
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
-      - name: Fetch and verify Windows aria2 asset
-        if: startsWith(matrix.rid, 'win-')
-        shell: pwsh
-        run: ./script/aria2.ps1 '${{ matrix.asset-argument }}'
-      - name: Fetch and verify Unix aria2 asset
-        if: ${{ !startsWith(matrix.rid, 'win-') }}
-        shell: bash
-        run: bash ./script/aria2.sh '${{ matrix.asset-argument }}'
       - name: Restore
         run: dotnet restore ${{ env.SOLUTION_FILE }}
       - name: Install ARM64 protobuf compiler
@@ -152,12 +144,8 @@ jobs:
           -p:AnalysisMode=All
           -p:EnforceCodeStyleInBuild=true
           -p:UseSharedCompilation=false
-      - name: Verify packaged aria2 TLS behavior
+      - name: Verify focused aria2 TLS harness lifecycle
         shell: pwsh
-        env:
-          DOWNKYI_ARIA2_BINARY: ${{ github.workspace }}/${{ matrix.binary }}
-          DOWNKYI_ARIA2_RID: ${{ matrix.rid }}
-          DOWNKYI_ARIA2_TLS_REPORT: ${{ github.workspace }}/artifacts/aria2-tls/${{ matrix.rid }}.json
         run: |
           . ./script/test-project-runner.ps1
           $result = Invoke-DownKyiTestProject `
@@ -166,8 +154,47 @@ jobs:
             -Configuration Release `
             -NoRestore `
             -NoBuild `
-            -ResultsDirectory ./artifacts/test-results/aria2-${{ matrix.rid }} `
-            -ClassNames DownKyi.Tests.Aria2TlsIntegrationTests
+            -ResultsDirectory ./artifacts/test-results/aria2-tls-focused-${{ matrix.rid }} `
+            -TrxName aria2-tls-focused-${{ matrix.rid }}.trx `
+            -EvidenceDirectory ./artifacts/test-flight-recorder/aria2-tls-focused-${{ matrix.rid }} `
+            -ClassNames @(
+              'DownKyi.Tests.Aria2TlsFailurePreservationTests'
+              'DownKyi.Tests.Aria2TlsReportWriterTests'
+              'DownKyi.Tests.Aria2TlsRuntimeLifecycleTests'
+              'DownKyi.Tests.LoopbackTlsFileServerLifecycleTests'
+            )
+          if ($result.ExitCode -ne 0) {
+            throw "Focused aria2 TLS harness tests failed."
+          }
+      - name: Fetch and verify Windows aria2 asset
+        if: startsWith(matrix.rid, 'win-')
+        shell: pwsh
+        run: ./script/aria2.ps1 '${{ matrix.asset-argument }}'
+      - name: Fetch and verify Unix aria2 asset
+        if: ${{ !startsWith(matrix.rid, 'win-') }}
+        shell: bash
+        run: bash ./script/aria2.sh '${{ matrix.asset-argument }}'
+      - name: Verify packaged aria2 TLS families and end-to-end behavior
+        shell: pwsh
+        env:
+          DOWNKYI_ARIA2_BINARY: ${{ github.workspace }}/${{ matrix.binary }}
+          DOWNKYI_ARIA2_RID: ${{ matrix.rid }}
+          DOWNKYI_ARIA2_TLS_REPORT: ${{ github.workspace }}/artifacts/aria2-tls/${{ matrix.rid }}
+        run: |
+          . ./script/test-project-runner.ps1
+          $result = Invoke-DownKyiTestProject `
+            -RepositoryRoot (Get-Location).Path `
+            -ProjectPath ./tests/DownKyi.Tests/DownKyi.Tests.csproj `
+            -Configuration Release `
+            -NoRestore `
+            -NoBuild `
+            -ResultsDirectory ./artifacts/test-results/aria2-tls-e2e-${{ matrix.rid }} `
+            -TrxName aria2-tls-e2e-${{ matrix.rid }}.trx `
+            -EvidenceDirectory ./artifacts/test-flight-recorder/aria2-tls-e2e-${{ matrix.rid }} `
+            -ClassNames @(
+              'DownKyi.Tests.Aria2RpcLifecycleIntegrationTests'
+              'DownKyi.Tests.Aria2TlsIntegrationTests'
+            )
           if ($result.ExitCode -ne 0) {
             throw "Packaged aria2 TLS integration tests failed."
           }
@@ -177,9 +204,11 @@ jobs:
         with:
           name: aria2-tls-${{ matrix.rid }}
           path: |
-            artifacts/aria2-tls/${{ matrix.rid }}.json
-            artifacts/test-results/aria2-${{ matrix.rid }}
-            artifacts/test-flight-recorder
+            artifacts/aria2-tls/${{ matrix.rid }}
+            artifacts/test-results/aria2-tls-focused-${{ matrix.rid }}
+            artifacts/test-results/aria2-tls-e2e-${{ matrix.rid }}
+            artifacts/test-flight-recorder/aria2-tls-focused-${{ matrix.rid }}
+            artifacts/test-flight-recorder/aria2-tls-e2e-${{ matrix.rid }}
           if-no-files-found: warn
 
   package-audit:
