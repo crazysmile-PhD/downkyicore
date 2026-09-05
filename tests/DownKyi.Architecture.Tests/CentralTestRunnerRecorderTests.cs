@@ -2,7 +2,6 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using DownKyi.CentralTestRunner;
-using DownKyi.TestInfrastructure;
 
 namespace DownKyi.Architecture.Tests;
 
@@ -241,29 +240,28 @@ public sealed class CentralTestRunnerRecorderTests
         var directory = CreateEvidenceDirectory();
         var markerPath = Path.Combine(directory, "build-process.pid");
         int? processId = null;
-        await ExternalProcessTestHarness.RunWithCleanupAsync(
-            async () =>
-            {
-                using var cancellation = new CancellationTokenSource();
-                var build = BuildProcessRunner.RunAsync(
-                    CreateFixtureStartInfo("fixture-hold-marker", markerPath),
-                    cancellation.Token,
-                    TimeSpan.FromSeconds(3));
-                processId = await WaitForProcessMarkerAsync(markerPath).ConfigureAwait(true);
+        try
+        {
+            using var cancellation = new CancellationTokenSource();
+            var build = BuildProcessRunner.RunAsync(
+                CreateFixtureStartInfo("fixture-hold-marker", markerPath),
+                cancellation.Token,
+                TimeSpan.FromSeconds(3));
+            processId = await WaitForProcessMarkerAsync(markerPath);
 
-                await cancellation.CancelAsync().ConfigureAwait(true);
-                await Assert.ThrowsAnyAsync<OperationCanceledException>(() => build).ConfigureAwait(true);
+            await cancellation.CancelAsync();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => build);
 
-                Assert.False(IsProcessAlive(processId.Value));
-            },
-            async () =>
+            Assert.False(IsProcessAlive(processId.Value));
+        }
+        finally
+        {
+            if (processId is not null)
             {
-                if (processId is not null)
-                {
-                    await StopFixtureProcessIfAlive(processId.Value).ConfigureAwait(true);
-                }
-            },
-            () => DeleteDirectoryAsync(directory)).ConfigureAwait(true);
+                StopFixtureProcessIfAlive(processId.Value);
+            }
+            Directory.Delete(directory, recursive: true);
+        }
     }
 
     [Fact]
@@ -496,28 +494,21 @@ public sealed class CentralTestRunnerRecorderTests
         }
     }
 
-    private static async Task StopFixtureProcessIfAlive(int processId)
+    private static void StopFixtureProcessIfAlive(int processId)
     {
         try
         {
             using var process = Process.GetProcessById(processId);
             if (!process.HasExited)
             {
-                await ExternalProcessTestHarness.StopAsync(
-                    process,
-                    TimeSpan.FromSeconds(3)).ConfigureAwait(true);
+                process.Kill();
+                process.WaitForExit(3000);
             }
         }
         catch (ArgumentException)
         {
             // The focused cancellation path already stopped the fixture.
         }
-    }
-
-    private static Task DeleteDirectoryAsync(string path)
-    {
-        Directory.Delete(path, recursive: true);
-        return Task.CompletedTask;
     }
 
     private static string CreateEvidenceDirectory()

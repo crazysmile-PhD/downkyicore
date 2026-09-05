@@ -3,7 +3,6 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using DownKyi.Core.Aria2cNet.Server;
-using DownKyi.TestInfrastructure;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DownKyi.Windows.Tests;
@@ -14,36 +13,18 @@ public sealed partial class AriaServerWindowsTests
     [Fact]
     public async Task LifetimeJobTerminatesTheAssignedProcessWhenReleased()
     {
-        var process = StartLongRunningProcess();
-        WindowsProcessJob? processJob = null;
+        using var process = StartLongRunningProcess();
+        var processJob = WindowsProcessJob.TryCreateAndAssign(
+            process,
+            NullLogger.Instance);
 
-        await ExternalProcessTestHarness.RunWithCleanupAsync(
-            async () =>
-            {
-                processJob = WindowsProcessJob.TryCreateAndAssign(
-                    process,
-                    NullLogger.Instance);
-
-                Assert.NotNull(processJob);
-                processJob.Dispose();
-                processJob = null;
-                await process
-                    .WaitForExitAsync(TestContext.Current.CancellationToken)
-                    .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken)
-                    .ConfigureAwait(true);
-                Assert.True(process.HasExited);
-            },
-            () =>
-            {
-                processJob?.Dispose();
-                return Task.CompletedTask;
-            },
-            () => ExternalProcessTestHarness.StopAsync(process, TimeSpan.FromSeconds(5)),
-            () =>
-            {
-                process.Dispose();
-                return Task.CompletedTask;
-            });
+        Assert.NotNull(processJob);
+        processJob.Dispose();
+        await process
+            .WaitForExitAsync(TestContext.Current.CancellationToken)
+            .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
+        Assert.True(process.HasExited);
     }
 
     [Fact]
@@ -55,58 +36,42 @@ public sealed partial class AriaServerWindowsTests
         Directory.CreateDirectory(directory);
         var server = new AriaServer(NullLoggerFactory.Instance);
         Process? process = null;
-        AriaRpcSecretFile? secretFile = null;
+        try
+        {
+            using var secretFile = AriaRpcSecretFile.Create(
+                directory,
+                "fixture-secret",
+                NullLogger.Instance);
+            var secretPath = secretFile.Path;
+            server.SetStartupSecretForTests(secretFile);
+            process = StartLongRunningProcess();
+            DuplicateFileHandleIntoProcess(secretPath, process);
+            server.SetTrackedServerForTests(process);
 
-        await ExternalProcessTestHarness.RunWithCleanupAsync(
-            () =>
-            {
-                secretFile = AriaRpcSecretFile.Create(
-                    directory,
-                    "fixture-secret",
-                    NullLogger.Instance);
-                var secretPath = secretFile.Path;
-                server.SetStartupSecretForTests(secretFile);
-                process = StartLongRunningProcess();
-                DuplicateFileHandleIntoProcess(secretPath, process);
-                server.SetTrackedServerForTests(process);
+            Assert.Throws<IOException>(() => File.Delete(secretPath));
 
-                Assert.Throws<IOException>(() => File.Delete(secretPath));
+            Assert.True(server.KillTrackedServer("test startup cleanup"));
 
-                Assert.True(server.KillTrackedServer("test startup cleanup"));
+            Assert.True(process.HasExited);
+            Assert.False(File.Exists(secretPath));
+            Assert.False(server.HasTrackedServerForTests());
+        }
+        finally
+        {
+            server.SetStartupSecretForTests(null);
+            server.SetTrackedServerForTests(null);
+            if (process is { HasExited: false })
+            {
+                process.Kill(entireProcessTree: true);
+                await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(true);
+            }
 
-                Assert.True(process.HasExited);
-                Assert.False(File.Exists(secretPath));
-                Assert.False(server.HasTrackedServerForTests());
-                return Task.CompletedTask;
-            },
-            () =>
+            process?.Dispose();
+            if (Directory.Exists(directory))
             {
-                server.SetStartupSecretForTests(null);
-                server.SetTrackedServerForTests(null);
-                return Task.CompletedTask;
-            },
-            () => process is null
-                ? Task.CompletedTask
-                : ExternalProcessTestHarness.StopAsync(process, TimeSpan.FromSeconds(5)),
-            () =>
-            {
-                secretFile?.Dispose();
-                return Task.CompletedTask;
-            },
-            () =>
-            {
-                process?.Dispose();
-                return Task.CompletedTask;
-            },
-            () =>
-            {
-                if (Directory.Exists(directory))
-                {
-                    Directory.Delete(directory, recursive: true);
-                }
-
-                return Task.CompletedTask;
-            });
+                Directory.Delete(directory, recursive: true);
+            }
+        }
     }
 
     private static Process StartLongRunningProcess()
@@ -119,7 +84,8 @@ public sealed partial class AriaServerWindowsTests
             CreateNoWindow = true
         };
 
-        return ExternalProcessTestHarness.Start(startInfo);
+        return Process.Start(startInfo)
+               ?? throw new InvalidOperationException("Could not start the process used by the cleanup test.");
     }
 
     private static void DuplicateFileHandleIntoProcess(

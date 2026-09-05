@@ -69,7 +69,13 @@ public sealed class TargetedResourceForensicsWindowsTests
         }
         finally
         {
-            await StopOwnerAsync(owner).ConfigureAwait(true);
+            if (owner is { HasExited: false })
+            {
+                owner.Kill(entireProcessTree: true);
+                await owner.WaitForExitAsync(TestContext.Current.CancellationToken).ConfigureAwait(true);
+            }
+
+            owner?.Dispose();
             if (Directory.Exists(targetDirectory) &&
                 TargetedResourceForensics.ProbeDeleteAccess(targetDirectory).State == DeleteAccessState.Allowed)
             {
@@ -374,7 +380,13 @@ public sealed class TargetedResourceForensicsWindowsTests
         finally
         {
             forensics?.Dispose();
-            await StopOwnerAsync(owner).ConfigureAwait(true);
+            if (owner is { HasExited: false })
+            {
+                owner.Kill(entireProcessTree: true);
+                await owner.WaitForExitAsync(TestContext.Current.CancellationToken).ConfigureAwait(true);
+            }
+
+            owner?.Dispose();
             if (Directory.Exists(targetDirectory))
             {
                 Directory.Delete(targetDirectory, recursive: true);
@@ -403,7 +415,8 @@ public sealed class TargetedResourceForensicsWindowsTests
         startInfo.ArgumentList.Add(runtimeConfig);
         startInfo.ArgumentList.Add(fixtureAssembly);
         startInfo.ArgumentList.Add("fixture-hold");
-        return ExternalProcessTestHarness.Start(startInfo);
+        return Process.Start(startInfo) ??
+            throw new InvalidOperationException("Unable to start the controlled directory owner.");
     }
 
     private static async Task WaitForOwnerReadyAsync(Process owner)
@@ -422,14 +435,15 @@ public sealed class TargetedResourceForensicsWindowsTests
             return;
         }
 
-        using (owner)
+        if (!owner.HasExited)
         {
-            await ExternalProcessTestHarness.StopAsync(
-                owner,
-                TimeSpan.FromSeconds(5),
-                owner.StandardOutput.ReadToEndAsync(CancellationToken.None),
-                owner.StandardError.ReadToEndAsync(CancellationToken.None)).ConfigureAwait(true);
+            owner.Kill(entireProcessTree: true);
+            await owner.WaitForExitAsync(TestContext.Current.CancellationToken)
+                .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
         }
+
+        owner.Dispose();
     }
 
     private static void DuplicateDirectoryHandleIntoProcess(

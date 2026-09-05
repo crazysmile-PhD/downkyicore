@@ -1,7 +1,6 @@
 using System.Buffers.Binary;
 using System.Diagnostics;
 using System.IO.Compression;
-using DownKyi.TestInfrastructure;
 
 namespace DownKyi.Architecture.Tests;
 
@@ -62,16 +61,16 @@ public sealed class V113ReleaseSafetyRegressionTests
     }
 
     [Fact]
-    public async Task PupNetStandalonePackagingStagesOnlyTheCanonicalValidatedPayload()
+    public void PupNetStandalonePackagingStagesOnlyTheCanonicalValidatedPayload()
     {
-        var configuration = await File.ReadAllTextAsync(
-            Path.Combine(RepositoryRoot, "script", "pupnet", "DownKyi.pupnet.conf"),
-            TestContext.Current.CancellationToken).ConfigureAwait(true);
-        var workflow = await File.ReadAllTextAsync(
-            Path.Combine(RepositoryRoot, ".github", "workflows", "build.yml"),
-            TestContext.Current.CancellationToken).ConfigureAwait(true);
+        var configuration = File.ReadAllText(
+            Path.Combine(RepositoryRoot, "script", "pupnet", "DownKyi.pupnet.conf"));
+        var workflow = File.ReadAllText(Path.Combine(RepositoryRoot, ".github", "workflows", "build.yml"));
         var linuxPublish = GetWorkflowJob(workflow, "build-linux-publish");
         var linuxPackages = GetWorkflowJob(workflow, "build-linux");
+        var root = CreateTemporaryDirectory();
+        var source = Path.Combine(root, "canonical");
+        var destination = Path.Combine(root, "pupnet-staging");
 
         Assert.Contains("DotnetProjectPath = NONE", configuration, StringComparison.Ordinal);
         Assert.Contains("DotnetPostPublish = stage-canonical-publish.sh", configuration, StringComparison.Ordinal);
@@ -91,815 +90,766 @@ public sealed class V113ReleaseSafetyRegressionTests
         Assert.Contains("file artifacts/publish/linux-arm64/DownKyi | grep -qi 'ELF.*aarch64'", workflow, StringComparison.Ordinal);
         Assert.DoesNotContain("p7zip-full", workflow, StringComparison.Ordinal);
 
-        var root = CreateTemporaryDirectory();
-        var source = Path.Combine(root, "canonical");
-        var destination = Path.Combine(root, "pupnet-staging");
-        await ExternalProcessTestHarness.RunWithCleanupAsync(
-            async () =>
+        try
+        {
+            Directory.CreateDirectory(source);
+            Directory.CreateDirectory(destination);
+            Directory.CreateDirectory(Path.Combine(source, "nested"));
+            File.WriteAllBytes(Path.Combine(source, "payload.bin"), [0, 1, 2, 3, 255]);
+            File.WriteAllText(Path.Combine(source, "nested", "LICENSE"), "canonical-license");
+
+            IReadOnlyDictionary<string, string> environment = new Dictionary<string, string>
             {
-                Directory.CreateDirectory(source);
-                Directory.CreateDirectory(destination);
-                Directory.CreateDirectory(Path.Combine(source, "nested"));
-                await File.WriteAllBytesAsync(
-                    Path.Combine(source, "payload.bin"),
-                    [0, 1, 2, 3, 255],
-                    TestContext.Current.CancellationToken).ConfigureAwait(true);
-                await File.WriteAllTextAsync(
-                    Path.Combine(source, "nested", "LICENSE"),
-                    "canonical-license",
-                    TestContext.Current.CancellationToken).ConfigureAwait(true);
+                ["CANONICAL_PUBLISH_DIRECTORY"] = source,
+                ["BUILD_APP_BIN"] = destination
+            };
+            ProcessResult result;
+            if (OperatingSystem.IsWindows())
+            {
+                result = RunProcess(
+                    "cmd.exe",
+                    ["/c", Path.Combine(RepositoryRoot, "script", "pupnet", "stage-canonical-publish.cmd")],
+                    root,
+                    environment);
+            }
+            else
+            {
+                result = RunProcess(
+                    Path.Combine(RepositoryRoot, "script", "pupnet", "stage-canonical-publish.sh"),
+                    [],
+                    root,
+                    environment);
+            }
 
-                IReadOnlyDictionary<string, string> environment = new Dictionary<string, string>
-                {
-                    ["CANONICAL_PUBLISH_DIRECTORY"] = source,
-                    ["BUILD_APP_BIN"] = destination
-                };
-                ExternalProcessResult result;
-                if (OperatingSystem.IsWindows())
-                {
-                    result = await RunProcess(
-                        "cmd.exe",
-                        ["/c", Path.Combine(RepositoryRoot, "script", "pupnet", "stage-canonical-publish.cmd")],
-                        root,
-                        environment).ConfigureAwait(false);
-                }
-                else
-                {
-                    result = await RunProcess(
-                        Path.Combine(RepositoryRoot, "script", "pupnet", "stage-canonical-publish.sh"),
-                        [],
-                        root,
-                        environment).ConfigureAwait(false);
-                }
+            Assert.Equal(0, result.ExitCode);
+            Assert.Equal(
+                File.ReadAllBytes(Path.Combine(source, "payload.bin")),
+                File.ReadAllBytes(Path.Combine(destination, "payload.bin")));
+            Assert.Equal(
+                "canonical-license",
+                File.ReadAllText(Path.Combine(destination, "nested", "LICENSE")));
 
-                Assert.Equal(0, result.ExitCode);
-                Assert.Equal(
-                    await File.ReadAllBytesAsync(
-                        Path.Combine(source, "payload.bin"),
-                        TestContext.Current.CancellationToken).ConfigureAwait(true),
-                    await File.ReadAllBytesAsync(
-                        Path.Combine(destination, "payload.bin"),
-                        TestContext.Current.CancellationToken).ConfigureAwait(true));
-                Assert.Equal(
-                    "canonical-license",
-                    await File.ReadAllTextAsync(
-                        Path.Combine(destination, "nested", "LICENSE"),
-                        TestContext.Current.CancellationToken).ConfigureAwait(true));
-
-                ExternalProcessResult secondResult;
-                if (OperatingSystem.IsWindows())
-                {
-                    secondResult = await RunProcess(
-                        "cmd.exe",
-                        ["/c", Path.Combine(RepositoryRoot, "script", "pupnet", "stage-canonical-publish.cmd")],
-                        root,
-                        environment).ConfigureAwait(false);
-                }
-                else
-                {
-                    secondResult = await RunProcess(
-                        Path.Combine(RepositoryRoot, "script", "pupnet", "stage-canonical-publish.sh"),
-                        [],
-                        root,
-                        environment).ConfigureAwait(false);
-                }
-                Assert.NotEqual(0, secondResult.ExitCode);
-                Assert.Contains("must be empty", NormalizeDiagnostic(secondResult), StringComparison.Ordinal);
-            },
-            () => DeleteTemporaryDirectoryAsync(root)).ConfigureAwait(true);
+            ProcessResult secondResult;
+            if (OperatingSystem.IsWindows())
+            {
+                secondResult = RunProcess(
+                    "cmd.exe",
+                    ["/c", Path.Combine(RepositoryRoot, "script", "pupnet", "stage-canonical-publish.cmd")],
+                    root,
+                    environment);
+            }
+            else
+            {
+                secondResult = RunProcess(
+                    Path.Combine(RepositoryRoot, "script", "pupnet", "stage-canonical-publish.sh"),
+                    [],
+                    root,
+                    environment);
+            }
+            Assert.NotEqual(0, secondResult.ExitCode);
+            Assert.Contains("must be empty", NormalizeDiagnostic(secondResult), StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(root);
+        }
     }
 
     [Fact]
-    public async Task ReleaseTagProvenanceRejectsLightweightAndNonMainTags()
+    public void ReleaseTagProvenanceRejectsLightweightAndNonMainTags()
     {
         var root = CreateTemporaryDirectory();
         var remote = Path.Combine(root, "remote.git");
         var repository = Path.Combine(root, "repository");
         var validator = Path.Combine(RepositoryRoot, "script", "validate-v113-release-subject.ps1");
 
-        await ExternalProcessTestHarness.RunWithCleanupAsync(
-            async () =>
-            {
-                await RunRequired("git", ["init", "--bare", remote], root).ConfigureAwait(false);
-                await RunRequired("git", ["init", "-b", "main", repository], root).ConfigureAwait(false);
-                await RunRequired("git", ["config", "user.name", "Release Fixture"], repository).ConfigureAwait(false);
-                await RunRequired("git", ["config", "user.email", "release-fixture@example.invalid"], repository).ConfigureAwait(false);
-                await File.WriteAllTextAsync(
-                    Path.Combine(repository, "fixture.txt"),
-                    "main",
-                    TestContext.Current.CancellationToken).ConfigureAwait(true);
-                await File.WriteAllTextAsync(
-                    Path.Combine(repository, "version.txt"),
-                    "1.1.3",
-                    TestContext.Current.CancellationToken).ConfigureAwait(true);
-                await RunRequired("git", ["add", "fixture.txt", "version.txt"], repository).ConfigureAwait(false);
-                await RunRequired("git", ["commit", "-m", "main fixture"], repository).ConfigureAwait(false);
-                await RunRequired("git", ["remote", "add", "origin", remote], repository).ConfigureAwait(false);
-                await RunRequired("git", ["push", "-u", "origin", "main"], repository).ConfigureAwait(false);
-                var mainCommit = (await RunRequired("git", ["rev-parse", "HEAD"], repository).ConfigureAwait(false)).StandardOutput.Trim();
+        try
+        {
+            RunRequired("git", ["init", "--bare", remote], root);
+            RunRequired("git", ["init", "-b", "main", repository], root);
+            RunRequired("git", ["config", "user.name", "Release Fixture"], repository);
+            RunRequired("git", ["config", "user.email", "release-fixture@example.invalid"], repository);
+            File.WriteAllText(Path.Combine(repository, "fixture.txt"), "main");
+            File.WriteAllText(Path.Combine(repository, "version.txt"), "1.1.3");
+            RunRequired("git", ["add", "fixture.txt", "version.txt"], repository);
+            RunRequired("git", ["commit", "-m", "main fixture"], repository);
+            RunRequired("git", ["remote", "add", "origin", remote], repository);
+            RunRequired("git", ["push", "-u", "origin", "main"], repository);
+            var mainCommit = RunRequired("git", ["rev-parse", "HEAD"], repository).StandardOutput.Trim();
 
-                await RunRequired("git", ["tag", "-a", "v1.1.3", "-m", "v1.1.3"], repository).ConfigureAwait(false);
-                var valid = await RunPowerShell(
-                    validator,
-                    ["-SubjectDirectory", repository, "-ReleaseVersion", "v1.1.3", "-SubjectSha", mainCommit],
-                    repository).ConfigureAwait(false);
-                Assert.Equal(0, valid.ExitCode);
+            RunRequired("git", ["tag", "-a", "v1.1.3", "-m", "v1.1.3"], repository);
+            var valid = RunPowerShell(
+                validator,
+                ["-SubjectDirectory", repository, "-ReleaseVersion", "v1.1.3", "-SubjectSha", mainCommit],
+                repository);
+            Assert.Equal(0, valid.ExitCode);
 
-                await RunRequired("git", ["tag", "-d", "v1.1.3"], repository).ConfigureAwait(false);
-                await RunRequired("git", ["tag", "v1.1.3"], repository).ConfigureAwait(false);
-                var lightweight = await RunPowerShell(
-                    validator,
-                    ["-SubjectDirectory", repository, "-ReleaseVersion", "v1.1.3", "-SubjectSha", mainCommit],
-                    repository).ConfigureAwait(false);
-                Assert.NotEqual(0, lightweight.ExitCode);
-                Assert.Contains("annotated tag", NormalizeDiagnostic(lightweight), StringComparison.OrdinalIgnoreCase);
+            RunRequired("git", ["tag", "-d", "v1.1.3"], repository);
+            RunRequired("git", ["tag", "v1.1.3"], repository);
+            var lightweight = RunPowerShell(
+                validator,
+                ["-SubjectDirectory", repository, "-ReleaseVersion", "v1.1.3", "-SubjectSha", mainCommit],
+                repository);
+            Assert.NotEqual(0, lightweight.ExitCode);
+            Assert.Contains("annotated tag", NormalizeDiagnostic(lightweight), StringComparison.OrdinalIgnoreCase);
 
-                await RunRequired("git", ["tag", "-d", "v1.1.3"], repository).ConfigureAwait(false);
-                await File.WriteAllTextAsync(
-                    Path.Combine(repository, "version.txt"),
-                    "1.1.4",
-                    TestContext.Current.CancellationToken).ConfigureAwait(true);
-                await RunRequired("git", ["add", "version.txt"], repository).ConfigureAwait(false);
-                await RunRequired("git", ["commit", "-m", "mismatched version fixture"], repository).ConfigureAwait(false);
-                await RunRequired("git", ["push", "origin", "main"], repository).ConfigureAwait(false);
-                var mismatchedMainCommit = (await RunRequired("git", ["rev-parse", "HEAD"], repository).ConfigureAwait(false)).StandardOutput.Trim();
-                await RunRequired("git", ["tag", "-a", "v1.1.3", "-m", "v1.1.3"], repository).ConfigureAwait(false);
-                var mismatchedVersion = await RunPowerShell(
-                    validator,
-                    ["-SubjectDirectory", repository, "-ReleaseVersion", "v1.1.3", "-SubjectSha", mismatchedMainCommit],
-                    repository).ConfigureAwait(false);
-                Assert.NotEqual(0, mismatchedVersion.ExitCode);
-                Assert.Contains("version.txt is 1.1.4", NormalizeDiagnostic(mismatchedVersion), StringComparison.Ordinal);
+            RunRequired("git", ["tag", "-d", "v1.1.3"], repository);
+            File.WriteAllText(Path.Combine(repository, "version.txt"), "1.1.4");
+            RunRequired("git", ["add", "version.txt"], repository);
+            RunRequired("git", ["commit", "-m", "mismatched version fixture"], repository);
+            RunRequired("git", ["push", "origin", "main"], repository);
+            var mismatchedMainCommit = RunRequired("git", ["rev-parse", "HEAD"], repository).StandardOutput.Trim();
+            RunRequired("git", ["tag", "-a", "v1.1.3", "-m", "v1.1.3"], repository);
+            var mismatchedVersion = RunPowerShell(
+                validator,
+                ["-SubjectDirectory", repository, "-ReleaseVersion", "v1.1.3", "-SubjectSha", mismatchedMainCommit],
+                repository);
+            Assert.NotEqual(0, mismatchedVersion.ExitCode);
+            Assert.Contains("version.txt is 1.1.4", NormalizeDiagnostic(mismatchedVersion), StringComparison.Ordinal);
 
-                await File.WriteAllTextAsync(
-                    Path.Combine(repository, "version.txt"),
-                    "1.1.3",
-                    TestContext.Current.CancellationToken).ConfigureAwait(true);
-                await RunRequired("git", ["add", "version.txt"], repository).ConfigureAwait(false);
-                await RunRequired("git", ["commit", "-m", "restore release version fixture"], repository).ConfigureAwait(false);
-                await RunRequired("git", ["push", "origin", "main"], repository).ConfigureAwait(false);
+            File.WriteAllText(Path.Combine(repository, "version.txt"), "1.1.3");
+            RunRequired("git", ["add", "version.txt"], repository);
+            RunRequired("git", ["commit", "-m", "restore release version fixture"], repository);
+            RunRequired("git", ["push", "origin", "main"], repository);
 
-                await RunRequired("git", ["checkout", "-b", "release-fixture"], repository).ConfigureAwait(false);
-                await File.AppendAllTextAsync(
-                    Path.Combine(repository, "fixture.txt"),
-                    "\nrelease-only",
-                    TestContext.Current.CancellationToken).ConfigureAwait(true);
-                await RunRequired("git", ["add", "fixture.txt"], repository).ConfigureAwait(false);
-                await RunRequired("git", ["commit", "-m", "release-only fixture"], repository).ConfigureAwait(false);
-                var releaseOnlyCommit = (await RunRequired("git", ["rev-parse", "HEAD"], repository).ConfigureAwait(false)).StandardOutput.Trim();
-                await RunRequired("git", ["tag", "-f", "-a", "v1.1.3", "-m", "v1.1.3"], repository).ConfigureAwait(false);
-                var remoteMain = (await RunRequired("git", ["rev-parse", "refs/remotes/origin/main"], repository).ConfigureAwait(false)).StandardOutput.Trim();
-                Assert.NotEqual(remoteMain, releaseOnlyCommit);
-                Assert.Equal("tag", (await RunRequired("git", ["cat-file", "-t", "v1.1.3"], repository).ConfigureAwait(false)).StandardOutput.Trim());
-                Assert.Equal(releaseOnlyCommit, (await RunRequired("git", ["rev-list", "-n", "1", "v1.1.3"], repository).ConfigureAwait(false)).StandardOutput.Trim());
-                Assert.Equal(
-                    "1.1.3",
-                    await File.ReadAllTextAsync(
-                        Path.Combine(repository, "version.txt"),
-                        TestContext.Current.CancellationToken).ConfigureAwait(true));
-                var nonMain = await RunPowerShell(
-                    validator,
-                    ["-SubjectDirectory", repository, "-ReleaseVersion", "v1.1.3", "-SubjectSha", releaseOnlyCommit],
-                    repository).ConfigureAwait(false);
-                Assert.NotEqual(0, nonMain.ExitCode);
-            },
-            () => DeleteTemporaryDirectoryAsync(root)).ConfigureAwait(true);
+            RunRequired("git", ["checkout", "-b", "release-fixture"], repository);
+            File.AppendAllText(Path.Combine(repository, "fixture.txt"), "\nrelease-only");
+            RunRequired("git", ["add", "fixture.txt"], repository);
+            RunRequired("git", ["commit", "-m", "release-only fixture"], repository);
+            var releaseOnlyCommit = RunRequired("git", ["rev-parse", "HEAD"], repository).StandardOutput.Trim();
+            RunRequired("git", ["tag", "-f", "-a", "v1.1.3", "-m", "v1.1.3"], repository);
+            var remoteMain = RunRequired("git", ["rev-parse", "refs/remotes/origin/main"], repository).StandardOutput.Trim();
+            Assert.NotEqual(remoteMain, releaseOnlyCommit);
+            Assert.Equal("tag", RunRequired("git", ["cat-file", "-t", "v1.1.3"], repository).StandardOutput.Trim());
+            Assert.Equal(releaseOnlyCommit, RunRequired("git", ["rev-list", "-n", "1", "v1.1.3"], repository).StandardOutput.Trim());
+            Assert.Equal("1.1.3", File.ReadAllText(Path.Combine(repository, "version.txt")));
+            var nonMain = RunPowerShell(
+                validator,
+                ["-SubjectDirectory", repository, "-ReleaseVersion", "v1.1.3", "-SubjectSha", releaseOnlyCommit],
+                repository);
+            Assert.NotEqual(0, nonMain.ExitCode);
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(root);
+        }
     }
 
     [Fact]
-    public async Task MacOsReleaseTrustRejectsPartialCredentials()
+    public void MacOsReleaseTrustRejectsPartialCredentials()
     {
         var root = CreateTemporaryDirectory();
         var output = Path.Combine(root, "trust.json");
         var resolver = Path.Combine(RepositoryRoot, "script", "resolve-v112-macos-trust.ps1");
 
-        await ExternalProcessTestHarness.RunWithCleanupAsync(
-            async () =>
-            {
-                var adHoc = await RunPowerShell(resolver, ["-OutputPath", output], root).ConfigureAwait(false);
-                Assert.Equal(0, adHoc.ExitCode);
-                Assert.Contains(
-                    "ad-hoc",
-                    await File.ReadAllTextAsync(output, TestContext.Current.CancellationToken).ConfigureAwait(true),
-                    StringComparison.Ordinal);
+        try
+        {
+            var adHoc = RunPowerShell(resolver, ["-OutputPath", output], root);
+            Assert.Equal(0, adHoc.ExitCode);
+            Assert.Contains("ad-hoc", File.ReadAllText(output), StringComparison.Ordinal);
 
-                var partial = await RunPowerShell(
-                    resolver,
-                    ["-OutputPath", output],
-                    root,
-                    new Dictionary<string, string> { ["APPLE_ID"] = "fixture@example.invalid" }).ConfigureAwait(false);
-                Assert.NotEqual(0, partial.ExitCode);
-                Assert.Contains("Partial Apple credentials", NormalizeDiagnostic(partial), StringComparison.Ordinal);
-            },
-            () => DeleteTemporaryDirectoryAsync(root)).ConfigureAwait(true);
+            var partial = RunPowerShell(
+                resolver,
+                ["-OutputPath", output],
+                root,
+                new Dictionary<string, string> { ["APPLE_ID"] = "fixture@example.invalid" });
+            Assert.NotEqual(0, partial.ExitCode);
+            Assert.Contains("Partial Apple credentials", NormalizeDiagnostic(partial), StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(root);
+        }
     }
 
     [Fact]
-    public async Task ReleasePackageValidationRejectsMutatedZipContents()
+    public void ReleasePackageValidationRejectsMutatedZipContents()
     {
         var root = CreateTemporaryDirectory();
         var runtime = Path.Combine(root, "runtime");
+        Directory.CreateDirectory(Path.Combine(runtime, "aria2"));
+        Directory.CreateDirectory(Path.Combine(runtime, "ffmpeg"));
         var validator = Path.Combine(RepositoryRoot, "script", "validate-v113-release-package.ps1");
 
-        await ExternalProcessTestHarness.RunWithCleanupAsync(
-            async () =>
-            {
-                Directory.CreateDirectory(Path.Combine(runtime, "aria2"));
-                Directory.CreateDirectory(Path.Combine(runtime, "ffmpeg"));
-                File.Copy(typeof(V113ReleaseSafetyRegressionTests).Assembly.Location, Path.Combine(runtime, "DownKyi.dll"));
-                WritePeFile(Path.Combine(runtime, "DownKyi.exe"), 0x8664);
-                var aria = Path.Combine(runtime, "aria2", "aria2c.exe");
-                WritePeFile(aria, 0x8664);
-                var ariaHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
-                    await File.ReadAllBytesAsync(aria, TestContext.Current.CancellationToken).ConfigureAwait(true)));
-                await File.WriteAllTextAsync(
-                    Path.Combine(runtime, "aria2", "aria2c.exe.sha256"),
-                    ariaHash,
-                    TestContext.Current.CancellationToken).ConfigureAwait(true);
-                var ffmpeg = Path.Combine(runtime, "ffmpeg", "ffmpeg.exe");
-                WritePeFile(ffmpeg, 0x8664);
-                WritePeFile(Path.Combine(runtime, "ffmpeg", "ffprobe.exe"), 0x8664);
-                await File.WriteAllTextAsync(
-                    Path.Combine(runtime, "DownKyi.deps.json"),
-                    "{\"libraries\":{\"Avalonia.Themes.Fluent/fixture\":{}}}",
-                    TestContext.Current.CancellationToken).ConfigureAwait(true);
-                WriteNonEmptyFile(Path.Combine(runtime, "Avalonia.Themes.Fluent.dll"));
-                var desktopDependency = Path.Combine(runtime, "DownKyi.Desktop.dll");
-                WriteNonEmptyFile(desktopDependency);
-                var expectedManifest = Path.Combine(root, "expected-publish-manifest.json");
-                var expected = await RunPowerShell(
-                    Path.Combine(RepositoryRoot, "script", "validate-publish-output.ps1"),
-                    [
-                        "-PublishDirectory", runtime,
+        try
+        {
+            File.Copy(typeof(V113ReleaseSafetyRegressionTests).Assembly.Location, Path.Combine(runtime, "DownKyi.dll"));
+            WritePeFile(Path.Combine(runtime, "DownKyi.exe"), 0x8664);
+            var aria = Path.Combine(runtime, "aria2", "aria2c.exe");
+            WritePeFile(aria, 0x8664);
+            var ariaHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(aria)));
+            File.WriteAllText(Path.Combine(runtime, "aria2", "aria2c.exe.sha256"), ariaHash);
+            var ffmpeg = Path.Combine(runtime, "ffmpeg", "ffmpeg.exe");
+            WritePeFile(ffmpeg, 0x8664);
+            WritePeFile(Path.Combine(runtime, "ffmpeg", "ffprobe.exe"), 0x8664);
+            File.WriteAllText(Path.Combine(runtime, "DownKyi.deps.json"), "{\"libraries\":{\"Avalonia.Themes.Fluent/fixture\":{}}}");
+            WriteNonEmptyFile(Path.Combine(runtime, "Avalonia.Themes.Fluent.dll"));
+            var desktopDependency = Path.Combine(runtime, "DownKyi.Desktop.dll");
+            WriteNonEmptyFile(desktopDependency);
+            var expectedManifest = Path.Combine(root, "expected-publish-manifest.json");
+            var expected = RunPowerShell(
+                Path.Combine(RepositoryRoot, "script", "validate-publish-output.ps1"),
+                [
+                    "-PublishDirectory", runtime,
                     "-RuntimeIdentifier", "win-x64",
                     "-ExpectedVersion", "1.1.3",
                     "-OutputPath", expectedManifest
-                    ],
-                    root).ConfigureAwait(false);
-                Assert.Equal(0, expected.ExitCode);
+                ],
+                root);
+            Assert.Equal(0, expected.ExitCode);
 
-                var validPackage = Path.Combine(root, "valid.zip");
-                await ZipFile.CreateFromDirectoryAsync(
-                    runtime,
-                    validPackage,
-                    TestContext.Current.CancellationToken).ConfigureAwait(true);
-                var valid = await RunPowerShell(
-                    validator,
-                    [
-                        "-PackagePath", validPackage,
+            var validPackage = Path.Combine(root, "valid.zip");
+            ZipFile.CreateFromDirectory(runtime, validPackage);
+            var valid = RunPowerShell(
+                validator,
+                [
+                    "-PackagePath", validPackage,
                     "-PackageKind", "zip",
                     "-RuntimeIdentifier", "win-x64",
                     "-ExpectedManifestPath", expectedManifest,
                     "-OutputPath", Path.Combine(root, "valid-manifest.json")
-                    ],
-                    root).ConfigureAwait(false);
-                Assert.Equal(0, valid.ExitCode);
+                ],
+                root);
+            Assert.Equal(0, valid.ExitCode);
 
-                File.Delete(desktopDependency);
-                var omittedDependencyPackage = Path.Combine(root, "omitted-dependency.zip");
-                await ZipFile.CreateFromDirectoryAsync(
-                    runtime,
-                    omittedDependencyPackage,
-                    TestContext.Current.CancellationToken).ConfigureAwait(true);
-                var omittedDependency = await RunPowerShell(
-                    validator,
-                    [
-                        "-PackagePath", omittedDependencyPackage,
+            File.Delete(desktopDependency);
+            var omittedDependencyPackage = Path.Combine(root, "omitted-dependency.zip");
+            ZipFile.CreateFromDirectory(runtime, omittedDependencyPackage);
+            var omittedDependency = RunPowerShell(
+                validator,
+                [
+                    "-PackagePath", omittedDependencyPackage,
                     "-PackageKind", "zip",
                     "-RuntimeIdentifier", "win-x64",
                     "-ExpectedManifestPath", expectedManifest,
                     "-OutputPath", Path.Combine(root, "omitted-dependency-manifest.json")
-                    ],
-                    root).ConfigureAwait(false);
-                Assert.NotEqual(0, omittedDependency.ExitCode);
-                Assert.Contains("does not match the validated publish manifest", NormalizeDiagnostic(omittedDependency), StringComparison.Ordinal);
+                ],
+                root);
+            Assert.NotEqual(0, omittedDependency.ExitCode);
+            Assert.Contains("does not match the validated publish manifest", NormalizeDiagnostic(omittedDependency), StringComparison.Ordinal);
 
-                WriteNonEmptyFile(desktopDependency);
-                await File.AppendAllTextAsync(
-                    desktopDependency,
-                    "corrupted",
-                    TestContext.Current.CancellationToken).ConfigureAwait(true);
-                var corruptedDependencyPackage = Path.Combine(root, "corrupted-dependency.zip");
-                await ZipFile.CreateFromDirectoryAsync(
-                    runtime,
-                    corruptedDependencyPackage,
-                    TestContext.Current.CancellationToken).ConfigureAwait(true);
-                var corruptedDependency = await RunPowerShell(
-                    validator,
-                    [
-                        "-PackagePath", corruptedDependencyPackage,
+            WriteNonEmptyFile(desktopDependency);
+            File.AppendAllText(desktopDependency, "corrupted");
+            var corruptedDependencyPackage = Path.Combine(root, "corrupted-dependency.zip");
+            ZipFile.CreateFromDirectory(runtime, corruptedDependencyPackage);
+            var corruptedDependency = RunPowerShell(
+                validator,
+                [
+                    "-PackagePath", corruptedDependencyPackage,
                     "-PackageKind", "zip",
                     "-RuntimeIdentifier", "win-x64",
                     "-ExpectedManifestPath", expectedManifest,
                     "-OutputPath", Path.Combine(root, "corrupted-dependency-manifest.json")
-                    ],
-                    root).ConfigureAwait(false);
-                Assert.NotEqual(0, corruptedDependency.ExitCode);
-                Assert.Contains("does not match the validated publish manifest", NormalizeDiagnostic(corruptedDependency), StringComparison.Ordinal);
-                WriteNonEmptyFile(desktopDependency);
+                ],
+                root);
+            Assert.NotEqual(0, corruptedDependency.ExitCode);
+            Assert.Contains("does not match the validated publish manifest", NormalizeDiagnostic(corruptedDependency), StringComparison.Ordinal);
+            WriteNonEmptyFile(desktopDependency);
 
-                await File.AppendAllTextAsync(
-                    ffmpeg,
-                    "substituted",
-                    TestContext.Current.CancellationToken).ConfigureAwait(true);
-                var substitutedPackage = Path.Combine(root, "substituted.zip");
-                await ZipFile.CreateFromDirectoryAsync(
-                    runtime,
-                    substitutedPackage,
-                    TestContext.Current.CancellationToken).ConfigureAwait(true);
-                var substituted = await RunPowerShell(
-                    validator,
-                    [
-                        "-PackagePath", substitutedPackage,
+            File.AppendAllText(ffmpeg, "substituted");
+            var substitutedPackage = Path.Combine(root, "substituted.zip");
+            ZipFile.CreateFromDirectory(runtime, substitutedPackage);
+            var substituted = RunPowerShell(
+                validator,
+                [
+                    "-PackagePath", substitutedPackage,
                     "-PackageKind", "zip",
                     "-RuntimeIdentifier", "win-x64",
                     "-ExpectedManifestPath", expectedManifest,
                     "-OutputPath", Path.Combine(root, "substituted-manifest.json")
-                    ],
-                    root).ConfigureAwait(false);
-                Assert.NotEqual(0, substituted.ExitCode);
-                Assert.Contains("does not match the validated publish manifest", NormalizeDiagnostic(substituted), StringComparison.Ordinal);
-                WritePeFile(ffmpeg, 0x8664);
+                ],
+                root);
+            Assert.NotEqual(0, substituted.ExitCode);
+            Assert.Contains("does not match the validated publish manifest", NormalizeDiagnostic(substituted), StringComparison.Ordinal);
+            WritePeFile(ffmpeg, 0x8664);
 
-                WritePeFile(aria, 0x014c);
-                var wrongArchitecturePackage = Path.Combine(root, "wrong-architecture.zip");
-                await ZipFile.CreateFromDirectoryAsync(
-                    runtime,
-                    wrongArchitecturePackage,
-                    TestContext.Current.CancellationToken).ConfigureAwait(true);
-                var wrongArchitecture = await RunPowerShell(
-                    validator,
-                    [
-                        "-PackagePath", wrongArchitecturePackage,
+            WritePeFile(aria, 0x014c);
+            var wrongArchitecturePackage = Path.Combine(root, "wrong-architecture.zip");
+            ZipFile.CreateFromDirectory(runtime, wrongArchitecturePackage);
+            var wrongArchitecture = RunPowerShell(
+                validator,
+                [
+                    "-PackagePath", wrongArchitecturePackage,
                     "-PackageKind", "zip",
                     "-RuntimeIdentifier", "win-x64",
                     "-ExpectedManifestPath", expectedManifest,
                     "-OutputPath", Path.Combine(root, "wrong-architecture-manifest.json")
-                    ],
-                    root).ConfigureAwait(false);
-                Assert.NotEqual(0, wrongArchitecture.ExitCode);
-                Assert.Contains("does not match win-x64", NormalizeDiagnostic(wrongArchitecture), StringComparison.Ordinal);
-                WritePeFile(aria, 0x8664);
-                ariaHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
-                    await File.ReadAllBytesAsync(aria, TestContext.Current.CancellationToken).ConfigureAwait(true)));
-                await File.WriteAllTextAsync(
-                    Path.Combine(runtime, "aria2", "aria2c.exe.sha256"),
-                    ariaHash,
-                    TestContext.Current.CancellationToken).ConfigureAwait(true);
+                ],
+                root);
+            Assert.NotEqual(0, wrongArchitecture.ExitCode);
+            Assert.Contains("does not match win-x64", NormalizeDiagnostic(wrongArchitecture), StringComparison.Ordinal);
+            WritePeFile(aria, 0x8664);
+            ariaHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(aria)));
+            File.WriteAllText(Path.Combine(runtime, "aria2", "aria2c.exe.sha256"), ariaHash);
 
-                File.Delete(Path.Combine(runtime, "Avalonia.Themes.Fluent.dll"));
-                var mutatedPackage = Path.Combine(root, "mutated.zip");
-                await ZipFile.CreateFromDirectoryAsync(
-                    runtime,
-                    mutatedPackage,
-                    TestContext.Current.CancellationToken).ConfigureAwait(true);
-                var mutated = await RunPowerShell(
-                    validator,
-                    [
-                        "-PackagePath", mutatedPackage,
+            File.Delete(Path.Combine(runtime, "Avalonia.Themes.Fluent.dll"));
+            var mutatedPackage = Path.Combine(root, "mutated.zip");
+            ZipFile.CreateFromDirectory(runtime, mutatedPackage);
+            var mutated = RunPowerShell(
+                validator,
+                [
+                    "-PackagePath", mutatedPackage,
                     "-PackageKind", "zip",
                     "-RuntimeIdentifier", "win-x64",
                     "-ExpectedManifestPath", expectedManifest,
                     "-OutputPath", Path.Combine(root, "mutated-manifest.json")
-                    ],
-                    root).ConfigureAwait(false);
-                Assert.NotEqual(0, mutated.ExitCode);
-                Assert.Contains("Avalonia Fluent theme assembly", NormalizeDiagnostic(mutated), StringComparison.Ordinal);
+                ],
+                root);
+            Assert.NotEqual(0, mutated.ExitCode);
+            Assert.Contains("Avalonia Fluent theme assembly", NormalizeDiagnostic(mutated), StringComparison.Ordinal);
 
-                WriteNonEmptyFile(Path.Combine(runtime, "Avalonia.Themes.Fluent.dll"));
-                File.Copy(typeof(string).Assembly.Location, Path.Combine(runtime, "DownKyi.dll"), overwrite: true);
-                var wrongVersionPackage = Path.Combine(root, "wrong-version.zip");
-                await ZipFile.CreateFromDirectoryAsync(
-                    runtime,
-                    wrongVersionPackage,
-                    TestContext.Current.CancellationToken).ConfigureAwait(true);
-                var wrongVersion = await RunPowerShell(
-                    validator,
-                    [
-                        "-PackagePath", wrongVersionPackage,
+            WriteNonEmptyFile(Path.Combine(runtime, "Avalonia.Themes.Fluent.dll"));
+            File.Copy(typeof(string).Assembly.Location, Path.Combine(runtime, "DownKyi.dll"), overwrite: true);
+            var wrongVersionPackage = Path.Combine(root, "wrong-version.zip");
+            ZipFile.CreateFromDirectory(runtime, wrongVersionPackage);
+            var wrongVersion = RunPowerShell(
+                validator,
+                [
+                    "-PackagePath", wrongVersionPackage,
                     "-PackageKind", "zip",
                     "-RuntimeIdentifier", "win-x64",
                     "-ExpectedManifestPath", expectedManifest,
                     "-OutputPath", Path.Combine(root, "wrong-version-manifest.json")
-                    ],
-                    root).ConfigureAwait(false);
-                Assert.NotEqual(0, wrongVersion.ExitCode);
-                Assert.Contains("does not match expected version", NormalizeDiagnostic(wrongVersion), StringComparison.Ordinal);
-            },
-            () => DeleteTemporaryDirectoryAsync(root)).ConfigureAwait(true);
+                ],
+                root);
+            Assert.NotEqual(0, wrongVersion.ExitCode);
+            Assert.Contains("does not match expected version", NormalizeDiagnostic(wrongVersion), StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(root);
+        }
     }
 
     [System.Runtime.Versioning.SupportedOSPlatform("linux")]
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
         "xUnit",
         "xUnit1013:Public method should be marked as test")]
-    public static async Task LinuxReleasePackageValidationRejectsMissingExecuteBits()
+    public static void LinuxReleasePackageValidationRejectsMissingExecuteBits()
     {
         var root = CreateTemporaryDirectory();
-        await ExternalProcessTestHarness.RunWithCleanupAsync(
-            async () =>
-            {
-                var package = await CreateLinuxDebPackageAsync(root, "amd64", includeExecuteBits: false).ConfigureAwait(false);
-                var result = await RunPowerShell(
-                    Path.Combine(RepositoryRoot, "script", "validate-v113-release-package.ps1"),
-                    [
-                        "-PackagePath", package,
+        try
+        {
+            var package = CreateLinuxDebPackage(root, "amd64", includeExecuteBits: false);
+            var result = RunPowerShell(
+                Path.Combine(RepositoryRoot, "script", "validate-v113-release-package.ps1"),
+                [
+                    "-PackagePath", package,
                     "-PackageKind", "deb",
                     "-RuntimeIdentifier", "linux-x64",
                     "-ExpectedManifestPath", package + ".expected.json",
                     "-OutputPath", Path.Combine(root, "permission-manifest.json")
-                    ],
-                    root).ConfigureAwait(false);
+                ],
+                root);
 
-                Assert.NotEqual(0, result.ExitCode);
-                Assert.Contains("not executable by a non-owner", NormalizeDiagnostic(result), StringComparison.Ordinal);
-            },
-            () => DeleteTemporaryDirectoryAsync(root)).ConfigureAwait(true);
+            Assert.NotEqual(0, result.ExitCode);
+            Assert.Contains("not executable by a non-owner", NormalizeDiagnostic(result), StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(root);
+        }
     }
 
     [System.Runtime.Versioning.SupportedOSPlatform("linux")]
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
         "xUnit",
         "xUnit1013:Public method should be marked as test")]
-    public static async Task LinuxReleasePackageValidationRejectsArchitectureMismatch()
+    public static void LinuxReleasePackageValidationRejectsArchitectureMismatch()
     {
         var root = CreateTemporaryDirectory();
-        await ExternalProcessTestHarness.RunWithCleanupAsync(
-            async () =>
-            {
-                var package = await CreateLinuxDebPackageAsync(root, "amd64", includeExecuteBits: true).ConfigureAwait(false);
-                var result = await RunPowerShell(
-                    Path.Combine(RepositoryRoot, "script", "validate-v113-release-package.ps1"),
-                    [
-                        "-PackagePath", package,
+        try
+        {
+            var package = CreateLinuxDebPackage(root, "amd64", includeExecuteBits: true);
+            var result = RunPowerShell(
+                Path.Combine(RepositoryRoot, "script", "validate-v113-release-package.ps1"),
+                [
+                    "-PackagePath", package,
                     "-PackageKind", "deb",
                     "-RuntimeIdentifier", "linux-arm64",
                     "-ExpectedManifestPath", package + ".expected.json",
                     "-OutputPath", Path.Combine(root, "architecture-manifest.json")
-                    ],
-                    root).ConfigureAwait(false);
+                ],
+                root);
 
-                Assert.NotEqual(0, result.ExitCode);
-                Assert.Contains("architecture amd64 does not match linux-arm64", NormalizeDiagnostic(result), StringComparison.Ordinal);
-            },
-            () => DeleteTemporaryDirectoryAsync(root)).ConfigureAwait(true);
+            Assert.NotEqual(0, result.ExitCode);
+            Assert.Contains("architecture amd64 does not match linux-arm64", NormalizeDiagnostic(result), StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(root);
+        }
     }
 
     [System.Runtime.Versioning.SupportedOSPlatform("linux")]
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
         "xUnit",
         "xUnit1013:Public method should be marked as test")]
-    public static async Task LinuxReleasePackageValidationRejectsOwnerOnlyExecuteBits()
+    public static void LinuxReleasePackageValidationRejectsOwnerOnlyExecuteBits()
     {
         var root = CreateTemporaryDirectory();
-        await ExternalProcessTestHarness.RunWithCleanupAsync(
-            async () =>
-            {
-                var package = await CreateLinuxDebPackageAsync(
-                    root,
-                    "amd64",
-                    includeExecuteBits: true,
-                    ownerOnlyExecute: true).ConfigureAwait(false);
-                var result = await RunPowerShell(
-                    Path.Combine(RepositoryRoot, "script", "validate-v113-release-package.ps1"),
-                    [
-                        "-PackagePath", package,
+        try
+        {
+            var package = CreateLinuxDebPackage(
+                root,
+                "amd64",
+                includeExecuteBits: true,
+                ownerOnlyExecute: true);
+            var result = RunPowerShell(
+                Path.Combine(RepositoryRoot, "script", "validate-v113-release-package.ps1"),
+                [
+                    "-PackagePath", package,
                     "-PackageKind", "deb",
                     "-RuntimeIdentifier", "linux-x64",
                     "-ExpectedManifestPath", package + ".expected.json",
                     "-OutputPath", Path.Combine(root, "owner-only-manifest.json")
-                    ],
-                    root).ConfigureAwait(false);
+                ],
+                root);
 
-                Assert.NotEqual(0, result.ExitCode);
-                Assert.Contains("not executable by a non-owner", NormalizeDiagnostic(result), StringComparison.Ordinal);
-            },
-            () => DeleteTemporaryDirectoryAsync(root)).ConfigureAwait(true);
+            Assert.NotEqual(0, result.ExitCode);
+            Assert.Contains("not executable by a non-owner", NormalizeDiagnostic(result), StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(root);
+        }
     }
 
     [System.Runtime.Versioning.SupportedOSPlatform("linux")]
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
         "xUnit",
         "xUnit1013:Public method should be marked as test")]
-    public static async Task LinuxReleasePackageValidationRejectsCrossFormatBinary()
+    public static void LinuxReleasePackageValidationRejectsCrossFormatBinary()
     {
         var root = CreateTemporaryDirectory();
-        await ExternalProcessTestHarness.RunWithCleanupAsync(
-            async () =>
-            {
-                var package = await CreateLinuxDebPackageAsync(
-                    root,
-                    "amd64",
-                    includeExecuteBits: true,
-                    crossFormatExecutable: true).ConfigureAwait(false);
-                var result = await RunPowerShell(
-                    Path.Combine(RepositoryRoot, "script", "validate-v113-release-package.ps1"),
-                    [
-                        "-PackagePath", package,
+        try
+        {
+            var package = CreateLinuxDebPackage(
+                root,
+                "amd64",
+                includeExecuteBits: true,
+                crossFormatExecutable: true);
+            var result = RunPowerShell(
+                Path.Combine(RepositoryRoot, "script", "validate-v113-release-package.ps1"),
+                [
+                    "-PackagePath", package,
                     "-PackageKind", "deb",
                     "-RuntimeIdentifier", "linux-x64",
                     "-ExpectedManifestPath", package + ".expected.json",
                     "-OutputPath", Path.Combine(root, "cross-format-manifest.json")
-                    ],
-                    root).ConfigureAwait(false);
+                ],
+                root);
 
-                Assert.NotEqual(0, result.ExitCode);
-                Assert.Contains("does not match linux-x64", NormalizeDiagnostic(result), StringComparison.Ordinal);
-            },
-            () => DeleteTemporaryDirectoryAsync(root)).ConfigureAwait(true);
+            Assert.NotEqual(0, result.ExitCode);
+            Assert.Contains("does not match linux-x64", NormalizeDiagnostic(result), StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(root);
+        }
     }
 
     [System.Runtime.Versioning.SupportedOSPlatform("linux")]
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
         "xUnit",
         "xUnit1013:Public method should be marked as test")]
-    public static async Task LinuxReleasePackageValidationRejectsMixedElfArchitectures()
+    public static void LinuxReleasePackageValidationRejectsMixedElfArchitectures()
     {
         var root = CreateTemporaryDirectory();
-        await ExternalProcessTestHarness.RunWithCleanupAsync(
-            async () =>
-            {
-                var package = await CreateLinuxDebPackageAsync(
-                    root,
-                    "amd64",
-                    includeExecuteBits: true,
-                    mixedArchitectureLibrary: true).ConfigureAwait(false);
-                var result = await RunPowerShell(
-                    Path.Combine(RepositoryRoot, "script", "validate-v113-release-package.ps1"),
-                    [
-                        "-PackagePath", package,
+        try
+        {
+            var package = CreateLinuxDebPackage(
+                root,
+                "amd64",
+                includeExecuteBits: true,
+                mixedArchitectureLibrary: true);
+            var result = RunPowerShell(
+                Path.Combine(RepositoryRoot, "script", "validate-v113-release-package.ps1"),
+                [
+                    "-PackagePath", package,
                     "-PackageKind", "deb",
                     "-RuntimeIdentifier", "linux-x64",
                     "-ExpectedManifestPath", package + ".expected.json",
                     "-OutputPath", Path.Combine(root, "mixed-elf-manifest.json")
-                    ],
-                    root).ConfigureAwait(false);
+                ],
+                root);
 
-                Assert.NotEqual(0, result.ExitCode);
-                Assert.Contains("wrong-architecture-fixture.so", NormalizeDiagnostic(result), StringComparison.Ordinal);
-                Assert.Contains("does not match linux-x64", NormalizeDiagnostic(result), StringComparison.Ordinal);
-            },
-            () => DeleteTemporaryDirectoryAsync(root)).ConfigureAwait(true);
+            Assert.NotEqual(0, result.ExitCode);
+            Assert.Contains("wrong-architecture-fixture.so", NormalizeDiagnostic(result), StringComparison.Ordinal);
+            Assert.Contains("does not match linux-x64", NormalizeDiagnostic(result), StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(root);
+        }
     }
 
     [System.Runtime.Versioning.SupportedOSPlatform("linux")]
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
         "xUnit",
         "xUnit1013:Public method should be marked as test")]
-    public static async Task LinuxReleasePackageValidationRejectsMissingAppImageEntrypoint()
+    public static void LinuxReleasePackageValidationRejectsMissingAppImageEntrypoint()
     {
         var root = CreateTemporaryDirectory();
-        await ExternalProcessTestHarness.RunWithCleanupAsync(
-            async () =>
-            {
-                var validator = Path.Combine(RepositoryRoot, "script", "validate-v113-release-package.ps1");
-                var brokenAppRunFixture = await CreateLinuxAppImageFixtureAsync(
-                    Path.Combine(root, "broken-app-run"),
-                    AppRunFixtureKind.RegularExitsImmediately).ConfigureAwait(false);
-                var brokenAppRun = await RunPowerShell(
-                    validator,
-                    [
-                        "-PackagePath", brokenAppRunFixture.Package,
+        try
+        {
+            var validator = Path.Combine(RepositoryRoot, "script", "validate-v113-release-package.ps1");
+            var brokenAppRunFixture = CreateLinuxAppImageFixture(
+                Path.Combine(root, "broken-app-run"),
+                AppRunFixtureKind.RegularExitsImmediately);
+            var brokenAppRun = RunPowerShell(
+                validator,
+                [
+                    "-PackagePath", brokenAppRunFixture.Package,
                     "-PackageKind", "AppImage",
                     "-RuntimeIdentifier", "linux-x64",
                     "-ExpectedManifestPath", brokenAppRunFixture.ExpectedManifest,
                     "-OutputPath", Path.Combine(root, "broken-app-run-manifest.json")
-                    ],
-                    root).ConfigureAwait(false);
-                Assert.NotEqual(0, brokenAppRun.ExitCode);
-                Assert.Contains("AppRun launch smoke exited", NormalizeDiagnostic(brokenAppRun), StringComparison.Ordinal);
+                ],
+                root);
+            Assert.NotEqual(0, brokenAppRun.ExitCode);
+            Assert.Contains("AppRun launch smoke exited", NormalizeDiagnostic(brokenAppRun), StringComparison.Ordinal);
 
-                var wrongStubFixture = await CreateLinuxAppImageFixtureAsync(
-                    Path.Combine(root, "wrong-stub"),
-                    AppRunFixtureKind.ValidSymlink,
-                    outerRuntimeStaysRunning: false).ConfigureAwait(false);
-                var wrongStub = await RunPowerShell(
-                    validator,
-                    [
-                        "-PackagePath", wrongStubFixture.Package,
+            var wrongStubFixture = CreateLinuxAppImageFixture(
+                Path.Combine(root, "wrong-stub"),
+                AppRunFixtureKind.ValidSymlink,
+                outerRuntimeStaysRunning: false);
+            var wrongStub = RunPowerShell(
+                validator,
+                [
+                    "-PackagePath", wrongStubFixture.Package,
                     "-PackageKind", "AppImage",
                     "-RuntimeIdentifier", "linux-x64",
                     "-ExpectedManifestPath", wrongStubFixture.ExpectedManifest,
                     "-OutputPath", Path.Combine(root, "wrong-stub-manifest.json")
-                    ],
-                    root).ConfigureAwait(false);
-                Assert.NotEqual(0, wrongStub.ExitCode);
-                Assert.Contains("AppImage runtime launch smoke exited", NormalizeDiagnostic(wrongStub), StringComparison.Ordinal);
+                ],
+                root);
+            Assert.NotEqual(0, wrongStub.ExitCode);
+            Assert.Contains("AppImage runtime launch smoke exited", NormalizeDiagnostic(wrongStub), StringComparison.Ordinal);
 
-                var mutatedFixture = await CreateLinuxAppImageFixtureAsync(
-                    Path.Combine(root, "missing"),
-                    AppRunFixtureKind.Missing).ConfigureAwait(false);
-                var mutated = await RunPowerShell(
-                    validator,
-                    [
-                        "-PackagePath", mutatedFixture.Package,
+            var mutatedFixture = CreateLinuxAppImageFixture(
+                Path.Combine(root, "missing"),
+                AppRunFixtureKind.Missing);
+            var mutated = RunPowerShell(
+                validator,
+                [
+                    "-PackagePath", mutatedFixture.Package,
                     "-PackageKind", "AppImage",
                     "-RuntimeIdentifier", "linux-x64",
                     "-ExpectedManifestPath", mutatedFixture.ExpectedManifest,
                     "-OutputPath", Path.Combine(root, "missing-appimage-manifest.json")
-                    ],
-                    root).ConfigureAwait(false);
-                Assert.NotEqual(0, mutated.ExitCode);
-                Assert.Contains("entrypoint AppRun is missing", NormalizeDiagnostic(mutated), StringComparison.Ordinal);
+                ],
+                root);
+            Assert.NotEqual(0, mutated.ExitCode);
+            Assert.Contains("entrypoint AppRun is missing", NormalizeDiagnostic(mutated), StringComparison.Ordinal);
 
-                var missingTargetFixture = await CreateLinuxAppImageFixtureAsync(
-                    Path.Combine(root, "missing-target"),
-                    AppRunFixtureKind.MissingTarget).ConfigureAwait(false);
-                var missingTarget = await RunPowerShell(
-                    validator,
-                    [
-                        "-PackagePath", missingTargetFixture.Package,
+            var missingTargetFixture = CreateLinuxAppImageFixture(
+                Path.Combine(root, "missing-target"),
+                AppRunFixtureKind.MissingTarget);
+            var missingTarget = RunPowerShell(
+                validator,
+                [
+                    "-PackagePath", missingTargetFixture.Package,
                     "-PackageKind", "AppImage",
                     "-RuntimeIdentifier", "linux-x64",
                     "-ExpectedManifestPath", missingTargetFixture.ExpectedManifest,
                     "-OutputPath", Path.Combine(root, "missing-target-manifest.json")
-                    ],
-                    root).ConfigureAwait(false);
-                Assert.NotEqual(0, missingTarget.ExitCode);
-                Assert.Contains("symlink target does not exist", NormalizeDiagnostic(missingTarget), StringComparison.Ordinal);
+                ],
+                root);
+            Assert.NotEqual(0, missingTarget.ExitCode);
+            Assert.Contains("symlink target does not exist", NormalizeDiagnostic(missingTarget), StringComparison.Ordinal);
 
-                var wrongTargetFixture = await CreateLinuxAppImageFixtureAsync(
-                    Path.Combine(root, "wrong-target"),
-                    AppRunFixtureKind.WrongTarget).ConfigureAwait(false);
-                var wrongTarget = await RunPowerShell(
-                    validator,
-                    [
-                        "-PackagePath", wrongTargetFixture.Package,
+            var wrongTargetFixture = CreateLinuxAppImageFixture(
+                Path.Combine(root, "wrong-target"),
+                AppRunFixtureKind.WrongTarget);
+            var wrongTarget = RunPowerShell(
+                validator,
+                [
+                    "-PackagePath", wrongTargetFixture.Package,
                     "-PackageKind", "AppImage",
                     "-RuntimeIdentifier", "linux-x64",
                     "-ExpectedManifestPath", wrongTargetFixture.ExpectedManifest,
                     "-OutputPath", Path.Combine(root, "wrong-target-manifest.json")
-                    ],
-                    root).ConfigureAwait(false);
-                Assert.NotEqual(0, wrongTarget.ExitCode);
-                Assert.Contains("symlink target is incorrect", NormalizeDiagnostic(wrongTarget), StringComparison.Ordinal);
+                ],
+                root);
+            Assert.NotEqual(0, wrongTarget.ExitCode);
+            Assert.Contains("symlink target is incorrect", NormalizeDiagnostic(wrongTarget), StringComparison.Ordinal);
 
-                var nonExecutableTargetFixture = await CreateLinuxAppImageFixtureAsync(
-                    Path.Combine(root, "non-executable-target"),
-                    AppRunFixtureKind.NonExecutableTarget).ConfigureAwait(false);
-                var nonExecutableTarget = await RunPowerShell(
-                    validator,
-                    [
-                        "-PackagePath", nonExecutableTargetFixture.Package,
+            var nonExecutableTargetFixture = CreateLinuxAppImageFixture(
+                Path.Combine(root, "non-executable-target"),
+                AppRunFixtureKind.NonExecutableTarget);
+            var nonExecutableTarget = RunPowerShell(
+                validator,
+                [
+                    "-PackagePath", nonExecutableTargetFixture.Package,
                     "-PackageKind", "AppImage",
                     "-RuntimeIdentifier", "linux-x64",
                     "-ExpectedManifestPath", nonExecutableTargetFixture.ExpectedManifest,
                     "-OutputPath", Path.Combine(root, "non-executable-target-manifest.json")
-                    ],
-                    root).ConfigureAwait(false);
-                Assert.NotEqual(0, nonExecutableTarget.ExitCode);
-                Assert.Contains("symlink target is not executable", NormalizeDiagnostic(nonExecutableTarget), StringComparison.Ordinal);
+                ],
+                root);
+            Assert.NotEqual(0, nonExecutableTarget.ExitCode);
+            Assert.Contains("symlink target is not executable", NormalizeDiagnostic(nonExecutableTarget), StringComparison.Ordinal);
 
-                var validFixture = await CreateLinuxAppImageFixtureAsync(
-                    Path.Combine(root, "valid"),
-                    AppRunFixtureKind.ValidSymlink).ConfigureAwait(false);
-                var valid = await RunPowerShell(
-                    validator,
-                    [
-                        "-PackagePath", validFixture.Package,
+            var validFixture = CreateLinuxAppImageFixture(
+                Path.Combine(root, "valid"),
+                AppRunFixtureKind.ValidSymlink);
+            var valid = RunPowerShell(
+                validator,
+                [
+                    "-PackagePath", validFixture.Package,
                     "-PackageKind", "AppImage",
                     "-RuntimeIdentifier", "linux-x64",
                     "-ExpectedManifestPath", validFixture.ExpectedManifest,
                     "-OutputPath", Path.Combine(root, "valid-appimage-manifest.json")
-                    ],
-                    root).ConfigureAwait(false);
-                Assert.Equal(0, valid.ExitCode);
-            },
-            () => DeleteTemporaryDirectoryAsync(root)).ConfigureAwait(true);
+                ],
+                root);
+            Assert.Equal(0, valid.ExitCode);
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(root);
+        }
     }
 
     [System.Runtime.Versioning.SupportedOSPlatform("linux")]
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
         "xUnit",
         "xUnit1013:Public method should be marked as test")]
-    public static async Task LinuxReleasePackageValidationRejectsPackageManagerVersionMismatch()
+    public static void LinuxReleasePackageValidationRejectsPackageManagerVersionMismatch()
     {
         var root = CreateTemporaryDirectory();
-        await ExternalProcessTestHarness.RunWithCleanupAsync(
-            async () =>
-            {
-                var validator = Path.Combine(RepositoryRoot, "script", "validate-v113-release-package.ps1");
-                var debPackage = await CreateLinuxDebPackageAsync(
-                    root,
-                    "amd64",
-                    includeExecuteBits: true,
-                    version: "1.1.2").ConfigureAwait(false);
-                var debResult = await RunPowerShell(
-                    validator,
-                    [
-                        "-PackagePath", debPackage,
+        try
+        {
+            var validator = Path.Combine(RepositoryRoot, "script", "validate-v113-release-package.ps1");
+            var debPackage = CreateLinuxDebPackage(
+                root,
+                "amd64",
+                includeExecuteBits: true,
+                version: "1.1.2");
+            var debResult = RunPowerShell(
+                validator,
+                [
+                    "-PackagePath", debPackage,
                     "-PackageKind", "deb",
                     "-RuntimeIdentifier", "linux-x64",
                     "-ExpectedManifestPath", debPackage + ".expected.json",
                     "-OutputPath", Path.Combine(root, "deb-version-manifest.json")
-                    ],
-                    root).ConfigureAwait(false);
-                Assert.NotEqual(0, debResult.ExitCode);
-                Assert.Contains("package version 1.1.2-1 does not match 1.1.3-1", NormalizeDiagnostic(debResult), StringComparison.Ordinal);
+                ],
+                root);
+            Assert.NotEqual(0, debResult.ExitCode);
+            Assert.Contains("package version 1.1.2-1 does not match 1.1.3-1", NormalizeDiagnostic(debResult), StringComparison.Ordinal);
 
-                var rpmPackage = await CreateLinuxRpmPackageAsync(root, "x86_64", "1.1.2").ConfigureAwait(false);
-                var rpmResult = await RunPowerShell(
-                    validator,
-                    [
-                        "-PackagePath", rpmPackage,
+            var rpmPackage = CreateLinuxRpmPackage(root, "x86_64", "1.1.2");
+            var rpmResult = RunPowerShell(
+                validator,
+                [
+                    "-PackagePath", rpmPackage,
                     "-PackageKind", "rpm",
                     "-RuntimeIdentifier", "linux-x64",
                     "-ExpectedManifestPath", rpmPackage + ".expected.json",
                     "-OutputPath", Path.Combine(root, "rpm-version-manifest.json")
-                    ],
-                    root).ConfigureAwait(false);
-                Assert.NotEqual(0, rpmResult.ExitCode);
-                Assert.Contains("package EVR 0:1.1.2-1 does not match 0:1.1.3-1", NormalizeDiagnostic(rpmResult), StringComparison.Ordinal);
-            },
-            () => DeleteTemporaryDirectoryAsync(root)).ConfigureAwait(true);
+                ],
+                root);
+            Assert.NotEqual(0, rpmResult.ExitCode);
+            Assert.Contains("package EVR 0:1.1.2-1 does not match 0:1.1.3-1", NormalizeDiagnostic(rpmResult), StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(root);
+        }
     }
 
     [System.Runtime.Versioning.SupportedOSPlatform("linux")]
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
         "xUnit",
         "xUnit1013:Public method should be marked as test")]
-    public static async Task LinuxReleasePackageValidationRejectsRpmEvrMismatch()
+    public static void LinuxReleasePackageValidationRejectsRpmEvrMismatch()
     {
         var root = CreateTemporaryDirectory();
-        await ExternalProcessTestHarness.RunWithCleanupAsync(
-            async () =>
-            {
-                var validator = Path.Combine(RepositoryRoot, "script", "validate-v113-release-package.ps1");
-                var releasePackage = await CreateLinuxRpmPackageAsync(root, "x86_64", "1.1.3", release: "2").ConfigureAwait(false);
-                var releaseResult = await RunPowerShell(
-                    validator,
-                    [
-                        "-PackagePath", releasePackage,
+        try
+        {
+            var validator = Path.Combine(RepositoryRoot, "script", "validate-v113-release-package.ps1");
+            var releasePackage = CreateLinuxRpmPackage(root, "x86_64", "1.1.3", release: "2");
+            var releaseResult = RunPowerShell(
+                validator,
+                [
+                    "-PackagePath", releasePackage,
                     "-PackageKind", "rpm",
                     "-RuntimeIdentifier", "linux-x64",
                     "-ExpectedManifestPath", releasePackage + ".expected.json",
                     "-OutputPath", Path.Combine(root, "rpm-release-manifest.json")
-                    ],
-                    root).ConfigureAwait(false);
-                Assert.NotEqual(0, releaseResult.ExitCode);
-                Assert.Contains("package EVR 0:1.1.3-2 does not match 0:1.1.3-1", NormalizeDiagnostic(releaseResult), StringComparison.Ordinal);
+                ],
+                root);
+            Assert.NotEqual(0, releaseResult.ExitCode);
+            Assert.Contains("package EVR 0:1.1.3-2 does not match 0:1.1.3-1", NormalizeDiagnostic(releaseResult), StringComparison.Ordinal);
 
-                var epochPackage = await CreateLinuxRpmPackageAsync(root, "x86_64", "1.1.3", epoch: 1).ConfigureAwait(false);
-                var epochResult = await RunPowerShell(
-                    validator,
-                    [
-                        "-PackagePath", epochPackage,
+            var epochPackage = CreateLinuxRpmPackage(root, "x86_64", "1.1.3", epoch: 1);
+            var epochResult = RunPowerShell(
+                validator,
+                [
+                    "-PackagePath", epochPackage,
                     "-PackageKind", "rpm",
                     "-RuntimeIdentifier", "linux-x64",
                     "-ExpectedManifestPath", epochPackage + ".expected.json",
                     "-OutputPath", Path.Combine(root, "rpm-epoch-manifest.json")
-                    ],
-                    root).ConfigureAwait(false);
-                Assert.NotEqual(0, epochResult.ExitCode);
-                Assert.Contains("package EVR 1:1.1.3-1 does not match 0:1.1.3-1", NormalizeDiagnostic(epochResult), StringComparison.Ordinal);
-            },
-            () => DeleteTemporaryDirectoryAsync(root)).ConfigureAwait(true);
+                ],
+                root);
+            Assert.NotEqual(0, epochResult.ExitCode);
+            Assert.Contains("package EVR 1:1.1.3-1 does not match 0:1.1.3-1", NormalizeDiagnostic(epochResult), StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(root);
+        }
     }
 
     [System.Runtime.Versioning.SupportedOSPlatform("linux")]
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
         "xUnit",
         "xUnit1013:Public method should be marked as test")]
-    public static async Task LinuxReleasePackageValidationRejectsPackageManagerIdentityMismatch()
+    public static void LinuxReleasePackageValidationRejectsPackageManagerIdentityMismatch()
     {
         var root = CreateTemporaryDirectory();
-        await ExternalProcessTestHarness.RunWithCleanupAsync(
-            async () =>
-            {
-                var validator = Path.Combine(RepositoryRoot, "script", "validate-v113-release-package.ps1");
-                var debPackage = await CreateLinuxDebPackageAsync(
-                    root,
-                    "amd64",
-                    includeExecuteBits: true,
-                    packageName: "downkyi-fixture").ConfigureAwait(false);
-                var debResult = await RunPowerShell(
-                    validator,
-                    [
-                        "-PackagePath", debPackage,
+        try
+        {
+            var validator = Path.Combine(RepositoryRoot, "script", "validate-v113-release-package.ps1");
+            var debPackage = CreateLinuxDebPackage(
+                root,
+                "amd64",
+                includeExecuteBits: true,
+                packageName: "downkyi-fixture");
+            var debResult = RunPowerShell(
+                validator,
+                [
+                    "-PackagePath", debPackage,
                     "-PackageKind", "deb",
                     "-RuntimeIdentifier", "linux-x64",
                     "-ExpectedManifestPath", debPackage + ".expected.json",
                     "-OutputPath", Path.Combine(root, "deb-identity-manifest.json")
-                    ],
-                    root).ConfigureAwait(false);
-                Assert.NotEqual(0, debResult.ExitCode);
-                Assert.Contains("package identity downkyi-fixture does not match downkyi", NormalizeDiagnostic(debResult), StringComparison.Ordinal);
+                ],
+                root);
+            Assert.NotEqual(0, debResult.ExitCode);
+            Assert.Contains("package identity downkyi-fixture does not match downkyi", NormalizeDiagnostic(debResult), StringComparison.Ordinal);
 
-                var rpmPackage = await CreateLinuxRpmPackageAsync(root, "x86_64", "1.1.3", "downkyi-fixture").ConfigureAwait(false);
-                var rpmResult = await RunPowerShell(
-                    validator,
-                    [
-                        "-PackagePath", rpmPackage,
+            var rpmPackage = CreateLinuxRpmPackage(root, "x86_64", "1.1.3", "downkyi-fixture");
+            var rpmResult = RunPowerShell(
+                validator,
+                [
+                    "-PackagePath", rpmPackage,
                     "-PackageKind", "rpm",
                     "-RuntimeIdentifier", "linux-x64",
                     "-ExpectedManifestPath", rpmPackage + ".expected.json",
                     "-OutputPath", Path.Combine(root, "rpm-identity-manifest.json")
-                    ],
-                    root).ConfigureAwait(false);
-                Assert.NotEqual(0, rpmResult.ExitCode);
-                Assert.Contains("package identity downkyi-fixture does not match downkyi", NormalizeDiagnostic(rpmResult), StringComparison.Ordinal);
-            },
-            () => DeleteTemporaryDirectoryAsync(root)).ConfigureAwait(true);
+                ],
+                root);
+            Assert.NotEqual(0, rpmResult.ExitCode);
+            Assert.Contains("package identity downkyi-fixture does not match downkyi", NormalizeDiagnostic(rpmResult), StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(root);
+        }
     }
 
     private static void WriteNonEmptyFile(string path) => File.WriteAllText(path, "fixture");
@@ -938,7 +888,7 @@ public sealed class V113ReleaseSafetyRegressionTests
     }
 
     [System.Runtime.Versioning.SupportedOSPlatform("linux")]
-    private static async Task<string> CreateLinuxDebPackageAsync(
+    private static string CreateLinuxDebPackage(
         string root,
         string architecture,
         bool includeExecuteBits,
@@ -992,37 +942,26 @@ public sealed class V113ReleaseSafetyRegressionTests
         }
 
         var aria = Path.Combine(runtime, "aria2", "aria2c");
-        var ariaHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
-            await File.ReadAllBytesAsync(aria, TestContext.Current.CancellationToken).ConfigureAwait(true)));
-        await File.WriteAllTextAsync(
-            Path.Combine(runtime, "aria2", "aria2c.sha256"),
-            ariaHash,
-            TestContext.Current.CancellationToken).ConfigureAwait(true);
-        await File.WriteAllTextAsync(
-            Path.Combine(runtime, "DownKyi.deps.json"),
-            "{\"libraries\":{\"Avalonia.Themes.Fluent/fixture\":{}}}",
-            TestContext.Current.CancellationToken).ConfigureAwait(true);
+        var ariaHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(aria)));
+        File.WriteAllText(Path.Combine(runtime, "aria2", "aria2c.sha256"), ariaHash);
+        File.WriteAllText(Path.Combine(runtime, "DownKyi.deps.json"), "{\"libraries\":{\"Avalonia.Themes.Fluent/fixture\":{}}}");
         WriteNonEmptyFile(Path.Combine(runtime, "Avalonia.Themes.Fluent.dll"));
-        await File.WriteAllTextAsync(
+        File.WriteAllText(
             Path.Combine(controlDirectory, "control"),
-            $"Package: {packageName}\nVersion: {version}-1\nArchitecture: {architecture}\nMaintainer: fixture@example.invalid\nDescription: DownKyi release validator fixture\n",
-            TestContext.Current.CancellationToken).ConfigureAwait(true);
+            $"Package: {packageName}\nVersion: {version}-1\nArchitecture: {architecture}\nMaintainer: fixture@example.invalid\nDescription: DownKyi release validator fixture\n");
 
         var package = Path.Combine(root, $"fixture-{architecture}-{includeExecuteBits}-{ownerOnlyExecute}-{version}-{packageName}.deb");
-        await WriteExpectedManifest(
+        WriteExpectedManifest(
             runtime,
             architecture == "amd64" ? "linux-x64" : "linux-arm64",
             package + ".expected.json",
-            root).ConfigureAwait(true);
-        await RunRequired(
-            "dpkg-deb",
-            ["--root-owner-group", "--build", packageRoot, package],
-            root).ConfigureAwait(true);
+            root);
+        RunRequired("dpkg-deb", ["--root-owner-group", "--build", packageRoot, package], root);
         return package;
     }
 
     [System.Runtime.Versioning.SupportedOSPlatform("linux")]
-    private static async Task<string> CreateLinuxRpmPackageAsync(
+    private static string CreateLinuxRpmPackage(
         string root,
         string architecture,
         string version,
@@ -1057,21 +996,14 @@ public sealed class V113ReleaseSafetyRegressionTests
                 UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
         }
         var aria = Path.Combine(runtime, "aria2", "aria2c");
-        var ariaHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
-            await File.ReadAllBytesAsync(aria, TestContext.Current.CancellationToken).ConfigureAwait(true)));
-        await File.WriteAllTextAsync(
-            Path.Combine(runtime, "aria2", "aria2c.sha256"),
-            ariaHash,
-            TestContext.Current.CancellationToken).ConfigureAwait(true);
-        await File.WriteAllTextAsync(
-            Path.Combine(runtime, "DownKyi.deps.json"),
-            "{\"libraries\":{\"Avalonia.Themes.Fluent/fixture\":{}}}",
-            TestContext.Current.CancellationToken).ConfigureAwait(true);
+        var ariaHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(aria)));
+        File.WriteAllText(Path.Combine(runtime, "aria2", "aria2c.sha256"), ariaHash);
+        File.WriteAllText(Path.Combine(runtime, "DownKyi.deps.json"), "{\"libraries\":{\"Avalonia.Themes.Fluent/fixture\":{}}}");
         WriteNonEmptyFile(Path.Combine(runtime, "Avalonia.Themes.Fluent.dll"));
 
         var specPath = Path.Combine(topDirectory, "SPECS", "downkyi-fixture.spec");
         var epochLine = epoch.HasValue ? $"Epoch: {epoch.Value}\n" : string.Empty;
-        await File.WriteAllTextAsync(
+        File.WriteAllText(
             specPath,
             $$"""
             %global _build_id_links none
@@ -1092,14 +1024,10 @@ public sealed class V113ReleaseSafetyRegressionTests
 
             %files
             /usr/lib/downkyi
-            """,
-            TestContext.Current.CancellationToken).ConfigureAwait(true);
-        await RunRequired(
-            "rpmbuild",
-            ["-bb", "--define", $"_topdir {topDirectory}", specPath],
-            root).ConfigureAwait(true);
+            """);
+        RunRequired("rpmbuild", ["-bb", "--define", $"_topdir {topDirectory}", specPath], root);
         var package = Directory.GetFiles(Path.Combine(topDirectory, "RPMS", architecture), "*.rpm").Single();
-        await WriteExpectedManifest(runtime, "linux-x64", package + ".expected.json", root).ConfigureAwait(true);
+        WriteExpectedManifest(runtime, "linux-x64", package + ".expected.json", root);
         return package;
     }
 
@@ -1114,7 +1042,7 @@ public sealed class V113ReleaseSafetyRegressionTests
     }
 
     [System.Runtime.Versioning.SupportedOSPlatform("linux")]
-    private static async Task<(string Package, string ExpectedManifest)> CreateLinuxAppImageFixtureAsync(
+    private static (string Package, string ExpectedManifest) CreateLinuxAppImageFixture(
         string root,
         AppRunFixtureKind appRunKind,
         bool outerRuntimeStaysRunning = true)
@@ -1127,41 +1055,27 @@ public sealed class V113ReleaseSafetyRegressionTests
 
         File.Copy(typeof(V113ReleaseSafetyRegressionTests).Assembly.Location, Path.Combine(runtime, "DownKyi.dll"));
         var downKyiSource = Path.Combine(root, "downkyi-fixture.c");
-        await File.WriteAllTextAsync(
+        File.WriteAllText(
             downKyiSource,
-            "#include <unistd.h>\nint main(void) { sleep(30); return 0; }\n",
-            TestContext.Current.CancellationToken).ConfigureAwait(true);
-        await RunRequired(
-            "gcc",
-            ["-O2", "-o", Path.Combine(runtime, "DownKyi"), downKyiSource],
-            root).ConfigureAwait(true);
+            "#include <unistd.h>\nint main(void) { sleep(30); return 0; }\n");
+        RunRequired("gcc", ["-O2", "-o", Path.Combine(runtime, "DownKyi"), downKyiSource], root);
         var aria = Path.Combine(runtime, "aria2", "aria2c");
         File.Copy("/bin/true", aria);
         File.Copy("/bin/true", Path.Combine(runtime, "ffmpeg", "ffmpeg"));
         File.Copy("/bin/true", Path.Combine(runtime, "ffmpeg", "ffprobe"));
-        var ariaHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
-            await File.ReadAllBytesAsync(aria, TestContext.Current.CancellationToken).ConfigureAwait(true)));
-        await File.WriteAllTextAsync(
-            Path.Combine(runtime, "aria2", "aria2c.sha256"),
-            ariaHash,
-            TestContext.Current.CancellationToken).ConfigureAwait(true);
-        await File.WriteAllTextAsync(
-            Path.Combine(runtime, "DownKyi.deps.json"),
-            "{\"libraries\":{\"Avalonia.Themes.Fluent/fixture\":{}}}",
-            TestContext.Current.CancellationToken).ConfigureAwait(true);
+        var ariaHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(aria)));
+        File.WriteAllText(Path.Combine(runtime, "aria2", "aria2c.sha256"), ariaHash);
+        File.WriteAllText(Path.Combine(runtime, "DownKyi.deps.json"), "{\"libraries\":{\"Avalonia.Themes.Fluent/fixture\":{}}}");
         WriteNonEmptyFile(Path.Combine(runtime, "Avalonia.Themes.Fluent.dll"));
 
         var expectedManifest = Path.Combine(root, "appimage-expected.json");
-        await WriteExpectedManifest(runtime, "linux-x64", expectedManifest, root).ConfigureAwait(true);
+        WriteExpectedManifest(runtime, "linux-x64", expectedManifest, root);
 
         var appRun = Path.Combine(appRoot, "AppRun");
         switch (appRunKind)
         {
             case AppRunFixtureKind.RegularExitsImmediately:
-                await File.WriteAllTextAsync(
-                    appRun,
-                    "#!/bin/sh\nexit 0\n",
-                    TestContext.Current.CancellationToken).ConfigureAwait(true);
+                File.WriteAllText(appRun, "#!/bin/sh\nexit 0\n");
                 File.SetUnixFileMode(
                     appRun,
                     UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
@@ -1217,12 +1131,9 @@ public sealed class V113ReleaseSafetyRegressionTests
             .Replace("__APP_ROOT__", escapedAppRoot, StringComparison.Ordinal)
             .Replace("__OUTER_BEHAVIOR__", outerBehavior, StringComparison.Ordinal);
         var runtimeSourcePath = Path.Combine(root, "appimage-runtime-fixture.c");
-        await File.WriteAllTextAsync(
-            runtimeSourcePath,
-            runtimeSource,
-            TestContext.Current.CancellationToken).ConfigureAwait(true);
+        File.WriteAllText(runtimeSourcePath, runtimeSource);
         var package = Path.Combine(root, appRunKind == AppRunFixtureKind.Missing ? "missing-app-run.AppImage" : "fixture.AppImage");
-        await RunRequired("gcc", ["-O2", "-o", package, runtimeSourcePath], root).ConfigureAwait(true);
+        RunRequired("gcc", ["-O2", "-o", package, runtimeSourcePath], root);
         using (var stream = File.Open(package, FileMode.Open, FileAccess.Write, FileShare.None))
         {
             stream.Position = 8;
@@ -1236,13 +1147,13 @@ public sealed class V113ReleaseSafetyRegressionTests
         return (package, expectedManifest);
     }
 
-    private static async Task WriteExpectedManifest(
+    private static void WriteExpectedManifest(
         string runtime,
         string runtimeIdentifier,
         string outputPath,
         string workingDirectory)
     {
-        var result = await RunPowerShell(
+        var result = RunPowerShell(
             Path.Combine(RepositoryRoot, "script", "validate-publish-output.ps1"),
             [
                 "-PublishDirectory", runtime,
@@ -1250,7 +1161,7 @@ public sealed class V113ReleaseSafetyRegressionTests
                 "-ExpectedVersion", "1.1.3",
                 "-OutputPath", outputPath
             ],
-            workingDirectory).ConfigureAwait(true);
+            workingDirectory);
         if (result.ExitCode != 0)
         {
             throw new InvalidOperationException($"Failed to create expected publish manifest: {NormalizeDiagnostic(result)}");
@@ -1316,7 +1227,7 @@ public sealed class V113ReleaseSafetyRegressionTests
             : normalized[start..];
     }
 
-    private static string NormalizeDiagnostic(ExternalProcessResult result) =>
+    private static string NormalizeDiagnostic(ProcessResult result) =>
         System.Text.RegularExpressions.Regex.Replace(
             $"{result.StandardOutput}\n{result.StandardError}",
             @"\s+",
@@ -1329,7 +1240,7 @@ public sealed class V113ReleaseSafetyRegressionTests
         return path;
     }
 
-    private static Task DeleteTemporaryDirectoryAsync(string path)
+    private static void DeleteTemporaryDirectory(string path)
     {
         if (OperatingSystem.IsWindows())
         {
@@ -1339,10 +1250,9 @@ public sealed class V113ReleaseSafetyRegressionTests
             }
         }
         Directory.Delete(path, recursive: true);
-        return Task.CompletedTask;
     }
 
-    private static async Task<ExternalProcessResult> RunPowerShell(
+    private static ProcessResult RunPowerShell(
         string script,
         IReadOnlyList<string> arguments,
         string workingDirectory,
@@ -1350,20 +1260,20 @@ public sealed class V113ReleaseSafetyRegressionTests
     {
         var allArguments = new List<string> { "-NoLogo", "-NoProfile", "-File", script };
         allArguments.AddRange(arguments);
-        return await RunProcess("pwsh", allArguments, workingDirectory, environment).ConfigureAwait(true);
+        return RunProcess("pwsh", allArguments, workingDirectory, environment);
     }
 
-    private static async Task<ExternalProcessResult> RunRequired(
+    private static ProcessResult RunRequired(
         string executable,
         IReadOnlyList<string> arguments,
         string workingDirectory)
     {
-        var result = await RunProcess(executable, arguments, workingDirectory).ConfigureAwait(true);
+        var result = RunProcess(executable, arguments, workingDirectory);
         Assert.True(result.ExitCode == 0, $"{executable} failed: {result.StandardError}");
         return result;
     }
 
-    private static async Task<ExternalProcessResult> RunProcess(
+    private static ProcessResult RunProcess(
         string executable,
         IReadOnlyList<string> arguments,
         string workingDirectory,
@@ -1395,11 +1305,12 @@ public sealed class V113ReleaseSafetyRegressionTests
             }
         }
 
-        return await ExternalProcessTestHarness.RunAsync(
-            startInfo,
-            TimeSpan.FromSeconds(30),
-            TimeSpan.FromSeconds(5),
-            TestContext.Current.CancellationToken).ConfigureAwait(true);
+        using var process = Process.Start(startInfo);
+        Assert.NotNull(process);
+        var output = process.StandardOutput.ReadToEndAsync();
+        var error = process.StandardError.ReadToEndAsync();
+        Assert.True(process.WaitForExit(30_000), $"Process timed out: {executable}");
+        return new ProcessResult(process.ExitCode, output.GetAwaiter().GetResult(), error.GetAwaiter().GetResult());
     }
 
     private static string FindRepositoryRoot()
@@ -1417,4 +1328,5 @@ public sealed class V113ReleaseSafetyRegressionTests
         throw new DirectoryNotFoundException("Could not locate repository root.");
     }
 
+    private sealed record ProcessResult(int ExitCode, string StandardOutput, string StandardError);
 }

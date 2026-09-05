@@ -3,7 +3,6 @@ using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Xml.Linq;
-using DownKyi.TestInfrastructure;
 
 namespace DownKyi.Architecture.Tests;
 
@@ -287,20 +286,15 @@ public sealed class ReleaseWorkflowArchitectureTests
     }
 
     [Fact]
-    public async Task ExternalAssetDownloadRetriesTransientFailuresAndFailsClosed()
+    public void ExternalAssetDownloadRetriesTransientFailuresAndFailsClosed()
     {
         var helperPath = Path.Combine(RepositoryRoot, "script", "download-external-asset.ps1");
-        var fixtureDirectory = Path.Combine(
-            Path.GetTempPath(),
-            $"downkyi-external-asset-{Guid.NewGuid():N}");
-        var successPath = Path.Combine(fixtureDirectory, "success.zip");
-        var failurePath = Path.Combine(fixtureDirectory, "failure.zip");
         var command = $$"""
             $ErrorActionPreference = 'Stop'
             $ProgressPreference = 'SilentlyContinue'
             . '{{helperPath.Replace("'", "''", StringComparison.Ordinal)}}'
-            $successPath = '{{successPath.Replace("'", "''", StringComparison.Ordinal)}}'
-            $failurePath = '{{failurePath.Replace("'", "''", StringComparison.Ordinal)}}'
+            $successPath = [IO.Path]::GetTempFileName()
+            $failurePath = [IO.Path]::GetTempFileName()
             try {
                 $successAttempts = 0
                 Invoke-ExternalAssetDownload `
@@ -355,37 +349,31 @@ public sealed class ReleaseWorkflowArchitectureTests
             exit 0
             """;
 
-        Directory.CreateDirectory(fixtureDirectory);
-        await ExternalProcessTestHarness.RunWithCleanupAsync(
-            async () =>
+        var encodedCommand = Convert.ToBase64String(Encoding.Unicode.GetBytes(command));
+        using var process = Process.Start(new ProcessStartInfo
+        {
+            FileName = "pwsh",
+            ArgumentList =
             {
-                var encodedCommand = Convert.ToBase64String(Encoding.Unicode.GetBytes(command));
-                var result = await ExternalProcessTestHarness.RunAsync(
-                    new ProcessStartInfo
-                    {
-                        FileName = "pwsh",
-                        ArgumentList =
-                        {
-                            "-NoLogo",
-                            "-NoProfile",
-                            "-NonInteractive",
-                            "-EncodedCommand",
-                            encodedCommand
-                        },
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true,
-                        UseShellExecute = false,
-                        CreateNoWindow = true
-                    },
-                    TimeSpan.FromSeconds(30),
-                    TimeSpan.FromSeconds(5),
-                    TestContext.Current.CancellationToken).ConfigureAwait(true);
-
-                Assert.True(
-                    result.ExitCode == 0,
-                    $"External-asset retry regression failed. stdout={result.StandardOutput} stderr={result.StandardError}");
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-EncodedCommand",
+                encodedCommand
             },
-            () => DeleteDirectoryAsync(fixtureDirectory)).ConfigureAwait(true);
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        });
+        Assert.NotNull(process);
+        Assert.True(process.WaitForExit(30_000), "The external-asset retry regression timed out.");
+
+        var standardOutput = process.StandardOutput.ReadToEnd();
+        var standardError = process.StandardError.ReadToEnd();
+        Assert.True(
+            process.ExitCode == 0,
+            $"External-asset retry regression failed. stdout={standardOutput} stderr={standardError}");
     }
 
     [Fact]
@@ -547,91 +535,82 @@ public sealed class ReleaseWorkflowArchitectureTests
     }
 
     [Fact]
-    public async Task V112MacosTrustResolverRequiresZeroOrAllCredentials()
+    public void V112MacosTrustResolverRequiresZeroOrAllCredentials()
     {
         var script = Path.Combine(RepositoryRoot, "script", "resolve-v112-macos-trust.ps1");
         var outputPath = Path.GetTempFileName();
 
-        await ExternalProcessTestHarness.RunWithCleanupAsync(
-            async () =>
+        try
+        {
+            var adHoc = RunPowerShellScript(
+                script,
+                ["-OutputPath", outputPath],
+                new Dictionary<string, string>());
+            Assert.Equal(0, adHoc.ExitCode);
+            Assert.Contains("ad-hoc", File.ReadAllText(outputPath), StringComparison.Ordinal);
+            Assert.DoesNotContain("developer-id", File.ReadAllText(outputPath), StringComparison.Ordinal);
+
+            IReadOnlyDictionary<string, string> developerIdEnvironment = new Dictionary<string, string>
             {
-                var adHoc = await RunPowerShellScript(
-                    script,
-                    ["-OutputPath", outputPath],
-                    new Dictionary<string, string>()).ConfigureAwait(true);
-                Assert.Equal(0, adHoc.ExitCode);
-                Assert.Contains(
-                    "ad-hoc",
-                    await File.ReadAllTextAsync(outputPath, TestContext.Current.CancellationToken).ConfigureAwait(true),
-                    StringComparison.Ordinal);
-                Assert.DoesNotContain(
-                    "developer-id",
-                    await File.ReadAllTextAsync(outputPath, TestContext.Current.CancellationToken).ConfigureAwait(true),
-                    StringComparison.Ordinal);
+                ["MACOS_CERTIFICATE"] = "fixture-certificate",
+                ["MACOS_CERTIFICATE_PWD"] = "fixture-password",
+                ["APPLE_ID"] = "fixture@example.invalid",
+                ["TEAM_ID"] = "FIXTURETEAM",
+                ["APP_SPECIFIC_PASSWORD"] = "fixture-app-password"
+            };
+            var developerId = RunPowerShellScript(
+                script,
+                ["-OutputPath", outputPath],
+                developerIdEnvironment);
+            Assert.Equal(0, developerId.ExitCode);
+            Assert.Contains("developer-id", File.ReadAllText(outputPath), StringComparison.Ordinal);
 
-                IReadOnlyDictionary<string, string> developerIdEnvironment = new Dictionary<string, string>
-                {
-                    ["MACOS_CERTIFICATE"] = "fixture-certificate",
-                    ["MACOS_CERTIFICATE_PWD"] = "fixture-password",
-                    ["APPLE_ID"] = "fixture@example.invalid",
-                    ["TEAM_ID"] = "FIXTURETEAM",
-                    ["APP_SPECIFIC_PASSWORD"] = "fixture-app-password"
-                };
-                var developerId = await RunPowerShellScript(
-                    script,
-                    ["-OutputPath", outputPath],
-                    developerIdEnvironment).ConfigureAwait(true);
-                Assert.Equal(0, developerId.ExitCode);
-                Assert.Contains(
-                    "developer-id",
-                    await File.ReadAllTextAsync(outputPath, TestContext.Current.CancellationToken).ConfigureAwait(true),
-                    StringComparison.Ordinal);
-
-                var partial = await RunPowerShellScript(
-                    script,
-                    ["-OutputPath", outputPath],
-                    new Dictionary<string, string> { ["APPLE_ID"] = "fixture@example.invalid" }).ConfigureAwait(true);
-                Assert.NotEqual(0, partial.ExitCode);
-                Assert.Contains("Partial Apple credentials", partial.StandardError, StringComparison.Ordinal);
-            },
-            () => DeleteFileAsync(outputPath)).ConfigureAwait(true);
+            var partial = RunPowerShellScript(
+                script,
+                ["-OutputPath", outputPath],
+                new Dictionary<string, string> { ["APPLE_ID"] = "fixture@example.invalid" });
+            Assert.NotEqual(0, partial.ExitCode);
+            Assert.Contains("Partial Apple credentials", partial.StandardError, StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(outputPath);
+        }
     }
 
     [Fact]
-    public async Task V112RecoveryReleaseNotesDiscloseSelectedTrustMode()
+    public void V112RecoveryReleaseNotesDiscloseSelectedTrustMode()
     {
         var script = Path.Combine(RepositoryRoot, "script", "render-v112-recovery-release-notes.ps1");
         var outputPath = Path.GetTempFileName();
 
-        await ExternalProcessTestHarness.RunWithCleanupAsync(
-            async () =>
-            {
-                var adHoc = await RunPowerShellScript(
-                    script,
-                    ["-TrustMode", "ad-hoc", "-OutputPath", outputPath],
-                    new Dictionary<string, string>()).ConfigureAwait(true);
-                Assert.Equal(0, adHoc.ExitCode);
-                var adHocNotes = await File.ReadAllTextAsync(
-                    outputPath,
-                    TestContext.Current.CancellationToken).ConfigureAwait(true);
-                Assert.Contains("ad-hoc identity", adHocNotes, StringComparison.Ordinal);
-                Assert.Contains("not notarized", adHocNotes, StringComparison.Ordinal);
-                Assert.Contains("does not have Gatekeeper distribution trust", adHocNotes, StringComparison.Ordinal);
+        try
+        {
+            var adHoc = RunPowerShellScript(
+                script,
+                ["-TrustMode", "ad-hoc", "-OutputPath", outputPath],
+                new Dictionary<string, string>());
+            Assert.Equal(0, adHoc.ExitCode);
+            var adHocNotes = File.ReadAllText(outputPath);
+            Assert.Contains("ad-hoc identity", adHocNotes, StringComparison.Ordinal);
+            Assert.Contains("not notarized", adHocNotes, StringComparison.Ordinal);
+            Assert.Contains("does not have Gatekeeper distribution trust", adHocNotes, StringComparison.Ordinal);
 
-                var developerId = await RunPowerShellScript(
-                    script,
-                    ["-TrustMode", "developer-id", "-OutputPath", outputPath],
-                    new Dictionary<string, string>()).ConfigureAwait(true);
-                Assert.Equal(0, developerId.ExitCode);
-                var developerIdNotes = await File.ReadAllTextAsync(
-                    outputPath,
-                    TestContext.Current.CancellationToken).ConfigureAwait(true);
-                Assert.Contains("Developer ID", developerIdNotes, StringComparison.Ordinal);
-                Assert.Contains("notarization", developerIdNotes, StringComparison.Ordinal);
-                Assert.Contains("stapling", developerIdNotes, StringComparison.Ordinal);
-                Assert.DoesNotContain("not notarized", developerIdNotes, StringComparison.Ordinal);
-            },
-            () => DeleteFileAsync(outputPath)).ConfigureAwait(true);
+            var developerId = RunPowerShellScript(
+                script,
+                ["-TrustMode", "developer-id", "-OutputPath", outputPath],
+                new Dictionary<string, string>());
+            Assert.Equal(0, developerId.ExitCode);
+            var developerIdNotes = File.ReadAllText(outputPath);
+            Assert.Contains("Developer ID", developerIdNotes, StringComparison.Ordinal);
+            Assert.Contains("notarization", developerIdNotes, StringComparison.Ordinal);
+            Assert.Contains("stapling", developerIdNotes, StringComparison.Ordinal);
+            Assert.DoesNotContain("not notarized", developerIdNotes, StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(outputPath);
+        }
     }
 
     [Fact]
@@ -696,7 +675,7 @@ public sealed class ReleaseWorkflowArchitectureTests
                string.Equals(settings[0].Value.Trim(), "false", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static async Task<ExternalProcessResult> RunPowerShellScript(
+    private static PowerShellResult RunPowerShellScript(
         string script,
         IReadOnlyList<string> arguments,
         IReadOnlyDictionary<string, string> environment)
@@ -736,24 +715,15 @@ public sealed class ReleaseWorkflowArchitectureTests
             startInfo.Environment[pair.Key] = pair.Value;
         }
 
-        return await ExternalProcessTestHarness.RunAsync(
-            startInfo,
-            TimeSpan.FromSeconds(30),
-            TimeSpan.FromSeconds(5),
-            TestContext.Current.CancellationToken).ConfigureAwait(true);
+        using var process = Process.Start(startInfo);
+        Assert.NotNull(process);
+        var standardOutput = process.StandardOutput.ReadToEnd();
+        var standardError = process.StandardError.ReadToEnd();
+        Assert.True(process.WaitForExit(30_000), $"Release trust regression timed out: {script}");
+        return new PowerShellResult(process.ExitCode, standardOutput, standardError);
     }
 
-    private static Task DeleteFileAsync(string path)
-    {
-        File.Delete(path);
-        return Task.CompletedTask;
-    }
-
-    private static Task DeleteDirectoryAsync(string path)
-    {
-        Directory.Delete(path, recursive: true);
-        return Task.CompletedTask;
-    }
+    private sealed record PowerShellResult(int ExitCode, string StandardOutput, string StandardError);
 
     private static void AssertInOrder(string source, params string[] fragments)
     {

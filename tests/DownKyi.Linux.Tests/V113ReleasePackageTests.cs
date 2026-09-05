@@ -7,65 +7,65 @@ namespace DownKyi.Linux.Tests;
 public sealed class V113ReleasePackageTests
 {
     [Fact]
-    public async Task FinalPackageValidationRejectsMissingExecuteBits()
+    public void FinalPackageValidationRejectsMissingExecuteBits()
     {
-        await V113ReleaseSafetyRegressionTests
+        V113ReleaseSafetyRegressionTests
             .LinuxReleasePackageValidationRejectsMissingExecuteBits();
     }
 
     [Fact]
-    public async Task FinalPackageValidationRejectsArchitectureMismatch()
+    public void FinalPackageValidationRejectsArchitectureMismatch()
     {
-        await V113ReleaseSafetyRegressionTests
+        V113ReleaseSafetyRegressionTests
             .LinuxReleasePackageValidationRejectsArchitectureMismatch();
     }
 
     [Fact]
-    public async Task FinalPackageValidationRejectsOwnerOnlyExecuteBits()
+    public void FinalPackageValidationRejectsOwnerOnlyExecuteBits()
     {
-        await V113ReleaseSafetyRegressionTests
+        V113ReleaseSafetyRegressionTests
             .LinuxReleasePackageValidationRejectsOwnerOnlyExecuteBits();
     }
 
     [Fact]
-    public async Task FinalPackageValidationRejectsCrossFormatBinary()
+    public void FinalPackageValidationRejectsCrossFormatBinary()
     {
-        await V113ReleaseSafetyRegressionTests
+        V113ReleaseSafetyRegressionTests
             .LinuxReleasePackageValidationRejectsCrossFormatBinary();
     }
 
     [Fact]
-    public async Task FinalPackageValidationRejectsMixedElfArchitectures()
+    public void FinalPackageValidationRejectsMixedElfArchitectures()
     {
-        await V113ReleaseSafetyRegressionTests
+        V113ReleaseSafetyRegressionTests
             .LinuxReleasePackageValidationRejectsMixedElfArchitectures();
     }
 
     [Fact]
-    public async Task FinalPackageValidationRejectsMissingAppImageEntrypoint()
+    public void FinalPackageValidationRejectsMissingAppImageEntrypoint()
     {
-        await V113ReleaseSafetyRegressionTests
+        V113ReleaseSafetyRegressionTests
             .LinuxReleasePackageValidationRejectsMissingAppImageEntrypoint();
     }
 
     [Fact]
-    public async Task FinalPackageValidationRejectsPackageManagerVersionMismatch()
+    public void FinalPackageValidationRejectsPackageManagerVersionMismatch()
     {
-        await V113ReleaseSafetyRegressionTests
+        V113ReleaseSafetyRegressionTests
             .LinuxReleasePackageValidationRejectsPackageManagerVersionMismatch();
     }
 
     [Fact]
-    public async Task FinalPackageValidationRejectsPackageManagerIdentityMismatch()
+    public void FinalPackageValidationRejectsPackageManagerIdentityMismatch()
     {
-        await V113ReleaseSafetyRegressionTests
+        V113ReleaseSafetyRegressionTests
             .LinuxReleasePackageValidationRejectsPackageManagerIdentityMismatch();
     }
 
     [Fact]
-    public async Task FinalPackageValidationRejectsRpmEvrMismatch()
+    public void FinalPackageValidationRejectsRpmEvrMismatch()
     {
-        await V113ReleaseSafetyRegressionTests
+        V113ReleaseSafetyRegressionTests
             .LinuxReleasePackageValidationRejectsRpmEvrMismatch();
     }
 }

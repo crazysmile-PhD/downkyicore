@@ -1,7 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using DownKyi.CentralTestRunner;
-using DownKyi.TestInfrastructure;
 
 namespace DownKyi.Architecture.Tests;
 
@@ -463,7 +462,8 @@ public sealed class CentralTestRunnerCancellationComponentTests
 
     private static async Task<Process> StartFixtureAsync(ProcessStartInfo startInfo)
     {
-        var process = ExternalProcessTestHarness.Start(startInfo);
+        var process = new Process { StartInfo = startInfo };
+        process.Start();
         try
         {
             var readyLine = await process.StandardOutput.ReadLineAsync()
@@ -511,11 +511,12 @@ public sealed class CentralTestRunnerCancellationComponentTests
 
         using (process)
         {
-            await ExternalProcessTestHarness.StopAsync(
-                process,
-                TestTimeout,
-                process.StandardOutput.ReadToEndAsync(CancellationToken.None),
-                process.StandardError.ReadToEndAsync(CancellationToken.None)).ConfigureAwait(false);
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+
+            await process.WaitForExitAsync().WaitAsync(TestTimeout).ConfigureAwait(false);
         }
     }
 }

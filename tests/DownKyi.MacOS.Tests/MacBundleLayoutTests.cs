@@ -2,7 +2,6 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
-using DownKyi.TestInfrastructure;
 
 namespace DownKyi.MacOS.Tests;
 
@@ -10,213 +9,177 @@ namespace DownKyi.MacOS.Tests;
 public sealed class MacBundleLayoutTests
 {
     private static readonly string RepositoryRoot = FindRepositoryRoot();
-    private static readonly TimeSpan ProcessExecutionTimeout = TimeSpan.FromSeconds(120);
-    private static readonly TimeSpan ProcessCleanupTimeout = TimeSpan.FromSeconds(5);
 
     [Fact]
-    public async Task NonCodePublishFilesMoveToResourcesWithoutBreakingDotNetHost()
+    public void NonCodePublishFilesMoveToResourcesWithoutBreakingDotNetHost()
     {
         var fixtureRoot = Path.Combine(Path.GetTempPath(), $"downkyi-layout-{Guid.NewGuid():N}");
         var publishDirectory = Path.Combine(fixtureRoot, "publish");
         var legacyApp = Path.Combine(fixtureRoot, "Legacy.app");
         var correctedApp = Path.Combine(fixtureRoot, "Corrected.app");
-        var cancellationToken = TestContext.Current.CancellationToken;
 
-        await ExternalProcessTestHarness.RunWithCleanupAsync(
-            async () =>
+        Directory.CreateDirectory(fixtureRoot);
+
+        try
+        {
+            var architecture = RuntimeInformation.ProcessArchitecture switch
             {
-                Directory.CreateDirectory(fixtureRoot);
+                Architecture.X64 => "x64",
+                Architecture.Arm64 => "arm64",
+                _ => throw new PlatformNotSupportedException(
+                    $"Unsupported macOS test architecture: {RuntimeInformation.ProcessArchitecture}")
+            };
 
-                var architecture = RuntimeInformation.ProcessArchitecture switch
-                {
-                    Architecture.X64 => "x64",
-                    Architecture.Arm64 => "arm64",
-                    _ => throw new PlatformNotSupportedException(
-                        $"Unsupported macOS test architecture: {RuntimeInformation.ProcessArchitecture}")
-                };
+            var probeProject = Path.Combine(
+                RepositoryRoot,
+                "script",
+                "macos",
+                "fixtures",
+                "BundleProbe",
+                "BundleProbe.csproj");
+            AssertSuccess(Run(
+                "dotnet",
+                fixtureRoot,
+                "publish",
+                probeProject,
+                "-c",
+                "Release",
+                "-r",
+                $"osx-{architecture}",
+                "--self-contained",
+                "-p:DebugType=None",
+                "-p:DebugSymbols=false",
+                "-o",
+                publishDirectory));
 
-                var probeProject = Path.Combine(
-                    RepositoryRoot,
-                    "script",
-                    "macos",
-                    "fixtures",
-                    "BundleProbe",
-                    "BundleProbe.csproj");
-                AssertSuccess(await RunAsync(
-                    "dotnet",
-                    fixtureRoot,
-                    cancellationToken,
-                    "publish",
-                    probeProject,
-                    "-c",
-                    "Release",
-                    "-r",
-                    $"osx-{architecture}",
-                    "--self-contained",
-                    "-nodeReuse:false",
-                    "-p:UseSharedCompilation=false",
-                    "-p:DebugType=None",
-                    "-p:DebugSymbols=false",
-                    "-o",
-                    publishDirectory).ConfigureAwait(false));
+            CreateAppBundle(legacyApp, publishDirectory);
+            var legacyRuntimeConfig = Path.Combine(
+                legacyApp,
+                "Contents",
+                "MacOS",
+                "BundleProbe.runtimeconfig.json");
+            var legacyDeps = Path.Combine(
+                legacyApp,
+                "Contents",
+                "MacOS",
+                "BundleProbe.deps.json");
+            Assert.True(File.Exists(legacyRuntimeConfig));
+            Assert.Null(new FileInfo(legacyRuntimeConfig).LinkTarget);
+            Assert.True(File.Exists(legacyDeps));
+            Assert.Null(new FileInfo(legacyDeps).LinkTarget);
 
-                await CreateAppBundleAsync(
-                    legacyApp,
-                    publishDirectory,
-                    cancellationToken).ConfigureAwait(false);
-                var legacyRuntimeConfig = Path.Combine(
-                    legacyApp,
-                    "Contents",
-                    "MacOS",
-                    "BundleProbe.runtimeconfig.json");
-                var legacyDeps = Path.Combine(
-                    legacyApp,
-                    "Contents",
-                    "MacOS",
-                    "BundleProbe.deps.json");
-                Assert.True(File.Exists(legacyRuntimeConfig));
-                Assert.Null(new FileInfo(legacyRuntimeConfig).LinkTarget);
-                Assert.True(File.Exists(legacyDeps));
-                Assert.Null(new FileInfo(legacyDeps).LinkTarget);
+            var legacySigning = RunSigningScript(legacyApp);
+            Assert.NotEqual(0, legacySigning.ExitCode);
+            var legacyOutput = legacySigning.StandardOutput + legacySigning.StandardError;
+            Assert.Contains("code object is not signed at all", legacyOutput, StringComparison.Ordinal);
 
-                var legacySigning = await RunSigningScriptAsync(
-                    legacyApp,
-                    cancellationToken).ConfigureAwait(false);
-                Assert.NotEqual(0, legacySigning.ExitCode);
-                var legacyOutput = legacySigning.StandardOutput + legacySigning.StandardError;
-                Assert.Contains("code object is not signed at all", legacyOutput, StringComparison.Ordinal);
+            CreateAppBundle(correctedApp, publishDirectory);
+            AssertSuccess(Run(
+                "/bin/bash",
+                RepositoryRoot,
+                Path.Combine(RepositoryRoot, "script", "macos", "prepare-app-layout.sh"),
+                correctedApp));
 
-                await CreateAppBundleAsync(
-                    correctedApp,
-                    publishDirectory,
-                    cancellationToken).ConfigureAwait(false);
-                AssertSuccess(await RunAsync(
-                    "/bin/bash",
-                    RepositoryRoot,
-                    cancellationToken,
-                    Path.Combine(RepositoryRoot, "script", "macos", "prepare-app-layout.sh"),
-                    correctedApp).ConfigureAwait(false));
+            var runtimeConfigLink = Path.Combine(
+                correctedApp,
+                "Contents",
+                "MacOS",
+                "BundleProbe.runtimeconfig.json");
+            var depsLink = Path.Combine(
+                correctedApp,
+                "Contents",
+                "MacOS",
+                "BundleProbe.deps.json");
+            Assert.NotNull(new FileInfo(runtimeConfigLink).LinkTarget);
+            Assert.NotNull(new FileInfo(depsLink).LinkTarget);
+            Assert.True(File.Exists(Path.Combine(
+                correctedApp,
+                "Contents",
+                "Resources",
+                "dotnet",
+                "BundleProbe.runtimeconfig.json")));
 
-                var runtimeConfigLink = Path.Combine(
-                    correctedApp,
-                    "Contents",
-                    "MacOS",
-                    "BundleProbe.runtimeconfig.json");
-                var depsLink = Path.Combine(
-                    correctedApp,
-                    "Contents",
-                    "MacOS",
-                    "BundleProbe.deps.json");
-                Assert.NotNull(new FileInfo(runtimeConfigLink).LinkTarget);
-                Assert.NotNull(new FileInfo(depsLink).LinkTarget);
-                Assert.True(File.Exists(Path.Combine(
-                    correctedApp,
-                    "Contents",
-                    "Resources",
-                    "dotnet",
-                    "BundleProbe.runtimeconfig.json")));
+            AssertSuccess(RunSigningScript(correctedApp));
+            AssertSuccess(Run(
+                "/bin/bash",
+                RepositoryRoot,
+                Path.Combine(RepositoryRoot, "script", "macos", "verify-app.sh"),
+                correctedApp));
 
-                AssertSuccess(await RunSigningScriptAsync(
-                    correctedApp,
-                    cancellationToken).ConfigureAwait(false));
-                AssertSuccess(await RunAsync(
-                    "/bin/bash",
-                    RepositoryRoot,
-                    cancellationToken,
-                    Path.Combine(RepositoryRoot, "script", "macos", "verify-app.sh"),
-                    correctedApp).ConfigureAwait(false));
-
-                var launch = await RunAsync(
-                    Path.Combine(correctedApp, "Contents", "MacOS", "BundleProbe"),
-                    fixtureRoot,
-                    cancellationToken).ConfigureAwait(false);
-                AssertSuccess(launch);
-            },
-            () => DeleteDirectoryAsync(fixtureRoot)).ConfigureAwait(true);
+            var launch = Run(
+                Path.Combine(correctedApp, "Contents", "MacOS", "BundleProbe"),
+                fixtureRoot);
+            AssertSuccess(launch);
+        }
+        finally
+        {
+            Directory.Delete(fixtureRoot, recursive: true);
+        }
     }
 
     [Fact]
-    public async Task LaunchVerificationBoundsCleanupForTermResistantApp()
+    public void LaunchVerificationBoundsCleanupForTermResistantApp()
     {
         var fixtureRoot = Path.Combine(Path.GetTempPath(), $"downkyi-launch-{Guid.NewGuid():N}");
         var appPath = Path.Combine(fixtureRoot, "Test.app");
         var executableDirectory = Path.Combine(appPath, "Contents", "MacOS");
         var executablePath = Path.Combine(executableDirectory, "TestApp");
-        var cancellationToken = TestContext.Current.CancellationToken;
+        Directory.CreateDirectory(executableDirectory);
 
-        await ExternalProcessTestHarness.RunWithCleanupAsync(
-            async () =>
-            {
-                Directory.CreateDirectory(executableDirectory);
+        try
+        {
+            File.WriteAllText(
+                executablePath,
+                "#!/bin/bash\ntrap '' TERM\nwhile true; do sleep 1; done\n",
+                new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+            AssertSuccess(Run("/bin/chmod", fixtureRoot, "+x", executablePath));
 
-                await File.WriteAllTextAsync(
-                    executablePath,
-                    "#!/bin/bash\ntrap '' TERM\nwhile true; do sleep 1; done\n",
-                    new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
-                    cancellationToken).ConfigureAwait(false);
-                AssertSuccess(await RunAsync(
-                    "/bin/chmod",
-                    fixtureRoot,
-                    cancellationToken,
-                    "+x",
-                    executablePath).ConfigureAwait(false));
+            var stopwatch = Stopwatch.StartNew();
+            var result = Run(
+                "/bin/bash",
+                RepositoryRoot,
+                new Dictionary<string, string?>
+                {
+                    ["MACOS_EXECUTABLE_NAME"] = "TestApp",
+                    ["MACOS_LAUNCH_SECONDS"] = "1"
+                },
+                Path.Combine(RepositoryRoot, "script", "macos", "verify-app-launch.sh"),
+                appPath);
+            stopwatch.Stop();
 
-                var stopwatch = Stopwatch.StartNew();
-                var result = await RunAsync(
-                    "/bin/bash",
-                    RepositoryRoot,
-                    new Dictionary<string, string?>
-                    {
-                        ["MACOS_EXECUTABLE_NAME"] = "TestApp",
-                        ["MACOS_LAUNCH_SECONDS"] = "1"
-                    },
-                    cancellationToken,
-                    Path.Combine(RepositoryRoot, "script", "macos", "verify-app-launch.sh"),
-                    appPath).ConfigureAwait(false);
-                stopwatch.Stop();
-
-                AssertSuccess(result);
-                Assert.True(
-                    stopwatch.Elapsed < TimeSpan.FromSeconds(15),
-                    $"Launch cleanup exceeded its bound: {stopwatch.Elapsed}.");
-            },
-            () => DeleteDirectoryAsync(fixtureRoot)).ConfigureAwait(true);
+            AssertSuccess(result);
+            Assert.True(
+                stopwatch.Elapsed < TimeSpan.FromSeconds(15),
+                $"Launch cleanup exceeded its bound: {stopwatch.Elapsed}.");
+        }
+        finally
+        {
+            Directory.Delete(fixtureRoot, recursive: true);
+        }
     }
 
-    private static Task<ExternalProcessResult> RunSigningScriptAsync(
-        string appPath,
-        CancellationToken cancellationToken)
+    private static ProcessResult RunSigningScript(string appPath)
     {
-        return RunAsync(
+        return Run(
             "/bin/bash",
             RepositoryRoot,
             new Dictionary<string, string?>
             {
                 ["MACOS_ADHOC_SIGNING"] = "true"
             },
-            cancellationToken,
             Path.Combine(RepositoryRoot, "script", "macos", "sign.sh"),
             appPath);
     }
 
-    private static async Task CreateAppBundleAsync(
-        string appPath,
-        string publishDirectory,
-        CancellationToken cancellationToken)
+    private static void CreateAppBundle(string appPath, string publishDirectory)
     {
         var contentsDirectory = Path.Combine(appPath, "Contents");
         var macOsDirectory = Path.Combine(contentsDirectory, "MacOS");
         Directory.CreateDirectory(macOsDirectory);
         Directory.CreateDirectory(Path.Combine(contentsDirectory, "Resources"));
 
-        AssertSuccess(await RunAsync(
-            "/bin/cp",
-            RepositoryRoot,
-            cancellationToken,
-            "-a",
-            $"{publishDirectory}/.",
-            macOsDirectory).ConfigureAwait(false));
-        await File.WriteAllTextAsync(
+        AssertSuccess(Run("/bin/cp", RepositoryRoot, "-a", $"{publishDirectory}/.", macOsDirectory));
+        File.WriteAllText(
             Path.Combine(contentsDirectory, "Info.plist"),
             """
             <?xml version="1.0" encoding="UTF-8"?>
@@ -232,24 +195,21 @@ public sealed class MacBundleLayoutTests
             </dict>
             </plist>
             """,
-            new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
-            cancellationToken).ConfigureAwait(false);
+            new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
     }
 
-    private static Task<ExternalProcessResult> RunAsync(
+    private static ProcessResult Run(
         string fileName,
         string workingDirectory,
-        CancellationToken cancellationToken,
         params string[] arguments)
     {
-        return RunAsync(fileName, workingDirectory, null, cancellationToken, arguments);
+        return Run(fileName, workingDirectory, environment: null, arguments);
     }
 
-    private static Task<ExternalProcessResult> RunAsync(
+    private static ProcessResult Run(
         string fileName,
         string workingDirectory,
         IReadOnlyDictionary<string, string?>? environment,
-        CancellationToken cancellationToken,
         params string[] arguments)
     {
         var startInfo = new ProcessStartInfo
@@ -273,28 +233,27 @@ public sealed class MacBundleLayoutTests
             }
         }
 
-        return ExternalProcessTestHarness.RunAsync(
-            startInfo,
-            ProcessExecutionTimeout,
-            ProcessCleanupTimeout,
-            cancellationToken);
+        using var process = Process.Start(startInfo);
+        Assert.NotNull(process);
+        var standardOutput = process.StandardOutput.ReadToEndAsync();
+        var standardError = process.StandardError.ReadToEndAsync();
+        if (!process.WaitForExit(120_000))
+        {
+            process.Kill(entireProcessTree: true);
+            throw new TimeoutException($"Process timed out: {fileName}");
+        }
+
+        return new ProcessResult(
+            process.ExitCode,
+            standardOutput.GetAwaiter().GetResult(),
+            standardError.GetAwaiter().GetResult());
     }
 
-    private static void AssertSuccess(ExternalProcessResult result)
+    private static void AssertSuccess(ProcessResult result)
     {
         Assert.True(
             result.ExitCode == 0,
             $"Process failed with exit code {result.ExitCode}. stdout={result.StandardOutput} stderr={result.StandardError}");
-    }
-
-    private static Task DeleteDirectoryAsync(string path)
-    {
-        if (Directory.Exists(path))
-        {
-            Directory.Delete(path, recursive: true);
-        }
-
-        return Task.CompletedTask;
     }
 
     private static string FindRepositoryRoot()
@@ -308,4 +267,6 @@ public sealed class MacBundleLayoutTests
         return directory?.FullName
                ?? throw new DirectoryNotFoundException("Could not locate the DownKyi repository root.");
     }
+
+    private sealed record ProcessResult(int ExitCode, string StandardOutput, string StandardError);
 }
