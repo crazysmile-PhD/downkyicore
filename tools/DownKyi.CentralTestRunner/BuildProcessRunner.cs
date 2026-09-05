@@ -239,19 +239,18 @@ internal static class BuildProcessRunner
         Func<Process, DateTimeOffset>? readStartTimeUtc = null,
         Func<Process, bool>? readHasExited = null,
         Func<int, bool>? isProcessPresent = null,
-        CancellationCleanupDiagnostic? diagnostic = null,
-        Func<int, Task<MacOsProcessStateProbeResult>>? macOsStateProbeAsync = null)
+        CancellationCleanupDiagnostic? diagnostic = null)
     {
+        var markers = new ObservedProcessModuleMarkers(observedProcess.Pid);
         Process process;
-        diagnostic?.Record("observed-process-open-start", observedProcess.Pid);
+        markers.Enter(ObservedProcessModule.GetProcessById);
         try
         {
             process = Process.GetProcessById(observedProcess.Pid);
-            diagnostic?.Record("observed-process-open-success", observedProcess.Pid);
+            markers.Complete(ObservedProcessModule.GetProcessById);
         }
         catch (ArgumentException)
         {
-            diagnostic?.Record("observed-process-terminal-before-open", observedProcess.Pid);
             // The observed process exited before its identity could be opened.
             return;
         }
@@ -260,74 +259,34 @@ internal static class BuildProcessRunner
         {
             try
             {
-                diagnostic?.Record("observed-process-identity-start", observedProcess.Pid);
-                if (observedProcess.StartTimeUtc is { } expectedStartTime &&
-                    (readStartTimeUtc ?? ReadStartTimeUtc)(process) != expectedStartTime)
+                markers.Enter(ObservedProcessModule.IdentityRead);
+                var identityMatches = observedProcess.StartTimeUtc is not { } expectedStartTime ||
+                    (readStartTimeUtc ?? ReadStartTimeUtc)(process) == expectedStartTime;
+                markers.Complete(ObservedProcessModule.IdentityRead);
+                if (!identityMatches)
                 {
-                    diagnostic?.Record("observed-process-identity-reused", observedProcess.Pid);
                     return;
                 }
 
-                diagnostic?.Record("observed-process-identity-success", observedProcess.Pid);
-                diagnostic?.Record("observed-process-reap-start", observedProcess.Pid);
+                markers.Enter(ObservedProcessModule.WaitForExit);
                 await process.WaitForExitAsync().ConfigureAwait(false);
-                diagnostic?.Record("observed-process-reap-success", observedProcess.Pid);
+                markers.Complete(ObservedProcessModule.WaitForExit);
             }
             catch (Exception exception) when (IsProcessObservationFailure(exception))
             {
-                diagnostic?.Record(
-                    "process-identity-observation-failure",
-                    observedProcess.Pid,
-                    $"exception={exception.GetType().FullName}");
                 if (!HasExitedAfterIdentityFailure(
                         process,
                         observedProcess.Pid,
                         readHasExited ?? ReadHasExited,
                         isProcessPresent ?? IsProcessPresent,
-                        diagnostic))
+                        ref markers))
                 {
-                    await RecordMacOsProcessStateAsync(
-                            observedProcess.Pid,
-                            diagnostic,
-                            macOsStateProbeAsync)
-                        .ConfigureAwait(false);
+                    diagnostic?.RecordObservedProcessFailure(in markers, exception);
                     throw;
                 }
 
-                diagnostic?.Record("observed-process-terminal-after-identity-failure", observedProcess.Pid);
                 // The observed process exited between opening it and reading or waiting on its identity.
             }
-        }
-    }
-
-    [SuppressMessage(
-        "Design",
-        "CA1031:Do not catch general exception types",
-        Justification = "Failure-only diagnostics must never replace the original process identity failure.")]
-    private static async Task RecordMacOsProcessStateAsync(
-        int processId,
-        CancellationCleanupDiagnostic? diagnostic,
-        Func<int, Task<MacOsProcessStateProbeResult>>? macOsStateProbeAsync)
-    {
-        if (!OperatingSystem.IsMacOS() && macOsStateProbeAsync is null)
-        {
-            return;
-        }
-
-        try
-        {
-            var result = await (macOsStateProbeAsync ?? MacOsProcessStateProbe.ProbeAsync)(processId)
-                .ConfigureAwait(false);
-            diagnostic?.Record("observed-process-os-state", processId, result.ToDiagnosticDetail());
-        }
-        catch (Exception exception)
-        {
-            diagnostic?.Record(
-                "observed-process-os-state",
-                processId,
-                $"targetPid={processId} ppid=unavailable rawState=unavailable " +
-                $"canonicalState=unavailable exitCode=unavailable " +
-                $"result=probe-exception:{exception.GetType().FullName}");
         }
     }
 
@@ -336,39 +295,34 @@ internal static class BuildProcessRunner
         int processId,
         Func<Process, bool> readHasExited,
         Func<int, bool> isProcessPresent,
-        CancellationCleanupDiagnostic? diagnostic)
+        ref ObservedProcessModuleMarkers markers)
     {
+        markers.Enter(ObservedProcessModule.HasExitedFallback);
         try
         {
-            if (readHasExited(process))
+            var hasExited = readHasExited(process);
+            markers.ObserveHasExited(hasExited);
+            markers.Complete(ObservedProcessModule.HasExitedFallback);
+            if (hasExited)
             {
-                diagnostic?.Record("observed-process-has-exited", processId, "value=true");
                 return true;
             }
-
-            diagnostic?.Record("observed-process-has-exited", processId, "value=false");
         }
         catch (Exception exception) when (IsProcessObservationFailure(exception))
         {
-            diagnostic?.Record(
-                "observed-process-has-exited-failure",
-                processId,
-                $"exception={exception.GetType().FullName}");
             // A vanished process can make both StartTime and HasExited unavailable.
         }
 
+        markers.Enter(ObservedProcessModule.PidPresenceFallback);
         try
         {
             var present = isProcessPresent(processId);
-            diagnostic?.Record("observed-process-presence", processId, $"value={present}");
+            markers.ObservePidPresence(present);
+            markers.Complete(ObservedProcessModule.PidPresenceFallback);
             return !present;
         }
         catch (Exception exception) when (IsProcessObservationFailure(exception))
         {
-            diagnostic?.Record(
-                "observed-process-presence-failure",
-                processId,
-                $"exception={exception.GetType().FullName}");
             // An inconclusive secondary observation must not replace the first identity failure.
             return false;
         }

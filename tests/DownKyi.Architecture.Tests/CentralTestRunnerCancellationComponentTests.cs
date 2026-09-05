@@ -30,18 +30,12 @@ public sealed class CentralTestRunnerCancellationComponentTests
                 var identityRead = new TaskCompletionSource(
                     TaskCreationOptions.RunContinuationsAsynchronously);
                 var expectedStartTime = fixture.StartTime.ToUniversalTime();
-                var probeCalls = 0;
                 var wait = BuildProcessRunner.WaitForObservedProcessExitAsync(
                     CreateObservedProcess(fixture, expectedStartTime),
                     process =>
                     {
                         identityRead.TrySetResult();
                         return process.StartTime.ToUniversalTime();
-                    },
-                    macOsStateProbeAsync: _ =>
-                    {
-                        Interlocked.Increment(ref probeCalls);
-                        throw new InvalidOperationException("The failure-only probe ran on the success path.");
                     });
 
                 await identityRead.Task.WaitAsync(TestTimeout).ConfigureAwait(true);
@@ -49,7 +43,6 @@ public sealed class CentralTestRunnerCancellationComponentTests
                 await wait.WaitAsync(TestTimeout).ConfigureAwait(true);
 
                 Assert.True(fixture.HasExited);
-                Assert.Equal(0, probeCalls);
             },
             () => StopFixtureAsync(fixture)).ConfigureAwait(true);
     }
@@ -328,13 +321,16 @@ public sealed class CentralTestRunnerCancellationComponentTests
     {
         using var cancellation = new CancellationTokenSource();
         await cancellation.CancelAsync();
+        using var error = new StringWriter();
 
         var exitCode = await Program.RunCommandAsync(
             [],
             (_, token) => Task.FromCanceled<int>(token),
+            error,
             cancellation.Token).ConfigureAwait(true);
 
         Assert.Equal(130, exitCode);
+        Assert.Equal(string.Empty, error.ToString());
     }
 
     [Fact]
@@ -353,7 +349,50 @@ public sealed class CentralTestRunnerCancellationComponentTests
     }
 
     [Fact]
-    public async Task OsStateProbeFailureDoesNotReplaceTheIdentityFailure()
+    public void ModuleMarkersRecordEnteredAndCompletedBits()
+    {
+        var markers = new ObservedProcessModuleMarkers(101);
+
+        markers.Enter(ObservedProcessModule.GetProcessById);
+        markers.Complete(ObservedProcessModule.GetProcessById);
+
+        Assert.Equal(0x1UL, markers.EnteredMask);
+        Assert.Equal(0x1UL, markers.CompletedMask);
+        Assert.Equal((byte)ObservedProcessModule.GetProcessById, markers.LastModule);
+    }
+
+    [Fact]
+    public void ModuleMarkersLeaveCompletedBitClearWhenModuleThrows()
+    {
+        var markers = new ObservedProcessModuleMarkers(102);
+
+        markers.Enter(ObservedProcessModule.IdentityRead);
+
+        Assert.Equal(0x2UL, markers.EnteredMask);
+        Assert.Equal(0UL, markers.CompletedMask);
+        Assert.Equal((byte)ObservedProcessModule.IdentityRead, markers.LastModule);
+    }
+
+    [Fact]
+    public void ModuleMarkersRemainIsolatedPerPid()
+    {
+        var first = new ObservedProcessModuleMarkers(201);
+        var second = new ObservedProcessModuleMarkers(202);
+
+        first.Enter(ObservedProcessModule.GetProcessById);
+        first.Complete(ObservedProcessModule.GetProcessById);
+        second.Enter(ObservedProcessModule.IdentityRead);
+
+        Assert.Equal(201, first.ProcessId);
+        Assert.Equal(0x1UL, first.EnteredMask);
+        Assert.Equal(0x1UL, first.CompletedMask);
+        Assert.Equal(202, second.ProcessId);
+        Assert.Equal(0x2UL, second.EnteredMask);
+        Assert.Equal(0UL, second.CompletedMask);
+    }
+
+    [Fact]
+    public async Task ModuleMarkerFailurePreservesIdentityExceptionAndExitCodeMapping()
     {
         Process? fixture = null;
         await FailurePreservingTestCleanup.RunAsync(
@@ -362,6 +401,10 @@ public sealed class CentralTestRunnerCancellationComponentTests
                 fixture = await StartHoldingFixtureAsync().ConfigureAwait(true);
                 var expectedStartTime = fixture.StartTime.ToUniversalTime();
                 var identityFailure = new Win32Exception("identity unavailable");
+                var diagnostic = new CancellationCleanupDiagnostic(
+                    fixture.Id,
+                    true,
+                    Directory.GetCurrentDirectory());
 
                 var exception = await Record.ExceptionAsync(
                     () => BuildProcessRunner.WaitForObservedProcessExitAsync(
@@ -369,33 +412,38 @@ public sealed class CentralTestRunnerCancellationComponentTests
                         _ => throw identityFailure,
                         _ => false,
                         _ => true,
-                        macOsStateProbeAsync: _ => throw new IOException("probe unavailable")))
+                        diagnostic))
                     .ConfigureAwait(true);
 
                 Assert.Same(identityFailure, exception);
+                diagnostic.AttachFailure(
+                    identityFailure,
+                    "observed-descendant-reap",
+                    identityFailure,
+                    identityFailure);
+                using var cancellation = new CancellationTokenSource();
+                await cancellation.CancelAsync().ConfigureAwait(true);
+                using var error = new StringWriter();
+                var exitCode = await Program.RunCommandAsync(
+                    [],
+                    (_, _) => Task.FromException<int>(identityFailure),
+                    error,
+                    cancellation.Token).ConfigureAwait(true);
+
+                var evidence = error.ToString();
+                Assert.Equal(2, exitCode);
+                Assert.Contains("targetPid=", evidence, StringComparison.Ordinal);
+                Assert.Contains("enteredMask=0xF", evidence, StringComparison.Ordinal);
+                Assert.Contains("completedMask=0xD", evidence, StringComparison.Ordinal);
+                Assert.Contains("lastModule=M4", evidence, StringComparison.Ordinal);
+                Assert.Contains("firstIncomplete=M2", evidence, StringComparison.Ordinal);
+                Assert.Contains("hasExited=false", evidence, StringComparison.Ordinal);
+                Assert.Contains("pidPresence=true", evidence, StringComparison.Ordinal);
+                Assert.Contains("M2=entered/not-completed", evidence, StringComparison.Ordinal);
+                Assert.Contains("M5=not-invoked", evidence, StringComparison.Ordinal);
                 Assert.False(fixture.HasExited);
             },
             () => StopFixtureAsync(fixture)).ConfigureAwait(true);
-    }
-
-    [Theory]
-    [InlineData("2963 2962 Z+", "Z+", "zombie")]
-    [InlineData("2963 2962 R", "R", "runnable")]
-    [InlineData("2963 2962 S+", "S+", "sleeping")]
-    [InlineData("2963 2962 T", "T", "stopped")]
-    public void MacOsProcessStateParserCanonicalizesState(
-        string output,
-        string expectedRawState,
-        string expectedCanonicalState)
-    {
-        var result = MacOsProcessStateProbe.Parse(2963, output, 0);
-
-        Assert.Equal(2963, result.TargetPid);
-        Assert.Equal(2962, result.ParentPid);
-        Assert.Equal(expectedRawState, result.RawState);
-        Assert.Equal(expectedCanonicalState, result.CanonicalState);
-        Assert.Equal(0, result.ExitCode);
-        Assert.Equal("success", result.Result);
     }
 
     [Fact]

@@ -82,6 +82,16 @@ internal sealed class CancellationCleanupDiagnostic
         target.Data[DataKey] = diagnostic;
     }
 
+    internal void RecordObservedProcessFailure(
+        in ObservedProcessModuleMarkers markers,
+        Exception exception)
+    {
+        Record(
+            "observed-process-module-markers",
+            markers.ProcessId,
+            markers.FormatFailure(exception, cancellationRequested));
+    }
+
     private static string BoundAndFlatten(string value, int capacity)
     {
         var flattened = value.Replace('\r', ' ').Replace('\n', ' ');
