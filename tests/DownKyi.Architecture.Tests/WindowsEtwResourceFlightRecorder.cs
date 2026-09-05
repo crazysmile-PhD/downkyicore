@@ -42,6 +42,7 @@ internal sealed class WindowsEtwResourceFlightRecorder : IDisposable
         """;
 
     private readonly string targetDirectory;
+    private readonly string targetPathSuffix;
     private readonly HashSet<int> knownProcessIds;
     private readonly Lock processIdsLock = new();
     private readonly string instanceName = $"DownKyiH4-{Guid.NewGuid():N}";
@@ -56,6 +57,8 @@ internal sealed class WindowsEtwResourceFlightRecorder : IDisposable
     private WindowsEtwResourceFlightRecorder(string targetDirectory, IEnumerable<int> knownProcessIds)
     {
         this.targetDirectory = Path.GetFullPath(targetDirectory);
+        var pathRoot = Path.GetPathRoot(this.targetDirectory) ?? string.Empty;
+        targetPathSuffix = this.targetDirectory[pathRoot.Length..];
         this.knownProcessIds = [.. knownProcessIds.Where(processId => processId > 0)];
         StartRecording();
     }
@@ -141,17 +144,16 @@ internal sealed class WindowsEtwResourceFlightRecorder : IDisposable
                 "-of",
                 "XML",
                 "-y",
-                "-lr",
-                "-rts");
+                "-lr");
             if (convert.ExitCode != 0 || !File.Exists(xmlPath))
             {
                 return $"etwRecorder=convert-failed exitCode={convert.ExitCode} output={convert.Output}";
             }
 
             var filtered = FilterTargetEvents(xmlPath);
-            var artifactPath = WriteFilteredArtifact(filtered);
+            var artifactPath = WriteFilteredArtifact(filtered.Content);
             return $"etwRecorder=recorded startedUtc={startedUtc:O} target={targetDirectory} " +
-                $"artifact={artifactPath}{Environment.NewLine}{filtered}";
+                $"{filtered.Summary} artifact={artifactPath}";
         }
         catch (Exception exception)
         {
@@ -200,14 +202,14 @@ internal sealed class WindowsEtwResourceFlightRecorder : IDisposable
         }
     }
 
-    private string FilterTargetEvents(string xmlPath)
+    private FilteredTrace FilterTargetEvents(string xmlPath)
     {
         var document = XDocument.Load(xmlPath, LoadOptions.PreserveWhitespace);
         var events = document.Descendants()
             .Where(element => element.Name.LocalName == "Event")
             .ToList();
         var targetEvents = events
-            .Where(element => Contains(element, targetDirectory))
+            .Where(ContainsTargetResource)
             .ToList();
         var identities = targetEvents
             .SelectMany(element => element.Descendants())
@@ -246,33 +248,44 @@ internal sealed class WindowsEtwResourceFlightRecorder : IDisposable
             }
         }
 
+        AddAncestorProcessIds(events, processIds);
+
         var selected = events.Where(
             element =>
             {
                 var serialized = element.ToString(SaveOptions.DisableFormatting);
-                return serialized.Contains(targetDirectory, StringComparison.OrdinalIgnoreCase) ||
+                return ContainsTargetResource(element) ||
                     identities.Any(identity => serialized.Contains(identity, StringComparison.OrdinalIgnoreCase)) ||
-                    (IsProcessLifecycleEvent(serialized) &&
+                    (IsProcessLifecycleEvent(element) &&
                      processIds.Any(processId => EventReferencesProcess(element, processId)));
             }).ToList();
 
         var builder = new StringBuilder();
-        builder.Append("etlEvents=").Append(events.Count)
+        var summary = new StringBuilder()
+            .Append("etlEvents=").Append(events.Count)
             .Append(" directTargetEvents=").Append(targetEvents.Count)
             .Append(" resourceIdentities=").Append(identities.Count)
-            .Append(" selectedEvents=").Append(selected.Count);
+            .Append(" selectedEvents=").Append(selected.Count)
+            .ToString();
+        builder.Append(summary);
         foreach (var selectedEvent in selected)
         {
             builder.AppendLine().Append(selectedEvent.ToString(SaveOptions.DisableFormatting));
         }
 
-        return builder.ToString();
+        return new FilteredTrace(summary, builder.ToString());
     }
 
     private static string WriteFilteredArtifact(string filtered)
     {
+        var artifactRoot = Environment.GetEnvironmentVariable("GITHUB_WORKSPACE");
+        if (string.IsNullOrWhiteSpace(artifactRoot))
+        {
+            artifactRoot = Directory.GetCurrentDirectory();
+        }
+
         var artifactDirectory = Path.Combine(
-            Directory.GetCurrentDirectory(),
+            artifactRoot,
             "artifacts",
             "test-flight-recorder");
         Directory.CreateDirectory(artifactDirectory);
@@ -283,36 +296,91 @@ internal sealed class WindowsEtwResourceFlightRecorder : IDisposable
         return artifactPath;
     }
 
-    private static bool Contains(XElement element, string value) =>
+    private bool ContainsTargetResource(XElement element) =>
         element.ToString(SaveOptions.DisableFormatting)
-            .Contains(value, StringComparison.OrdinalIgnoreCase);
+            .Contains(targetPathSuffix, StringComparison.OrdinalIgnoreCase);
 
     private static bool IsResourceIdentity(string? name) =>
         name is not null &&
         (name.Contains("FileObject", StringComparison.OrdinalIgnoreCase) ||
-         name.Contains("FileKey", StringComparison.OrdinalIgnoreCase));
+         name.Contains("FileKey", StringComparison.OrdinalIgnoreCase) ||
+         name.Contains("IrpPtr", StringComparison.OrdinalIgnoreCase));
 
     private static bool EventReferencesProcess(XElement element, int processId)
     {
-        var value = processId.ToString(CultureInfo.InvariantCulture);
-        return element.Descendants().Any(
-            descendant =>
-                (descendant.Name.LocalName == "Execution" || descendant.Name.LocalName == "Data") &&
-                (descendant.Value == value || descendant.Attributes().Any(attribute => attribute.Value == value)));
+        return TryReadDataProcessId(element, "ProcessId", out var observedProcessId) &&
+            observedProcessId == processId;
     }
 
-    private static bool IsProcessLifecycleEvent(string serialized) =>
-        serialized.Contains("Process", StringComparison.OrdinalIgnoreCase) &&
-        (serialized.Contains("Start", StringComparison.OrdinalIgnoreCase) ||
-         serialized.Contains("Stop", StringComparison.OrdinalIgnoreCase) ||
-         serialized.Contains("End", StringComparison.OrdinalIgnoreCase));
+    private static bool IsProcessLifecycleEvent(XElement element)
+    {
+        var eventName = element.Descendants()
+            .FirstOrDefault(descendant => descendant.Name.LocalName == "EventName")?.Value;
+        var opcode = element.Descendants()
+            .FirstOrDefault(descendant =>
+                descendant.Name.LocalName == "Opcode" &&
+                descendant.Parent?.Name.LocalName == "RenderingInfo")?.Value;
+        return eventName?.Equals("Process", StringComparison.OrdinalIgnoreCase) == true &&
+            (opcode?.Equals("Start", StringComparison.OrdinalIgnoreCase) == true ||
+             opcode?.Equals("End", StringComparison.OrdinalIgnoreCase) == true ||
+             opcode?.Equals("DCStart", StringComparison.OrdinalIgnoreCase) == true ||
+             opcode?.Equals("DCEnd", StringComparison.OrdinalIgnoreCase) == true);
+    }
 
     private static void AddProcessId(string value, HashSet<int> processIds)
     {
-        if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var processId))
+        if (TryParseProcessId(value, out var processId))
         {
             processIds.Add(processId);
         }
+    }
+
+    private static void AddAncestorProcessIds(IEnumerable<XElement> events, HashSet<int> processIds)
+    {
+        var processEvents = events.Where(IsProcessLifecycleEvent).ToList();
+        var changed = true;
+        while (changed)
+        {
+            changed = false;
+            foreach (var processEvent in processEvents)
+            {
+                if (!TryReadDataProcessId(processEvent, "ProcessId", out var processId) ||
+                    !processIds.Contains(processId) ||
+                    !TryReadDataProcessId(processEvent, "ParentId", out var parentId) ||
+                    parentId <= 0)
+                {
+                    continue;
+                }
+
+                changed |= processIds.Add(parentId);
+            }
+        }
+    }
+
+    private static bool TryReadDataProcessId(XElement element, string name, out int processId)
+    {
+        processId = 0;
+        var value = element.Descendants()
+            .FirstOrDefault(descendant =>
+                descendant.Name.LocalName == "Data" &&
+                descendant.Attribute("Name")?.Value.Equals(name, StringComparison.OrdinalIgnoreCase) == true)
+            ?.Value;
+        return value is not null && TryParseProcessId(value, out processId);
+    }
+
+    private static bool TryParseProcessId(string value, out int processId)
+    {
+        var trimmed = value.Trim();
+        if (trimmed.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+        {
+            return int.TryParse(
+                trimmed.AsSpan(2),
+                NumberStyles.HexNumber,
+                CultureInfo.InvariantCulture,
+                out processId);
+        }
+
+        return int.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out processId);
     }
 
     private static ToolResult RunTool(string executable, params string[] arguments)
@@ -356,4 +424,6 @@ internal sealed class WindowsEtwResourceFlightRecorder : IDisposable
     }
 
     private sealed record ToolResult(int ExitCode, string Output);
+
+    private sealed record FilteredTrace(string Summary, string Content);
 }
