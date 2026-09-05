@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using DownKyi.CodeMetricsAudit;
 
@@ -18,17 +19,18 @@ public sealed class CodeMetricsAuditTests
             "classifications.json",
             """
             {
-              "schemaVersion": 1,
+              "schemaVersion": 2,
               "production": [
                 {
                   "file": "src/Product.cs",
+                  "symbol": "Product",
                   "classification": "architecture hotspot",
                   "rationale": "Behavior-led review required."
                 }
               ]
             }
             """);
-        var productionResult = CreateResult(productionFile, 10, 4, "Production coupling");
+        var productionResult = CreateResult(productionFile, 10, 4, "'Product' is coupled with production types.");
         var testResult = CreateResult(testFile, 20, 8, "Test coupling");
         TemporaryDirectory.CreateFile(
             sarifDirectory,
@@ -41,6 +43,7 @@ public sealed class CodeMetricsAuditTests
             classifications,
             new GitState("0123456789abcdef", true));
 
+        Assert.True(report.DirtyWorktree);
         Assert.Equal(2, report.Summary.Total);
         Assert.Equal(1, report.Summary.Production);
         Assert.Equal(1, report.Summary.Test);
@@ -95,6 +98,129 @@ public sealed class CodeMetricsAuditTests
     }
 
     [Fact]
+    public void WriterRollsBackBothReportsWhenSecondPublicationFails()
+    {
+        using var directory = new TemporaryDirectory();
+        var output = directory.CreateDirectory("output");
+        var jsonPath = TemporaryDirectory.CreateFile(output, "ca1506-report.json", "previous-json");
+        var markdownPath = TemporaryDirectory.CreateFile(output, "ca1506-report.md", "previous-markdown");
+        var report = CreateReport();
+
+        Assert.Throws<IOException>(() => Ca1506ReportWriter.Write(
+            output,
+            report,
+            (source, destination) =>
+            {
+                if (destination.EndsWith(".md", StringComparison.Ordinal))
+                {
+                    throw new IOException("Injected Markdown publication failure.");
+                }
+
+                File.Move(source, destination);
+            }));
+
+        Assert.Equal("previous-json", File.ReadAllText(jsonPath));
+        Assert.Equal("previous-markdown", File.ReadAllText(markdownPath));
+        Assert.DoesNotContain(
+            Directory.EnumerateFiles(output),
+            path => Path.GetFileName(path).StartsWith(".ca1506-report-", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task SyntacticallyMalformedJsonFailsWithBoundedOutput(bool malformedSarif)
+    {
+        using var directory = new TemporaryDirectory();
+        var repositoryRoot = directory.CreateDirectory("repository");
+        InitializeGitRepository(repositoryRoot);
+        var sarifDirectory = directory.CreateDirectory("sarif");
+        var classifications = TemporaryDirectory.CreateFile(
+            repositoryRoot,
+            "classifications.json",
+            malformedSarif ? """{"schemaVersion":2,"production":[]}""" : "{broken");
+        TemporaryDirectory.CreateFile(
+            sarifDirectory,
+            "Broken.sarif",
+            malformedSarif ? "{broken" : CreateSarif());
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = await Program.RunAsync(
+            [
+                "--repository-root", repositoryRoot,
+                "--sarif-directory", sarifDirectory,
+                "--classification-file", classifications,
+                "--output-directory", Path.Combine(repositoryRoot, "reports")
+            ],
+            output,
+            error);
+
+        Assert.Equal(1, exitCode);
+        Assert.Equal("CA1506 audit failed: malformed JSON input.", error.ToString().Trim());
+        Assert.DoesNotContain(repositoryRoot, error.ToString(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(nameof(JsonException), error.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void NewFindingInClassifiedFileRequiresItsOwnReview()
+    {
+        using var directory = new TemporaryDirectory();
+        var repositoryRoot = directory.CreateDirectory("repository");
+        var sarifDirectory = directory.CreateDirectory("sarif");
+        var productionFile = TemporaryDirectory.CreateFile(repositoryRoot, "src/Product.cs", "internal sealed class Product;");
+        var classifications = TemporaryDirectory.CreateFile(
+            repositoryRoot,
+            "classifications.json",
+            """
+            {
+              "schemaVersion": 2,
+              "production": [
+                {
+                  "file": "src/Product.cs",
+                  "symbol": "ReviewedMember",
+                  "classification": "architecture hotspot",
+                  "rationale": "Reviewed member rationale."
+                }
+              ]
+            }
+            """);
+        TemporaryDirectory.CreateFile(
+            sarifDirectory,
+            "Product.sarif",
+            CreateSarif(
+                CreateResult(productionFile, 10, 4, "'ReviewedMember' is coupled with reviewed types."),
+                CreateResult(productionFile, 20, 4, "'NewMember' is coupled with new types.")));
+
+        var report = Ca1506ReportGenerator.Generate(
+            repositoryRoot,
+            sarifDirectory,
+            classifications,
+            new GitState("0123456789abcdef", false));
+
+        Assert.Contains(report.Findings, finding =>
+            finding.Message.StartsWith("'ReviewedMember'", StringComparison.Ordinal) &&
+            finding.Classification == "architecture hotspot");
+        Assert.Contains(report.Findings, finding =>
+            finding.Message.StartsWith("'NewMember'", StringComparison.Ordinal) &&
+            finding.Classification == "needs manual review");
+    }
+
+    [Fact]
+    public async Task UntrackedCompileInputMarksGitStateDirty()
+    {
+        using var directory = new TemporaryDirectory();
+        var repositoryRoot = directory.CreateDirectory("repository");
+        InitializeGitRepository(repositoryRoot);
+
+        Assert.False((await GitStateReader.ReadAsync(repositoryRoot)).DirtyWorktree);
+
+        TemporaryDirectory.CreateFile(repositoryRoot, "src/UntrackedCompileInput.cs", "internal sealed class UntrackedCompileInput;");
+
+        Assert.True((await GitStateReader.ReadAsync(repositoryRoot)).DirtyWorktree);
+    }
+
+    [Fact]
     public void MalformedSarifFailsClosed()
     {
         using var directory = new TemporaryDirectory();
@@ -103,7 +229,7 @@ public sealed class CodeMetricsAuditTests
         var classifications = TemporaryDirectory.CreateFile(
             repositoryRoot,
             "classifications.json",
-            """{"schemaVersion":1,"production":[]}""");
+            """{"schemaVersion":2,"production":[]}""");
         TemporaryDirectory.CreateFile(sarifDirectory, "Broken.sarif", """{"notRuns":[]}""");
 
         Assert.Throws<InvalidDataException>(() => Ca1506ReportGenerator.Generate(
@@ -149,6 +275,55 @@ public sealed class CodeMetricsAuditTests
         });
     }
 
+    private static Ca1506Report CreateReport()
+    {
+        var counts = Ca1506ReportGenerator.ClassificationOrder.ToDictionary(
+            classification => classification,
+            _ => 0,
+            StringComparer.Ordinal);
+        return new Ca1506Report(
+            1,
+            "CA1506",
+            "0123456789abcdef",
+            false,
+            new Ca1506Summary(0, 0, 0, counts),
+            []);
+    }
+
+    private static void InitializeGitRepository(string repositoryRoot)
+    {
+        RunGit(repositoryRoot, "init", "--quiet");
+        RunGit(repositoryRoot, "config", "user.email", "tests@example.invalid");
+        RunGit(repositoryRoot, "config", "user.name", "DownKyi Tests");
+        TemporaryDirectory.CreateFile(repositoryRoot, "README.md", "fixture");
+        RunGit(repositoryRoot, "add", "README.md");
+        RunGit(repositoryRoot, "commit", "--quiet", "-m", "fixture");
+    }
+
+    private static void RunGit(string repositoryRoot, params string[] arguments)
+    {
+        using var process = new Process
+        {
+            StartInfo = new ProcessStartInfo("git")
+            {
+                WorkingDirectory = repositoryRoot,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            }
+        };
+        foreach (var argument in arguments)
+        {
+            process.StartInfo.ArgumentList.Add(argument);
+        }
+
+        process.Start();
+        var error = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+        Assert.True(process.ExitCode == 0, $"git {string.Join(' ', arguments)} failed: {error}");
+    }
+
     private sealed class TemporaryDirectory : IDisposable
     {
         private readonly string _root = Path.Combine(
@@ -181,6 +356,11 @@ public sealed class CodeMetricsAuditTests
         {
             if (Directory.Exists(_root))
             {
+                foreach (var file in Directory.EnumerateFiles(_root, "*", SearchOption.AllDirectories))
+                {
+                    File.SetAttributes(file, FileAttributes.Normal);
+                }
+
                 Directory.Delete(_root, recursive: true);
             }
         }

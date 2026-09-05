@@ -64,7 +64,7 @@ internal static class Ca1506ReportGenerator
     {
         using var document = JsonDocument.Parse(File.ReadAllText(path));
         var root = document.RootElement;
-        if (!root.TryGetProperty("schemaVersion", out var schemaVersion) || schemaVersion.GetInt32() != 1)
+        if (!root.TryGetProperty("schemaVersion", out var schemaVersion) || schemaVersion.GetInt32() != 2)
         {
             throw new InvalidDataException("Unsupported CA1506 classification schema version.");
         }
@@ -77,15 +77,19 @@ internal static class Ca1506ReportGenerator
         foreach (var entry in entries.EnumerateArray())
         {
             var file = GetRequiredString(entry, "file");
+            var symbol = GetRequiredString(entry, "symbol");
             var classification = GetRequiredString(entry, "classification");
             var rationale = GetRequiredString(entry, "rationale");
             if (!ClassificationOrder.Contains(classification, StringComparer.Ordinal))
             {
                 throw new InvalidDataException($"Unknown CA1506 classification: {classification}");
             }
-            if (!classifications.TryAdd(file, new ProductionClassification(file, classification, rationale)))
+            var key = CreateClassificationKey(file, symbol);
+            if (!classifications.TryAdd(
+                    key,
+                    new ProductionClassification(file, symbol, classification, rationale)))
             {
-                throw new InvalidDataException($"Duplicate CA1506 production classification: {file}");
+                throw new InvalidDataException($"Duplicate CA1506 production classification: {file} ({symbol})");
             }
         }
 
@@ -130,7 +134,9 @@ internal static class Ca1506ReportGenerator
                     continue;
                 }
 
-                var review = Classify(source.File, classifications);
+                var message = ReadMessage(result);
+                var diagnosticIdentity = ReadDiagnosticIdentity(message, source.Line, source.Column);
+                var review = Classify(source.File, diagnosticIdentity, classifications);
                 findingsByKey.Add(
                     key,
                     new Ca1506Finding(
@@ -141,7 +147,7 @@ internal static class Ca1506ReportGenerator
                         source.File,
                         source.Line,
                         source.Column,
-                        ReadMessage(result),
+                        message,
                         review.Rationale));
             }
         }
@@ -149,6 +155,7 @@ internal static class Ca1506ReportGenerator
 
     private static ClassificationDecision Classify(
         string file,
+        string diagnosticIdentity,
         Dictionary<string, ProductionClassification> classifications)
     {
         if (file.StartsWith("tests/", StringComparison.OrdinalIgnoreCase))
@@ -159,7 +166,7 @@ internal static class Ca1506ReportGenerator
                 "The finding is in integration or behavioral test composition rather than production runtime code.");
         }
 
-        if (classifications.TryGetValue(file, out var classification))
+        if (classifications.TryGetValue(CreateClassificationKey(file, diagnosticIdentity), out var classification))
         {
             return new ClassificationDecision("production", classification.Classification, classification.Rationale);
         }
@@ -168,6 +175,26 @@ internal static class Ca1506ReportGenerator
             "production",
             "needs manual review",
             "This production finding has not yet received a behavior-led architecture classification.");
+    }
+
+    private static string ReadDiagnosticIdentity(string message, int line, int column)
+    {
+        var openingQuote = message.IndexOf('\'', StringComparison.Ordinal);
+        if (openingQuote >= 0)
+        {
+            var closingQuote = message.IndexOf('\'', openingQuote + 1);
+            if (closingQuote > openingQuote + 1)
+            {
+                return message[(openingQuote + 1)..closingQuote];
+            }
+        }
+
+        return $"location:{line}:{column}:{message.Trim()}";
+    }
+
+    private static string CreateClassificationKey(string file, string diagnosticIdentity)
+    {
+        return string.Concat(file, "\n", diagnosticIdentity);
     }
 
     private static string ReadMessage(JsonElement result)

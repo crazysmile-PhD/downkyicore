@@ -27,5 +27,6 @@ internal sealed record Ca1506Report(
 
 internal sealed record ProductionClassification(
     string File,
+    string Symbol,
     string Classification,
     string Rationale);

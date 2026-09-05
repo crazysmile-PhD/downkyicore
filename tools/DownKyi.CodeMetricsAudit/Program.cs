@@ -1,8 +1,15 @@
+using System.Text.Json;
+
 namespace DownKyi.CodeMetricsAudit;
 
 internal static class Program
 {
     public static async Task<int> Main(string[] args)
+    {
+        return await RunAsync(args, Console.Out, Console.Error).ConfigureAwait(false);
+    }
+
+    internal static async Task<int> RunAsync(string[] args, TextWriter output, TextWriter error)
     {
         try
         {
@@ -15,15 +22,20 @@ internal static class Program
                 gitState);
             Ca1506ReportWriter.Write(options.OutputDirectory, report);
 
-            await Console.Out.WriteLineAsync(
+            await output.WriteLineAsync(
                 $"CA1506 audit completed with {report.Findings.Count} advisory finding(s).").ConfigureAwait(false);
-            await Console.Out.WriteLineAsync(
+            await output.WriteLineAsync(
                 $"Production: {report.Summary.Production}; test: {report.Summary.Test}").ConfigureAwait(false);
-            await Console.Out.WriteLineAsync(
+            await output.WriteLineAsync(
                 $"Markdown: {Path.Combine(options.OutputDirectory, "ca1506-report.md")}").ConfigureAwait(false);
-            await Console.Out.WriteLineAsync(
+            await output.WriteLineAsync(
                 $"JSON: {Path.Combine(options.OutputDirectory, "ca1506-report.json")}").ConfigureAwait(false);
             return 0;
+        }
+        catch (JsonException)
+        {
+            await error.WriteLineAsync("CA1506 audit failed: malformed JSON input.").ConfigureAwait(false);
+            return 1;
         }
         catch (Exception exception) when (exception is ArgumentException
             or IOException
@@ -31,7 +43,7 @@ internal static class Program
             or InvalidOperationException
             or UnauthorizedAccessException)
         {
-            await Console.Error.WriteLineAsync($"CA1506 audit failed: {exception.Message}").ConfigureAwait(false);
+            await error.WriteLineAsync($"CA1506 audit failed: {exception.Message}").ConfigureAwait(false);
             return 1;
         }
     }

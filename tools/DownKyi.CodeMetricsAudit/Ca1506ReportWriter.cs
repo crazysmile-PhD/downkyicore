@@ -14,18 +14,132 @@ internal static class Ca1506ReportWriter
 
     public static void Write(string outputDirectory, Ca1506Report report)
     {
+        Write(outputDirectory, report, static (source, destination) => File.Move(source, destination));
+    }
+
+    internal static void Write(
+        string outputDirectory,
+        Ca1506Report report,
+        Action<string, string> publishFile)
+    {
         ArgumentException.ThrowIfNullOrWhiteSpace(outputDirectory);
         ArgumentNullException.ThrowIfNull(report);
+        ArgumentNullException.ThrowIfNull(publishFile);
         Directory.CreateDirectory(outputDirectory);
 
         var jsonPath = Path.Combine(outputDirectory, "ca1506-report.json");
         var markdownPath = Path.Combine(outputDirectory, "ca1506-report.md");
-        File.WriteAllText(jsonPath, JsonSerializer.Serialize(report, JsonOptions) + "\n", new UTF8Encoding(false));
-        File.WriteAllText(markdownPath, BuildMarkdown(report), new UTF8Encoding(false));
+        if (Directory.Exists(jsonPath) || Directory.Exists(markdownPath))
+        {
+            throw new IOException("CA1506 audit report destination is not a file.");
+        }
+
+        var operationId = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+        var stagedJsonPath = Path.Combine(outputDirectory, $".ca1506-report-{operationId}.json.tmp");
+        var stagedMarkdownPath = Path.Combine(outputDirectory, $".ca1506-report-{operationId}.md.tmp");
+        var backupJsonPath = Path.Combine(outputDirectory, $".ca1506-report-{operationId}.json.bak");
+        var backupMarkdownPath = Path.Combine(outputDirectory, $".ca1506-report-{operationId}.md.bak");
+        var publishedJson = false;
+        var publishedMarkdown = false;
+        try
+        {
+            File.WriteAllText(
+                stagedJsonPath,
+                JsonSerializer.Serialize(report, JsonOptions) + "\n",
+                new UTF8Encoding(false));
+            File.WriteAllText(stagedMarkdownPath, BuildMarkdown(report), new UTF8Encoding(false));
+
+            BackupExistingReport(jsonPath, backupJsonPath);
+            try
+            {
+                BackupExistingReport(markdownPath, backupMarkdownPath);
+            }
+            catch
+            {
+                RestoreReport(backupJsonPath, jsonPath);
+                throw;
+            }
+
+            try
+            {
+                publishFile(stagedJsonPath, jsonPath);
+                publishedJson = true;
+                publishFile(stagedMarkdownPath, markdownPath);
+                publishedMarkdown = true;
+            }
+            catch (Exception exception)
+            {
+                RollBackPublication(
+                    jsonPath,
+                    markdownPath,
+                    backupJsonPath,
+                    backupMarkdownPath,
+                    publishedJson,
+                    publishedMarkdown,
+                    exception);
+                throw;
+            }
+
+            File.Delete(backupJsonPath);
+            File.Delete(backupMarkdownPath);
+        }
+        finally
+        {
+            File.Delete(stagedJsonPath);
+            File.Delete(stagedMarkdownPath);
+        }
 
         if (!File.Exists(jsonPath) || !File.Exists(markdownPath))
         {
             throw new IOException("CA1506 audit reports were not produced.");
+        }
+    }
+
+    private static void BackupExistingReport(string reportPath, string backupPath)
+    {
+        if (File.Exists(reportPath))
+        {
+            File.Move(reportPath, backupPath);
+        }
+    }
+
+    private static void RestoreReport(string backupPath, string reportPath)
+    {
+        if (File.Exists(backupPath))
+        {
+            File.Move(backupPath, reportPath, overwrite: true);
+        }
+    }
+
+    private static void RollBackPublication(
+        string jsonPath,
+        string markdownPath,
+        string backupJsonPath,
+        string backupMarkdownPath,
+        bool publishedJson,
+        bool publishedMarkdown,
+        Exception publicationFailure)
+    {
+        try
+        {
+            if (publishedJson)
+            {
+                File.Delete(jsonPath);
+            }
+
+            if (publishedMarkdown)
+            {
+                File.Delete(markdownPath);
+            }
+
+            RestoreReport(backupJsonPath, jsonPath);
+            RestoreReport(backupMarkdownPath, markdownPath);
+        }
+        catch (Exception rollbackFailure)
+        {
+            throw new IOException(
+                "CA1506 audit report publication and rollback failed.",
+                new AggregateException(publicationFailure, rollbackFailure));
         }
     }
 
@@ -37,7 +151,7 @@ internal static class Ca1506ReportWriter
         markdown.AppendLine(CultureInfo.InvariantCulture, $"- Commit: `{report.Commit}`");
         markdown.AppendLine(
             CultureInfo.InvariantCulture,
-            $"- Dirty tracked worktree: **{(report.DirtyWorktree ? "true" : "false")}**");
+            $"- Dirty worktree (including untracked files): **{(report.DirtyWorktree ? "true" : "false")}**");
         markdown.AppendLine(CultureInfo.InvariantCulture, $"- Unique findings: **{report.Summary.Total}**");
         markdown.AppendLine(CultureInfo.InvariantCulture, $"- Production findings: **{report.Summary.Production}**");
         markdown.AppendLine(CultureInfo.InvariantCulture, $"- Test findings: **{report.Summary.Test}**");

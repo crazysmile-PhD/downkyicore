@@ -13,6 +13,11 @@ build failure, missing or malformed inputs, missing SARIF, parse failure, or an
 unwritable report exits non-zero. Normal Release builds retain warnings-as-errors
 and do not enable CA1506.
 
+The JSON and Markdown reports are staged and published as one operation. If
+either publication fails, the writer removes the operation's partial output and
+restores any preceding complete report pair. Git provenance includes untracked
+files because SDK projects can compile an untracked source file by default.
+
 ## Language boundary
 
 PowerShell is retained only as an extremely thin process boundary. The audit
@@ -53,7 +58,8 @@ the blocking policy, so normal Avalonia inheritance is not refactored or
 suppressed to manufacture a zero baseline.
 
 Production classification decisions live in
-`script/code-metrics/ca1506-classifications.json`. New test findings are
-classified as test integration; new production findings default to needs manual
-review so the report stays complete without treating an unreviewed metric as a
-defect.
+`script/code-metrics/ca1506-classifications.json` and are keyed by repository
+path plus diagnostic symbol. A second diagnostic in the same production file
+does not inherit an existing review. New test findings are classified as test
+integration; new production findings default to needs manual review so the
+report stays complete without treating an unreviewed metric as a defect.

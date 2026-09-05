@@ -14,7 +14,7 @@ internal static class GitStateReader
                 repositoryRoot,
                 "status",
                 "--porcelain",
-                "--untracked-files=no")
+                "--untracked-files=all")
             .ConfigureAwait(false);
         return new GitState(commit.Trim(), !string.IsNullOrWhiteSpace(status));
     }
