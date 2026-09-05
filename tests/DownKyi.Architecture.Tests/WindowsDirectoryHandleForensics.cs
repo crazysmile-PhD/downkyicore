@@ -18,7 +18,8 @@ internal static class WindowsDirectoryHandleForensics
         Justification = "A failure-only forensic scanner must never replace the original sharing violation.")]
     internal static string Capture(
         string directory,
-        int markerProcessId,
+        int knownProcessId,
+        string knownProcessRole,
         int testhostProcessId,
         DateTimeOffset cancellationRequestedUtc)
     {
@@ -60,7 +61,11 @@ internal static class WindowsDirectoryHandleForensics
                 $"pathResolutionFailures={result.PathResolutionFailures}"));
             foreach (var owner in result.Owners)
             {
-                var role = ClassifyRole(owner, markerProcessId, testhostProcessId);
+                var role = ClassifyRole(
+                    owner,
+                    knownProcessId,
+                    knownProcessRole,
+                    testhostProcessId);
                 var birth = owner.StartTimeUtc is null
                     ? "unknown"
                     : owner.StartTimeUtc > cancellationRequestedUtc
@@ -135,7 +140,8 @@ internal static class WindowsDirectoryHandleForensics
 
     private static string ClassifyRole(
         HandleOwner owner,
-        int markerProcessId,
+        int knownProcessId,
+        string knownProcessRole,
         int testhostProcessId)
     {
         if (owner.ProcessId == testhostProcessId)
@@ -143,7 +149,12 @@ internal static class WindowsDirectoryHandleForensics
             return "testhost";
         }
 
-        if (owner.ProcessId == markerProcessId ||
+        if (owner.ProcessId == knownProcessId)
+        {
+            return knownProcessRole;
+        }
+
+        if (
             owner.CommandLine.Contains("fixture-hold-marker", StringComparison.OrdinalIgnoreCase))
         {
             return "marker-descendant";

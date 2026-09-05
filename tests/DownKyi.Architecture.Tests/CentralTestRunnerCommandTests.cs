@@ -11,6 +11,7 @@ public sealed class CentralTestRunnerCommandTests
         var repositoryRoot = await CreateRepositoryAsync();
         var markerPath = Path.Combine(repositoryRoot, "build-process.pid");
         int? processId = null;
+        WindowsDirectoryDeleteAccessProbe? deleteProbe = null;
         await FailurePreservingTestCleanup.RunAsync(
             async () =>
             {
@@ -54,8 +55,24 @@ public sealed class CentralTestRunnerCommandTests
                 Assert.False(File.Exists(projectPath));
 
                 var cancellationRequestedUtc = DateTimeOffset.UtcNow;
+                if (OperatingSystem.IsWindows())
+                {
+                    deleteProbe = WindowsDirectoryDeleteAccessProbe.Start(
+                        projectDirectory,
+                        processId.Value,
+                        "marker-descendant",
+                        Environment.ProcessId,
+                        cancellationRequestedUtc);
+                }
+
                 await cancellation.CancelAsync().ConfigureAwait(true);
                 var exitCode = await run.ConfigureAwait(true);
+                deleteProbe?.MarkCleanupReturned();
+                if (deleteProbe is not null)
+                {
+                    await deleteProbe.ObservePostCleanupAsync(TimeSpan.FromMilliseconds(150))
+                        .ConfigureAwait(true);
+                }
 
                 Assert.Equal(130, exitCode);
                 Assert.False(IsProcessAlive(processId.Value));
@@ -69,17 +86,36 @@ public sealed class CentralTestRunnerCommandTests
                     var evidence = WindowsDirectoryHandleForensics.Capture(
                         projectDirectory,
                         processId.Value,
+                        "marker-descendant",
                         Environment.ProcessId,
                         cancellationRequestedUtc);
+                    var probeEvidence = deleteProbe?.StopAndFormat() ?? "probe=not-running";
+                    deleteProbe?.Dispose();
+                    deleteProbe = null;
                     throw new IOException(
                         $"{exception.Message}{Environment.NewLine}" +
-                        $"Failure-only handle forensics:{Environment.NewLine}{evidence}",
+                        $"Failure-only handle forensics:{Environment.NewLine}{evidence}{Environment.NewLine}" +
+                        $"DELETE-access canary:{Environment.NewLine}{probeEvidence}",
                         exception);
                 }
+
+                if (deleteProbe is not null)
+                {
+                    var anomalyDetected = deleteProbe.AnomalyDetected;
+                    var probeEvidence = deleteProbe.StopAndFormat();
+                    deleteProbe.Dispose();
+                    deleteProbe = null;
+                    Assert.False(
+                        anomalyDetected,
+                        $"DELETE access was blocked at or after cleanup return.{Environment.NewLine}" +
+                        probeEvidence);
+                }
+
                 Assert.False(Directory.Exists(projectDirectory));
             },
             () =>
             {
+                deleteProbe?.Dispose();
                 if (processId is not null)
                 {
                     StopProcessIfAlive(processId.Value);

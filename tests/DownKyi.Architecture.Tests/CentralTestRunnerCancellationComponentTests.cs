@@ -367,6 +367,8 @@ public sealed class CentralTestRunnerCancellationComponentTests
             Path.GetTempPath(),
             $"downkyi-central-runner-filesystem-{Guid.NewGuid():N}");
         Process? fixture = null;
+        var fixtureProcessId = 0;
+        WindowsDirectoryDeleteAccessProbe? deleteProbe = null;
         Directory.CreateDirectory(fixtureDirectory);
         await FailurePreservingTestCleanup.RunAsync(
             async () =>
@@ -374,18 +376,70 @@ public sealed class CentralTestRunnerCancellationComponentTests
                 var startInfo = CreateFixtureStartInfo("fixture-hold");
                 startInfo.WorkingDirectory = fixtureDirectory;
                 fixture = await StartFixtureAsync(startInfo).ConfigureAwait(true);
+                fixtureProcessId = fixture.Id;
+
+                var cleanupRequestedUtc = DateTimeOffset.UtcNow;
+                if (OperatingSystem.IsWindows())
+                {
+                    deleteProbe = WindowsDirectoryDeleteAccessProbe.Start(
+                        fixtureDirectory,
+                        fixtureProcessId,
+                        "fixture-root",
+                        Environment.ProcessId,
+                        cleanupRequestedUtc);
+                }
 
                 await BuildProcessRunner.CleanupAfterCancellationAsync(fixture, TestTimeout)
                     .ConfigureAwait(true);
+                deleteProbe?.MarkCleanupReturned();
                 fixture.Dispose();
                 fixture = null;
+                if (deleteProbe is not null)
+                {
+                    await deleteProbe.ObservePostCleanupAsync(TimeSpan.FromMilliseconds(150))
+                        .ConfigureAwait(true);
+                }
 
-                Directory.Delete(fixtureDirectory);
+                try
+                {
+                    Directory.Delete(fixtureDirectory);
+                }
+                catch (IOException exception) when (
+                    OperatingSystem.IsWindows() && IsSharingViolation(exception))
+                {
+                    var evidence = WindowsDirectoryHandleForensics.Capture(
+                        fixtureDirectory,
+                        fixtureProcessId,
+                        "fixture-root",
+                        Environment.ProcessId,
+                        cleanupRequestedUtc);
+                    var probeEvidence = deleteProbe?.StopAndFormat() ?? "probe=not-running";
+                    deleteProbe?.Dispose();
+                    deleteProbe = null;
+                    throw new IOException(
+                        $"{exception.Message}{Environment.NewLine}" +
+                        $"Failure-only handle forensics:{Environment.NewLine}{evidence}{Environment.NewLine}" +
+                        $"DELETE-access canary:{Environment.NewLine}{probeEvidence}",
+                        exception);
+                }
+
+                if (deleteProbe is not null)
+                {
+                    var anomalyDetected = deleteProbe.AnomalyDetected;
+                    var probeEvidence = deleteProbe.StopAndFormat();
+                    deleteProbe.Dispose();
+                    deleteProbe = null;
+                    Assert.False(
+                        anomalyDetected,
+                        $"DELETE access was blocked at or after cleanup return.{Environment.NewLine}" +
+                        probeEvidence);
+                }
 
                 Assert.False(Directory.Exists(fixtureDirectory));
             },
             async () =>
             {
+                deleteProbe?.Dispose();
                 await StopFixtureAsync(fixture).ConfigureAwait(true);
                 if (Directory.Exists(fixtureDirectory))
                 {
@@ -393,6 +447,9 @@ public sealed class CentralTestRunnerCancellationComponentTests
                 }
             }).ConfigureAwait(true);
     }
+
+    private static bool IsSharingViolation(IOException exception) =>
+        (exception.HResult & 0xffff) is 32 or 33;
 
     private static async Task AssertSnapshotFailureStillKillsAsync(Exception snapshotFailure)
     {
