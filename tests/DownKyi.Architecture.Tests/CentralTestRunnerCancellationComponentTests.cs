@@ -346,6 +346,41 @@ public sealed class CentralTestRunnerCancellationComponentTests
     }
 
     [Fact]
+    public async Task CleanupFailureDiagnosticIsBoundedRedactedAndFailureOnly()
+    {
+        var diagnosticRoot = Path.Combine(Path.GetTempPath(), $"downkyi-diagnostic-{Guid.NewGuid():N}");
+        var secret = "fixture-diagnostic-secret";
+        var failure = new InvalidOperationException($"failed at {diagnosticRoot} token={secret}");
+        var diagnostic = new CancellationCleanupDiagnostic(1234, true, diagnosticRoot);
+        diagnostic.Record("process-relationship-snapshot-start", 1234);
+        diagnostic.Record(
+            "process-relationship-snapshot-failure",
+            1234,
+            $"exception={failure.GetType().FullName}");
+        diagnostic.AttachFailure(failure, "process-relationship-snapshot", failure, failure);
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+        using var error = new StringWriter();
+
+        var exitCode = await Program.RunCommandAsync(
+            [],
+            (_, _) => Task.FromException<int>(failure),
+            error,
+            cancellation.Token).ConfigureAwait(true);
+
+        var evidence = error.ToString();
+        Assert.Equal(2, exitCode);
+        Assert.InRange(evidence.Length, 1, 4098);
+        Assert.Contains("failureStage=process-relationship-snapshot", evidence, StringComparison.Ordinal);
+        Assert.Contains("firstException=System.InvalidOperationException", evidence, StringComparison.Ordinal);
+        Assert.Contains("cancellationRequested=True", evidence, StringComparison.Ordinal);
+        Assert.Contains("rootPid=1234", evidence, StringComparison.Ordinal);
+        Assert.Contains("<repository-root>", evidence, StringComparison.Ordinal);
+        Assert.DoesNotContain(diagnosticRoot, evidence, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(secret, evidence, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task ExitCodeMappingReturns2ForLiveProcessIdentityFailure()
     {
         using var cancellation = new CancellationTokenSource();

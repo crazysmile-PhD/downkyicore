@@ -39,6 +39,7 @@ public sealed class CentralTestRunnerCommandTests
                     """,
                     TestContext.Current.CancellationToken).ConfigureAwait(true);
                 using var cancellation = new CancellationTokenSource();
+                using var cancellationError = new StringWriter();
                 var run = Program.RunCommandAsync(
                     [
                         "run-project",
@@ -47,6 +48,7 @@ public sealed class CentralTestRunnerCommandTests
                         "--configuration", "Release",
                         "--no-restore"
                 ],
+                    cancellationError,
                     cancellation.Token);
                 processId = await WaitForProcessMarkerAsync(markerPath).ConfigureAwait(true);
                 File.Delete(projectPath);
@@ -55,7 +57,9 @@ public sealed class CentralTestRunnerCommandTests
                 await cancellation.CancelAsync().ConfigureAwait(true);
                 var exitCode = await run.ConfigureAwait(true);
 
-                Assert.Equal(130, exitCode);
+                Assert.True(
+                    exitCode == 130,
+                    $"Expected cancellation exit code 130 but received {exitCode}. {cancellationError}");
                 Assert.False(IsProcessAlive(processId.Value));
                 Directory.Delete(projectDirectory);
 

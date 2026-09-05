@@ -105,7 +105,16 @@ internal static class Program
         string[] args,
         CancellationToken cancellationToken)
     {
-        return await RunCommandAsync(args, CentralTestCommand.RunAsync, cancellationToken)
+        return await RunCommandCoreAsync(args, CentralTestCommand.RunAsync, Console.Error, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    internal static async Task<int> RunCommandAsync(
+        string[] args,
+        TextWriter error,
+        CancellationToken cancellationToken)
+    {
+        return await RunCommandCoreAsync(args, CentralTestCommand.RunAsync, error, cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -114,13 +123,34 @@ internal static class Program
         Func<string[], CancellationToken, Task<int>> runCommandAsync,
         CancellationToken cancellationToken)
     {
+        return await RunCommandCoreAsync(args, runCommandAsync, Console.Error, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    internal static async Task<int> RunCommandAsync(
+        string[] args,
+        Func<string[], CancellationToken, Task<int>> runCommandAsync,
+        TextWriter error,
+        CancellationToken cancellationToken)
+    {
+        return await RunCommandCoreAsync(args, runCommandAsync, error, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static async Task<int> RunCommandCoreAsync(
+        string[] args,
+        Func<string[], CancellationToken, Task<int>> runCommandAsync,
+        TextWriter errorWriter,
+        CancellationToken cancellationToken)
+    {
         try
         {
             return await runCommandAsync(args, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            await Console.Error.WriteLineAsync(exception.Message).ConfigureAwait(false);
+            var message = exception.Data[CancellationCleanupDiagnostic.DataKey] as string ?? exception.Message;
+            await errorWriter.WriteLineAsync(message).ConfigureAwait(false);
             return 2;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
