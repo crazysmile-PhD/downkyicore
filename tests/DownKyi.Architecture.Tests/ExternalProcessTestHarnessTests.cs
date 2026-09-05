@@ -3,6 +3,7 @@ using DownKyi.TestInfrastructure;
 
 namespace DownKyi.Architecture.Tests;
 
+[Collection("External process lifecycle")]
 public sealed class ExternalProcessTestHarnessTests
 {
     [Fact]
@@ -76,6 +77,57 @@ public sealed class ExternalProcessTestHarnessTests
             childLine["child-pid=".Length..],
             System.Globalization.CultureInfo.InvariantCulture);
         Assert.False(IsProcessAlive(childProcessId));
+    }
+
+    [Fact]
+    public async Task RunAsyncKillsInheritedPipeDescendantAfterRootExit()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var fixtureRoot = Path.Combine(
+            Path.GetTempPath(),
+            $"downkyi-inherited-pipe-{Guid.NewGuid():N}");
+        var childPidPath = Path.Combine(fixtureRoot, "child.pid");
+        Directory.CreateDirectory(fixtureRoot);
+
+        await ExternalProcessTestHarness.RunWithCleanupAsync(
+            async () =>
+            {
+                var startInfo = new ProcessStartInfo("/bin/sh")
+                {
+                    WorkingDirectory = fixtureRoot,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true
+                };
+                startInfo.ArgumentList.Add("-c");
+                startInfo.ArgumentList.Add("sleep 60 & echo $! > \"$1\"; exit 0");
+                startInfo.ArgumentList.Add("inherited-pipe-fixture");
+                startInfo.ArgumentList.Add(childPidPath);
+
+                await Assert.ThrowsAsync<TimeoutException>(
+                    () => ExternalProcessTestHarness.RunAsync(
+                        startInfo,
+                        TimeSpan.FromSeconds(5),
+                        TimeSpan.FromSeconds(2),
+                        TestContext.Current.CancellationToken)).ConfigureAwait(true);
+
+                var childProcessId = int.Parse(
+                    await File.ReadAllTextAsync(
+                        childPidPath,
+                        TestContext.Current.CancellationToken).ConfigureAwait(true),
+                    System.Globalization.CultureInfo.InvariantCulture);
+                Assert.False(IsProcessAlive(childProcessId));
+            },
+            () =>
+            {
+                Directory.Delete(fixtureRoot, recursive: true);
+                return Task.CompletedTask;
+            }).ConfigureAwait(true);
     }
 
     [Fact]

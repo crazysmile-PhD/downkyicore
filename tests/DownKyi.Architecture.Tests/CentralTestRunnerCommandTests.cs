@@ -4,6 +4,7 @@ using DownKyi.TestInfrastructure;
 
 namespace DownKyi.Architecture.Tests;
 
+[Collection("External process lifecycle")]
 public sealed class CentralTestRunnerCommandTests
 {
     [Fact]
