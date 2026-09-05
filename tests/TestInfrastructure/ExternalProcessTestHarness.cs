@@ -1,7 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.ExceptionServices;
-using System.Runtime.InteropServices;
 
 namespace DownKyi.TestInfrastructure;
 
@@ -66,45 +65,6 @@ public sealed class ExternalProcessTimeoutException : TimeoutException
 
 public static class ExternalProcessTestHarness
 {
-    private const int NoSuchProcess = 3;
-    private const int SigKill = 9;
-    private const string PosixProcessGroupLauncher = """
-        $ErrorActionPreference = 'Stop'
-        Add-Type -TypeDefinition @'
-        using System.Runtime.InteropServices;
-
-        public static class NativeProcessGroup
-        {
-            [DllImport("libc", SetLastError = true)]
-            public static extern int setpgid(int processId, int processGroupId);
-        }
-        '@
-        if ([NativeProcessGroup]::setpgid(0, 0) -ne 0) {
-            $errorCode = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
-            throw "setpgid failed with error $errorCode."
-        }
-        $startInfo = [Diagnostics.ProcessStartInfo]::new()
-        $startInfo.FileName = [string]$args[0]
-        $startInfo.UseShellExecute = $false
-        $startInfo.CreateNoWindow = $true
-        for ($index = 1; $index -lt $args.Count; $index++) {
-            [void]$startInfo.ArgumentList.Add([string]$args[$index])
-        }
-        $process = [Diagnostics.Process]::new()
-        $process.StartInfo = $startInfo
-        try {
-            if (-not $process.Start()) {
-                throw "The target process did not start."
-            }
-            $process.WaitForExit()
-            $exitCode = $process.ExitCode
-        }
-        finally {
-            $process.Dispose()
-        }
-        exit $exitCode
-        """;
-
     public static Process Start(ProcessStartInfo startInfo)
     {
         ArgumentNullException.ThrowIfNull(startInfo);
@@ -152,17 +112,12 @@ public static class ExternalProcessTestHarness
         ValidateTimeout(executionTimeout, nameof(executionTimeout));
         ValidateTimeout(cleanupTimeout, nameof(cleanupTimeout));
 
-        var usePosixProcessGroup = !OperatingSystem.IsWindows();
-        var ownedStartInfo = usePosixProcessGroup
-            ? CreatePosixProcessGroupStartInfo(startInfo)
-            : startInfo;
-        using var process = Start(ownedStartInfo);
+        using var process = Start(startInfo);
         var processId = process.Id;
-        var posixProcessGroupId = usePosixProcessGroup ? processId : (int?)null;
-        var standardOutput = ownedStartInfo.RedirectStandardOutput
+        var standardOutput = startInfo.RedirectStandardOutput
             ? process.StandardOutput.ReadToEndAsync(CancellationToken.None)
             : Task.FromResult(string.Empty);
-        var standardError = ownedStartInfo.RedirectStandardError
+        var standardError = startInfo.RedirectStandardError
             ? process.StandardError.ReadToEndAsync(CancellationToken.None)
             : Task.FromResult(string.Empty);
         var exit = process.WaitForExitAsync(CancellationToken.None);
@@ -178,8 +133,7 @@ public static class ExternalProcessTestHarness
                 exit,
                 standardOutput,
                 standardError,
-                cleanupTimeout,
-                posixProcessGroupId).ConfigureAwait(false);
+                cleanupTimeout).ConfigureAwait(false);
             var capturedOutput = await GetCompletedOutputAsync(standardOutput).ConfigureAwait(false);
             var capturedError = await GetCompletedOutputAsync(standardError).ConfigureAwait(false);
             throw new ExternalProcessTimeoutException(
@@ -197,8 +151,7 @@ public static class ExternalProcessTestHarness
                 exit,
                 standardOutput,
                 standardError,
-                cleanupTimeout,
-                posixProcessGroupId).ConfigureAwait(false);
+                cleanupTimeout).ConfigureAwait(false);
             var cleanupException = CreateCleanupException(cleanupFailures);
             throw new OperationCanceledException(
                 $"External test process '{startInfo.FileName}' was cancelled.",
@@ -210,20 +163,7 @@ public static class ExternalProcessTestHarness
             standardOutput,
             standardError,
             cleanupTimeout).ConfigureAwait(false);
-        if (drainFailures.Count > 0)
-        {
-            var cleanupFailures = await StopCoreAsync(
-                process,
-                exit,
-                standardOutput,
-                standardError,
-                cleanupTimeout,
-                posixProcessGroupId).ConfigureAwait(false);
-            ThrowPrimaryAndCleanupFailures(
-                drainFailures[0],
-                [.. drainFailures.Skip(1), .. cleanupFailures],
-                "External process output drain and descendant cleanup failed.");
-        }
+        ThrowCleanupFailures(drainFailures, "External process output drain failed.");
 
         return new ExternalProcessResult(
             process.ExitCode,
@@ -294,30 +234,30 @@ public static class ExternalProcessTestHarness
         Task exitTask,
         Task standardOutput,
         Task standardError,
-        TimeSpan cleanupTimeout,
-        int? posixProcessGroupId = null)
+        TimeSpan cleanupTimeout)
     {
         return await StopCoreAsync(
             process,
             exitTask,
             [standardOutput, standardError],
-            cleanupTimeout,
-            posixProcessGroupId).ConfigureAwait(false);
+            cleanupTimeout).ConfigureAwait(false);
     }
 
     private static async Task<List<Exception>> StopCoreAsync(
         Process process,
         Task exitTask,
         Task[] drainTasks,
-        TimeSpan cleanupTimeout,
-        int? posixProcessGroupId = null)
+        TimeSpan cleanupTimeout)
     {
         var failures = new List<Exception>();
         var cleanup = Stopwatch.StartNew();
 
         try
         {
-            TerminateOwnedProcesses(process, posixProcessGroupId);
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
         }
         catch (Exception exception) when (IsProcessCleanupException(exception))
         {
@@ -389,96 +329,6 @@ public static class ExternalProcessTestHarness
             or Win32Exception
             or NotSupportedException;
     }
-
-    private static ProcessStartInfo CreatePosixProcessGroupStartInfo(ProcessStartInfo startInfo)
-    {
-        if (startInfo.UseShellExecute)
-        {
-            throw new NotSupportedException("The external process harness requires UseShellExecute=false.");
-        }
-
-        if (startInfo.RedirectStandardInput)
-        {
-            throw new NotSupportedException("Redirected standard input is not supported by the POSIX process-group launcher.");
-        }
-
-        if (!string.IsNullOrWhiteSpace(startInfo.Arguments))
-        {
-            throw new NotSupportedException("Use ProcessStartInfo.ArgumentList with the external process harness.");
-        }
-
-        var ownedStartInfo = new ProcessStartInfo("pwsh")
-        {
-            WorkingDirectory = startInfo.WorkingDirectory,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardOutput = startInfo.RedirectStandardOutput,
-            RedirectStandardError = startInfo.RedirectStandardError,
-            StandardOutputEncoding = startInfo.StandardOutputEncoding,
-            StandardErrorEncoding = startInfo.StandardErrorEncoding
-        };
-        ownedStartInfo.Environment.Clear();
-        foreach (var environmentVariable in startInfo.Environment)
-        {
-            ownedStartInfo.Environment.Add(environmentVariable);
-        }
-
-        ownedStartInfo.ArgumentList.Add("-NoLogo");
-        ownedStartInfo.ArgumentList.Add("-NoProfile");
-        ownedStartInfo.ArgumentList.Add("-NonInteractive");
-        ownedStartInfo.ArgumentList.Add("-CommandWithArgs");
-        ownedStartInfo.ArgumentList.Add(PosixProcessGroupLauncher);
-        ownedStartInfo.ArgumentList.Add(startInfo.FileName);
-        foreach (var argument in startInfo.ArgumentList)
-        {
-            ownedStartInfo.ArgumentList.Add(argument);
-        }
-
-        return ownedStartInfo;
-    }
-
-    private static void TerminateOwnedProcesses(Process process, int? posixProcessGroupId)
-    {
-        if (posixProcessGroupId is { } processGroupId)
-        {
-            if (Kill(-processGroupId, SigKill) == 0)
-            {
-                return;
-            }
-
-            var error = Marshal.GetLastPInvokeError();
-            if (error == NoSuchProcess)
-            {
-                return;
-            }
-
-            throw new Win32Exception(error, $"Unable to terminate POSIX process group {processGroupId}.");
-        }
-
-        if (!process.HasExited)
-        {
-            process.Kill(entireProcessTree: true);
-        }
-    }
-
-    private static void ThrowPrimaryAndCleanupFailures(
-        Exception primaryFailure,
-        List<Exception> cleanupFailures,
-        string message)
-    {
-        if (cleanupFailures.Count == 0)
-        {
-            ExceptionDispatchInfo.Capture(primaryFailure).Throw();
-        }
-
-        throw new AggregateException(message, [primaryFailure, .. cleanupFailures]);
-    }
-
-#pragma warning disable SYSLIB1054 // Test-only POSIX signal call does not justify enabling unsafe code.
-    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    [DllImport("libc", EntryPoint = "kill", SetLastError = true)]
-    private static extern int Kill(int processId, int signal);
-#pragma warning restore SYSLIB1054
 
     private static TimeSpan Remaining(TimeSpan timeout, TimeSpan elapsed)
     {
