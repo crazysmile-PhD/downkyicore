@@ -59,7 +59,9 @@ suppressed to manufacture a zero baseline.
 
 Production classification decisions live in
 `script/code-metrics/ca1506-classifications.json` and are keyed by repository
-path plus diagnostic symbol. A second diagnostic in the same production file
+path plus the diagnostic's repository-relative source region (`location:line:column`).
+This distinguishes same-named members, overloads, and members on different declaring
+types without depending on SARIF result order. A second diagnostic in the same production file
 does not inherit an existing review. New test findings are classified as test
 integration; new production findings default to needs manual review so the
 report stays complete without treating an unreviewed metric as a defect.

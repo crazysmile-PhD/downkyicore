@@ -77,19 +77,19 @@ internal static class Ca1506ReportGenerator
         foreach (var entry in entries.EnumerateArray())
         {
             var file = GetRequiredString(entry, "file");
-            var symbol = GetRequiredString(entry, "symbol");
+            var identity = GetRequiredString(entry, "identity");
             var classification = GetRequiredString(entry, "classification");
             var rationale = GetRequiredString(entry, "rationale");
             if (!ClassificationOrder.Contains(classification, StringComparer.Ordinal))
             {
                 throw new InvalidDataException($"Unknown CA1506 classification: {classification}");
             }
-            var key = CreateClassificationKey(file, symbol);
+            var key = CreateClassificationKey(file, identity);
             if (!classifications.TryAdd(
                     key,
-                    new ProductionClassification(file, symbol, classification, rationale)))
+                    new ProductionClassification(file, identity, classification, rationale)))
             {
-                throw new InvalidDataException($"Duplicate CA1506 production classification: {file} ({symbol})");
+                throw new InvalidDataException($"Duplicate CA1506 production classification: {file} ({identity})");
             }
         }
 
@@ -135,7 +135,7 @@ internal static class Ca1506ReportGenerator
                 }
 
                 var message = ReadMessage(result);
-                var diagnosticIdentity = ReadDiagnosticIdentity(message, source.Line, source.Column);
+                var diagnosticIdentity = CreateDiagnosticIdentity(source);
                 var review = Classify(source.File, diagnosticIdentity, classifications);
                 findingsByKey.Add(
                     key,
@@ -177,19 +177,9 @@ internal static class Ca1506ReportGenerator
             "This production finding has not yet received a behavior-led architecture classification.");
     }
 
-    private static string ReadDiagnosticIdentity(string message, int line, int column)
+    private static string CreateDiagnosticIdentity(SarifSourceLocation source)
     {
-        var openingQuote = message.IndexOf('\'', StringComparison.Ordinal);
-        if (openingQuote >= 0)
-        {
-            var closingQuote = message.IndexOf('\'', openingQuote + 1);
-            if (closingQuote > openingQuote + 1)
-            {
-                return message[(openingQuote + 1)..closingQuote];
-            }
-        }
-
-        return $"location:{line}:{column}:{message.Trim()}";
+        return $"location:{source.Line}:{source.Column}";
     }
 
     private static string CreateClassificationKey(string file, string diagnosticIdentity)

@@ -27,9 +27,7 @@ internal static class Program
             await output.WriteLineAsync(
                 $"Production: {report.Summary.Production}; test: {report.Summary.Test}").ConfigureAwait(false);
             await output.WriteLineAsync(
-                $"Markdown: {Path.Combine(options.OutputDirectory, "ca1506-report.md")}").ConfigureAwait(false);
-            await output.WriteLineAsync(
-                $"JSON: {Path.Combine(options.OutputDirectory, "ca1506-report.json")}").ConfigureAwait(false);
+                "CA1506 reports: ca1506-report.md; ca1506-report.json").ConfigureAwait(false);
             return 0;
         }
         catch (JsonException)

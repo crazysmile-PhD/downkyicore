@@ -13,6 +13,7 @@ internal enum MacOsProcessIdentityState
 
 internal readonly record struct MacOsProcessIdentityResult(
     MacOsProcessIdentityState State,
+    int BytesReturned,
     int ProcessId,
     int ParentProcessId,
     uint Status,
@@ -71,6 +72,7 @@ internal static class MacOsProcessIdentityProbe
                 returned == 0 && error == NoSuchProcess
                     ? MacOsProcessIdentityState.Gone
                     : MacOsProcessIdentityState.Unavailable,
+                returned,
                 processId,
                 0,
                 0,
@@ -87,6 +89,7 @@ internal static class MacOsProcessIdentityProbe
                 : MacOsProcessIdentityState.SameIdentityLive;
         return new MacOsProcessIdentityResult(
             state,
+            returned,
             unchecked((int)nativeProcessId),
             unchecked((int)parentProcessId),
             status,
@@ -94,8 +97,8 @@ internal static class MacOsProcessIdentityProbe
             error);
     }
 
-    [StructLayout(LayoutKind.Explicit, Size = 144)]
-    private struct ProcBsdInfo
+    [StructLayout(LayoutKind.Explicit, Size = 136)]
+    internal struct ProcBsdInfo
     {
         [FieldOffset(4)]
         internal uint Status;
@@ -106,10 +109,10 @@ internal static class MacOsProcessIdentityProbe
         [FieldOffset(16)]
         internal uint ParentProcessId;
 
-        [FieldOffset(128)]
+        [FieldOffset(120)]
         internal ulong StartTimeSeconds;
 
-        [FieldOffset(136)]
+        [FieldOffset(128)]
         internal ulong StartTimeMicroseconds;
     }
 

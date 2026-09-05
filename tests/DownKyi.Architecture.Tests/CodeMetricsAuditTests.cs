@@ -23,7 +23,7 @@ public sealed class CodeMetricsAuditTests
               "production": [
                 {
                   "file": "src/Product.cs",
-                  "symbol": "Product",
+                  "identity": "location:10:4",
                   "classification": "architecture hotspot",
                   "rationale": "Behavior-led review required."
                 }
@@ -163,7 +163,7 @@ public sealed class CodeMetricsAuditTests
     }
 
     [Fact]
-    public void NewFindingInClassifiedFileRequiresItsOwnReview()
+    public void DiagnosticLocationSeparatesSameNamedMembersAndIsOrderIndependent()
     {
         using var directory = new TemporaryDirectory();
         var repositoryRoot = directory.CreateDirectory("repository");
@@ -178,32 +178,82 @@ public sealed class CodeMetricsAuditTests
               "production": [
                 {
                   "file": "src/Product.cs",
-                  "symbol": "ReviewedMember",
+                  "identity": "location:10:4",
                   "classification": "architecture hotspot",
                   "rationale": "Reviewed member rationale."
                 }
               ]
             }
             """);
-        TemporaryDirectory.CreateFile(
+        var first = CreateResult(productionFile, 10, 4, "'Execute' on ProductA is coupled with reviewed types.");
+        var second = CreateResult(productionFile, 20, 4, "'Execute' on ProductB is coupled with new types.");
+        var overload = CreateResult(productionFile, 30, 4, "'Execute' overload is coupled with new types.");
+        var sarifPath = TemporaryDirectory.CreateFile(
             sarifDirectory,
             "Product.sarif",
-            CreateSarif(
-                CreateResult(productionFile, 10, 4, "'ReviewedMember' is coupled with reviewed types."),
-                CreateResult(productionFile, 20, 4, "'NewMember' is coupled with new types.")));
+            CreateSarif(first, second, overload));
 
-        var report = Ca1506ReportGenerator.Generate(
+        var reportBeforeReorder = Ca1506ReportGenerator.Generate(
             repositoryRoot,
             sarifDirectory,
             classifications,
             new GitState("0123456789abcdef", false));
 
-        Assert.Contains(report.Findings, finding =>
-            finding.Message.StartsWith("'ReviewedMember'", StringComparison.Ordinal) &&
-            finding.Classification == "architecture hotspot");
-        Assert.Contains(report.Findings, finding =>
-            finding.Message.StartsWith("'NewMember'", StringComparison.Ordinal) &&
-            finding.Classification == "needs manual review");
+        File.WriteAllText(sarifPath, CreateSarif(overload, first, second));
+        var reportAfterReorder = Ca1506ReportGenerator.Generate(
+            repositoryRoot,
+            sarifDirectory,
+            classifications,
+            new GitState("0123456789abcdef", false));
+
+        var reviewed = Assert.Single(reportBeforeReorder.Findings, finding => finding.Line == 10);
+        Assert.Equal("architecture hotspot", reviewed.Classification);
+        Assert.Equal("Reviewed member rationale.", reviewed.Rationale);
+        Assert.All(
+            reportBeforeReorder.Findings.Where(finding => finding.Line is 20 or 30),
+            finding => Assert.Equal("needs manual review", finding.Classification));
+        Assert.Equal(
+            reportBeforeReorder.Findings.Select(ToClassificationIdentity),
+            reportAfterReorder.Findings.Select(ToClassificationIdentity));
+    }
+
+    [Fact]
+    public async Task SuccessfulAuditReportsFixedNamesWithoutAbsolutePaths()
+    {
+        using var directory = new TemporaryDirectory();
+        var repositoryRoot = directory.CreateDirectory("repository");
+        InitializeGitRepository(repositoryRoot);
+        var sarifDirectory = directory.CreateDirectory("sarif");
+        var classifications = TemporaryDirectory.CreateFile(
+            repositoryRoot,
+            "classifications.json",
+            """{"schemaVersion":2,"production":[]}""");
+        TemporaryDirectory.CreateFile(sarifDirectory, "Product.sarif", CreateSarif());
+        var outputDirectory = Path.Combine(repositoryRoot, "artifacts", "code-metrics");
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = await Program.RunAsync(
+            [
+                "--repository-root", repositoryRoot,
+                "--sarif-directory", sarifDirectory,
+                "--classification-file", classifications,
+                "--output-directory", outputDirectory
+            ],
+            output,
+            error);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(string.Empty, error.ToString());
+        Assert.DoesNotContain(repositoryRoot, output.ToString(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            output.ToString(),
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ca1506-report.md", output.ToString(), StringComparison.Ordinal);
+        Assert.Contains("ca1506-report.json", output.ToString(), StringComparison.Ordinal);
+        Assert.True(File.Exists(Path.Combine(outputDirectory, "ca1506-report.md")));
+        Assert.True(File.Exists(Path.Combine(outputDirectory, "ca1506-report.json")));
     }
 
     [Fact]
@@ -273,6 +323,11 @@ public sealed class CodeMetricsAuditTests
                 new { results }
             }
         });
+    }
+
+    private static string ToClassificationIdentity(Ca1506Finding finding)
+    {
+        return $"{finding.File}|{finding.Line}|{finding.Column}|{finding.Classification}|{finding.Rationale}";
     }
 
     private static Ca1506Report CreateReport()

@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using DownKyi.CentralTestRunner;
 
 namespace DownKyi.Architecture.Tests;
@@ -374,10 +375,10 @@ public sealed class CentralTestRunnerCancellationComponentTests
 
     [Theory]
     [InlineData((int)MacOsProcessIdentityState.Gone, 0, 3, 0, 0U, 0UL)]
-    [InlineData((int)MacOsProcessIdentityState.SameIdentityZombie, 144, 0, 1234, 5U, 1_700_000_000UL)]
-    [InlineData((int)MacOsProcessIdentityState.SameIdentityLive, 144, 0, 1234, 2U, 1_700_000_000UL)]
-    [InlineData((int)MacOsProcessIdentityState.Reused, 144, 0, 1235, 2U, 1_700_000_000UL)]
-    [InlineData((int)MacOsProcessIdentityState.Unavailable, 143, 0, 1234, 5U, 1_700_000_000UL)]
+    [InlineData((int)MacOsProcessIdentityState.SameIdentityZombie, 136, 0, 1234, 5U, 1_700_000_000UL)]
+    [InlineData((int)MacOsProcessIdentityState.SameIdentityLive, 136, 0, 1234, 2U, 1_700_000_000UL)]
+    [InlineData((int)MacOsProcessIdentityState.Reused, 136, 0, 1235, 2U, 1_700_000_000UL)]
+    [InlineData((int)MacOsProcessIdentityState.Unavailable, 135, 0, 1234, 5U, 1_700_000_000UL)]
     public void MacOsIdentityProbeClassifiesBsdProcessInformation(
         int expectedStateValue,
         int returned,
@@ -400,7 +401,11 @@ public sealed class CentralTestRunnerCancellationComponentTests
             startTimeSeconds,
             startTimeSeconds == 0 ? 0UL : 123_456UL);
 
-        Assert.Equal(144, MacOsProcessIdentityProbe.NativeBufferSize);
+        Assert.Equal(136, Marshal.SizeOf<MacOsProcessIdentityProbe.ProcBsdInfo>());
+        Assert.Equal(120, Marshal.OffsetOf<MacOsProcessIdentityProbe.ProcBsdInfo>(
+            nameof(MacOsProcessIdentityProbe.ProcBsdInfo.StartTimeSeconds)).ToInt32());
+        Assert.Equal(128, Marshal.OffsetOf<MacOsProcessIdentityProbe.ProcBsdInfo>(
+            nameof(MacOsProcessIdentityProbe.ProcBsdInfo.StartTimeMicroseconds)).ToInt32());
         Assert.Equal((MacOsProcessIdentityState)expectedStateValue, result.State);
     }
 
@@ -606,6 +611,7 @@ public sealed class CentralTestRunnerCancellationComponentTests
     {
         return new MacOsProcessIdentityResult(
             state,
+            MacOsProcessIdentityProbe.NativeBufferSize,
             processId,
             Environment.ProcessId,
             state == MacOsProcessIdentityState.SameIdentityZombie ? 5U : 2U,
