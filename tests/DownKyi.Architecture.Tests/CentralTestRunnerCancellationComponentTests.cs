@@ -7,7 +7,6 @@ namespace DownKyi.Architecture.Tests;
 public sealed class CentralTestRunnerCancellationComponentTests
 {
     private static readonly TimeSpan TestTimeout = TimeSpan.FromSeconds(5);
-    private const int MacOsLifecycleTrialLimit = 50;
 
     [Fact]
     public void BuildInvocationDisablesPersistentBuildServers()
@@ -393,79 +392,6 @@ public sealed class CentralTestRunnerCancellationComponentTests
     }
 
     [Fact]
-    public async Task MacOsSingleChildTerminationObservationExperiment()
-    {
-        if (!OperatingSystem.IsMacOS())
-        {
-            return;
-        }
-
-        var counts = Enum.GetValues<ObservedProcessOutcomeCategory>()
-            .ToDictionary(category => category, _ => 0);
-        LifecycleExperimentHit? firstAmbiguous = null;
-        var executedTrials = 0;
-        for (var trial = 0; trial < MacOsLifecycleTrialLimit; trial++)
-        {
-            Process? fixture = null;
-            ObservedProcessObservationOutcome? outcome = null;
-            DateTimeOffset snapshotStartTime = default;
-            var targetPid = 0;
-            await FailurePreservingTestCleanup.RunAsync(
-                async () =>
-                {
-                    fixture = await StartHoldingFixtureAsync().ConfigureAwait(true);
-                    targetPid = fixture.Id;
-                    snapshotStartTime = fixture.StartTime.ToUniversalTime();
-                    BuildProcessRunner.KillOwnedProcessTree(fixture);
-                    try
-                    {
-                        await BuildProcessRunner.WaitForObservedProcessExitAsync(
-                                CreateObservedProcess(fixture, snapshotStartTime),
-                                observationCompleted: value => outcome = value)
-                            .WaitAsync(TestTimeout)
-                            .ConfigureAwait(true);
-                    }
-                    catch (Exception exception) when (
-                        outcome is { Category: ObservedProcessOutcomeCategory.IdentityFailureAmbiguous } value &&
-                        ReferenceEquals(exception, value.Exception))
-                    {
-                        // The experiment records this production-equivalent ambiguous observation.
-                    }
-                },
-                () => StopFixtureAsync(fixture)).ConfigureAwait(true);
-
-            var observed = Assert.IsType<ObservedProcessObservationOutcome>(outcome);
-            counts[observed.Category]++;
-            executedTrials++;
-            if (observed.Category == ObservedProcessOutcomeCategory.IdentityFailureAmbiguous)
-            {
-                firstAmbiguous = new LifecycleExperimentHit(
-                    targetPid,
-                    snapshotStartTime,
-                    observed,
-                    "completed");
-                break;
-            }
-        }
-
-        var summary = $"macos-single-child-lifecycle trials={executedTrials} " +
-            $"terminal-before-open={counts[ObservedProcessOutcomeCategory.TerminalBeforeOpen]} " +
-            $"identity-success-then-reap={counts[ObservedProcessOutcomeCategory.IdentitySuccessThenReap]} " +
-            $"identity-failure-terminal-confirmed={counts[ObservedProcessOutcomeCategory.IdentityFailureTerminalConfirmed]} " +
-            $"identity-failure-ambiguous={counts[ObservedProcessOutcomeCategory.IdentityFailureAmbiguous]} " +
-            $"live-process={counts[ObservedProcessOutcomeCategory.LiveProcess]} " +
-            $"other={counts[ObservedProcessOutcomeCategory.Other]}";
-        if (firstAmbiguous is { } hit)
-        {
-            summary += $" firstAmbiguous=[snapshotStart={hit.SnapshotStartTime:O} " +
-                $"{hit.Outcome.Markers.FormatFailure(hit.Outcome.Exception!, cancellationRequested: false)} " +
-                $"cleanup={hit.CleanupResult}]";
-        }
-
-        Console.WriteLine(summary);
-    }
-
-    [Fact]
     public async Task ModuleMarkerFailurePreservesIdentityExceptionAndExitCodeMapping()
     {
         Process? fixture = null;
@@ -664,12 +590,6 @@ public sealed class CentralTestRunnerCancellationComponentTests
             _ => throw new ArgumentOutOfRangeException(nameof(exceptionType))
         };
     }
-
-    private readonly record struct LifecycleExperimentHit(
-        int TargetPid,
-        DateTimeOffset SnapshotStartTime,
-        ObservedProcessObservationOutcome Outcome,
-        string CleanupResult);
 
     private static Task<Process> StartHoldingFixtureAsync()
     {
