@@ -1,3 +1,7 @@
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
+
 namespace DownKyi.CentralTestRunner;
 
 internal static class Program
@@ -12,6 +16,40 @@ internal static class Program
                 $"fixture-ready pid={Environment.ProcessId} start={startTimeUtc:O}");
             await Console.Out.FlushAsync().ConfigureAwait(false);
             await Task.Delay(Timeout.InfiniteTimeSpan).ConfigureAwait(false);
+            return 0;
+        }
+
+        if (args.Length > 1 && string.Equals(args[0], "fixture-directory-lock", StringComparison.Ordinal))
+        {
+            using var directoryLock = NativeMethods.CreateFile(
+                args[1],
+                NativeMethods.ListDirectory,
+                NativeMethods.ShareRead | NativeMethods.ShareWrite,
+                IntPtr.Zero,
+                NativeMethods.OpenExisting,
+                NativeMethods.BackupSemantics,
+                IntPtr.Zero);
+            if (directoryLock.IsInvalid)
+            {
+                throw new Win32Exception(Marshal.GetLastPInvokeError());
+            }
+
+            var lockReferenceAdded = false;
+            directoryLock.DangerousAddRef(ref lockReferenceAdded);
+            try
+            {
+                await Console.Out.WriteLineAsync("fixture-lock-ready").ConfigureAwait(false);
+                await Console.Out.FlushAsync().ConfigureAwait(false);
+                await Task.Delay(Timeout.InfiniteTimeSpan).ConfigureAwait(false);
+            }
+            finally
+            {
+                if (lockReferenceAdded)
+                {
+                    directoryLock.DangerousRelease();
+                }
+            }
+
             return 0;
         }
 
@@ -89,5 +127,30 @@ internal static class Program
         {
             return 130;
         }
+    }
+
+    private static class NativeMethods
+    {
+        internal const uint ShareRead = 0x00000001;
+        internal const uint ShareWrite = 0x00000002;
+        internal const uint ListDirectory = 0x00000001;
+        internal const uint OpenExisting = 3;
+        internal const uint BackupSemantics = 0x02000000;
+
+        [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+        [DllImport(
+            "kernel32.dll",
+            EntryPoint = "CreateFileW",
+            ExactSpelling = true,
+            CharSet = CharSet.Unicode,
+            SetLastError = true)]
+        internal static extern SafeFileHandle CreateFile(
+            string fileName,
+            uint desiredAccess,
+            uint shareMode,
+            IntPtr securityAttributes,
+            uint creationDisposition,
+            uint flagsAndAttributes,
+            IntPtr templateFile);
     }
 }
