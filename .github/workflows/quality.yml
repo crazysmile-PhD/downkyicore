@@ -66,6 +66,21 @@ jobs:
           -p:AnalysisMode=All
           -p:EnforceCodeStyleInBuild=true
           -p:UseSharedCompilation=false
+      - name: Validate targeted resource forensics
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          DOWNKYI_TARGETED_RESOURCE_FORENSICS: '1'
+        run: >
+          ./script/test-project.ps1
+          -ProjectPath tests/DownKyi.Windows.Tests/DownKyi.Windows.Tests.csproj
+          -Configuration Release
+          -NoRestore
+          -NoBuild
+          -ResultsDirectory ./TestResults
+          -TrxName targeted-resource-forensics.trx
+          -Filter FullyQualifiedName=DownKyi.Windows.Tests.TargetedResourceForensicsWindowsTests.ControlledDirectoryOwnerProducesCorrelatedLifecycleArtifact
+          -EvidenceDirectory ./artifacts/test-flight-recorder
       - name: Test
         shell: pwsh
         run: >
@@ -74,6 +89,13 @@ jobs:
           -NoRestore
           -NoBuild
           -ResultsDirectory ./TestResults
+      - name: Classify resource-contention failure
+        if: failure()
+        shell: pwsh
+        run: >
+          ./script/classify-resource-contention.ps1
+          -ResultsDirectory ./TestResults
+          -OutputPath ./artifacts/test-flight-recorder/resource-contention-classification.json
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v7

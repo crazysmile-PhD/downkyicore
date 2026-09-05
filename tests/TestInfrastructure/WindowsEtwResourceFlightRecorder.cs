@@ -2,9 +2,10 @@ using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Xml.Linq;
 
-namespace DownKyi.Architecture.Tests;
+namespace DownKyi.TestInfrastructure;
 
 internal sealed class WindowsEtwResourceFlightRecorder : IDisposable
 {
@@ -43,7 +44,9 @@ internal sealed class WindowsEtwResourceFlightRecorder : IDisposable
 
     private readonly string targetDirectory;
     private readonly string targetPathSuffix;
+    private readonly string testIdentity;
     private readonly HashSet<int> knownProcessIds;
+    private readonly Dictionary<int, string> processClassifications = [];
     private readonly Lock processIdsLock = new();
     private readonly string instanceName = $"DownKyiH4-{Guid.NewGuid():N}";
     private readonly string temporaryDirectory = Path.Combine(
@@ -54,21 +57,33 @@ internal sealed class WindowsEtwResourceFlightRecorder : IDisposable
     private bool started;
     private int stopped;
 
-    private WindowsEtwResourceFlightRecorder(string targetDirectory, IEnumerable<int> knownProcessIds)
+    internal string? ArtifactPath { get; private set; }
+
+    private WindowsEtwResourceFlightRecorder(
+        string targetDirectory,
+        string testIdentity,
+        IEnumerable<int> knownProcessIds)
     {
         this.targetDirectory = Path.GetFullPath(targetDirectory);
+        this.testIdentity = testIdentity;
         var pathRoot = Path.GetPathRoot(this.targetDirectory) ?? string.Empty;
         targetPathSuffix = this.targetDirectory[pathRoot.Length..];
         this.knownProcessIds = [.. knownProcessIds.Where(processId => processId > 0)];
+        foreach (var processId in this.knownProcessIds)
+        {
+            processClassifications[processId] = "testhost";
+        }
+
         StartRecording();
     }
 
     internal static WindowsEtwResourceFlightRecorder Start(
         string targetDirectory,
+        string testIdentity,
         params int[] knownProcessIds) =>
-        new(targetDirectory, knownProcessIds);
+        new(targetDirectory, testIdentity, knownProcessIds);
 
-    internal void AddKnownProcessId(int processId)
+    internal void AddKnownProcessId(int processId, string classification)
     {
         if (processId <= 0)
         {
@@ -78,6 +93,7 @@ internal sealed class WindowsEtwResourceFlightRecorder : IDisposable
         lock (processIdsLock)
         {
             knownProcessIds.Add(processId);
+            processClassifications[processId] = classification;
         }
     }
 
@@ -85,7 +101,10 @@ internal sealed class WindowsEtwResourceFlightRecorder : IDisposable
         "Design",
         "CA1031:Do not catch general exception types",
         Justification = "A diagnostic recorder failure must be returned as evidence without replacing the test result.")]
-    internal string StopAndFormat(bool preserve)
+    internal string StopAndFormat(
+        bool preserve,
+        string probeEvidence,
+        string rootCauseStatus)
     {
         if (Interlocked.Exchange(ref stopped, 1) != 0)
         {
@@ -151,9 +170,12 @@ internal sealed class WindowsEtwResourceFlightRecorder : IDisposable
             }
 
             var filtered = FilterTargetEvents(xmlPath);
-            var artifactPath = WriteFilteredArtifact(filtered.Content);
+            ArtifactPath = WriteFilteredArtifact(
+                filtered,
+                probeEvidence,
+                rootCauseStatus);
             return $"etwRecorder=recorded startedUtc={startedUtc:O} target={targetDirectory} " +
-                $"{filtered.Summary} artifact={artifactPath}";
+                $"{filtered.Summary} artifact={ArtifactPath}";
         }
         catch (Exception exception)
         {
@@ -167,7 +189,10 @@ internal sealed class WindowsEtwResourceFlightRecorder : IDisposable
 
     public void Dispose()
     {
-        _ = StopAndFormat(preserve: false);
+        _ = StopAndFormat(
+            preserve: false,
+            probeEvidence: "probe=disposed-before-report",
+            rootCauseStatus: "Root cause not proven.");
     }
 
     [SuppressMessage(
@@ -253,9 +278,8 @@ internal sealed class WindowsEtwResourceFlightRecorder : IDisposable
         var selected = events.Where(
             element =>
             {
-                var serialized = element.ToString(SaveOptions.DisableFormatting);
                 return ContainsTargetResource(element) ||
-                    identities.Any(identity => serialized.Contains(identity, StringComparison.OrdinalIgnoreCase)) ||
+                    EventReferencesResourceIdentity(element, identities) ||
                     (IsProcessLifecycleEvent(element) &&
                      processIds.Any(processId => EventReferencesProcess(element, processId)));
             }).ToList();
@@ -270,13 +294,17 @@ internal sealed class WindowsEtwResourceFlightRecorder : IDisposable
         builder.Append(summary);
         foreach (var selectedEvent in selected)
         {
-            builder.AppendLine().Append(selectedEvent.ToString(SaveOptions.DisableFormatting));
+            builder.AppendLine().Append(
+                Sanitize(selectedEvent.ToString(SaveOptions.DisableFormatting)));
         }
 
         return new FilteredTrace(summary, builder.ToString());
     }
 
-    private static string WriteFilteredArtifact(string filtered)
+    private string WriteFilteredArtifact(
+        FilteredTrace filtered,
+        string probeEvidence,
+        string rootCauseStatus)
     {
         var artifactRoot = Environment.GetEnvironmentVariable("GITHUB_WORKSPACE");
         if (string.IsNullOrWhiteSpace(artifactRoot))
@@ -291,8 +319,34 @@ internal sealed class WindowsEtwResourceFlightRecorder : IDisposable
         Directory.CreateDirectory(artifactDirectory);
         var artifactPath = Path.Combine(
             artifactDirectory,
-            $"h4-resource-{Guid.NewGuid():N}.log");
-        File.WriteAllText(artifactPath, filtered, Encoding.UTF8);
+            $"targeted-resource-forensics-{Guid.NewGuid():N}.log");
+        HashSet<int> processIds;
+        Dictionary<int, string> classifications;
+        lock (processIdsLock)
+        {
+            processIds = new HashSet<int>(knownProcessIds);
+            classifications = new Dictionary<int, string>(processClassifications);
+        }
+
+        var header = new StringBuilder()
+            .AppendLine("schemaVersion=1")
+            .Append("runIdentity=").AppendLine(ReadRunIdentity())
+            .Append("testIdentity=").AppendLine(Sanitize(testIdentity))
+            .Append("targetResource=").AppendLine(Sanitize(targetDirectory))
+            .AppendLine("operation=DirectoryDeleteAccess")
+            .Append("recorderStartedUtc=").AppendLine(startedUtc.ToString("O", CultureInfo.InvariantCulture))
+            .Append("knownProcessIds=").AppendLine(string.Join(',', processIds.Order()))
+            .Append("processClassifications=").AppendLine(
+                string.Join(
+                    ',',
+                    classifications.OrderBy(entry => entry.Key).Select(
+                        entry => $"{entry.Key}:{Sanitize(entry.Value)}")))
+            .Append("rootCauseStatus=").AppendLine(Sanitize(rootCauseStatus))
+            .AppendLine("probeTimeline:")
+            .AppendLine(Sanitize(probeEvidence))
+            .AppendLine("resourceAndProcessLifecycle:")
+            .AppendLine(filtered.Content);
+        File.WriteAllText(artifactPath, header.ToString(), Encoding.UTF8);
         return artifactPath;
     }
 
@@ -303,8 +357,16 @@ internal sealed class WindowsEtwResourceFlightRecorder : IDisposable
     private static bool IsResourceIdentity(string? name) =>
         name is not null &&
         (name.Contains("FileObject", StringComparison.OrdinalIgnoreCase) ||
-         name.Contains("FileKey", StringComparison.OrdinalIgnoreCase) ||
-         name.Contains("IrpPtr", StringComparison.OrdinalIgnoreCase));
+         name.Contains("FileKey", StringComparison.OrdinalIgnoreCase));
+
+    private static bool EventReferencesResourceIdentity(
+        XElement element,
+        HashSet<string> identities) =>
+        element.Descendants().Any(
+            descendant =>
+                descendant.Name.LocalName == "Data" &&
+                IsResourceIdentity(descendant.Attribute("Name")?.Value) &&
+                identities.Contains(descendant.Value));
 
     private static bool EventReferencesProcess(XElement element, int processId)
     {
@@ -406,8 +468,42 @@ internal sealed class WindowsEtwResourceFlightRecorder : IDisposable
             throw new TimeoutException($"{executable} did not finish within the diagnostic timeout.");
         }
 
-        return new ToolResult(process.ExitCode, output.ReplaceLineEndings(" ").Trim());
+        return new ToolResult(
+            process.ExitCode,
+            Sanitize(output.ReplaceLineEndings(" ").Trim()));
     }
+
+    private static string ReadRunIdentity()
+    {
+        var runId = Environment.GetEnvironmentVariable("GITHUB_RUN_ID") ?? "local";
+        var attempt = Environment.GetEnvironmentVariable("GITHUB_RUN_ATTEMPT") ?? "local";
+        var job = Environment.GetEnvironmentVariable("GITHUB_JOB") ?? "local";
+        return $"run={runId} attempt={attempt} job={job}";
+    }
+
+    private static string Sanitize(string value)
+    {
+        var sanitized = value;
+        sanitized = ReplaceRoot(sanitized, Environment.GetEnvironmentVariable("GITHUB_WORKSPACE"), "<workspace>");
+        sanitized = ReplaceRoot(sanitized, Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "<user>");
+        sanitized = ReplaceRoot(sanitized, Path.GetTempPath().TrimEnd(Path.DirectorySeparatorChar), "<temp>");
+        sanitized = Regex.Replace(
+            sanitized,
+            "(?i)(authorization\\s*[:=]\\s*(?:bearer\\s+)?)[^\\s<]+",
+            "$1<redacted>",
+            RegexOptions.CultureInvariant);
+        sanitized = Regex.Replace(
+            sanitized,
+            "(?i)(access[_-]?token|cookie|sessdata|bili_jct)(=|%3D)[^&\\s<]+",
+            "$1$2<redacted>",
+            RegexOptions.CultureInvariant);
+        return sanitized;
+    }
+
+    private static string ReplaceRoot(string value, string? root, string replacement) =>
+        string.IsNullOrWhiteSpace(root)
+            ? value
+            : value.Replace(root, replacement, StringComparison.OrdinalIgnoreCase);
 
     private void DeleteTemporaryDirectory()
     {

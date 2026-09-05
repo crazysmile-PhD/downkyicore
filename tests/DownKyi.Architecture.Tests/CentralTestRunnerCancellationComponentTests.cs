@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using DownKyi.CentralTestRunner;
+using DownKyi.TestInfrastructure;
 
 namespace DownKyi.Architecture.Tests;
 
@@ -369,15 +370,16 @@ public sealed class CentralTestRunnerCancellationComponentTests
             $"downkyi-central-runner-filesystem-{Guid.NewGuid():N}");
         Process? fixture = null;
         var fixtureProcessId = 0;
-        WindowsDirectoryDeleteAccessProbe? deleteProbe = null;
+        TargetedResourceForensics? deleteProbe = null;
         Directory.CreateDirectory(fixtureDirectory);
         await FailurePreservingTestCleanup.RunAsync(
             async () =>
             {
                 if (OperatingSystem.IsWindows())
                 {
-                    deleteProbe = WindowsDirectoryDeleteAccessProbe.Start(
+                    deleteProbe = TargetedResourceForensics.Start(
                         fixtureDirectory,
+                        nameof(FilesystemTeardownDeletesFixtureDirectoryAfterProcessCleanup),
                         Environment.ProcessId);
                 }
 
@@ -386,7 +388,7 @@ public sealed class CentralTestRunnerCancellationComponentTests
                 fixture = await StartFixtureAsync(startInfo).ConfigureAwait(true);
                 fixtureProcessId = fixture.Id;
 
-                deleteProbe?.AddKnownProcessId(fixtureProcessId);
+                deleteProbe?.AddKnownProcessId(fixtureProcessId, "root-owner");
                 deleteProbe?.MarkCancellationRequested();
                 await BuildProcessRunner.CleanupAfterCancellationAsync(fixture, TestTimeout)
                     .ConfigureAwait(true);

@@ -42,6 +42,14 @@ state and one final best-effort process snapshot under
 complete descendant proof. See `docs/testing/README.md` for the executable
 owners and focused behavior tests.
 
+Resource-contention failures follow
+`docs/testing/targeted-resource-forensics.md`: CI first classifies the failure,
+then points maintainers to a resource- and operation-specific probe. ETW remains
+opt-in and pre-armed only for a narrow target; it is never blanket-enabled for
+the normal success path. Failure-only artifacts are bounded and sanitized, and
+must state `Root cause not proven.` until failure-window evidence identifies an
+owner or proves the violated lifecycle ordering.
+
 Pull requests are guarded by `.github/workflows/quality.yml`:
 
 - format check with `dotnet format --verify-no-changes --verbosity diagnostic`

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using DownKyi.CentralTestRunner;
+using DownKyi.TestInfrastructure;
 
 namespace DownKyi.Architecture.Tests;
 
@@ -12,7 +13,7 @@ public sealed class CentralTestRunnerCommandTests
         var repositoryRoot = await CreateRepositoryAsync();
         var markerPath = Path.Combine(repositoryRoot, "build-process.pid");
         int? processId = null;
-        WindowsDirectoryDeleteAccessProbe? deleteProbe = null;
+        TargetedResourceForensics? deleteProbe = null;
         await FailurePreservingTestCleanup.RunAsync(
             async () =>
             {
@@ -42,8 +43,9 @@ public sealed class CentralTestRunnerCommandTests
                     TestContext.Current.CancellationToken).ConfigureAwait(true);
                 if (OperatingSystem.IsWindows())
                 {
-                    deleteProbe = WindowsDirectoryDeleteAccessProbe.Start(
+                    deleteProbe = TargetedResourceForensics.Start(
                         projectDirectory,
+                        nameof(BuildCancellationReturns130AfterStoppingOwnedBuildProcess),
                         Environment.ProcessId);
                 }
 
@@ -58,7 +60,7 @@ public sealed class CentralTestRunnerCommandTests
                 ],
                     cancellation.Token);
                 processId = await WaitForProcessMarkerAsync(markerPath).ConfigureAwait(true);
-                deleteProbe?.AddKnownProcessId(processId.Value);
+                deleteProbe?.AddKnownProcessId(processId.Value, "owned-build-process");
                 File.Delete(projectPath);
                 Assert.False(File.Exists(projectPath));
 
