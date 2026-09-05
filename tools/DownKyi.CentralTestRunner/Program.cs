@@ -67,9 +67,18 @@ internal static class Program
         string[] args,
         CancellationToken cancellationToken)
     {
+        return await RunCommandAsync(args, CentralTestCommand.RunAsync, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    internal static async Task<int> RunCommandAsync(
+        string[] args,
+        Func<string[], CancellationToken, Task<int>> runCommandAsync,
+        CancellationToken cancellationToken)
+    {
         try
         {
-            return await CentralTestCommand.RunAsync(args, cancellationToken).ConfigureAwait(false);
+            return await runCommandAsync(args, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {

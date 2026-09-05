@@ -11,59 +11,66 @@ public sealed class CentralTestRunnerCommandTests
         var repositoryRoot = await CreateRepositoryAsync();
         var markerPath = Path.Combine(repositoryRoot, "build-process.pid");
         int? processId = null;
-        try
-        {
-            var projectDirectory = Path.Combine(repositoryRoot, "tests", "Fixture.Tests");
-            Directory.CreateDirectory(projectDirectory);
-            var runnerAssembly = typeof(FlightRecorderExecution).Assembly.Location;
-            var runtimeConfig = Path.Combine(
-                AppContext.BaseDirectory,
-                "DownKyi.Architecture.Tests.runtimeconfig.json");
-            var command =
-                $"dotnet exec --runtimeconfig &quot;{EscapeXml(runtimeConfig)}&quot; " +
-                $"&quot;{EscapeXml(runnerAssembly)}&quot; fixture-hold-marker &quot;{EscapeXml(markerPath)}&quot;";
-            await File.WriteAllTextAsync(
-                Path.Combine(projectDirectory, "Fixture.Tests.csproj"),
-                $$"""
-                <Project DefaultTargets="Build">
-                  <PropertyGroup>
-                    <DownKyiTestPlatforms>Windows;Linux;macOS</DownKyiTestPlatforms>
-                  </PropertyGroup>
-                  <Target Name="Build">
-                    <Exec Command="{{command}}" />
-                  </Target>
-                </Project>
-                """,
-                TestContext.Current.CancellationToken);
-
-            using var cancellation = new CancellationTokenSource();
-            var run = Program.RunCommandAsync(
-                [
-                    "run-project",
-                    "--repository-root", repositoryRoot,
-                    "--project", "tests/Fixture.Tests/Fixture.Tests.csproj",
-                    "--configuration", "Release",
-                    "--no-restore"
-            ],
-                cancellation.Token);
-            processId = await WaitForProcessMarkerAsync(markerPath);
-
-            await cancellation.CancelAsync();
-            var exitCode = await run.ConfigureAwait(true);
-
-            Assert.Equal(130, exitCode);
-            Assert.False(IsProcessAlive(processId.Value));
-            Directory.Delete(projectDirectory, recursive: true);
-            Assert.False(Directory.Exists(projectDirectory));
-        }
-        finally
-        {
-            if (processId is not null)
+        await FailurePreservingTestCleanup.RunAsync(
+            async () =>
             {
-                StopProcessIfAlive(processId.Value);
-            }
-            Directory.Delete(repositoryRoot, recursive: true);
-        }
+                var projectDirectory = Path.Combine(repositoryRoot, "tests", "Fixture.Tests");
+                var projectPath = Path.Combine(projectDirectory, "Fixture.Tests.csproj");
+                Directory.CreateDirectory(projectDirectory);
+                var runnerAssembly = typeof(FlightRecorderExecution).Assembly.Location;
+                var runtimeConfig = Path.Combine(
+                    AppContext.BaseDirectory,
+                    "DownKyi.Architecture.Tests.runtimeconfig.json");
+                var fixtureWorkingDirectory = AppContext.BaseDirectory;
+                var command =
+                    $"dotnet exec --runtimeconfig &quot;{EscapeXml(runtimeConfig)}&quot; " +
+                    $"&quot;{EscapeXml(runnerAssembly)}&quot; fixture-hold-marker &quot;{EscapeXml(markerPath)}&quot;";
+                await File.WriteAllTextAsync(
+                    projectPath,
+                    $$"""
+                    <Project DefaultTargets="Build">
+                      <PropertyGroup>
+                        <DownKyiTestPlatforms>Windows;Linux;macOS</DownKyiTestPlatforms>
+                      </PropertyGroup>
+                      <Target Name="Build">
+                        <Exec Command="{{command}}" WorkingDirectory="{{EscapeXml(fixtureWorkingDirectory)}}" />
+                      </Target>
+                    </Project>
+                    """,
+                    TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+                using var cancellation = new CancellationTokenSource();
+                var run = Program.RunCommandAsync(
+                    [
+                        "run-project",
+                        "--repository-root", repositoryRoot,
+                        "--project", "tests/Fixture.Tests/Fixture.Tests.csproj",
+                        "--configuration", "Release",
+                        "--no-restore"
+                ],
+                    cancellation.Token);
+                processId = await WaitForProcessMarkerAsync(markerPath).ConfigureAwait(true);
+                File.Delete(projectPath);
+                Assert.False(File.Exists(projectPath));
+
+                await cancellation.CancelAsync().ConfigureAwait(true);
+                var exitCode = await run.ConfigureAwait(true);
+
+                Assert.Equal(130, exitCode);
+                Assert.False(IsProcessAlive(processId.Value));
+                Directory.Delete(projectDirectory);
+                Assert.False(Directory.Exists(projectDirectory));
+            },
+            () =>
+            {
+                if (processId is not null)
+                {
+                    StopProcessIfAlive(processId.Value);
+                }
+
+                Directory.Delete(repositoryRoot, recursive: true);
+                return Task.CompletedTask;
+            }).ConfigureAwait(true);
     }
 
     [Fact]

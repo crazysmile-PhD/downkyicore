@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
+using System.Runtime.ExceptionServices;
 
 namespace DownKyi.CentralTestRunner;
 
@@ -10,14 +12,22 @@ internal static class BuildProcessRunner
         bool noRestore,
         CancellationToken cancellationToken)
     {
-        var startInfo = new ProcessStartInfo("dotnet")
-        {
-            UseShellExecute = false
-        };
+        var startInfo = CreateBuildStartInfo(projectPath, configuration, noRestore);
+
+        return await RunAsync(startInfo, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal static ProcessStartInfo CreateBuildStartInfo(
+        string projectPath,
+        string configuration,
+        bool noRestore)
+    {
+        var startInfo = new ProcessStartInfo("dotnet") { UseShellExecute = false };
         startInfo.ArgumentList.Add("build");
         startInfo.ArgumentList.Add(projectPath);
         startInfo.ArgumentList.Add("-c");
         startInfo.ArgumentList.Add(configuration);
+        startInfo.ArgumentList.Add("--disable-build-servers");
         startInfo.ArgumentList.Add("-nodeReuse:false");
         startInfo.ArgumentList.Add("-p:UseSharedCompilation=false");
         if (noRestore)
@@ -25,7 +35,7 @@ internal static class BuildProcessRunner
             startInfo.ArgumentList.Add("--no-restore");
         }
 
-        return await RunAsync(startInfo, cancellationToken).ConfigureAwait(false);
+        return startInfo;
     }
 
     internal static async Task<int> RunAsync(
@@ -42,57 +52,191 @@ internal static class BuildProcessRunner
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             var cleanupWindow = cleanupTimeout ?? TimeSpan.FromSeconds(5);
-            var ownedProcesses = await ProcessTreeSnapshot.CaptureAsync(process.Id, cleanupWindow)
-                .ConfigureAwait(false);
-            try
-            {
-                if (!process.HasExited)
-                {
-                    process.Kill(entireProcessTree: true);
-                }
-            }
-            catch (Exception exception) when (
-                (exception is InvalidOperationException or System.ComponentModel.Win32Exception) &&
-                process.HasExited)
-            {
-                // The build exited between the liveness check and the kill request.
-            }
-
-            await process.WaitForExitAsync()
-                .WaitAsync(cleanupWindow)
-                .ConfigureAwait(false);
-            await WaitForOwnedProcessesToExitAsync(ownedProcesses.Processes, cleanupWindow)
-                .ConfigureAwait(false);
+            await CleanupAfterCancellationAsync(process, cleanupWindow).ConfigureAwait(false);
             throw;
         }
 
         return process.ExitCode;
     }
 
-    private static async Task WaitForOwnedProcessesToExitAsync(
-        IReadOnlyList<ObservedProcess> ownedProcesses,
-        TimeSpan cleanupTimeout)
+    [SuppressMessage(
+        "Design",
+        "CA1031:Do not catch general exception types",
+        Justification = "A diagnostic failure must be retained while mandatory process termination still runs.")]
+    internal static async Task CleanupAfterCancellationAsync(
+        Process process,
+        TimeSpan cleanupWindow,
+        Func<int, TimeSpan, Task<FinalProcessSnapshot>>? captureSnapshotAsync = null)
     {
-        var waits = ownedProcesses.Select(WaitForObservedProcessExitAsync);
-        await Task.WhenAll(waits).WaitAsync(cleanupTimeout).ConfigureAwait(false);
+        var captureSnapshot = captureSnapshotAsync ?? ProcessTreeSnapshot.CaptureAsync;
+        FinalProcessSnapshot? ownedProcesses = null;
+        ExceptionDispatchInfo? snapshotFailure = null;
+        try
+        {
+            ownedProcesses = await captureSnapshot(process.Id, cleanupWindow).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            snapshotFailure = ExceptionDispatchInfo.Capture(exception);
+        }
+
+        try
+        {
+            KillOwnedProcessTree(process);
+            await WaitForRootExitAsync(process, cleanupWindow).ConfigureAwait(false);
+            if (ownedProcesses is not null)
+            {
+                await WaitForOwnedProcessesToExitAsync(ownedProcesses.Processes, cleanupWindow)
+                    .ConfigureAwait(false);
+            }
+        }
+        catch (Exception cleanupFailure) when (snapshotFailure is not null)
+        {
+            throw new AggregateException(
+                $"The process snapshot failed: {snapshotFailure.SourceException.Message} " +
+                $"Mandatory process cleanup also failed: {cleanupFailure.Message}",
+                snapshotFailure.SourceException,
+                cleanupFailure);
+        }
+
+        snapshotFailure?.Throw();
     }
 
-    private static async Task WaitForObservedProcessExitAsync(ObservedProcess observedProcess)
+    internal static void KillOwnedProcessTree(Process process)
     {
         try
         {
-            using var process = Process.GetProcessById(observedProcess.Pid);
-            if (observedProcess.StartTimeUtc is { } expectedStartTime &&
-                process.StartTime.ToUniversalTime() != expectedStartTime)
+            if (!process.HasExited)
             {
-                return;
+                process.Kill(entireProcessTree: true);
             }
+        }
+        catch (Exception exception) when (
+            (exception is InvalidOperationException or System.ComponentModel.Win32Exception) &&
+            process.HasExited)
+        {
+            // The build exited between the liveness check and the kill request.
+        }
+    }
 
-            await process.WaitForExitAsync().ConfigureAwait(false);
+    internal static async Task WaitForRootExitAsync(Process process, TimeSpan cleanupTimeout)
+    {
+        await process.WaitForExitAsync()
+            .WaitAsync(cleanupTimeout)
+            .ConfigureAwait(false);
+    }
+
+    internal static async Task WaitForOwnedProcessesToExitAsync(
+        IReadOnlyList<ObservedProcess> ownedProcesses,
+        TimeSpan cleanupTimeout,
+        Func<Process, DateTimeOffset>? readStartTimeUtc = null)
+    {
+        var waits = ownedProcesses.Select(
+            observedProcess => WaitForObservedProcessExitAsync(
+                observedProcess,
+                readStartTimeUtc ?? ReadStartTimeUtc));
+        await Task.WhenAll(waits).WaitAsync(cleanupTimeout).ConfigureAwait(false);
+    }
+
+    internal static async Task WaitForObservedProcessExitAsync(
+        ObservedProcess observedProcess,
+        Func<Process, DateTimeOffset>? readStartTimeUtc = null,
+        Func<Process, bool>? readHasExited = null,
+        Func<int, bool>? isProcessPresent = null)
+    {
+        Process process;
+        try
+        {
+            process = Process.GetProcessById(observedProcess.Pid);
         }
         catch (ArgumentException)
         {
             // The observed process exited before its identity could be opened.
+            return;
         }
+
+        using (process)
+        {
+            try
+            {
+                if (observedProcess.StartTimeUtc is { } expectedStartTime &&
+                    (readStartTimeUtc ?? ReadStartTimeUtc)(process) != expectedStartTime)
+                {
+                    return;
+                }
+
+                await process.WaitForExitAsync().ConfigureAwait(false);
+            }
+            catch (Exception exception) when (IsProcessObservationFailure(exception))
+            {
+                if (!HasExitedAfterIdentityFailure(
+                        process,
+                        observedProcess.Pid,
+                        readHasExited ?? ReadHasExited,
+                        isProcessPresent ?? IsProcessPresent))
+                {
+                    throw;
+                }
+
+                // The observed process exited between opening it and reading or waiting on its identity.
+            }
+        }
+    }
+
+    private static bool HasExitedAfterIdentityFailure(
+        Process process,
+        int processId,
+        Func<Process, bool> readHasExited,
+        Func<int, bool> isProcessPresent)
+    {
+        try
+        {
+            if (readHasExited(process))
+            {
+                return true;
+            }
+        }
+        catch (Exception exception) when (IsProcessObservationFailure(exception))
+        {
+            // A vanished process can make both StartTime and HasExited unavailable.
+        }
+
+        try
+        {
+            return !isProcessPresent(processId);
+        }
+        catch (Exception exception) when (IsProcessObservationFailure(exception))
+        {
+            // An inconclusive secondary observation must not replace the first identity failure.
+            return false;
+        }
+    }
+
+    private static bool IsProcessObservationFailure(Exception exception)
+    {
+        return exception is InvalidOperationException or System.ComponentModel.Win32Exception;
+    }
+
+    private static bool ReadHasExited(Process process)
+    {
+        return process.HasExited;
+    }
+
+    private static bool IsProcessPresent(int processId)
+    {
+        try
+        {
+            using var process = Process.GetProcessById(processId);
+            return true;
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+    }
+
+    private static DateTimeOffset ReadStartTimeUtc(Process process)
+    {
+        return process.StartTime.ToUniversalTime();
     }
 }
