@@ -239,7 +239,8 @@ internal static class BuildProcessRunner
         Func<Process, DateTimeOffset>? readStartTimeUtc = null,
         Func<Process, bool>? readHasExited = null,
         Func<int, bool>? isProcessPresent = null,
-        CancellationCleanupDiagnostic? diagnostic = null)
+        CancellationCleanupDiagnostic? diagnostic = null,
+        Action<ObservedProcessObservationOutcome>? observationCompleted = null)
     {
         var markers = new ObservedProcessModuleMarkers(observedProcess.Pid);
         Process process;
@@ -251,6 +252,10 @@ internal static class BuildProcessRunner
         }
         catch (ArgumentException)
         {
+            observationCompleted?.Invoke(new ObservedProcessObservationOutcome(
+                ObservedProcessOutcomeCategory.TerminalBeforeOpen,
+                markers,
+                null));
             // The observed process exited before its identity could be opened.
             return;
         }
@@ -265,21 +270,40 @@ internal static class BuildProcessRunner
                 markers.Complete(ObservedProcessModule.IdentityRead);
                 if (!identityMatches)
                 {
+                    observationCompleted?.Invoke(new ObservedProcessObservationOutcome(
+                        ObservedProcessOutcomeCategory.Other,
+                        markers,
+                        null));
                     return;
                 }
 
                 markers.Enter(ObservedProcessModule.WaitForExit);
                 await process.WaitForExitAsync().ConfigureAwait(false);
                 markers.Complete(ObservedProcessModule.WaitForExit);
+                observationCompleted?.Invoke(new ObservedProcessObservationOutcome(
+                    ObservedProcessOutcomeCategory.IdentitySuccessThenReap,
+                    markers,
+                    null));
             }
             catch (Exception exception) when (IsProcessObservationFailure(exception))
             {
-                if (!HasExitedAfterIdentityFailure(
+                var failedModule = markers.LastModule;
+                var terminalConfirmed = HasExitedAfterIdentityFailure(
                         process,
                         observedProcess.Pid,
                         readHasExited ?? ReadHasExited,
                         isProcessPresent ?? IsProcessPresent,
-                        ref markers))
+                        ref markers);
+                var category = failedModule == (byte)ObservedProcessModule.IdentityRead
+                    ? terminalConfirmed
+                        ? ObservedProcessOutcomeCategory.IdentityFailureTerminalConfirmed
+                        : ObservedProcessOutcomeCategory.IdentityFailureAmbiguous
+                    : ObservedProcessOutcomeCategory.Other;
+                observationCompleted?.Invoke(new ObservedProcessObservationOutcome(
+                    category,
+                    markers,
+                    exception));
+                if (!terminalConfirmed)
                 {
                     diagnostic?.RecordObservedProcessFailure(in markers, exception);
                     throw;

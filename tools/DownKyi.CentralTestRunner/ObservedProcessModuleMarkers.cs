@@ -10,6 +10,21 @@ internal enum ObservedProcessModule : byte
     WaitForExit = 6,
 }
 
+internal enum ObservedProcessOutcomeCategory
+{
+    TerminalBeforeOpen,
+    IdentitySuccessThenReap,
+    IdentityFailureTerminalConfirmed,
+    IdentityFailureAmbiguous,
+    LiveProcess,
+    Other,
+}
+
+internal readonly record struct ObservedProcessObservationOutcome(
+    ObservedProcessOutcomeCategory Category,
+    ObservedProcessModuleMarkers Markers,
+    Exception? Exception);
+
 internal struct ObservedProcessModuleMarkers
 {
     private byte hasExitedResult;
@@ -27,6 +42,10 @@ internal struct ObservedProcessModuleMarkers
     internal ulong CompletedMask { get; private set; }
 
     internal byte LastModule { get; private set; }
+
+    internal bool? HasExitedResult => DecodeBoolean(hasExitedResult);
+
+    internal bool? PidPresenceResult => DecodeBoolean(pidPresenceResult);
 
     internal void Enter(ObservedProcessModule module)
     {
@@ -102,6 +121,16 @@ internal struct ObservedProcessModuleMarkers
             1 => "false",
             2 => "true",
             _ => "unavailable",
+        };
+    }
+
+    private static bool? DecodeBoolean(byte value)
+    {
+        return value switch
+        {
+            1 => false,
+            2 => true,
+            _ => null,
         };
     }
 
