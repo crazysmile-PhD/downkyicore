@@ -3,6 +3,16 @@ using DownKyi.CentralTestRunner;
 
 namespace DownKyi.Architecture.Tests;
 
+[CollectionDefinition("CentralTestRunner command process lifecycle", DisableParallelization = true)]
+[System.Diagnostics.CodeAnalysis.SuppressMessage(
+    "Maintainability",
+    "CA1515:Consider making public types internal",
+    Justification = "xUnit requires collection definition classes to be public.")]
+public sealed class CentralTestRunnerCommandProcessGroup
+{
+}
+
+[Collection("CentralTestRunner command process lifecycle")]
 public sealed class CentralTestRunnerCommandTests
 {
     [Fact]
