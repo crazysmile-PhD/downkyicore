@@ -15,7 +15,7 @@ if (-not (Test-Path -LiteralPath $resolvedResultsDirectory -PathType Container))
 }
 
 $signatures = [ordered]@{
-    SharingViolation = '(?i)sharing violation|ERROR_SHARING_VIOLATION|0x80070020'
+    SharingViolation = '(?i)sharing\s*violation|ERROR_SHARING_VIOLATION|0x80070020'
     AccessDenied = '(?i)access (?:is )?denied|unauthorizedaccessexception|EACCES'
     ResourceBusy = '(?i)resource busy|device or resource busy|text file busy|EBUSY|ETXTBSY'
     InUse = '(?i)being used by another process|file .* is in use|database is locked|cannot delete|could not delete'
