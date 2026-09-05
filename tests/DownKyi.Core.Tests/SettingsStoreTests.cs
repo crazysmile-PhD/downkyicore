@@ -9,6 +9,30 @@ namespace DownKyi.Core.Tests;
 public sealed class SettingsStoreTests
 {
     [Fact]
+    public void SkipVersionAcceptsPrereleaseAndBuildMetadata()
+    {
+        var directory = CreateTestDirectory();
+        try
+        {
+            using var store = new SettingsStore(Path.Combine(directory, "settings.json"));
+
+            var updated = store.Update(settings => settings with
+            {
+                About = settings.About with
+                {
+                    SkipVersionOnLaunch = "v1.2.3-beta.1+build.9"
+                }
+            });
+
+            Assert.Equal("1.2.3-beta.1+build.9", updated.About.SkipVersionOnLaunch);
+        }
+        finally
+        {
+            DeleteDirectory(directory);
+        }
+    }
+
+    [Fact]
     public void CustomAriaAcceptsTheDefaultEmptyRpcSecretWithoutBootstrapFailure()
     {
         var directory = CreateTestDirectory();
