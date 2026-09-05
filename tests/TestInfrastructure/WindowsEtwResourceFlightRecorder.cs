@@ -511,7 +511,18 @@ internal sealed class WindowsEtwResourceFlightRecorder : IDisposable
         return int.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out processId);
     }
 
-    private static ToolResult RunTool(string executable, params string[] arguments)
+    private static ToolResult RunTool(string executable, params string[] arguments) =>
+        RunTool(
+            executable,
+            TimeSpan.FromSeconds(15),
+            TimeSpan.FromSeconds(5),
+            arguments);
+
+    internal static ToolResult RunTool(
+        string executable,
+        TimeSpan exitTimeout,
+        TimeSpan cleanupTimeout,
+        params string[] arguments)
     {
         var startInfo = new ProcessStartInfo(executable)
         {
@@ -525,18 +536,111 @@ internal sealed class WindowsEtwResourceFlightRecorder : IDisposable
             startInfo.ArgumentList.Add(argument);
         }
 
-        using var process = Process.Start(startInfo) ??
-            throw new InvalidOperationException($"Unable to start {executable}.");
-        var output = process.StandardOutput.ReadToEnd() + process.StandardError.ReadToEnd();
-        if (!process.WaitForExit(TimeSpan.FromSeconds(15)))
+        using var process = new Process { StartInfo = startInfo };
+        if (!process.Start())
         {
-            process.Kill(entireProcessTree: true);
+            throw new InvalidOperationException($"Unable to start {executable}.");
+        }
+
+        string standardOutput = string.Empty;
+        string standardError = string.Empty;
+        Exception? outputFailure = null;
+        Exception? errorFailure = null;
+        var outputReader = CreateReaderThread(
+            $"{executable} stdout drain",
+            () => process.StandardOutput.ReadToEnd(),
+            value => standardOutput = value,
+            exception => outputFailure = exception);
+        var errorReader = CreateReaderThread(
+            $"{executable} stderr drain",
+            () => process.StandardError.ReadToEnd(),
+            value => standardError = value,
+            exception => errorFailure = exception);
+        outputReader.Start();
+        errorReader.Start();
+
+        var timedOut = !process.WaitForExit(exitTimeout);
+        if (timedOut)
+        {
+            TerminateTool(process, executable, cleanupTimeout);
+        }
+
+        if (!JoinReaders(outputReader, errorReader, cleanupTimeout))
+        {
+            if (!timedOut)
+            {
+                TerminateTool(process, executable, cleanupTimeout);
+            }
+
+            throw new TimeoutException($"{executable} output did not drain within the diagnostic cleanup timeout.");
+        }
+
+        if (timedOut)
+        {
             throw new TimeoutException($"{executable} did not finish within the diagnostic timeout.");
         }
 
+        if (outputFailure is not null || errorFailure is not null)
+        {
+            throw new InvalidOperationException(
+                $"Unable to drain {executable} diagnostic output.",
+                outputFailure ?? errorFailure);
+        }
+
+        var output = standardOutput + standardError;
         return new ToolResult(
             process.ExitCode,
             Sanitize(output.ReplaceLineEndings(" ").Trim()));
+    }
+
+    private static Thread CreateReaderThread(
+        string name,
+        Func<string> read,
+        Action<string> complete,
+        Action<Exception> fail) =>
+        new(() =>
+        {
+            try
+            {
+                complete(read());
+            }
+            catch (Exception exception) when (exception is IOException or InvalidOperationException or ObjectDisposedException)
+            {
+                fail(exception);
+            }
+        })
+        {
+            IsBackground = true,
+            Name = name,
+        };
+
+    private static bool JoinReaders(Thread outputReader, Thread errorReader, TimeSpan timeout)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        if (!outputReader.Join(timeout))
+        {
+            return false;
+        }
+
+        var remaining = timeout - stopwatch.Elapsed;
+        return errorReader.Join(remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero);
+    }
+
+    private static void TerminateTool(Process process, string executable, TimeSpan timeout)
+    {
+        try
+        {
+            process.Kill(entireProcessTree: true);
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            // The diagnostic tool may have exited while the timeout was observed.
+        }
+
+        if (!process.WaitForExit(timeout))
+        {
+            throw new TimeoutException($"{executable} did not exit within the diagnostic cleanup timeout.");
+        }
     }
 
     private static string ReadRunIdentity()
@@ -585,7 +689,7 @@ internal sealed class WindowsEtwResourceFlightRecorder : IDisposable
         }
     }
 
-    private sealed record ToolResult(int ExitCode, string Output);
+    internal sealed record ToolResult(int ExitCode, string Output);
 
     private sealed record FilteredTrace(string Summary, string Content);
 }

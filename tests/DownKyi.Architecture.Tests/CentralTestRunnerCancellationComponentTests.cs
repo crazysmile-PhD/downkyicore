@@ -177,6 +177,37 @@ public sealed class CentralTestRunnerCancellationComponentTests
     }
 
     [Fact]
+    public async Task SynchronousRelationshipSnapshotIsBoundedByTheRequestedTimeout()
+    {
+        using var releaseSnapshot = new ManualResetEventSlim();
+        var snapshotStarted = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        try
+        {
+            var snapshot = ProcessTreeSnapshot.ReadParentIdsAsync(
+                () =>
+                {
+                    snapshotStarted.TrySetResult();
+                    releaseSnapshot.Wait();
+                    return [];
+                },
+                TimeSpan.FromMilliseconds(100));
+
+            await snapshotStarted.Task.WaitAsync(
+                TestTimeout,
+                TestContext.Current.CancellationToken).ConfigureAwait(true);
+            var exception = await Assert.ThrowsAsync<TimeoutException>(() => snapshot)
+                .ConfigureAwait(true);
+
+            Assert.Contains("bounded cleanup window", exception.Message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            releaseSnapshot.Set();
+        }
+    }
+
+    [Fact]
     public async Task RelationshipSnapshotCommandFailureIsTyped()
     {
         var startInfo = CreateDotNetStartInfo();
