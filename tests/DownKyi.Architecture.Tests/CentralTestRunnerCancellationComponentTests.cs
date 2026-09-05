@@ -80,7 +80,7 @@ public sealed class CentralTestRunnerCancellationComponentTests
     [Theory]
     [InlineData("Win32Exception")]
     [InlineData("InvalidOperationException")]
-    public async Task IdentityObservationPreservesReadFailureForALiveProcess(string exceptionType)
+    public async Task IdentityObservationWaitsAfterReadFailureUntilProcessExits(string exceptionType)
     {
         Process? fixture = null;
         await FailurePreservingTestCleanup.RunAsync(
@@ -88,14 +88,22 @@ public sealed class CentralTestRunnerCancellationComponentTests
             {
                 fixture = await StartHoldingFixtureAsync().ConfigureAwait(true);
                 var expectedStartTime = fixture.StartTime.ToUniversalTime();
+                var identityRead = new TaskCompletionSource(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
 
-                var exception = await Record.ExceptionAsync(
-                    () => BuildProcessRunner.WaitForObservedProcessExitAsync(
-                        CreateObservedProcess(fixture, expectedStartTime),
-                        _ => throw CreateIdentityReadException(exceptionType))).ConfigureAwait(true);
+                var wait = BuildProcessRunner.WaitForOwnedProcessesToExitAsync(
+                    [CreateObservedProcess(fixture, expectedStartTime)],
+                    TestTimeout,
+                    _ =>
+                    {
+                        identityRead.TrySetResult();
+                        throw CreateIdentityReadException(exceptionType);
+                    });
+                await identityRead.Task.WaitAsync(TestTimeout).ConfigureAwait(true);
+                BuildProcessRunner.KillOwnedProcessTree(fixture);
+                await wait.ConfigureAwait(true);
 
-                Assert.IsType(CreateIdentityReadException(exceptionType).GetType(), exception);
-                Assert.False(fixture.HasExited);
+                Assert.True(fixture.HasExited);
             },
             () => StopFixtureAsync(fixture)).ConfigureAwait(true);
     }
@@ -150,6 +158,29 @@ public sealed class CentralTestRunnerCancellationComponentTests
                     .ConfigureAwait(true);
 
                 Assert.Same(identityFailure, exception);
+                Assert.False(fixture.HasExited);
+            },
+            () => StopFixtureAsync(fixture)).ConfigureAwait(true);
+    }
+
+    [Fact]
+    public async Task IdentityObservationFailsClosedWhenLiveProcessExceedsDeadline()
+    {
+        Process? fixture = null;
+        await FailurePreservingTestCleanup.RunAsync(
+            async () =>
+            {
+                fixture = await StartHoldingFixtureAsync().ConfigureAwait(true);
+                var expectedStartTime = fixture.StartTime.ToUniversalTime();
+
+                var exception = await Record.ExceptionAsync(
+                    () => BuildProcessRunner.WaitForOwnedProcessesToExitAsync(
+                        [CreateObservedProcess(fixture, expectedStartTime)],
+                        TimeSpan.Zero,
+                        _ => throw new Win32Exception("identity unavailable")))
+                    .ConfigureAwait(true);
+
+                Assert.IsType<TimeoutException>(exception);
                 Assert.False(fixture.HasExited);
             },
             () => StopFixtureAsync(fixture)).ConfigureAwait(true);
