@@ -271,6 +271,89 @@ public sealed class CodeMetricsAuditTests
     }
 
     [Fact]
+    public async Task IgnoredCompileInputMarksGitStateDirty()
+    {
+        using var directory = new TemporaryDirectory();
+        var repositoryRoot = directory.CreateDirectory("repository");
+        InitializeGitRepository(repositoryRoot);
+        TemporaryDirectory.CreateFile(repositoryRoot, ".gitignore", "DownKyi.Core/Binary/*\n");
+        RunGit(repositoryRoot, "add", ".gitignore");
+        RunGit(repositoryRoot, "commit", "--quiet", "-m", "ignore fixture source");
+
+        Assert.False((await GitStateReader.ReadAsync(repositoryRoot)).DirtyWorktree);
+
+        TemporaryDirectory.CreateFile(
+            repositoryRoot,
+            "DownKyi.Core/Binary/CompileInput.cs",
+            "internal sealed class CompileInput;");
+
+        Assert.True((await GitStateReader.ReadAsync(repositoryRoot)).DirtyWorktree);
+    }
+
+    [Fact]
+    public async Task MissingInputPathFailsWithoutDisclosingAbsolutePath()
+    {
+        using var directory = new TemporaryDirectory();
+        var repositoryRoot = directory.CreateDirectory("repository");
+        var missingPath = Path.Combine(repositoryRoot, "missing-sarif");
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = await Program.RunAsync(
+            [
+                "--repository-root", repositoryRoot,
+                "--sarif-directory", missingPath,
+                "--classification-file", missingPath,
+                "--output-directory", Path.Combine(repositoryRoot, "reports")
+            ],
+            output,
+            error);
+
+        Assert.Equal(1, exitCode);
+        Assert.Equal("CA1506 audit failed: invalid arguments or missing input.", error.ToString().Trim());
+        Assert.DoesNotContain(repositoryRoot, error.ToString(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            error.ToString(),
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task OutputIoFailureDoesNotDiscloseAbsolutePath()
+    {
+        using var directory = new TemporaryDirectory();
+        var repositoryRoot = directory.CreateDirectory("repository");
+        InitializeGitRepository(repositoryRoot);
+        var sarifDirectory = directory.CreateDirectory("sarif");
+        var classifications = TemporaryDirectory.CreateFile(
+            repositoryRoot,
+            "classifications.json",
+            """{"schemaVersion":2,"production":[]}""");
+        TemporaryDirectory.CreateFile(sarifDirectory, "Product.sarif", CreateSarif());
+        var outputPath = TemporaryDirectory.CreateFile(repositoryRoot, "blocked-output", "not a directory");
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = await Program.RunAsync(
+            [
+                "--repository-root", repositoryRoot,
+                "--sarif-directory", sarifDirectory,
+                "--classification-file", classifications,
+                "--output-directory", outputPath
+            ],
+            output,
+            error);
+
+        Assert.Equal(1, exitCode);
+        Assert.Equal("CA1506 audit failed: audit I/O failure.", error.ToString().Trim());
+        Assert.DoesNotContain(repositoryRoot, error.ToString(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            error.ToString(),
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void MalformedSarifFailsClosed()
     {
         using var directory = new TemporaryDirectory();

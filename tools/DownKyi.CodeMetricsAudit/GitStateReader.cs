@@ -16,7 +16,20 @@ internal static class GitStateReader
                 "--porcelain",
                 "--untracked-files=all")
             .ConfigureAwait(false);
-        return new GitState(commit.Trim(), !string.IsNullOrWhiteSpace(status));
+        var ignoredCompileInputs = await RunGitAsync(
+                repositoryRoot,
+                "ls-files",
+                "--others",
+                "--ignored",
+                "--exclude-standard",
+                "--",
+                ":(glob)**/*.cs",
+                ":(exclude,glob)**/bin/**",
+                ":(exclude,glob)**/obj/**")
+            .ConfigureAwait(false);
+        return new GitState(
+            commit.Trim(),
+            !string.IsNullOrWhiteSpace(status) || !string.IsNullOrWhiteSpace(ignoredCompileInputs));
     }
 
     private static async Task<string> RunGitAsync(string repositoryRoot, params string[] arguments)

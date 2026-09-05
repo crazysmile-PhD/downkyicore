@@ -41,8 +41,21 @@ internal static class Program
             or InvalidOperationException
             or UnauthorizedAccessException)
         {
-            await error.WriteLineAsync($"CA1506 audit failed: {exception.Message}").ConfigureAwait(false);
+            await error.WriteLineAsync($"CA1506 audit failed: {GetFailureCategory(exception)}.").ConfigureAwait(false);
             return 1;
         }
+    }
+
+    private static string GetFailureCategory(Exception exception)
+    {
+        return exception switch
+        {
+            ArgumentException => "invalid arguments or missing input",
+            InvalidDataException => "invalid audit input",
+            UnauthorizedAccessException => "access denied",
+            IOException => "audit I/O failure",
+            InvalidOperationException => "audit infrastructure failure",
+            _ => "unexpected controlled failure"
+        };
     }
 }
