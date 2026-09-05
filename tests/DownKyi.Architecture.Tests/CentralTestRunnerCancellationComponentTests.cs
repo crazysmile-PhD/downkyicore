@@ -4,6 +4,7 @@ using DownKyi.CentralTestRunner;
 
 namespace DownKyi.Architecture.Tests;
 
+[Collection(ResourceFlightRecorderGroup.Name)]
 public sealed class CentralTestRunnerCancellationComponentTests
 {
     private static readonly TimeSpan TestTimeout = TimeSpan.FromSeconds(5);
@@ -373,22 +374,20 @@ public sealed class CentralTestRunnerCancellationComponentTests
         await FailurePreservingTestCleanup.RunAsync(
             async () =>
             {
+                if (OperatingSystem.IsWindows())
+                {
+                    deleteProbe = WindowsDirectoryDeleteAccessProbe.Start(
+                        fixtureDirectory,
+                        Environment.ProcessId);
+                }
+
                 var startInfo = CreateFixtureStartInfo("fixture-hold");
                 startInfo.WorkingDirectory = fixtureDirectory;
                 fixture = await StartFixtureAsync(startInfo).ConfigureAwait(true);
                 fixtureProcessId = fixture.Id;
 
-                var cleanupRequestedUtc = DateTimeOffset.UtcNow;
-                if (OperatingSystem.IsWindows())
-                {
-                    deleteProbe = WindowsDirectoryDeleteAccessProbe.Start(
-                        fixtureDirectory,
-                        fixtureProcessId,
-                        "fixture-root",
-                        Environment.ProcessId,
-                        cleanupRequestedUtc);
-                }
-
+                deleteProbe?.AddKnownProcessId(fixtureProcessId);
+                deleteProbe?.MarkCancellationRequested();
                 await BuildProcessRunner.CleanupAfterCancellationAsync(fixture, TestTimeout)
                     .ConfigureAwait(true);
                 deleteProbe?.MarkCleanupReturned();
@@ -407,19 +406,12 @@ public sealed class CentralTestRunnerCancellationComponentTests
                 catch (IOException exception) when (
                     OperatingSystem.IsWindows() && IsSharingViolation(exception))
                 {
-                    var evidence = WindowsDirectoryHandleForensics.Capture(
-                        fixtureDirectory,
-                        fixtureProcessId,
-                        "fixture-root",
-                        Environment.ProcessId,
-                        cleanupRequestedUtc);
-                    var probeEvidence = deleteProbe?.StopAndFormat() ?? "probe=not-running";
+                    var probeEvidence = deleteProbe?.StopAndFormat(forcePreserve: true) ?? "probe=not-running";
                     deleteProbe?.Dispose();
                     deleteProbe = null;
                     throw new IOException(
                         $"{exception.Message}{Environment.NewLine}" +
-                        $"Failure-only handle forensics:{Environment.NewLine}{evidence}{Environment.NewLine}" +
-                        $"DELETE-access canary:{Environment.NewLine}{probeEvidence}",
+                        $"Pre-armed resource flight recorder:{Environment.NewLine}{probeEvidence}",
                         exception);
                 }
 

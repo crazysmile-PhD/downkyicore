@@ -12,41 +12,33 @@ internal sealed class WindowsDirectoryDeleteAccessProbe : IDisposable
     private const int SharingViolation = 32;
     private const int LockViolation = 33;
     private readonly string directory;
-    private readonly int knownProcessId;
-    private readonly string knownProcessRole;
-    private readonly int testhostProcessId;
-    private readonly DateTimeOffset cancellationRequestedUtc;
+    private readonly WindowsEtwResourceFlightRecorder flightRecorder;
     private readonly DateTimeOffset startedUtc = DateTimeOffset.UtcNow;
     private readonly Stopwatch stopwatch = Stopwatch.StartNew();
     private readonly ManualResetEventSlim firstSample = new(false);
-    private readonly TaskCompletionSource anomalyObserved = new(
+    private readonly TaskCompletionSource allowedAfterAnomaly = new(
         TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly Lock evidenceLock = new();
     private readonly List<string> transitions = [];
-    private readonly List<string> ownerSnapshots = [];
     private readonly Thread worker;
     private long allowedSamples;
     private long blockedSamples;
     private long otherErrorSamples;
     private int stopRequested;
+    private int cancellationRequested;
     private int relockDetected;
     private int blockedAtCleanupReturn;
-    private int relockSnapshotCaptured;
-    private int cleanupSnapshotCaptured;
     private string? workerFailure;
+    private DateTimeOffset? cancellationRequestedUtc;
 
     private WindowsDirectoryDeleteAccessProbe(
         string directory,
-        int knownProcessId,
-        string knownProcessRole,
-        int testhostProcessId,
-        DateTimeOffset cancellationRequestedUtc)
+        int testhostProcessId)
     {
         this.directory = directory;
-        this.knownProcessId = knownProcessId;
-        this.knownProcessRole = knownProcessRole;
-        this.testhostProcessId = testhostProcessId;
-        this.cancellationRequestedUtc = cancellationRequestedUtc;
+        flightRecorder = WindowsEtwResourceFlightRecorder.Start(
+            directory,
+            testhostProcessId);
         worker = new Thread(Run)
         {
             IsBackground = true,
@@ -61,17 +53,11 @@ internal sealed class WindowsDirectoryDeleteAccessProbe : IDisposable
 
     internal static WindowsDirectoryDeleteAccessProbe Start(
         string directory,
-        int knownProcessId,
-        string knownProcessRole,
-        int testhostProcessId,
-        DateTimeOffset cancellationRequestedUtc)
+        int testhostProcessId)
     {
         var probe = new WindowsDirectoryDeleteAccessProbe(
             directory,
-            knownProcessId,
-            knownProcessRole,
-            testhostProcessId,
-            cancellationRequestedUtc);
+            testhostProcessId);
         if (!probe.firstSample.Wait(TimeSpan.FromSeconds(2)))
         {
             probe.Dispose();
@@ -79,6 +65,21 @@ internal sealed class WindowsDirectoryDeleteAccessProbe : IDisposable
         }
 
         return probe;
+    }
+
+    internal void AddKnownProcessId(int processId)
+    {
+        flightRecorder.AddKnownProcessId(processId);
+    }
+
+    internal void MarkCancellationRequested()
+    {
+        cancellationRequestedUtc = DateTimeOffset.UtcNow;
+        Volatile.Write(ref cancellationRequested, 1);
+        lock (evidenceLock)
+        {
+            transitions.Add($"T+{stopwatch.Elapsed.TotalMilliseconds:F3}ms cancellation-requested");
+        }
     }
 
     internal void MarkCleanupReturned()
@@ -95,8 +96,6 @@ internal sealed class WindowsDirectoryDeleteAccessProbe : IDisposable
         if (state.State == ProbeState.SharingViolation)
         {
             Volatile.Write(ref blockedAtCleanupReturn, 1);
-            CaptureOwnerSnapshot("blocked-at-cleanup-return", ref cleanupSnapshotCaptured);
-            anomalyObserved.TrySetResult();
         }
     }
 
@@ -105,17 +104,18 @@ internal sealed class WindowsDirectoryDeleteAccessProbe : IDisposable
         using var deadline = new CancellationTokenSource(observationWindow);
         try
         {
-            await anomalyObserved.Task.WaitAsync(deadline.Token).ConfigureAwait(false);
+            await allowedAfterAnomaly.Task.WaitAsync(deadline.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (deadline.IsCancellationRequested)
         {
         }
     }
 
-    internal string StopAndFormat()
+    internal string StopAndFormat(bool forcePreserve = false)
     {
         RequestStop();
         var stopped = worker.Join(TimeSpan.FromSeconds(2));
+        var lifecycle = flightRecorder.StopAndFormat(forcePreserve || AnomalyDetected);
         lock (evidenceLock)
         {
             var builder = new StringBuilder();
@@ -126,6 +126,8 @@ internal sealed class WindowsDirectoryDeleteAccessProbe : IDisposable
                 .Append(" otherErrorSamples=").Append(otherErrorSamples)
                 .Append(" relockDetected=").Append(RelockDetected)
                 .Append(" blockedAtCleanupReturn=").Append(BlockedAtCleanupReturn)
+                .Append(" cancellationRequestedUtc=")
+                .Append(cancellationRequestedUtc?.ToString("O", CultureInfo.InvariantCulture) ?? "not-marked")
                 .Append(" workerStopped=").Append(stopped)
                 .Append(" workerFailure=").Append(workerFailure ?? "none");
             foreach (var transition in transitions)
@@ -133,11 +135,7 @@ internal sealed class WindowsDirectoryDeleteAccessProbe : IDisposable
                 builder.AppendLine().Append("transition ").Append(transition);
             }
 
-            foreach (var snapshot in ownerSnapshots)
-            {
-                builder.AppendLine().Append("relockOwnerSnapshot:").AppendLine().Append(snapshot);
-            }
-
+            builder.AppendLine().Append("resourceFlightRecorder:").AppendLine().Append(lifecycle);
             return builder.ToString();
         }
     }
@@ -146,6 +144,7 @@ internal sealed class WindowsDirectoryDeleteAccessProbe : IDisposable
     {
         RequestStop();
         _ = worker.Join(TimeSpan.FromSeconds(2));
+        flightRecorder.Dispose();
         firstSample.Dispose();
     }
 
@@ -166,11 +165,15 @@ internal sealed class WindowsDirectoryDeleteAccessProbe : IDisposable
                 {
                     RecordTransition(current);
                     if (previous?.State == ProbeState.Allowed &&
-                        current.State == ProbeState.SharingViolation)
+                        current.State == ProbeState.SharingViolation &&
+                        Volatile.Read(ref cancellationRequested) != 0)
                     {
                         Volatile.Write(ref relockDetected, 1);
-                        CaptureOwnerSnapshot("allowed-to-blocked", ref relockSnapshotCaptured);
-                        anomalyObserved.TrySetResult();
+                    }
+
+                    if (current.State == ProbeState.Allowed && AnomalyDetected)
+                    {
+                        allowedAfterAnomaly.TrySetResult();
                     }
 
                     previous = current;
@@ -188,7 +191,7 @@ internal sealed class WindowsDirectoryDeleteAccessProbe : IDisposable
             }
 
             firstSample.Set();
-            anomalyObserved.TrySetResult();
+            allowedAfterAnomaly.TrySetResult();
         }
     }
 
@@ -220,27 +223,6 @@ internal sealed class WindowsDirectoryDeleteAccessProbe : IDisposable
     private void RequestStop()
     {
         Volatile.Write(ref stopRequested, 1);
-    }
-
-    private void CaptureOwnerSnapshot(string reason, ref int captureGuard)
-    {
-        if (Interlocked.Exchange(ref captureGuard, 1) != 0)
-        {
-            return;
-        }
-
-        var snapshot = OperatingSystem.IsWindows()
-            ? WindowsDirectoryHandleForensics.Capture(
-                directory,
-                knownProcessId,
-                knownProcessRole,
-                testhostProcessId,
-                cancellationRequestedUtc)
-            : "scannerFailure=DELETE-access canary unexpectedly ran outside Windows";
-        lock (evidenceLock)
-        {
-            ownerSnapshots.Add($"reason={reason}{Environment.NewLine}{snapshot}");
-        }
     }
 
     private static ProbeResult TryAcquireDeleteAccess(string directory)

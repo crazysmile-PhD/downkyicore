@@ -3,6 +3,7 @@ using DownKyi.CentralTestRunner;
 
 namespace DownKyi.Architecture.Tests;
 
+[Collection(ResourceFlightRecorderGroup.Name)]
 public sealed class CentralTestRunnerCommandTests
 {
     [Fact]
@@ -39,6 +40,12 @@ public sealed class CentralTestRunnerCommandTests
                     </Project>
                     """,
                     TestContext.Current.CancellationToken).ConfigureAwait(true);
+                if (OperatingSystem.IsWindows())
+                {
+                    deleteProbe = WindowsDirectoryDeleteAccessProbe.Start(
+                        projectDirectory,
+                        Environment.ProcessId);
+                }
 
                 using var cancellation = new CancellationTokenSource();
                 var run = Program.RunCommandAsync(
@@ -51,20 +58,11 @@ public sealed class CentralTestRunnerCommandTests
                 ],
                     cancellation.Token);
                 processId = await WaitForProcessMarkerAsync(markerPath).ConfigureAwait(true);
+                deleteProbe?.AddKnownProcessId(processId.Value);
                 File.Delete(projectPath);
                 Assert.False(File.Exists(projectPath));
 
-                var cancellationRequestedUtc = DateTimeOffset.UtcNow;
-                if (OperatingSystem.IsWindows())
-                {
-                    deleteProbe = WindowsDirectoryDeleteAccessProbe.Start(
-                        projectDirectory,
-                        processId.Value,
-                        "marker-descendant",
-                        Environment.ProcessId,
-                        cancellationRequestedUtc);
-                }
-
+                deleteProbe?.MarkCancellationRequested();
                 await cancellation.CancelAsync().ConfigureAwait(true);
                 var exitCode = await run.ConfigureAwait(true);
                 deleteProbe?.MarkCleanupReturned();
@@ -83,19 +81,12 @@ public sealed class CentralTestRunnerCommandTests
                 catch (IOException exception) when (
                     OperatingSystem.IsWindows() && IsSharingViolation(exception))
                 {
-                    var evidence = WindowsDirectoryHandleForensics.Capture(
-                        projectDirectory,
-                        processId.Value,
-                        "marker-descendant",
-                        Environment.ProcessId,
-                        cancellationRequestedUtc);
-                    var probeEvidence = deleteProbe?.StopAndFormat() ?? "probe=not-running";
+                    var probeEvidence = deleteProbe?.StopAndFormat(forcePreserve: true) ?? "probe=not-running";
                     deleteProbe?.Dispose();
                     deleteProbe = null;
                     throw new IOException(
                         $"{exception.Message}{Environment.NewLine}" +
-                        $"Failure-only handle forensics:{Environment.NewLine}{evidence}{Environment.NewLine}" +
-                        $"DELETE-access canary:{Environment.NewLine}{probeEvidence}",
+                        $"Pre-armed resource flight recorder:{Environment.NewLine}{probeEvidence}",
                         exception);
                 }
 
