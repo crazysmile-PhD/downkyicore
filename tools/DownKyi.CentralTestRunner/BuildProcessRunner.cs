@@ -187,21 +187,29 @@ internal static class BuildProcessRunner
             }
             catch (Exception exception) when (IsProcessObservationFailure(exception))
             {
-                if (!HasExitedAfterIdentityFailure(
+                var terminalState = ObserveTerminalStateAfterIdentityFailure(
                         process,
                         observedProcess.Pid,
                         readHasExited ?? ReadHasExited,
-                        isProcessPresent ?? IsProcessPresent))
+                        isProcessPresent ?? IsProcessPresent);
+                if (terminalState is true)
+                {
+                    return;
+                }
+
+                if (terminalState is null)
                 {
                     throw;
                 }
 
-                // The observed process exited between opening it and reading or waiting on its identity.
+                // A dying Unix process can retain its PID after identity reads become unavailable.
+                // The caller's cleanup window bounds this wait and remains fail-closed if it expires.
+                await process.WaitForExitAsync().ConfigureAwait(false);
             }
         }
     }
 
-    private static bool HasExitedAfterIdentityFailure(
+    private static bool? ObserveTerminalStateAfterIdentityFailure(
         Process process,
         int processId,
         Func<Process, bool> readHasExited,
@@ -226,7 +234,7 @@ internal static class BuildProcessRunner
         catch (Exception exception) when (IsProcessObservationFailure(exception))
         {
             // An inconclusive secondary observation must not replace the first identity failure.
-            return false;
+            return null;
         }
     }
 
