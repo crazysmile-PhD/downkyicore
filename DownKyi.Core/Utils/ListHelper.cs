@@ -43,30 +43,11 @@ public static class ListHelper
     /// <param name="list"></param>
     /// <param name="item"></param>
     /// <param name="index"></param>
-    /// <param name="currentSelection"></param>
-    public static void InsertUnique<T>(Collection<T> list, T item, int index, ref T currentSelection)
+    public static void InsertUnique<T>(Collection<T> list, T item, int index)
     {
         ArgumentNullException.ThrowIfNull(list);
 
-        if (!list.Contains(item))
-        {
-            list.Insert(index, item);
-        }
-        else
-        {
-            var previousSelection = currentSelection;
-            list.Remove(item);
-            list.Insert(index, item);
-            if (previousSelection != null && EqualityComparer<T>.Default.Equals(previousSelection, item))
-            {
-                currentSelection = previousSelection;
-            }
-        }
-    }
-
-    public static void InsertUnique<T>(Collection<T> list, T item, int index)
-    {
-        T defaultSelection = default!;
-        InsertUnique(list, item, index, ref defaultSelection);
+        list.Remove(item);
+        list.Insert(index, item);
     }
 }

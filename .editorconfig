@@ -101,6 +101,16 @@ dotnet_diagnostic.CA1724.severity = error
 # Executable assembly surface rule cleaned in PR 02.
 dotnet_diagnostic.CA1515.severity = error
 
+# Legacy API and code-metrics rules with a clean blocking baseline.
+dotnet_diagnostic.CA1005.severity = error
+dotnet_diagnostic.CA1017.severity = error
+dotnet_diagnostic.CA1021.severity = error
+dotnet_diagnostic.CA1045.severity = error
+dotnet_diagnostic.CA1060.severity = error
+dotnet_diagnostic.CA1502.severity = error
+dotnet_diagnostic.CA1505.severity = error
+dotnet_diagnostic.CA1509.severity = error
+
 [*.{csproj,props,targets,axaml,json,yml,yaml}]
 indent_style = space
 indent_size = 2
