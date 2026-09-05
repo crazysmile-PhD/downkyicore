@@ -70,6 +70,13 @@ The repository uses `AnalysisMode=All` with
 approved cleanup record live in `docs/analyzer-baseline.csv`,
 `docs/analyzer-baseline.md` and `docs/analyzer-cleanup-report.md`.
 
+Tier 1 design and maintainability rules `CA1005`, `CA1017`, `CA1021`, `CA1045`,
+`CA1060`, `CA1502`, `CA1505`, and `CA1509` are explicit blocking errors in
+`.editorconfig`. `CA1506` is intentionally separate: run
+`script/audit-code-metrics.ps1` to produce the advisory, deduplicated production
+and test inventory described in `docs/testing/code-metrics-audit.md`. Findings
+do not fail that audit, but build, input, parse, and report failures do.
+
 ## Download Persistence Policy
 
 - `src/DownKyi.Domain/Downloads` owns immutable task identity, lifecycle, progress, transfer, output, failure, and completion state.

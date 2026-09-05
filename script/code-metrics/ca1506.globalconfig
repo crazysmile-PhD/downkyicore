@@ -1,0 +1,4 @@
+is_global = true
+global_level = 999
+
+dotnet_diagnostic.CA1506.severity = warning

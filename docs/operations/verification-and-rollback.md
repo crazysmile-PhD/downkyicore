@@ -33,6 +33,7 @@ dotnet build ./DownKyi.sln `
 
 pwsh ./script/test-solution.ps1 -Configuration Release -NoRestore -NoBuild
 dotnet format ./DownKyi.sln --no-restore --verify-no-changes
+pwsh ./script/audit-code-metrics.ps1 -Configuration Release -NoRestore
 pwsh ./script/audit-module-boundaries.ps1 `
   -OutputPath ./artifacts/architecture/module-boundary-audit.json
 $workflowFiles = Get-ChildItem ./.github/workflows -Filter *.yml | `
@@ -45,6 +46,10 @@ pwsh ./script/scan-secrets.ps1
 ```
 
 `scan-secrets.ps1` 使用 Gitleaks 掃描目前 tracked 與尚未追蹤、但未被 `.gitignore` 排除的候選提交檔。固定驗證版本為 Gitleaks `8.30.1`；Windows x64 release zip 必須先依官方 `gitleaks_8.30.1_checksums.txt` 驗證 SHA-256，再解壓到 `.tools/gitleaks/bin/`。`.gitleaks.toml` 只允許公開 WBI 測試 fixture 與精確的 Avalonia brush resource 行，不得加入整個目錄或一般測試檔的寬鬆排除。
+
+`audit-code-metrics.ps1` 是獨立的 CA1506 架構稽核。finding 本身不阻擋，
+但 build、SARIF 解析、分類輸入或 Markdown/JSON 報告產生失敗會阻擋。
+目前分類與輸出契約見 `../testing/code-metrics-audit.md`。
 
 Repository 測試只能經由 `script/test-project.ps1` 或
 `script/test-solution.ps1` 進入 `DownKyi.CentralTestRunner`。Runner 會套用

@@ -46,7 +46,7 @@ public sealed class CentralTestRunnerCommandTests
                         "--project", "tests/Fixture.Tests/Fixture.Tests.csproj",
                         "--configuration", "Release",
                         "--no-restore"
-                ],
+                    ],
                     cancellation.Token);
                 processId = await WaitForProcessMarkerAsync(markerPath).ConfigureAwait(true);
                 File.Delete(projectPath);

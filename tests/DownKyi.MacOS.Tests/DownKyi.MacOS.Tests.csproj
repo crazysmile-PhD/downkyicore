@@ -24,4 +24,8 @@
     <Compile Remove="Fixtures/**/*.cs" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\..\tools\DownKyi.CentralTestRunner\DownKyi.CentralTestRunner.csproj" />
+  </ItemGroup>
+
 </Project>

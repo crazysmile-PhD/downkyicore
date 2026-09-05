@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 2,
+  "production": [
+    {
+      "file": "DownKyi.Core/FFmpeg/FfmpegConcatRuntime.cs",
+      "identity": "location:191:46",
+      "classification": "architecture hotspot",
+      "rationale": "The method coordinates input checks, FFmpeg strategies, process execution, validation, publication, diagnostics, and cleanup. It is a real review hotspot, but the audit does not prove a behavioral defect."
+    },
+    {
+      "file": "DownKyi.Core/Settings/SettingsManager.About.cs",
+      "identity": "location:3:29",
+      "classification": "needs manual review",
+      "rationale": "The diagnostic is attached to one partial declaration of an internal settings persistence aggregate. Partial-class aggregation inflates the type metric, and no defect or smaller authoritative owner is established."
+    },
+    {
+      "file": "src/DownKyi.Desktop/Services/Download/Aria2TransferBackend.cs",
+      "identity": "location:96:47",
+      "classification": "architecture hotspot",
+      "rationale": "The transfer boundary coordinates protocol, transport, retry-result taxonomy, progress, and resume identity. Further separation requires a behavior-led design review."
+    },
+    {
+      "file": "src/DownKyi.Desktop/Services/Download/BuiltinTransferBackend.cs",
+      "identity": "location:59:47",
+      "classification": "architecture hotspot",
+      "rationale": "The transfer boundary coordinates HTTP, filesystem, progress, resume, and typed failure behavior. Further separation requires a behavior-led design review."
+    },
+    {
+      "file": "src/DownKyi.Desktop/Services/Download/DownloadRuntimeFactory.cs",
+      "identity": "location:75:30",
+      "classification": "composition root",
+      "rationale": "Create is the deliberate runtime assembly boundary that wires the selected backend and its owned collaborators. The finding alone does not justify artificial wrappers."
+    }
+  ]
+}

@@ -41,6 +41,7 @@ dotnet build ./DownKyi.sln -c Release --no-restore --no-incremental `
   -p:CodeAnalysisTreatWarningsAsErrors=true -p:UseSharedCompilation=false
 pwsh ./script/test-solution.ps1 -Configuration Release -NoRestore -NoBuild
 dotnet format ./DownKyi.sln --verify-no-changes --no-restore
+pwsh ./script/audit-code-metrics.ps1 -Configuration Release -NoRestore
 pwsh ./script/audit-module-boundaries.ps1 `
   -OutputPath ./artifacts/architecture/module-boundary-audit.json
 $workflowFiles = Get-ChildItem ./.github/workflows -Filter *.yml | `
