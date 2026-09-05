@@ -105,13 +105,18 @@ internal static class TlsFailureClassifier
             return true;
         }
 
+        if (ContainsAny(message, "certificate"))
+        {
+            errorCode = Prefix + "validation";
+            return true;
+        }
+
         if (ContainsAny(message,
                 "ssl/tls handshake",
                 "tls handshake",
                 "ssl handshake",
                 "secure connection",
-                "authentication failed",
-                "certificate"))
+                "authentication failed"))
         {
             errorCode = Prefix + "handshake";
             return true;
@@ -124,6 +129,30 @@ internal static class TlsFailureClassifier
     public static bool IsTlsErrorCode(string? errorCode)
     {
         return errorCode?.StartsWith(Prefix, StringComparison.Ordinal) == true;
+    }
+
+    public static bool IsCertificateValidationErrorCode(string? errorCode)
+    {
+        return IsTlsErrorCode(errorCode) &&
+               !string.Equals(
+                   errorCode,
+                   Prefix + "handshake",
+                   StringComparison.Ordinal);
+    }
+
+    public static DownloadTransferResult CreateTransferFailure(
+        string tlsErrorCode,
+        string transientErrorCode)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(tlsErrorCode);
+        ArgumentException.ThrowIfNullOrWhiteSpace(transientErrorCode);
+        return IsCertificateValidationErrorCode(tlsErrorCode)
+            ? DownloadTransferResult.Failed(
+                DownloadTransferFailureKind.Tls,
+                tlsErrorCode)
+            : DownloadTransferResult.Failed(
+                DownloadTransferFailureKind.TransientNetwork,
+                transientErrorCode);
     }
 
     public static string GetResourceKey(string errorCode)

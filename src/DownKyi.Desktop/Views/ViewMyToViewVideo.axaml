@@ -228,6 +228,11 @@
                     Foreground="{DynamicResource BrushTextDark}"
                     IsChecked="{Binding IsSelectAll, Mode=TwoWay}" />
 
+                <custom:DownloadPreparationStatus
+                    Grid.Column="1"
+                    CancelCommand="{Binding CancelDownloadPreparationCommand}"
+                    IsActive="{Binding DownloadCommandGate.IsExecuting}" />
+
                 <Button
                     Grid.Column="2"
                     Margin="0,0,10,0"

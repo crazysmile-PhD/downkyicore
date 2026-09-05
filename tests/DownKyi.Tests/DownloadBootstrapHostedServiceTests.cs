@@ -20,7 +20,8 @@ public sealed class DownloadBootstrapHostedServiceTests
         var dispatcher = new ImmediateUiDispatcher();
         var listState = new DownloadListState();
         var clock = new FixedClock();
-        using var tasks = new DownloadTaskApplicationService(new EmptyDownloadTaskStore(), clock);
+        var taskStore = new EmptyDownloadTaskStore();
+        using var tasks = new DownloadTaskApplicationService(taskStore, clock);
         using var storage = new DownloadTaskProjectionStore(tasks, clock);
         var stateWriter = new DownloadTaskStateWriter(tasks);
         var queueGateway = new DownloadTaskQueueGateway();
@@ -38,7 +39,8 @@ public sealed class DownloadBootstrapHostedServiceTests
 
         Assert.True(runtime.Started);
         Assert.True(runtime.Ended);
-        Assert.True(dispatcher.InvocationCount >= 2);
+        Assert.Equal(1, dispatcher.InvocationCount);
+        Assert.Equal(0, taskStore.HistoryPageCallCount);
         Assert.Empty(listState.Downloading);
         Assert.Empty(listState.Downloaded);
     }
@@ -312,6 +314,8 @@ public sealed class DownloadBootstrapHostedServiceTests
     private sealed class EmptyDownloadTaskStore(
         IReadOnlyList<DownloadTask>? unfinished = null) : IDownloadTaskStore
     {
+        public int HistoryPageCallCount { get; private set; }
+
         public Task InitializeAsync(CancellationToken cancellationToken)
         {
             return Task.CompletedTask;
@@ -357,6 +361,7 @@ public sealed class DownloadBootstrapHostedServiceTests
             int pageSize,
             CancellationToken cancellationToken)
         {
+            HistoryPageCallCount++;
             return Task.FromResult(new DownloadHistoryPage(Array.Empty<DownloadTask>(), null));
         }
 

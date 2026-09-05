@@ -44,13 +44,24 @@ internal sealed class DownloadListState
     public void AddDownloaded(DownloadedItem item)
     {
         ArgumentNullException.ThrowIfNull(item);
+        if (_downloaded.Any(existing => string.Equals(
+                existing.DownloadBase.Id,
+                item.DownloadBase.Id,
+                StringComparison.Ordinal)))
+        {
+            return;
+        }
+
         _downloaded.Add(item);
     }
 
     public void AddDownloadedRange(IEnumerable<DownloadedItem> items)
     {
         ArgumentNullException.ThrowIfNull(items);
-        _downloaded.AddRange(items);
+        var loadedIds = _downloaded
+            .Select(item => item.DownloadBase.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        _downloaded.AddRange(items.Where(item => loadedIds.Add(item.DownloadBase.Id)));
     }
 
     public bool RemoveDownloaded(DownloadedItem item)

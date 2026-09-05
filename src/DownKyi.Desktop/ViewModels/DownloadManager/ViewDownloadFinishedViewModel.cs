@@ -1,8 +1,10 @@
 using System;
 using System.Collections.ObjectModel;
+using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
+using DownKyi.Application.Downloads;
 using DownKyi.Commands;
 using DownKyi.Core.Settings;
 using DownKyi.Services;
@@ -14,12 +16,20 @@ namespace DownKyi.ViewModels.DownloadManager;
 
 internal class ViewDownloadFinishedViewModel : ViewModelBase
 {
+    private readonly DownKyiAsyncCommandGate _listMutationCommandGate = new();
     public const string Tag = "PageDownloadManagerDownloadFinished";
 
     private readonly IDownloadManagerCoordinator _downloadManagerCoordinator;
     private readonly DownloadListState _downloadLists;
+    private readonly DownloadTaskProjectionStore _projectionStore;
     private readonly ILogger<ViewDownloadFinishedViewModel> _logger;
     private readonly ISettingsStore _settingsStore;
+    private CancellationTokenSource? _loadCancellation;
+    private DownloadHistoryCursor? _nextCursor;
+    private bool _hasMoreHistory = true;
+    private bool _isLoadingPage;
+    private bool _retryPageLoad;
+    private const int HistoryPageSize = 250;
 
     #region 页面属性申明
 
@@ -38,6 +48,7 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
     public ViewDownloadFinishedViewModel(
         IDesktopInteractionContext desktopInteractions,
         DownloadListState downloadLists,
+        DownloadTaskProjectionStore projectionStore,
         ISettingsStore settingsStore,
         IDownloadManagerCoordinator downloadManagerCoordinator,
         ILogger<ViewDownloadFinishedViewModel> logger
@@ -45,6 +56,7 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
     {
         // 初始化DownloadedList
         _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
+        _projectionStore = projectionStore ?? throw new ArgumentNullException(nameof(projectionStore));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         _downloadManagerCoordinator = downloadManagerCoordinator
             ?? throw new ArgumentNullException(nameof(downloadManagerCoordinator));
@@ -112,9 +124,67 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
         });
     }
 
+    private DownKyiAsyncDelegateCommand? _loadMoreCommand;
+
+    public DownKyiAsyncDelegateCommand LoadMoreCommand =>
+        _loadMoreCommand ??= new DownKyiAsyncDelegateCommand(
+            LoadNextPageAsync,
+            _logger,
+            executionGate: _listMutationCommandGate);
+
+    private Task LoadNextPageAsync() => LoadNextPageAsync(retryIfBusy: false);
+
+    private Task LoadInitialPageAsync() => LoadNextPageAsync(retryIfBusy: true);
+
+    private async Task LoadNextPageAsync(bool retryIfBusy)
+    {
+        if (_isLoadingPage)
+        {
+            _retryPageLoad |= retryIfBusy;
+            return;
+        }
+
+        if (!_hasMoreHistory)
+        {
+            return;
+        }
+
+        _loadCancellation ??= new CancellationTokenSource();
+        var cancellationToken = _loadCancellation.Token;
+        _isLoadingPage = true;
+        try
+        {
+            var page = await _projectionStore
+                .GetDownloadedProjectionPageAsync(_nextCursor, HistoryPageSize, cancellationToken)
+                .ConfigureAwait(true);
+            cancellationToken.ThrowIfCancellationRequested();
+            _downloadLists.AddDownloadedRange(page.Items);
+            _nextCursor = page.NextCursor;
+            _hasMoreHistory = page.NextCursor != null;
+            _downloadLists.SortDownloaded(_settingsStore.Current.Basic.DownloadFinishedSort);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+        finally
+        {
+            _isLoadingPage = false;
+            if (_retryPageLoad && _loadCancellation is { IsCancellationRequested: false })
+            {
+                _retryPageLoad = false;
+                RunFireAndForget(LoadNextPageAsync(), nameof(LoadNextPageAsync), _logger);
+            }
+        }
+    }
+
     // 清空下载完成列表事件
     private DownKyiAsyncDelegateCommand? _clearAllDownloadedCommand;
-    public DownKyiAsyncDelegateCommand ClearAllDownloadedCommand => _clearAllDownloadedCommand ??= new DownKyiAsyncDelegateCommand(ExecuteClearAllDownloadedCommand, _logger);
+    public DownKyiAsyncDelegateCommand ClearAllDownloadedCommand =>
+        _clearAllDownloadedCommand ??= new DownKyiAsyncDelegateCommand(
+            ExecuteClearAllDownloadedCommand,
+            _logger,
+            executionGate: _listMutationCommandGate);
 
     /// <summary>
     /// 清空下载完成列表事件
@@ -185,7 +255,11 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
     // 删除事件
     private DownKyiAsyncDelegateCommand<DownloadedItem>? _removeVideoCommand;
 
-    public DownKyiAsyncDelegateCommand<DownloadedItem> RemoveVideoCommand => _removeVideoCommand ??= new DownKyiAsyncDelegateCommand<DownloadedItem>(ExecuteRemoveVideoCommand, _logger);
+    public DownKyiAsyncDelegateCommand<DownloadedItem> RemoveVideoCommand =>
+        _removeVideoCommand ??= new DownKyiAsyncDelegateCommand<DownloadedItem>(
+            ExecuteRemoveVideoCommand,
+            _logger,
+            executionGate: _listMutationCommandGate);
 
     /// <summary>
     /// 删除事件
@@ -220,6 +294,37 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
         {
             Notifications.Show(message);
         }
+    }
+
+    public override void OnNavigatedTo(AppNavigationContext navigationContext)
+    {
+        ArgumentNullException.ThrowIfNull(navigationContext);
+        base.OnNavigatedTo(navigationContext);
+        CancelAndDispose(ref _loadCancellation);
+        _loadCancellation = new CancellationTokenSource();
+        _nextCursor = null;
+        _hasMoreHistory = true;
+        _retryPageLoad = false;
+        RunFireAndForget(LoadInitialPageAsync(), nameof(LoadInitialPageAsync), _logger);
+    }
+
+    public override void OnNavigatedFrom(AppNavigationContext navigationContext)
+    {
+        CancelAndDispose(ref _loadCancellation);
+        base.OnNavigatedFrom(navigationContext);
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing && !IsDisposed)
+        {
+            _retryPageLoad = false;
+            _loadCancellation?.Cancel();
+            _loadCancellation?.Dispose();
+            _loadCancellation = null;
+        }
+
+        base.Dispose(disposing);
     }
 
     #endregion

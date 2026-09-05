@@ -33,6 +33,8 @@ internal partial class ViewMyBangumiFollowViewModel : ViewModelBase
     private CancellationTokenSource? _loadCancellation;
     private CancellationTokenSource? _downloadCancellation;
 
+    public DownKyiAsyncCommandGate DownloadCommandGate { get; } = new();
+
     private long _mid = -1;
 
     // 每页视频数量，暂时在此写死，以后在设置中增加选项
@@ -230,7 +232,10 @@ internal partial class ViewMyBangumiFollowViewModel : ViewModelBase
     // 添加选中项到下载列表事件
     private DownKyiAsyncDelegateCommand? _addToDownloadCommand;
 
-    public DownKyiAsyncDelegateCommand AddToDownloadCommand => _addToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(true), _logger);
+    public DownKyiAsyncDelegateCommand AddToDownloadCommand => _addToDownloadCommand ??= new DownKyiAsyncDelegateCommand(
+        () => AddToDownloadAsync(true),
+        _logger,
+        executionGate: DownloadCommandGate);
 
     /// <summary>
     /// 添加选中项到下载列表事件
@@ -238,7 +243,15 @@ internal partial class ViewMyBangumiFollowViewModel : ViewModelBase
     // 添加所有视频到下载列表事件
     private DownKyiAsyncDelegateCommand? _addAllToDownloadCommand;
 
-    public DownKyiAsyncDelegateCommand AddAllToDownloadCommand => _addAllToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(false), _logger);
+    public DownKyiAsyncDelegateCommand AddAllToDownloadCommand => _addAllToDownloadCommand ??= new DownKyiAsyncDelegateCommand(
+        () => AddToDownloadAsync(false),
+        _logger,
+        executionGate: DownloadCommandGate);
+
+    private RelayCommand? _cancelDownloadPreparationCommand;
+
+    public RelayCommand CancelDownloadPreparationCommand =>
+        _cancelDownloadPreparationCommand ??= new RelayCommand(() => _downloadCancellation?.Cancel());
 
     /// <summary>
     /// 添加所有视频到下载列表事件

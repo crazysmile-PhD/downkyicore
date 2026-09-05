@@ -16,6 +16,7 @@ namespace DownKyi.ViewModels.DownloadManager
 
         private readonly IDownloadManagerCoordinator _downloadManagerCoordinator;
         private readonly ILogger<ViewDownloadingViewModel> _logger;
+        private readonly DownKyiAsyncCommandGate _listMutationCommandGate = new();
 
         #region 页面属性申明
 
@@ -44,7 +45,8 @@ namespace DownKyi.ViewModels.DownloadManager
         public DownKyiAsyncDelegateCommand PauseAllDownloadingCommand =>
             _pauseAllDownloadingCommand ??= new DownKyiAsyncDelegateCommand(
                 ExecutePauseAllDownloadingCommand,
-                _logger);
+                _logger,
+                executionGate: _listMutationCommandGate);
 
         /// <summary>
         /// 暂停所有下载事件
@@ -60,7 +62,8 @@ namespace DownKyi.ViewModels.DownloadManager
         public DownKyiAsyncDelegateCommand ContinueAllDownloadingCommand =>
             _continueAllDownloadingCommand ??= new DownKyiAsyncDelegateCommand(
                 ExecuteContinueAllDownloadingCommand,
-                _logger);
+                _logger,
+                executionGate: _listMutationCommandGate);
 
         /// <summary>
         /// 继续所有下载事件
@@ -75,7 +78,8 @@ namespace DownKyi.ViewModels.DownloadManager
         public DownKyiAsyncDelegateCommand<DownloadingItem> ToggleDownloadingCommand =>
             _toggleDownloadingCommand ??= new DownKyiAsyncDelegateCommand<DownloadingItem>(
                 ExecuteToggleDownloadingCommand,
-                _logger);
+                _logger,
+                executionGate: _listMutationCommandGate);
 
         private Task ExecuteToggleDownloadingCommand(DownloadingItem? downloadingItem)
         {
@@ -87,7 +91,11 @@ namespace DownKyi.ViewModels.DownloadManager
         // 删除所有下载事件
         private DownKyiAsyncDelegateCommand? _deleteAllDownloadingCommand;
 
-        public DownKyiAsyncDelegateCommand DeleteAllDownloadingCommand => _deleteAllDownloadingCommand ??= new DownKyiAsyncDelegateCommand(ExecuteDeleteAllDownloadingCommand, _logger);
+        public DownKyiAsyncDelegateCommand DeleteAllDownloadingCommand =>
+            _deleteAllDownloadingCommand ??= new DownKyiAsyncDelegateCommand(
+                ExecuteDeleteAllDownloadingCommand,
+                _logger,
+                executionGate: _listMutationCommandGate);
 
         /// <summary>
         /// 删除所有下载事件
@@ -107,7 +115,11 @@ namespace DownKyi.ViewModels.DownloadManager
 
         // 下载列表删除事件
         private DownKyiAsyncDelegateCommand<DownloadingItem>? _deleteCommand;
-        public DownKyiAsyncDelegateCommand<DownloadingItem> DeleteCommand => _deleteCommand ??= new DownKyiAsyncDelegateCommand<DownloadingItem>(ExecuteDeleteCommand, _logger);
+        public DownKyiAsyncDelegateCommand<DownloadingItem> DeleteCommand =>
+            _deleteCommand ??= new DownKyiAsyncDelegateCommand<DownloadingItem>(
+                ExecuteDeleteCommand,
+                _logger,
+                executionGate: _listMutationCommandGate);
 
         /// <summary>
         /// 下载列表删除事件

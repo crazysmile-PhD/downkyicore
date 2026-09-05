@@ -132,6 +132,18 @@ internal sealed class DownloadTaskProjectionStore : IDisposable
         return page;
     }
 
+    public async Task<DownloadedProjectionPage> GetDownloadedProjectionPageAsync(
+        DownloadHistoryCursor? cursor,
+        int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        var page = await GetDownloadedPageAsync(cursor, pageSize, cancellationToken)
+            .ConfigureAwait(true);
+        return new DownloadedProjectionPage(
+            page.Items.Select(DownloadTaskProjectionMapper.ToDownloadedItem).ToArray(),
+            page.NextCursor);
+    }
+
     public async Task<IReadOnlyList<DownloadedItem>> GetDownloadedAsync(
         CancellationToken cancellationToken = default)
     {
@@ -139,8 +151,9 @@ internal sealed class DownloadTaskProjectionStore : IDisposable
         DownloadHistoryCursor? cursor = null;
         do
         {
-            var page = await GetDownloadedPageAsync(cursor, 500, cancellationToken).ConfigureAwait(true);
-            items.AddRange(page.Items.Select(DownloadTaskProjectionMapper.ToDownloadedItem));
+            var page = await GetDownloadedProjectionPageAsync(cursor, 500, cancellationToken)
+                .ConfigureAwait(true);
+            items.AddRange(page.Items);
             cursor = page.NextCursor;
         }
         while (cursor != null);
@@ -270,3 +283,7 @@ internal sealed class DownloadTaskProjectionStore : IDisposable
 internal sealed record DownloadTaskProjectionStartupState(
     IReadOnlyList<DownloadTask> Tasks,
     IReadOnlyList<DownloadingItem> Projections);
+
+internal sealed record DownloadedProjectionPage(
+    IReadOnlyList<DownloadedItem> Items,
+    DownloadHistoryCursor? NextCursor);

@@ -169,6 +169,53 @@ public sealed class VideoDetailCommandStateTests
     }
 
     [Avalonia.Headless.XUnit.AvaloniaFact]
+    public async Task DownloadPreparationDisablesEveryCompetingWorkflowCommand()
+    {
+        DesktopTestResources.EnsureProductThemeResources();
+        var settingsPath = Path.Combine(
+            Path.GetTempPath(),
+            $"downkyi-video-detail-download-gate-{Guid.NewGuid():N}.json");
+        using var settings = new SettingsStore(settingsPath);
+        using var workflow = new VideoDetailWorkflowCoordinatorStub();
+        var downloadCoordinator = new VideoDetailDownloadCoordinatorStub
+        {
+            WaitForRelease = true
+        };
+        using var viewModel = new ViewVideoDetailViewModel(
+            new DesktopInteractionContextStub(),
+            new ClipboardServiceStub(),
+            settings,
+            workflow,
+            downloadCoordinator,
+            NullLogger<ViewVideoDetailViewModel>.Instance);
+        viewModel.UiState.VideoInfoView = new DownKyi.Presentation.VideoInfoView();
+        viewModel.UiState.DisplayState = VideoDetailDisplayState.Content;
+        var completion = WaitUntilExecutableAfterDisabled(viewModel.AddToDownloadCommand);
+
+        viewModel.AddToDownloadCommand.Execute(null);
+        await downloadCoordinator.AddRequested.Task
+            .WaitAsync(TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
+
+        Assert.False(viewModel.InputCommand.CanExecute(null));
+        Assert.False(viewModel.ParseCommand.CanExecute(null));
+        Assert.False(viewModel.ParseAllVideoCommand.CanExecute(null));
+        Assert.False(viewModel.AddToDownloadCommand.CanExecute(null));
+        Assert.Equal(1, workflow.OperationStartCount);
+
+        viewModel.ParseAllVideoCommand.Execute(null);
+        Assert.Equal(1, workflow.OperationStartCount);
+
+        downloadCoordinator.ReleaseAdd();
+        await completion.WaitAsync(TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.True(viewModel.InputCommand.CanExecute(null));
+        Assert.True(viewModel.ParseCommand.CanExecute(null));
+        Assert.True(viewModel.ParseAllVideoCommand.CanExecute(null));
+        Assert.True(viewModel.AddToDownloadCommand.CanExecute(null));
+    }
+
+    [Avalonia.Headless.XUnit.AvaloniaFact]
     public async Task AutoParseCompletionReEnablesSelectedDownload()
     {
         DesktopTestResources.EnsureProductThemeResources();
@@ -352,6 +399,8 @@ public sealed class VideoDetailCommandStateTests
         public TaskCompletionSource PageStreamsStarted { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
+        public int OperationStartCount => Volatile.Read(ref _version);
+
         public VideoDetailOperation StartOperation()
         {
             return new VideoDetailOperation(Interlocked.Increment(ref _version), CancellationToken.None);
@@ -420,14 +469,19 @@ public sealed class VideoDetailCommandStateTests
 
     private sealed class VideoDetailDownloadCoordinatorStub : IVideoDetailDownloadCoordinator
     {
+        private readonly TaskCompletionSource _releaseAdd =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
         public TaskCompletionSource AddRequested { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public bool WaitForRelease { get; init; }
 
         public bool LastIsAll { get; private set; }
 
         public DownKyi.Presentation.VideoInfoView? LastVideoInfo { get; private set; }
 
-        public Task<int?> AddAsync(
+        public async Task<int?> AddAsync(
             string input,
             DownKyi.Presentation.VideoInfoView videoInfoView,
             IList<DownKyi.Presentation.VideoSection> videoSections,
@@ -438,7 +492,17 @@ public sealed class VideoDetailCommandStateTests
             LastIsAll = isAll;
             LastVideoInfo = videoInfoView;
             AddRequested.TrySetResult();
-            return Task.FromResult<int?>(1);
+            if (WaitForRelease)
+            {
+                await _releaseAdd.Task.WaitAsync(cancellationToken).ConfigureAwait(true);
+            }
+
+            return 1;
+        }
+
+        public void ReleaseAdd()
+        {
+            _releaseAdd.TrySetResult();
         }
     }
 

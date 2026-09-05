@@ -1,3 +1,4 @@
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
 
@@ -11,8 +12,11 @@ internal sealed class NullAsyncImageLoader : IAsyncImageLoader
     {
     }
 
-    public Task<Bitmap?> ProvideImageAsync(string url)
+    public Task<Bitmap?> ProvideImageAsync(
+        string url,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         return Task.FromResult<Bitmap?>(null);
     }
 

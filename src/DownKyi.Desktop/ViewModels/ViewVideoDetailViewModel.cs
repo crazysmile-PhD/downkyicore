@@ -45,23 +45,23 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
         _workflow = workflow ?? throw new ArgumentNullException(nameof(workflow));
         _downloadCoordinator = downloadCoordinator ?? throw new ArgumentNullException(nameof(downloadCoordinator));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        var operationCommandGate = new DownKyiAsyncCommandGate();
         UiState.DownloadManage = CreateDownloadManageIcon();
         BackSpaceCommand = new RelayCommand(ExecuteBackSpace);
         DownloadManagerCommand = new RelayCommand(ExecuteDownloadManagerCommand);
-        InputCommand = new DownKyiAsyncDelegateCommand(ExecuteInputCommandAsync, _logger, () => !UiState.IsBusy);
+        InputCommand = new DownKyiAsyncDelegateCommand(ExecuteInputCommandAsync, _logger, () => !UiState.IsBusy, executionGate: operationCommandGate);
         InputSearchCommand = new RelayCommand(() => _workflow.ApplySearch(UiState.InputSearchText));
         CopyCoverUrlCommand = new DownKyiAsyncDelegateCommand(ExecuteCopyCoverUrlCommandAsync, _logger);
         UpperCommand = new RelayCommand(ExecuteUpperCommand);
         SelectAllCommand = new RelayCommand(() => SetAllSelected(UiState.IsSelectAll));
         ClearSelectionCommand = new RelayCommand(() => SetAllSelected(isSelected: false));
-        ParseCommand = new DownKyiAsyncDelegateCommand<object>(ExecuteParseCommandAsync, _logger, _ => !UiState.IsBusy);
-        ParseAllVideoCommand = new DownKyiAsyncDelegateCommand(ExecuteParseAllVideoCommandAsync, _logger, () => !UiState.IsBusy);
-        AddToDownloadCommand = new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(false), _logger, () => !UiState.IsBusy);
+        ParseCommand = new DownKyiAsyncDelegateCommand<object>(ExecuteParseCommandAsync, _logger, _ => !UiState.IsBusy, executionGate: operationCommandGate);
+        ParseAllVideoCommand = new DownKyiAsyncDelegateCommand(ExecuteParseAllVideoCommandAsync, _logger, () => !UiState.IsBusy, executionGate: operationCommandGate);
+        AddToDownloadCommand = new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(false), _logger, () => !UiState.IsBusy, executionGate: operationCommandGate);
         UiState.IsBusyChanged += OnIsBusyChanged;
     }
 
     public VideoDetailUiState UiState { get; } = new();
-
     public RangeObservableCollection<VideoSection> VideoSections { get; } = new();
 
     public RelayCommand BackSpaceCommand { get; }

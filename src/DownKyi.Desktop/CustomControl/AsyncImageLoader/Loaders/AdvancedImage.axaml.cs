@@ -226,6 +226,7 @@ internal class AdvancedImage : ContentControl
 
         Bitmap? bitmap;
         var wasCancelled = false;
+        var ownsUpdate = false;
         try
         {
             bitmap = await Task.Run(async () =>
@@ -246,7 +247,9 @@ internal class AdvancedImage : ContentControl
                     }
 
                     loader ??= ImageLoader.AsyncImageLoader;
-                    return await loader.ProvideImageAsync(source).ConfigureAwait(true);
+                    return await loader
+                        .ProvideImageAsync(source, cancellationTokenSource.Token)
+                        .ConfigureAwait(true);
                 }
                 catch (TaskCanceledException)
                 {
@@ -278,17 +281,35 @@ internal class AdvancedImage : ContentControl
         }
         finally
         {
-            Interlocked.CompareExchange(ref _updateCancellationToken, null, cancellationTokenSource);
+            ownsUpdate = ReferenceEquals(
+                Interlocked.CompareExchange(
+                    ref _updateCancellationToken,
+                    null,
+                    cancellationTokenSource),
+                cancellationTokenSource);
             cancellationTokenSource.Dispose();
         }
 
         if (wasCancelled)
         {
             bitmap?.Dispose();
+            if (ownsUpdate)
+            {
+                IsLoading = false;
+            }
+
             return;
         }
-        CurrentImage = bitmap is null ? null : new ImageWrapper(bitmap);
-        IsLoading = false;
+
+        if (ownsUpdate)
+        {
+            CurrentImage = bitmap is null ? null : new ImageWrapper(bitmap);
+            IsLoading = false;
+        }
+        else
+        {
+            bitmap?.Dispose();
+        }
     }
 
     private static async Task CancelPreviousAsync(CancellationTokenSource cancellationTokenSource)
