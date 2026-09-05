@@ -321,16 +321,13 @@ public sealed class CentralTestRunnerCancellationComponentTests
     {
         using var cancellation = new CancellationTokenSource();
         await cancellation.CancelAsync();
-        using var error = new StringWriter();
 
         var exitCode = await Program.RunCommandAsync(
             [],
             (_, token) => Task.FromCanceled<int>(token),
-            error,
             cancellation.Token).ConfigureAwait(true);
 
         Assert.Equal(130, exitCode);
-        Assert.Equal(string.Empty, error.ToString());
     }
 
     [Fact]
@@ -348,51 +345,99 @@ public sealed class CentralTestRunnerCancellationComponentTests
         Assert.Equal(2, exitCode);
     }
 
-    [Fact]
-    public void ModuleMarkersRecordEnteredAndCompletedBits()
+    [Theory]
+    [InlineData((int)MacOsProcessIdentityState.SameIdentityZombie)]
+    [InlineData((int)MacOsProcessIdentityState.Reused)]
+    public async Task MacOsIdentityFallbackTreatsTerminalOrReusedPidAsComplete(
+        int stateValue)
     {
-        var markers = new ObservedProcessModuleMarkers(101);
+        var state = (MacOsProcessIdentityState)stateValue;
+        Process? fixture = null;
+        await FailurePreservingTestCleanup.RunAsync(
+            async () =>
+            {
+                fixture = await StartHoldingFixtureAsync().ConfigureAwait(true);
+                var expectedStartTime = fixture.StartTime.ToUniversalTime();
 
-        markers.Enter(ObservedProcessModule.GetProcessById);
-        markers.Complete(ObservedProcessModule.GetProcessById);
+                await BuildProcessRunner.WaitForObservedProcessExitAsync(
+                    CreateObservedProcess(fixture, expectedStartTime),
+                    _ => throw new Win32Exception("identity unavailable"),
+                    _ => false,
+                    _ => true,
+                    (pid, startTime) => CreateMacIdentityResult(state, pid, startTime))
+                    .ConfigureAwait(true);
 
-        Assert.Equal(0x1UL, markers.EnteredMask);
-        Assert.Equal(0x1UL, markers.CompletedMask);
-        Assert.Equal((byte)ObservedProcessModule.GetProcessById, markers.LastModule);
+                Assert.False(fixture.HasExited);
+            },
+            () => StopFixtureAsync(fixture)).ConfigureAwait(true);
+    }
+
+    [Theory]
+    [InlineData((int)MacOsProcessIdentityState.Gone, 0, 3, 0, 0U, 0UL)]
+    [InlineData((int)MacOsProcessIdentityState.SameIdentityZombie, 144, 0, 1234, 5U, 1_700_000_000UL)]
+    [InlineData((int)MacOsProcessIdentityState.SameIdentityLive, 144, 0, 1234, 2U, 1_700_000_000UL)]
+    [InlineData((int)MacOsProcessIdentityState.Reused, 144, 0, 1235, 2U, 1_700_000_000UL)]
+    [InlineData((int)MacOsProcessIdentityState.Unavailable, 143, 0, 1234, 5U, 1_700_000_000UL)]
+    public void MacOsIdentityProbeClassifiesBsdProcessInformation(
+        int expectedStateValue,
+        int returned,
+        int error,
+        int nativeProcessId,
+        uint status,
+        ulong startTimeSeconds)
+    {
+        var expectedStartTime = DateTimeOffset.UnixEpoch +
+            TimeSpan.FromSeconds(1_700_000_000 + 0.123456d);
+
+        var result = MacOsProcessIdentityProbe.Classify(
+            1234,
+            expectedStartTime,
+            returned,
+            error,
+            unchecked((uint)nativeProcessId),
+            42,
+            status,
+            startTimeSeconds,
+            startTimeSeconds == 0 ? 0UL : 123_456UL);
+
+        Assert.Equal(144, MacOsProcessIdentityProbe.NativeBufferSize);
+        Assert.Equal((MacOsProcessIdentityState)expectedStateValue, result.State);
+    }
+
+    [Theory]
+    [InlineData((int)MacOsProcessIdentityState.SameIdentityLive)]
+    [InlineData((int)MacOsProcessIdentityState.Unavailable)]
+    public async Task MacOsIdentityFallbackPreservesFailureWhenProcessIsNotProvenTerminal(
+        int stateValue)
+    {
+        var state = (MacOsProcessIdentityState)stateValue;
+        Process? fixture = null;
+        await FailurePreservingTestCleanup.RunAsync(
+            async () =>
+            {
+                fixture = await StartHoldingFixtureAsync().ConfigureAwait(true);
+                var expectedStartTime = fixture.StartTime.ToUniversalTime();
+                var identityFailure = new Win32Exception("identity unavailable");
+
+                var exception = await Record.ExceptionAsync(
+                    () => BuildProcessRunner.WaitForObservedProcessExitAsync(
+                        CreateObservedProcess(fixture, expectedStartTime),
+                        _ => throw identityFailure,
+                        _ => false,
+                        _ => true,
+                        (pid, startTime) => CreateMacIdentityResult(
+                            state,
+                            pid,
+                            startTime))).ConfigureAwait(true);
+
+                Assert.Same(identityFailure, exception);
+                Assert.False(fixture.HasExited);
+            },
+            () => StopFixtureAsync(fixture)).ConfigureAwait(true);
     }
 
     [Fact]
-    public void ModuleMarkersLeaveCompletedBitClearWhenModuleThrows()
-    {
-        var markers = new ObservedProcessModuleMarkers(102);
-
-        markers.Enter(ObservedProcessModule.IdentityRead);
-
-        Assert.Equal(0x2UL, markers.EnteredMask);
-        Assert.Equal(0UL, markers.CompletedMask);
-        Assert.Equal((byte)ObservedProcessModule.IdentityRead, markers.LastModule);
-    }
-
-    [Fact]
-    public void ModuleMarkersRemainIsolatedPerPid()
-    {
-        var first = new ObservedProcessModuleMarkers(201);
-        var second = new ObservedProcessModuleMarkers(202);
-
-        first.Enter(ObservedProcessModule.GetProcessById);
-        first.Complete(ObservedProcessModule.GetProcessById);
-        second.Enter(ObservedProcessModule.IdentityRead);
-
-        Assert.Equal(201, first.ProcessId);
-        Assert.Equal(0x1UL, first.EnteredMask);
-        Assert.Equal(0x1UL, first.CompletedMask);
-        Assert.Equal(202, second.ProcessId);
-        Assert.Equal(0x2UL, second.EnteredMask);
-        Assert.Equal(0UL, second.CompletedMask);
-    }
-
-    [Fact]
-    public async Task ModuleMarkerFailurePreservesIdentityExceptionAndExitCodeMapping()
+    public async Task MacOsIdentityProbeFailureDoesNotReplaceOriginalIdentityFailure()
     {
         Process? fixture = null;
         await FailurePreservingTestCleanup.RunAsync(
@@ -401,10 +446,6 @@ public sealed class CentralTestRunnerCancellationComponentTests
                 fixture = await StartHoldingFixtureAsync().ConfigureAwait(true);
                 var expectedStartTime = fixture.StartTime.ToUniversalTime();
                 var identityFailure = new Win32Exception("identity unavailable");
-                var diagnostic = new CancellationCleanupDiagnostic(
-                    fixture.Id,
-                    true,
-                    Directory.GetCurrentDirectory());
 
                 var exception = await Record.ExceptionAsync(
                     () => BuildProcessRunner.WaitForObservedProcessExitAsync(
@@ -412,73 +453,40 @@ public sealed class CentralTestRunnerCancellationComponentTests
                         _ => throw identityFailure,
                         _ => false,
                         _ => true,
-                        diagnostic))
+                        (_, _) => throw new DllNotFoundException("libproc unavailable")))
                     .ConfigureAwait(true);
 
                 Assert.Same(identityFailure, exception);
-                diagnostic.AttachFailure(
-                    identityFailure,
-                    "observed-descendant-reap",
-                    identityFailure,
-                    identityFailure);
-                using var cancellation = new CancellationTokenSource();
-                await cancellation.CancelAsync().ConfigureAwait(true);
-                using var error = new StringWriter();
-                var exitCode = await Program.RunCommandAsync(
-                    [],
-                    (_, _) => Task.FromException<int>(identityFailure),
-                    error,
-                    cancellation.Token).ConfigureAwait(true);
-
-                var evidence = error.ToString();
-                Assert.Equal(2, exitCode);
-                Assert.Contains("targetPid=", evidence, StringComparison.Ordinal);
-                Assert.Contains("enteredMask=0xF", evidence, StringComparison.Ordinal);
-                Assert.Contains("completedMask=0xD", evidence, StringComparison.Ordinal);
-                Assert.Contains("lastModule=M4", evidence, StringComparison.Ordinal);
-                Assert.Contains("firstIncomplete=M2", evidence, StringComparison.Ordinal);
-                Assert.Contains("hasExited=false", evidence, StringComparison.Ordinal);
-                Assert.Contains("pidPresence=true", evidence, StringComparison.Ordinal);
-                Assert.Contains("M2=entered/not-completed", evidence, StringComparison.Ordinal);
-                Assert.Contains("M5=not-invoked", evidence, StringComparison.Ordinal);
                 Assert.False(fixture.HasExited);
             },
             () => StopFixtureAsync(fixture)).ConfigureAwait(true);
     }
 
     [Fact]
-    public async Task CleanupFailureDiagnosticIsBoundedRedactedAndFailureOnly()
+    public async Task MissingPidCompletesWithoutMacOsIdentityProbe()
     {
-        var diagnosticRoot = Path.Combine(Path.GetTempPath(), $"downkyi-diagnostic-{Guid.NewGuid():N}");
-        var secret = "fixture-diagnostic-secret";
-        var failure = new InvalidOperationException($"failed at {diagnosticRoot} token={secret}");
-        var diagnostic = new CancellationCleanupDiagnostic(1234, true, diagnosticRoot);
-        diagnostic.Record("process-relationship-snapshot-start", 1234);
-        diagnostic.Record(
-            "process-relationship-snapshot-failure",
-            1234,
-            $"exception={failure.GetType().FullName}");
-        diagnostic.AttachFailure(failure, "process-relationship-snapshot", failure, failure);
-        using var cancellation = new CancellationTokenSource();
-        await cancellation.CancelAsync();
-        using var error = new StringWriter();
+        Process? fixture = null;
+        await FailurePreservingTestCleanup.RunAsync(
+            async () =>
+            {
+                fixture = await StartHoldingFixtureAsync().ConfigureAwait(true);
+                var expectedStartTime = fixture.StartTime.ToUniversalTime();
+                var probeCalls = 0;
 
-        var exitCode = await Program.RunCommandAsync(
-            [],
-            (_, _) => Task.FromException<int>(failure),
-            error,
-            cancellation.Token).ConfigureAwait(true);
+                await BuildProcessRunner.WaitForObservedProcessExitAsync(
+                    CreateObservedProcess(fixture, expectedStartTime),
+                    _ => throw new Win32Exception("identity unavailable"),
+                    _ => false,
+                    _ => false,
+                    (_, _) =>
+                    {
+                        probeCalls++;
+                        return default;
+                    }).ConfigureAwait(true);
 
-        var evidence = error.ToString();
-        Assert.Equal(2, exitCode);
-        Assert.InRange(evidence.Length, 1, 4098);
-        Assert.Contains("failureStage=process-relationship-snapshot", evidence, StringComparison.Ordinal);
-        Assert.Contains("firstException=System.InvalidOperationException", evidence, StringComparison.Ordinal);
-        Assert.Contains("cancellationRequested=True", evidence, StringComparison.Ordinal);
-        Assert.Contains("rootPid=1234", evidence, StringComparison.Ordinal);
-        Assert.Contains("<repository-root>", evidence, StringComparison.Ordinal);
-        Assert.DoesNotContain(diagnosticRoot, evidence, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain(secret, evidence, StringComparison.Ordinal);
+                Assert.Equal(0, probeCalls);
+            },
+            () => StopFixtureAsync(fixture)).ConfigureAwait(true);
     }
 
     [Fact]
@@ -589,6 +597,22 @@ public sealed class CentralTestRunnerCancellationComponentTests
             "InvalidOperationException" => new InvalidOperationException("identity unavailable"),
             _ => throw new ArgumentOutOfRangeException(nameof(exceptionType))
         };
+    }
+
+    private static MacOsProcessIdentityResult CreateMacIdentityResult(
+        MacOsProcessIdentityState state,
+        int processId,
+        DateTimeOffset expectedStartTimeUtc)
+    {
+        return new MacOsProcessIdentityResult(
+            state,
+            processId,
+            Environment.ProcessId,
+            state == MacOsProcessIdentityState.SameIdentityZombie ? 5U : 2U,
+            state == MacOsProcessIdentityState.Reused
+                ? expectedStartTimeUtc.AddSeconds(1)
+                : expectedStartTimeUtc,
+            0);
     }
 
     private static Task<Process> StartHoldingFixtureAsync()

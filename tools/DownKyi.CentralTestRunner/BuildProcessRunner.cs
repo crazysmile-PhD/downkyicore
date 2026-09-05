@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.ExceptionServices;
+using System.Runtime.InteropServices;
 
 namespace DownKyi.CentralTestRunner;
 
@@ -20,8 +21,7 @@ internal static class BuildProcessRunner
         return await RunAsync(
             startInfo,
             cancellationToken,
-            cleanupResourceDirectory: cleanupResourceDirectory,
-            diagnosticWorkingDirectory: Path.GetDirectoryName(Path.GetFullPath(projectPath))).ConfigureAwait(false);
+            cleanupResourceDirectory: cleanupResourceDirectory).ConfigureAwait(false);
     }
 
     internal static ProcessStartInfo CreateBuildStartInfo(
@@ -49,8 +49,7 @@ internal static class BuildProcessRunner
         ProcessStartInfo startInfo,
         CancellationToken cancellationToken,
         TimeSpan? cleanupTimeout = null,
-        string? cleanupResourceDirectory = null,
-        string? diagnosticWorkingDirectory = null)
+        string? cleanupResourceDirectory = null)
     {
         using var process = new Process { StartInfo = startInfo };
         process.Start();
@@ -64,10 +63,7 @@ internal static class BuildProcessRunner
             await CleanupAfterCancellationAsync(
                 process,
                 cleanupWindow,
-                cleanupResourceDirectory: cleanupResourceDirectory,
-                cancellationRequested: cancellationToken.IsCancellationRequested,
-                diagnosticWorkingDirectory: diagnosticWorkingDirectory ?? startInfo.WorkingDirectory)
-                .ConfigureAwait(false);
+                cleanupResourceDirectory: cleanupResourceDirectory).ConfigureAwait(false);
             throw;
         }
 
@@ -82,118 +78,47 @@ internal static class BuildProcessRunner
         Process process,
         TimeSpan cleanupWindow,
         Func<int, TimeSpan, Task<FinalProcessSnapshot>>? captureSnapshotAsync = null,
-        string? cleanupResourceDirectory = null,
-        bool cancellationRequested = false,
-        string? diagnosticWorkingDirectory = null)
+        string? cleanupResourceDirectory = null)
     {
         var captureSnapshot = captureSnapshotAsync ?? ProcessTreeSnapshot.CaptureAsync;
-        var diagnostic = new CancellationCleanupDiagnostic(
-            process.Id,
-            cancellationRequested,
-            diagnosticWorkingDirectory ?? Directory.GetCurrentDirectory());
-        diagnostic.Record("cancellation-observed", process.Id);
         FinalProcessSnapshot? ownedProcesses = null;
         ExceptionDispatchInfo? snapshotFailure = null;
-        diagnostic.Record("process-relationship-snapshot-start", process.Id);
         try
         {
             ownedProcesses = await captureSnapshot(process.Id, cleanupWindow).ConfigureAwait(false);
-            diagnostic.Record(
-                "process-relationship-snapshot-success",
-                process.Id,
-                $"observed={ownedProcesses.Processes.Count}");
-            foreach (var observedProcess in ownedProcesses.Processes)
-            {
-                diagnostic.Record(
-                    "snapshot-process-observed",
-                    observedProcess.Pid,
-                    $"parent={observedProcess.ParentPid} identity={(observedProcess.StartTimeUtc is null ? "missing" : "present")}");
-            }
         }
         catch (Exception exception)
         {
-            diagnostic.Record(
-                "process-relationship-snapshot-failure",
-                process.Id,
-                $"exception={exception.GetType().FullName}");
             snapshotFailure = ExceptionDispatchInfo.Capture(exception);
         }
 
-        var cleanupStage = "kill-owned-process-tree";
         try
         {
-            diagnostic.Record("kill-owned-process-tree-start", process.Id);
             KillOwnedProcessTree(process);
-            diagnostic.Record("kill-owned-process-tree-success", process.Id);
-            cleanupStage = "root-reap";
-            diagnostic.Record("root-reap-start", process.Id);
             await WaitForRootExitAsync(process, cleanupWindow).ConfigureAwait(false);
-            diagnostic.Record("root-reap-success", process.Id);
             if (ownedProcesses is not null)
             {
-                cleanupStage = "observed-descendant-reap";
-                diagnostic.Record(
-                    "observed-descendant-reap-start",
-                    process.Id,
-                    $"observed={ownedProcesses.Processes.Count}");
-                await WaitForOwnedProcessesToExitAsync(
-                        ownedProcesses.Processes,
-                        cleanupWindow,
-                        diagnostic: diagnostic)
+                await WaitForOwnedProcessesToExitAsync(ownedProcesses.Processes, cleanupWindow)
                     .ConfigureAwait(false);
-                diagnostic.Record("observed-descendant-reap-success", process.Id);
             }
 
             if (OperatingSystem.IsWindows() && cleanupResourceDirectory is not null)
             {
-                cleanupStage = "windows-resource-readiness";
-                diagnostic.Record("windows-resource-readiness-start", process.Id);
                 await WindowsDirectoryResourceRundown.WaitForDeleteAccessAsync(
                     cleanupResourceDirectory,
                     cleanupWindow).ConfigureAwait(false);
-                diagnostic.Record("windows-resource-readiness-success", process.Id);
             }
         }
-        catch (Exception cleanupFailure)
+        catch (Exception cleanupFailure) when (snapshotFailure is not null)
         {
-            diagnostic.Record(
-                "unexpected-exception-escaping-cleanup",
-                process.Id,
-                $"stage={cleanupStage} exception={cleanupFailure.GetType().FullName}");
-            var firstFailure = snapshotFailure?.SourceException ?? cleanupFailure;
-            var firstFailureStage = snapshotFailure is null
-                ? cleanupStage
-                : "process-relationship-snapshot";
-            if (snapshotFailure is not null)
-            {
-                var aggregate = new AggregateException(
-                    $"The process snapshot failed: {snapshotFailure.SourceException.Message} " +
-                    $"Mandatory process cleanup also failed: {cleanupFailure.Message}",
-                    snapshotFailure.SourceException,
-                    cleanupFailure);
-                diagnostic.AttachFailure(aggregate, firstFailureStage, firstFailure, cleanupFailure);
-                throw aggregate;
-            }
-
-            diagnostic.AttachFailure(cleanupFailure, firstFailureStage, firstFailure, cleanupFailure);
-            throw;
+            throw new AggregateException(
+                $"The process snapshot failed: {snapshotFailure.SourceException.Message} " +
+                $"Mandatory process cleanup also failed: {cleanupFailure.Message}",
+                snapshotFailure.SourceException,
+                cleanupFailure);
         }
 
-        if (snapshotFailure is not null)
-        {
-            diagnostic.Record(
-                "unexpected-exception-escaping-cleanup",
-                process.Id,
-                "stage=process-relationship-snapshot");
-            diagnostic.AttachFailure(
-                snapshotFailure.SourceException,
-                "process-relationship-snapshot",
-                snapshotFailure.SourceException,
-                snapshotFailure.SourceException);
-            snapshotFailure.Throw();
-        }
-
-        diagnostic.Record("original-cancellation-rethrow", process.Id);
+        snapshotFailure?.Throw();
     }
 
     internal static void KillOwnedProcessTree(Process process)
@@ -223,14 +148,12 @@ internal static class BuildProcessRunner
     internal static async Task WaitForOwnedProcessesToExitAsync(
         IReadOnlyList<ObservedProcess> ownedProcesses,
         TimeSpan cleanupTimeout,
-        Func<Process, DateTimeOffset>? readStartTimeUtc = null,
-        CancellationCleanupDiagnostic? diagnostic = null)
+        Func<Process, DateTimeOffset>? readStartTimeUtc = null)
     {
         var waits = ownedProcesses.Select(
             observedProcess => WaitForObservedProcessExitAsync(
                 observedProcess,
-                readStartTimeUtc ?? ReadStartTimeUtc,
-                diagnostic: diagnostic));
+                readStartTimeUtc ?? ReadStartTimeUtc));
         await Task.WhenAll(waits).WaitAsync(cleanupTimeout).ConfigureAwait(false);
     }
 
@@ -239,23 +162,15 @@ internal static class BuildProcessRunner
         Func<Process, DateTimeOffset>? readStartTimeUtc = null,
         Func<Process, bool>? readHasExited = null,
         Func<int, bool>? isProcessPresent = null,
-        CancellationCleanupDiagnostic? diagnostic = null,
-        Action<ObservedProcessObservationOutcome>? observationCompleted = null)
+        Func<int, DateTimeOffset, MacOsProcessIdentityResult>? macOsIdentityProbe = null)
     {
-        var markers = new ObservedProcessModuleMarkers(observedProcess.Pid);
         Process process;
-        markers.Enter(ObservedProcessModule.GetProcessById);
         try
         {
             process = Process.GetProcessById(observedProcess.Pid);
-            markers.Complete(ObservedProcessModule.GetProcessById);
         }
         catch (ArgumentException)
         {
-            observationCompleted?.Invoke(new ObservedProcessObservationOutcome(
-                ObservedProcessOutcomeCategory.TerminalBeforeOpen,
-                markers,
-                null));
             // The observed process exited before its identity could be opened.
             return;
         }
@@ -264,48 +179,23 @@ internal static class BuildProcessRunner
         {
             try
             {
-                markers.Enter(ObservedProcessModule.IdentityRead);
-                var identityMatches = observedProcess.StartTimeUtc is not { } expectedStartTime ||
-                    (readStartTimeUtc ?? ReadStartTimeUtc)(process) == expectedStartTime;
-                markers.Complete(ObservedProcessModule.IdentityRead);
-                if (!identityMatches)
+                if (observedProcess.StartTimeUtc is { } expectedStartTime &&
+                    (readStartTimeUtc ?? ReadStartTimeUtc)(process) != expectedStartTime)
                 {
-                    observationCompleted?.Invoke(new ObservedProcessObservationOutcome(
-                        ObservedProcessOutcomeCategory.Other,
-                        markers,
-                        null));
                     return;
                 }
 
-                markers.Enter(ObservedProcessModule.WaitForExit);
                 await process.WaitForExitAsync().ConfigureAwait(false);
-                markers.Complete(ObservedProcessModule.WaitForExit);
-                observationCompleted?.Invoke(new ObservedProcessObservationOutcome(
-                    ObservedProcessOutcomeCategory.IdentitySuccessThenReap,
-                    markers,
-                    null));
             }
             catch (Exception exception) when (IsProcessObservationFailure(exception))
             {
-                var failedModule = markers.LastModule;
-                var terminalConfirmed = HasExitedAfterIdentityFailure(
+                if (!HasExitedAfterIdentityFailure(
                         process,
-                        observedProcess.Pid,
+                        observedProcess,
                         readHasExited ?? ReadHasExited,
                         isProcessPresent ?? IsProcessPresent,
-                        ref markers);
-                var category = failedModule == (byte)ObservedProcessModule.IdentityRead
-                    ? terminalConfirmed
-                        ? ObservedProcessOutcomeCategory.IdentityFailureTerminalConfirmed
-                        : ObservedProcessOutcomeCategory.IdentityFailureAmbiguous
-                    : ObservedProcessOutcomeCategory.Other;
-                observationCompleted?.Invoke(new ObservedProcessObservationOutcome(
-                    category,
-                    markers,
-                    exception));
-                if (!terminalConfirmed)
+                        macOsIdentityProbe))
                 {
-                    diagnostic?.RecordObservedProcessFailure(in markers, exception);
                     throw;
                 }
 
@@ -316,18 +206,14 @@ internal static class BuildProcessRunner
 
     private static bool HasExitedAfterIdentityFailure(
         Process process,
-        int processId,
+        ObservedProcess observedProcess,
         Func<Process, bool> readHasExited,
         Func<int, bool> isProcessPresent,
-        ref ObservedProcessModuleMarkers markers)
+        Func<int, DateTimeOffset, MacOsProcessIdentityResult>? macOsIdentityProbe)
     {
-        markers.Enter(ObservedProcessModule.HasExitedFallback);
         try
         {
-            var hasExited = readHasExited(process);
-            markers.ObserveHasExited(hasExited);
-            markers.Complete(ObservedProcessModule.HasExitedFallback);
-            if (hasExited)
+            if (readHasExited(process))
             {
                 return true;
             }
@@ -337,24 +223,54 @@ internal static class BuildProcessRunner
             // A vanished process can make both StartTime and HasExited unavailable.
         }
 
-        markers.Enter(ObservedProcessModule.PidPresenceFallback);
         try
         {
-            var present = isProcessPresent(processId);
-            markers.ObservePidPresence(present);
-            markers.Complete(ObservedProcessModule.PidPresenceFallback);
-            return !present;
+            if (!isProcessPresent(observedProcess.Pid))
+            {
+                return true;
+            }
         }
         catch (Exception exception) when (IsProcessObservationFailure(exception))
         {
             // An inconclusive secondary observation must not replace the first identity failure.
             return false;
         }
+
+        if (observedProcess.StartTimeUtc is not { } expectedStartTimeUtc ||
+            (!OperatingSystem.IsMacOS() && macOsIdentityProbe is null))
+        {
+            return false;
+        }
+
+        MacOsProcessIdentityResult identity;
+        try
+        {
+            identity = (macOsIdentityProbe ?? MacOsProcessIdentityProbe.Probe)(
+                observedProcess.Pid,
+                expectedStartTimeUtc);
+        }
+        catch (Exception exception) when (IsMacOsIdentityProbeUnavailable(exception))
+        {
+            return false;
+        }
+
+        return identity.State is
+            MacOsProcessIdentityState.Gone or
+            MacOsProcessIdentityState.SameIdentityZombie or
+            MacOsProcessIdentityState.Reused;
     }
 
     private static bool IsProcessObservationFailure(Exception exception)
     {
         return exception is InvalidOperationException or System.ComponentModel.Win32Exception;
+    }
+
+    private static bool IsMacOsIdentityProbeUnavailable(Exception exception)
+    {
+        return exception is DllNotFoundException or
+            EntryPointNotFoundException or
+            BadImageFormatException or
+            MarshalDirectiveException;
     }
 
     private static bool ReadHasExited(Process process)
