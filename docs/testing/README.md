@@ -44,6 +44,12 @@ Focused recorder behavior 位於
 deterministic timeout fixture 證明失敗 evidence，另一路徑確認 PASS 不保留
 大型 evidence。
 
+短暫 sharing violation、resource busy、rename/move/overwrite 或 database-lock
+失敗使用 [Targeted Resource Forensics](targeted-resource-forensics.md)。先對準
+resource 與真實 operation，再用相同語義的 probe 找 failure window；只有直接
+owner/lifecycle evidence 才能宣稱 root cause proven。不得先 blanket-enable
+tracing、重跑相同失敗或加入 timing workaround。
+
 ## Test Isolation
 
 測試不得讀取使用者真實 settings、cookie、下載 DB 或 aria2 session。網路

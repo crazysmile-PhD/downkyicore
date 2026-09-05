@@ -59,11 +59,20 @@ internal static class ProcessTreeSnapshot
         };
     }
 
-    private static async Task<Dictionary<int, int>> ReadParentIdsAsync(TimeSpan timeout)
+    private static Task<Dictionary<int, int>> ReadParentIdsAsync(TimeSpan timeout)
     {
-        var startInfo = OperatingSystem.IsWindows()
-            ? CreateWindowsSnapshotStartInfo()
-            : CreateUnixSnapshotStartInfo();
+        if (OperatingSystem.IsWindows())
+        {
+            return Task.FromResult(WindowsProcessRelationshipSnapshot.ReadParentIds());
+        }
+
+        return ReadParentIdsAsync(CreateUnixSnapshotStartInfo(), timeout);
+    }
+
+    internal static async Task<Dictionary<int, int>> ReadParentIdsAsync(
+        ProcessStartInfo startInfo,
+        TimeSpan timeout)
+    {
         using var process = new Process { StartInfo = startInfo };
         process.Start();
         var outputTask = process.StandardOutput.ReadToEndAsync();
@@ -113,23 +122,6 @@ internal static class ProcessTreeSnapshot
         }
 
         return result;
-    }
-
-    private static ProcessStartInfo CreateWindowsSnapshotStartInfo()
-    {
-        var startInfo = new ProcessStartInfo("powershell.exe")
-        {
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true
-        };
-        startInfo.ArgumentList.Add("-NoProfile");
-        startInfo.ArgumentList.Add("-NonInteractive");
-        startInfo.ArgumentList.Add("-Command");
-        startInfo.ArgumentList.Add(
-            "Get-CimInstance Win32_Process | ForEach-Object { '{0}|{1}' -f $_.ProcessId,$_.ParentProcessId }");
-        return startInfo;
     }
 
     private static ProcessStartInfo CreateUnixSnapshotStartInfo()

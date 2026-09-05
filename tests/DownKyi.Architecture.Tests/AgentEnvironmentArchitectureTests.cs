@@ -41,8 +41,10 @@ public sealed class AgentEnvironmentArchitectureTests
             "script/test-solution.ps1",
             "script/test-project.ps1",
             "script/test-project-runner.ps1",
+            "script/classify-resource-contention.ps1",
             "tools/DownKyi.CentralTestRunner/DownKyi.CentralTestRunner.csproj",
             "docs/maintenance.md",
+            "docs/testing/targeted-resource-forensics.md",
             "docs/operations/verification-and-rollback.md");
 
         var operations = Read("docs/operations/verification-and-rollback.md");
@@ -63,6 +65,9 @@ public sealed class AgentEnvironmentArchitectureTests
         Assert.Contains("--no-incremental", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("AnalysisMode=All", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("./script/test-solution.ps1", qualityWorkflow, StringComparison.Ordinal);
+        Assert.Contains("Validate targeted resource forensics", qualityWorkflow, StringComparison.Ordinal);
+        Assert.Contains("DOWNKYI_TARGETED_RESOURCE_FORENSICS: '1'", qualityWorkflow, StringComparison.Ordinal);
+        Assert.Contains("classify-resource-contention.ps1", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("--vulnerable", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("--deprecated", qualityWorkflow, StringComparison.Ordinal);
         Assert.DoesNotContain("LogFileName=test-results-${{ matrix.os }}.trx", qualityWorkflow, StringComparison.Ordinal);
@@ -77,6 +82,11 @@ public sealed class AgentEnvironmentArchitectureTests
         Assert.Contains("-p:UseSharedCompilation=false", runnerScript, StringComparison.Ordinal);
         Assert.Contains("run-project", runnerScript, StringComparison.Ordinal);
         Assert.Contains("run-solution", runnerScript, StringComparison.Ordinal);
+
+        var resourceClassifier = Read("script/classify-resource-contention.ps1");
+        Assert.Contains("$matchedSignatures.Count -eq 0", resourceClassifier, StringComparison.Ordinal);
+        Assert.Contains("TargetedResourceContention", resourceClassifier, StringComparison.Ordinal);
+        Assert.DoesNotContain("wpr.exe", resourceClassifier, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
