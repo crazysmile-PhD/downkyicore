@@ -1,10 +1,8 @@
 using System.Diagnostics;
 using DownKyi.CentralTestRunner;
-using DownKyi.TestInfrastructure;
 
 namespace DownKyi.Architecture.Tests;
 
-[Collection(ResourceFlightRecorderGroup.Name)]
 public sealed class CentralTestRunnerCommandTests
 {
     [Fact]
@@ -13,7 +11,6 @@ public sealed class CentralTestRunnerCommandTests
         var repositoryRoot = await CreateRepositoryAsync();
         var markerPath = Path.Combine(repositoryRoot, "build-process.pid");
         int? processId = null;
-        TargetedResourceForensics? deleteProbe = null;
         await FailurePreservingTestCleanup.RunAsync(
             async () =>
             {
@@ -41,14 +38,6 @@ public sealed class CentralTestRunnerCommandTests
                     </Project>
                     """,
                     TestContext.Current.CancellationToken).ConfigureAwait(true);
-                if (OperatingSystem.IsWindows())
-                {
-                    deleteProbe = TargetedResourceForensics.Start(
-                        projectDirectory,
-                        nameof(BuildCancellationReturns130AfterStoppingOwnedBuildProcess),
-                        Environment.ProcessId);
-                }
-
                 using var cancellation = new CancellationTokenSource();
                 var run = Program.RunCommandAsync(
                     [
@@ -60,55 +49,20 @@ public sealed class CentralTestRunnerCommandTests
                 ],
                     cancellation.Token);
                 processId = await WaitForProcessMarkerAsync(markerPath).ConfigureAwait(true);
-                deleteProbe?.AddKnownProcessId(processId.Value, "owned-build-process");
                 File.Delete(projectPath);
                 Assert.False(File.Exists(projectPath));
 
-                deleteProbe?.MarkCancellationRequested();
                 await cancellation.CancelAsync().ConfigureAwait(true);
                 var exitCode = await run.ConfigureAwait(true);
-                deleteProbe?.MarkCleanupReturned();
-                if (deleteProbe is not null)
-                {
-                    await deleteProbe.ObservePostCleanupAsync(TimeSpan.FromMilliseconds(150))
-                        .ConfigureAwait(true);
-                }
 
                 Assert.Equal(130, exitCode);
                 Assert.False(IsProcessAlive(processId.Value));
-                try
-                {
-                    Directory.Delete(projectDirectory);
-                }
-                catch (IOException exception) when (
-                    OperatingSystem.IsWindows() && IsSharingViolation(exception))
-                {
-                    var probeEvidence = deleteProbe?.StopAndFormat(forcePreserve: true) ?? "probe=not-running";
-                    deleteProbe?.Dispose();
-                    deleteProbe = null;
-                    throw new IOException(
-                        $"{exception.Message}{Environment.NewLine}" +
-                        $"Pre-armed resource flight recorder:{Environment.NewLine}{probeEvidence}",
-                        exception);
-                }
-
-                if (deleteProbe is not null)
-                {
-                    var anomalyDetected = deleteProbe.AnomalyDetected;
-                    var probeEvidence = deleteProbe.StopAndFormat();
-                    deleteProbe.Dispose();
-                    deleteProbe = null;
-                    Assert.False(
-                        anomalyDetected,
-                        $"DELETE access was blocked at or after cleanup return.{Environment.NewLine}" +
-                        probeEvidence);
-                }
+                Directory.Delete(projectDirectory);
 
                 Assert.False(Directory.Exists(projectDirectory));
             },
             () =>
             {
-                deleteProbe?.Dispose();
                 if (processId is not null)
                 {
                     StopProcessIfAlive(processId.Value);
@@ -118,9 +72,6 @@ public sealed class CentralTestRunnerCommandTests
                 return Task.CompletedTask;
             }).ConfigureAwait(true);
     }
-
-    private static bool IsSharingViolation(IOException exception) =>
-        (exception.HResult & 0xffff) is 32 or 33;
 
     [Fact]
     public async Task RunSolutionRejectsEmptyProjectDiscovery()

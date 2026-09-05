@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using DownKyi.CentralTestRunner;
 using DownKyi.TestInfrastructure;
 using Microsoft.Win32.SafeHandles;
 
@@ -78,6 +79,210 @@ public sealed class TargetedResourceForensicsWindowsTests
             if (Directory.Exists(targetDirectory) &&
                 TargetedResourceForensics.ProbeDeleteAccess(targetDirectory).State == DeleteAccessState.Allowed)
             {
+                Directory.Delete(targetDirectory);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task DirectoryRundownWaitDoesNotCompleteUntilDeleteAccessIsReady()
+    {
+        var targetDirectory = Path.Combine(
+            Path.GetTempPath(),
+            $"downkyi-delete-rundown-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(targetDirectory);
+        Process? owner = null;
+        try
+        {
+            owner = StartDirectoryOwner(targetDirectory);
+            await WaitForOwnerReadyAsync(owner).ConfigureAwait(true);
+            DuplicateDirectoryHandleIntoProcess(targetDirectory, owner);
+
+            var wait = WindowsDirectoryResourceRundown.WaitForDeleteAccessAsync(
+                targetDirectory,
+                TimeSpan.FromSeconds(5));
+
+            Assert.False(wait.IsCompleted);
+            owner.Kill(entireProcessTree: true);
+            await owner.WaitForExitAsync(TestContext.Current.CancellationToken)
+                .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+            await wait.ConfigureAwait(true);
+
+            Assert.Equal(
+                DeleteAccessState.Allowed,
+                TargetedResourceForensics.ProbeDeleteAccess(targetDirectory).State);
+        }
+        finally
+        {
+            await StopOwnerAsync(owner).ConfigureAwait(true);
+            if (Directory.Exists(targetDirectory))
+            {
+                await WindowsDirectoryResourceRundown.WaitForDeleteAccessAsync(
+                    targetDirectory,
+                    TimeSpan.FromSeconds(5)).ConfigureAwait(true);
+                Directory.Delete(targetDirectory);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task CancellationCleanupReturnsOnlyAfterDirectoryDeleteAccessIsReady()
+    {
+        var targetDirectory = Path.Combine(
+            Path.GetTempPath(),
+            $"downkyi-cleanup-rundown-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(targetDirectory);
+        Process? owner = null;
+        try
+        {
+            owner = StartDirectoryOwner(targetDirectory);
+            await WaitForOwnerReadyAsync(owner).ConfigureAwait(true);
+            DuplicateDirectoryHandleIntoProcess(targetDirectory, owner);
+            Assert.Equal(
+                DeleteAccessState.SharingViolation,
+                TargetedResourceForensics.ProbeDeleteAccess(targetDirectory).State);
+
+            await BuildProcessRunner.CleanupAfterCancellationAsync(
+                owner,
+                TimeSpan.FromSeconds(5),
+                cleanupResourceDirectory: targetDirectory).ConfigureAwait(true);
+
+            Assert.True(owner.HasExited);
+            Assert.Equal(
+                DeleteAccessState.Allowed,
+                TargetedResourceForensics.ProbeDeleteAccess(targetDirectory).State);
+            Directory.Delete(targetDirectory);
+        }
+        finally
+        {
+            await StopOwnerAsync(owner).ConfigureAwait(true);
+            if (Directory.Exists(targetDirectory))
+            {
+                await WindowsDirectoryResourceRundown.WaitForDeleteAccessAsync(
+                    targetDirectory,
+                    TimeSpan.FromSeconds(5)).ConfigureAwait(true);
+                Directory.Delete(targetDirectory);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task DirectoryRundownDeadlineProducesTypedCleanupFailure()
+    {
+        var targetDirectory = Path.Combine(
+            Path.GetTempPath(),
+            $"downkyi-rundown-timeout-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(targetDirectory);
+        Process? owner = null;
+        try
+        {
+            owner = StartDirectoryOwner(targetDirectory);
+            await WaitForOwnerReadyAsync(owner).ConfigureAwait(true);
+            DuplicateDirectoryHandleIntoProcess(targetDirectory, owner);
+
+            var exception = await Assert.ThrowsAsync<DirectoryResourceRundownTimeoutException>(
+                () => WindowsDirectoryResourceRundown.WaitForDeleteAccessAsync(
+                    targetDirectory,
+                    TimeSpan.Zero)).ConfigureAwait(true);
+
+            Assert.Equal(targetDirectory, exception.ResourcePath);
+            Assert.Equal(32, exception.Win32Error);
+        }
+        finally
+        {
+            await StopOwnerAsync(owner).ConfigureAwait(true);
+            if (Directory.Exists(targetDirectory))
+            {
+                await WindowsDirectoryResourceRundown.WaitForDeleteAccessAsync(
+                    targetDirectory,
+                    TimeSpan.FromSeconds(5)).ConfigureAwait(true);
+                Directory.Delete(targetDirectory);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task CancellationCleanupFailsClosedWhenAnotherOwnerBlocksTheDirectory()
+    {
+        var targetDirectory = Path.Combine(
+            Path.GetTempPath(),
+            $"downkyi-cleanup-rundown-timeout-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(targetDirectory);
+        Process? root = null;
+        Process? blocker = null;
+        try
+        {
+            root = StartDirectoryOwner(Path.GetTempPath());
+            blocker = StartDirectoryOwner(targetDirectory);
+            await WaitForOwnerReadyAsync(root).ConfigureAwait(true);
+            await WaitForOwnerReadyAsync(blocker).ConfigureAwait(true);
+            DuplicateDirectoryHandleIntoProcess(targetDirectory, blocker);
+
+            var exception = await Assert.ThrowsAsync<DirectoryResourceRundownTimeoutException>(
+                () => BuildProcessRunner.CleanupAfterCancellationAsync(
+                    root,
+                    TimeSpan.FromMilliseconds(500),
+                    cleanupResourceDirectory: targetDirectory)).ConfigureAwait(true);
+
+            Assert.Equal(targetDirectory, exception.ResourcePath);
+            Assert.True(root.HasExited);
+            Assert.False(blocker.HasExited);
+        }
+        finally
+        {
+            await StopOwnerAsync(root).ConfigureAwait(true);
+            await StopOwnerAsync(blocker).ConfigureAwait(true);
+            if (Directory.Exists(targetDirectory))
+            {
+                await WindowsDirectoryResourceRundown.WaitForDeleteAccessAsync(
+                    targetDirectory,
+                    TimeSpan.FromSeconds(5)).ConfigureAwait(true);
+                Directory.Delete(targetDirectory);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task CleanupPreservesSnapshotFailureAheadOfDirectoryRundownTimeout()
+    {
+        var targetDirectory = Path.Combine(
+            Path.GetTempPath(),
+            $"downkyi-rundown-preservation-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(targetDirectory);
+        Process? root = null;
+        Process? blocker = null;
+        try
+        {
+            root = StartDirectoryOwner(Path.GetTempPath());
+            blocker = StartDirectoryOwner(targetDirectory);
+            await WaitForOwnerReadyAsync(root).ConfigureAwait(true);
+            await WaitForOwnerReadyAsync(blocker).ConfigureAwait(true);
+            DuplicateDirectoryHandleIntoProcess(targetDirectory, blocker);
+            var snapshotFailure = new InvalidOperationException("intentional snapshot failure");
+
+            var exception = await Record.ExceptionAsync(
+                () => BuildProcessRunner.CleanupAfterCancellationAsync(
+                    root,
+                    TimeSpan.FromSeconds(1),
+                    (_, _) => Task.FromException<FinalProcessSnapshot>(snapshotFailure),
+                    targetDirectory)).ConfigureAwait(true);
+
+            var aggregate = Assert.IsType<AggregateException>(exception);
+            Assert.Same(snapshotFailure, aggregate.InnerExceptions[0]);
+            Assert.IsType<DirectoryResourceRundownTimeoutException>(aggregate.InnerExceptions[1]);
+            Assert.True(root.HasExited);
+            Assert.False(blocker.HasExited);
+        }
+        finally
+        {
+            await StopOwnerAsync(root).ConfigureAwait(true);
+            await StopOwnerAsync(blocker).ConfigureAwait(true);
+            if (Directory.Exists(targetDirectory))
+            {
+                await WindowsDirectoryResourceRundown.WaitForDeleteAccessAsync(
+                    targetDirectory,
+                    TimeSpan.FromSeconds(5)).ConfigureAwait(true);
                 Directory.Delete(targetDirectory);
             }
         }
@@ -212,6 +417,33 @@ public sealed class TargetedResourceForensicsWindowsTests
         startInfo.ArgumentList.Add("fixture-hold");
         return Process.Start(startInfo) ??
             throw new InvalidOperationException("Unable to start the controlled directory owner.");
+    }
+
+    private static async Task WaitForOwnerReadyAsync(Process owner)
+    {
+        var ready = await owner.StandardOutput.ReadLineAsync(
+                TestContext.Current.CancellationToken).AsTask()
+            .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
+        Assert.StartsWith("fixture-ready pid=", ready, StringComparison.Ordinal);
+    }
+
+    private static async Task StopOwnerAsync(Process? owner)
+    {
+        if (owner is null)
+        {
+            return;
+        }
+
+        if (!owner.HasExited)
+        {
+            owner.Kill(entireProcessTree: true);
+            await owner.WaitForExitAsync(TestContext.Current.CancellationToken)
+                .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+        }
+
+        owner.Dispose();
     }
 
     private static void DuplicateDirectoryHandleIntoProcess(

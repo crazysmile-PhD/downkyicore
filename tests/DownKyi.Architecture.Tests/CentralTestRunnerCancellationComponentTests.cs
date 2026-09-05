@@ -1,11 +1,9 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using DownKyi.CentralTestRunner;
-using DownKyi.TestInfrastructure;
 
 namespace DownKyi.Architecture.Tests;
 
-[Collection(ResourceFlightRecorderGroup.Name)]
 public sealed class CentralTestRunnerCancellationComponentTests
 {
     private static readonly TimeSpan TestTimeout = TimeSpan.FromSeconds(5);
@@ -363,77 +361,51 @@ public sealed class CentralTestRunnerCancellationComponentTests
     }
 
     [Fact]
+    public async Task ExitCodeMappingReturns2ForDirectoryRundownTimeout()
+    {
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+
+        var exitCode = await Program.RunCommandAsync(
+            [],
+            (_, _) => Task.FromException<int>(
+                new DirectoryResourceRundownTimeoutException(
+                    "fixture-directory",
+                    TimeSpan.Zero,
+                    32)),
+            cancellation.Token).ConfigureAwait(true);
+
+        Assert.Equal(2, exitCode);
+    }
+
+    [Fact]
     public async Task FilesystemTeardownDeletesFixtureDirectoryAfterProcessCleanup()
     {
         var fixtureDirectory = Path.Combine(
             Path.GetTempPath(),
             $"downkyi-central-runner-filesystem-{Guid.NewGuid():N}");
         Process? fixture = null;
-        var fixtureProcessId = 0;
-        TargetedResourceForensics? deleteProbe = null;
         Directory.CreateDirectory(fixtureDirectory);
         await FailurePreservingTestCleanup.RunAsync(
             async () =>
             {
-                if (OperatingSystem.IsWindows())
-                {
-                    deleteProbe = TargetedResourceForensics.Start(
-                        fixtureDirectory,
-                        nameof(FilesystemTeardownDeletesFixtureDirectoryAfterProcessCleanup),
-                        Environment.ProcessId);
-                }
-
                 var startInfo = CreateFixtureStartInfo("fixture-hold");
                 startInfo.WorkingDirectory = fixtureDirectory;
                 fixture = await StartFixtureAsync(startInfo).ConfigureAwait(true);
-                fixtureProcessId = fixture.Id;
 
-                deleteProbe?.AddKnownProcessId(fixtureProcessId, "root-owner");
-                deleteProbe?.MarkCancellationRequested();
-                await BuildProcessRunner.CleanupAfterCancellationAsync(fixture, TestTimeout)
+                await BuildProcessRunner.CleanupAfterCancellationAsync(
+                    fixture,
+                    TestTimeout,
+                    cleanupResourceDirectory: fixtureDirectory)
                     .ConfigureAwait(true);
-                deleteProbe?.MarkCleanupReturned();
                 fixture.Dispose();
                 fixture = null;
-                if (deleteProbe is not null)
-                {
-                    await deleteProbe.ObservePostCleanupAsync(TimeSpan.FromMilliseconds(150))
-                        .ConfigureAwait(true);
-                }
-
-                try
-                {
-                    Directory.Delete(fixtureDirectory);
-                }
-                catch (IOException exception) when (
-                    OperatingSystem.IsWindows() && IsSharingViolation(exception))
-                {
-                    var probeEvidence = deleteProbe?.StopAndFormat(forcePreserve: true) ?? "probe=not-running";
-                    deleteProbe?.Dispose();
-                    deleteProbe = null;
-                    throw new IOException(
-                        $"{exception.Message}{Environment.NewLine}" +
-                        $"Pre-armed resource flight recorder:{Environment.NewLine}{probeEvidence}",
-                        exception);
-                }
-
-                if (deleteProbe is not null)
-                {
-                    var anomalyDetected = deleteProbe.AnomalyDetected;
-                    var probeEvidence = deleteProbe.StopAndFormat();
-                    deleteProbe.Dispose();
-                    deleteProbe = null;
-                    Assert.False(
-                        anomalyDetected,
-                        $"DELETE access was blocked at or after cleanup return.{Environment.NewLine}" +
-                        probeEvidence);
-                }
+                Directory.Delete(fixtureDirectory);
 
                 Assert.False(Directory.Exists(fixtureDirectory));
             },
             async () =>
             {
-                deleteProbe?.Dispose();
                 await StopFixtureAsync(fixture).ConfigureAwait(true);
                 if (Directory.Exists(fixtureDirectory))
                 {
@@ -441,9 +413,6 @@ public sealed class CentralTestRunnerCancellationComponentTests
                 }
             }).ConfigureAwait(true);
     }
-
-    private static bool IsSharingViolation(IOException exception) =>
-        (exception.HResult & 0xffff) is 32 or 33;
 
     private static async Task AssertSnapshotFailureStillKillsAsync(Exception snapshotFailure)
     {

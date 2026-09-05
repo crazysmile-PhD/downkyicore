@@ -13,8 +13,14 @@ internal static class BuildProcessRunner
         CancellationToken cancellationToken)
     {
         var startInfo = CreateBuildStartInfo(projectPath, configuration, noRestore);
+        var cleanupResourceDirectory = OperatingSystem.IsWindows()
+            ? Path.GetDirectoryName(Path.GetFullPath(projectPath))
+            : null;
 
-        return await RunAsync(startInfo, cancellationToken).ConfigureAwait(false);
+        return await RunAsync(
+            startInfo,
+            cancellationToken,
+            cleanupResourceDirectory: cleanupResourceDirectory).ConfigureAwait(false);
     }
 
     internal static ProcessStartInfo CreateBuildStartInfo(
@@ -41,7 +47,8 @@ internal static class BuildProcessRunner
     internal static async Task<int> RunAsync(
         ProcessStartInfo startInfo,
         CancellationToken cancellationToken,
-        TimeSpan? cleanupTimeout = null)
+        TimeSpan? cleanupTimeout = null,
+        string? cleanupResourceDirectory = null)
     {
         using var process = new Process { StartInfo = startInfo };
         process.Start();
@@ -52,7 +59,10 @@ internal static class BuildProcessRunner
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             var cleanupWindow = cleanupTimeout ?? TimeSpan.FromSeconds(5);
-            await CleanupAfterCancellationAsync(process, cleanupWindow).ConfigureAwait(false);
+            await CleanupAfterCancellationAsync(
+                process,
+                cleanupWindow,
+                cleanupResourceDirectory: cleanupResourceDirectory).ConfigureAwait(false);
             throw;
         }
 
@@ -66,7 +76,8 @@ internal static class BuildProcessRunner
     internal static async Task CleanupAfterCancellationAsync(
         Process process,
         TimeSpan cleanupWindow,
-        Func<int, TimeSpan, Task<FinalProcessSnapshot>>? captureSnapshotAsync = null)
+        Func<int, TimeSpan, Task<FinalProcessSnapshot>>? captureSnapshotAsync = null,
+        string? cleanupResourceDirectory = null)
     {
         var captureSnapshot = captureSnapshotAsync ?? ProcessTreeSnapshot.CaptureAsync;
         FinalProcessSnapshot? ownedProcesses = null;
@@ -88,6 +99,13 @@ internal static class BuildProcessRunner
             {
                 await WaitForOwnedProcessesToExitAsync(ownedProcesses.Processes, cleanupWindow)
                     .ConfigureAwait(false);
+            }
+
+            if (OperatingSystem.IsWindows() && cleanupResourceDirectory is not null)
+            {
+                await WindowsDirectoryResourceRundown.WaitForDeleteAccessAsync(
+                    cleanupResourceDirectory,
+                    cleanupWindow).ConfigureAwait(false);
             }
         }
         catch (Exception cleanupFailure) when (snapshotFailure is not null)
