@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using DownKyi.Core.Aria2cNet.Server;
+using DownKyi.TestInfrastructure;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DownKyi.Core.Tests;
@@ -81,27 +82,32 @@ public sealed class AriaServerProcessTests
     public async Task KillTrackedServerTerminatesAndReleasesTrackedProcess()
     {
         var server = new AriaServer(NullLoggerFactory.Instance);
-        using var process = StartLongRunningProcess();
-        server.SetTrackedServerForTests(process);
+        var process = StartLongRunningProcess();
 
-        try
-        {
-            Assert.True(server.KillTrackedServer("test cleanup"));
-            await process
-                .WaitForExitAsync(TestContext.Current.CancellationToken)
-                .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken).ConfigureAwait(true);
-
-            Assert.True(process.HasExited);
-            Assert.False(server.HasTrackedServerForTests());
-        }
-        finally
-        {
-            server.SetTrackedServerForTests(null);
-            if (!process.HasExited)
+        await ExternalProcessTestHarness.RunWithCleanupAsync(
+            async () =>
             {
-                process.Kill(entireProcessTree: true);
-            }
-        }
+                server.SetTrackedServerForTests(process);
+                Assert.True(server.KillTrackedServer("test cleanup"));
+                await process
+                    .WaitForExitAsync(TestContext.Current.CancellationToken)
+                    .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken)
+                    .ConfigureAwait(true);
+
+                Assert.True(process.HasExited);
+                Assert.False(server.HasTrackedServerForTests());
+            },
+            () =>
+            {
+                server.SetTrackedServerForTests(null);
+                return Task.CompletedTask;
+            },
+            () => ExternalProcessTestHarness.StopAsync(process, TimeSpan.FromSeconds(5)),
+            () =>
+            {
+                process.Dispose();
+                return Task.CompletedTask;
+            });
     }
 
     private static Process StartLongRunningProcess()
@@ -114,8 +120,7 @@ public sealed class AriaServerProcessTests
         startInfo.UseShellExecute = false;
         startInfo.CreateNoWindow = true;
 
-        return Process.Start(startInfo)
-               ?? throw new InvalidOperationException("Could not start the process used by the cleanup test.");
+        return ExternalProcessTestHarness.Start(startInfo);
     }
 
     private sealed class AriaBinaryFixture : IDisposable

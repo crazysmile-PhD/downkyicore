@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.Versioning;
 using System.Text;
+using DownKyi.TestInfrastructure;
 
 namespace DownKyi.MacOS.Tests;
 
@@ -8,11 +9,16 @@ namespace DownKyi.MacOS.Tests;
 public sealed class MacSigningScriptTests
 {
     private static readonly string RepositoryRoot = FindRepositoryRoot();
+    private static readonly string[] SigningFixtureFileNames =
+        ["sign.sh", "codesign-common.sh", "DownKyi.entitlements"];
+    private static readonly TimeSpan ProcessCleanupTimeout = TimeSpan.FromSeconds(5);
 
     [Fact]
-    public void AdHocSigningExecutesUnderSystemBashNounsetWithoutTimestamp()
+    public async Task AdHocSigningExecutesUnderSystemBashNounsetWithoutTimestamp()
     {
-        var calls = RunSigningFixture(adHoc: true);
+        var calls = await RunSigningFixtureAsync(
+            adHoc: true,
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
 
         AssertSigningCoverage(calls);
         Assert.All(calls, arguments =>
@@ -23,10 +29,13 @@ public sealed class MacSigningScriptTests
     }
 
     [Fact]
-    public void DeveloperIdSigningIncludesTimestamp()
+    public async Task DeveloperIdSigningIncludesTimestamp()
     {
         const string identity = "Developer ID Application: DownKyi Test";
-        var calls = RunSigningFixture(adHoc: false, identity);
+        var calls = await RunSigningFixtureAsync(
+            adHoc: false,
+            TestContext.Current.CancellationToken,
+            identity).ConfigureAwait(true);
 
         AssertSigningCoverage(calls);
         Assert.All(calls, arguments =>
@@ -36,8 +45,9 @@ public sealed class MacSigningScriptTests
         });
     }
 
-    private static string[][] RunSigningFixture(
+    private static async Task<string[][]> RunSigningFixtureAsync(
         bool adHoc,
+        CancellationToken cancellationToken,
         string identity = "Developer ID Application: DownKyi Test")
     {
         var fixtureRoot = Path.Combine(Path.GetTempPath(), $"downkyi-signing-{Guid.NewGuid():N}");
@@ -45,25 +55,29 @@ public sealed class MacSigningScriptTests
         var appContentsDirectory = Path.Combine(fixtureRoot, "Test.app", "Contents");
         var appBinaryDirectory = Path.Combine(appContentsDirectory, "MacOS");
         var codesignLog = Path.Combine(fixtureRoot, "codesign.log");
+        string[][]? calls = null;
 
-        Directory.CreateDirectory(stubDirectory);
-        Directory.CreateDirectory(appBinaryDirectory);
-
-        try
-        {
-            foreach (var fileName in new[] { "sign.sh", "codesign-common.sh", "DownKyi.entitlements" })
+        await ExternalProcessTestHarness.RunWithCleanupAsync(
+            async () =>
             {
-                var source = File.ReadAllText(
-                    Path.Combine(RepositoryRoot, "script", "macos", fileName));
-                File.WriteAllText(
-                    Path.Combine(fixtureRoot, fileName),
-                    source.Replace("\r\n", "\n", StringComparison.Ordinal),
-                    new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
-            }
+                Directory.CreateDirectory(stubDirectory);
+                Directory.CreateDirectory(appBinaryDirectory);
 
-            File.WriteAllText(
-                Path.Combine(stubDirectory, "file"),
-                """
+                foreach (var fileName in SigningFixtureFileNames)
+                {
+                    var source = await File.ReadAllTextAsync(
+                        Path.Combine(RepositoryRoot, "script", "macos", fileName),
+                        cancellationToken).ConfigureAwait(false);
+                    await File.WriteAllTextAsync(
+                        Path.Combine(fixtureRoot, fileName),
+                        source.Replace("\r\n", "\n", StringComparison.Ordinal),
+                        new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+                        cancellationToken).ConfigureAwait(false);
+                }
+
+                await File.WriteAllTextAsync(
+                    Path.Combine(stubDirectory, "file"),
+                    """
                 #!/bin/bash
                 set -eu
                 case "$1" in
@@ -77,10 +91,11 @@ public sealed class MacSigningScriptTests
                     printf '%s: ASCII text\n' "$1"
                     ;;
                 esac
-                """.Replace("\r\n", "\n", StringComparison.Ordinal));
-            File.WriteAllText(
-                Path.Combine(stubDirectory, "codesign"),
-                """
+                """.Replace("\r\n", "\n", StringComparison.Ordinal),
+                    cancellationToken).ConfigureAwait(false);
+                await File.WriteAllTextAsync(
+                    Path.Combine(stubDirectory, "codesign"),
+                    """
                 #!/bin/bash
                 set -eu
                 {
@@ -90,14 +105,27 @@ public sealed class MacSigningScriptTests
                   done
                   printf '\n'
                 } >> "$CODESIGN_LOG"
-                """.Replace("\r\n", "\n", StringComparison.Ordinal));
-            File.WriteAllText(Path.Combine(appBinaryDirectory, "DownKyi"), "fixture");
-            File.WriteAllText(Path.Combine(appBinaryDirectory, "libfixture.dylib"), "fixture");
-            File.WriteAllText(Path.Combine(appBinaryDirectory, "ManagedDependency.dll"), "fixture");
-            File.WriteAllText(Path.Combine(appBinaryDirectory, "runtimeconfig.json"), "{}");
-            File.WriteAllText(
-                Path.Combine(appContentsDirectory, "Info.plist"),
-                """
+                """.Replace("\r\n", "\n", StringComparison.Ordinal),
+                    cancellationToken).ConfigureAwait(false);
+                await File.WriteAllTextAsync(
+                    Path.Combine(appBinaryDirectory, "DownKyi"),
+                    "fixture",
+                    cancellationToken).ConfigureAwait(false);
+                await File.WriteAllTextAsync(
+                    Path.Combine(appBinaryDirectory, "libfixture.dylib"),
+                    "fixture",
+                    cancellationToken).ConfigureAwait(false);
+                await File.WriteAllTextAsync(
+                    Path.Combine(appBinaryDirectory, "ManagedDependency.dll"),
+                    "fixture",
+                    cancellationToken).ConfigureAwait(false);
+                await File.WriteAllTextAsync(
+                    Path.Combine(appBinaryDirectory, "runtimeconfig.json"),
+                    "{}",
+                    cancellationToken).ConfigureAwait(false);
+                await File.WriteAllTextAsync(
+                    Path.Combine(appContentsDirectory, "Info.plist"),
+                    """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
                 <plist version="1.0">
@@ -107,47 +135,57 @@ public sealed class MacSigningScriptTests
                 </dict>
                 </plist>
                 """,
-                new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+                    new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+                    cancellationToken).ConfigureAwait(false);
 
-            var startInfo = new ProcessStartInfo
-            {
-                FileName = "/bin/bash",
-                WorkingDirectory = fixtureRoot,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-            startInfo.ArgumentList.Add("-c");
-            startInfo.ArgumentList.Add(
-                "set -euo pipefail; " +
-                "chmod +x stub-bin/file stub-bin/codesign; " +
-                "export PATH=\"$PWD/stub-bin:$PATH\"; " +
-                "export CODESIGN_LOG=\"$PWD/codesign.log\"; " +
-                $"export MACOS_ADHOC_SIGNING={(adHoc ? "true" : "false")}; " +
-                $"export MACOS_SIGNING_IDENTITY=\"{identity}\"; " +
-                "/bin/bash ./sign.sh Test.app");
+                var startInfo = new ProcessStartInfo
+                {
+                    FileName = "/bin/bash",
+                    WorkingDirectory = fixtureRoot,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                startInfo.ArgumentList.Add("-c");
+                startInfo.ArgumentList.Add(
+                    "set -euo pipefail; " +
+                    "chmod +x stub-bin/file stub-bin/codesign; " +
+                    "export PATH=\"$PWD/stub-bin:$PATH\"; " +
+                    "export CODESIGN_LOG=\"$PWD/codesign.log\"; " +
+                    $"export MACOS_ADHOC_SIGNING={(adHoc ? "true" : "false")}; " +
+                    $"export MACOS_SIGNING_IDENTITY=\"{identity}\"; " +
+                    "/bin/bash ./sign.sh Test.app");
 
-            using var process = Process.Start(startInfo);
-            Assert.NotNull(process);
-            var standardOutput = process.StandardOutput.ReadToEndAsync();
-            var standardError = process.StandardError.ReadToEndAsync();
-            Assert.True(process.WaitForExit(30_000), "The macOS signing regression fixture timed out.");
+                var result = await ExternalProcessTestHarness.RunAsync(
+                    startInfo,
+                    TimeSpan.FromSeconds(30),
+                    ProcessCleanupTimeout,
+                    cancellationToken).ConfigureAwait(false);
+                Assert.True(
+                    result.ExitCode == 0,
+                    $"The macOS signing regression fixture failed. stdout={result.StandardOutput} stderr={result.StandardError}");
 
-            var output = standardOutput.GetAwaiter().GetResult();
-            var error = standardError.GetAwaiter().GetResult();
-            Assert.True(
-                process.ExitCode == 0,
-                $"The macOS signing regression fixture failed. stdout={output} stderr={error}");
+                calls = (await File.ReadAllLinesAsync(
+                        codesignLog,
+                        cancellationToken).ConfigureAwait(false))
+                    .Select(line => line.Split('\t').Skip(1).ToArray())
+                    .ToArray();
+            },
+            () => DeleteDirectoryAsync(fixtureRoot)).ConfigureAwait(false);
 
-            return File.ReadAllLines(codesignLog)
-                .Select(line => line.Split('\t').Skip(1).ToArray())
-                .ToArray();
-        }
-        finally
+        return calls
+               ?? throw new InvalidOperationException("The macOS signing fixture did not produce codesign calls.");
+    }
+
+    private static Task DeleteDirectoryAsync(string path)
+    {
+        if (Directory.Exists(path))
         {
-            Directory.Delete(fixtureRoot, recursive: true);
+            Directory.Delete(path, recursive: true);
         }
+
+        return Task.CompletedTask;
     }
 
     private static void AssertCodesignIdentity(string[] arguments, string identity)

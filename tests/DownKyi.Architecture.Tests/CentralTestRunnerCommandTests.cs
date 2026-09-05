@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using DownKyi.CentralTestRunner;
+using DownKyi.TestInfrastructure;
 
 namespace DownKyi.Architecture.Tests;
 
@@ -11,7 +12,7 @@ public sealed class CentralTestRunnerCommandTests
         var repositoryRoot = await CreateRepositoryAsync();
         var markerPath = Path.Combine(repositoryRoot, "build-process.pid");
         int? processId = null;
-        await FailurePreservingTestCleanup.RunAsync(
+        await ExternalProcessTestHarness.RunWithCleanupAsync(
             async () =>
             {
                 var projectDirectory = Path.Combine(repositoryRoot, "tests", "Fixture.Tests");
@@ -46,7 +47,7 @@ public sealed class CentralTestRunnerCommandTests
                         "--project", "tests/Fixture.Tests/Fixture.Tests.csproj",
                         "--configuration", "Release",
                         "--no-restore"
-                ],
+                    ],
                     cancellation.Token);
                 processId = await WaitForProcessMarkerAsync(markerPath).ConfigureAwait(true);
                 File.Delete(projectPath);
@@ -61,16 +62,14 @@ public sealed class CentralTestRunnerCommandTests
 
                 Assert.False(Directory.Exists(projectDirectory));
             },
-            () =>
+            async () =>
             {
                 if (processId is not null)
                 {
-                    StopProcessIfAlive(processId.Value);
+                    await StopProcessIfAlive(processId.Value).ConfigureAwait(true);
                 }
-
-                Directory.Delete(repositoryRoot, recursive: true);
-                return Task.CompletedTask;
-            }).ConfigureAwait(true);
+            },
+            () => DeleteDirectoryAsync(repositoryRoot)).ConfigureAwait(true);
     }
 
     [Fact]
@@ -244,21 +243,28 @@ public sealed class CentralTestRunnerCommandTests
         }
     }
 
-    private static void StopProcessIfAlive(int processId)
+    private static async Task StopProcessIfAlive(int processId)
     {
         try
         {
             using var process = Process.GetProcessById(processId);
             if (!process.HasExited)
             {
-                process.Kill(entireProcessTree: true);
-                process.WaitForExit(3000);
+                await ExternalProcessTestHarness.StopAsync(
+                    process,
+                    TimeSpan.FromSeconds(3)).ConfigureAwait(true);
             }
         }
         catch (ArgumentException)
         {
             // The cancellation path already stopped the build fixture.
         }
+    }
+
+    private static Task DeleteDirectoryAsync(string path)
+    {
+        Directory.Delete(path, recursive: true);
+        return Task.CompletedTask;
     }
 
     private static string EscapeXml(string value)

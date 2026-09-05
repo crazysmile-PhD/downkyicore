@@ -59,6 +59,7 @@ public sealed partial class Aria2TlsIntegrationTests
             cancellationToken).ConfigureAwait(true);
         await using var runtimeLifetime = runtime.ConfigureAwait(false);
         var results = new List<Aria2TlsCaseResult>();
+        Exception? primaryFailure = null;
         try
         {
             await RunTrustedSplitDownloadAsync(
@@ -243,12 +244,22 @@ public sealed partial class Aria2TlsIntegrationTests
 
             Assert.All(results, result => Assert.True(result.Passed, result.Name));
         }
+        catch (Exception exception)
+        {
+            primaryFailure = exception;
+            throw;
+        }
         finally
         {
-            await WriteReportAsync(
-                runtime,
-                results,
-                CancellationToken.None).ConfigureAwait(true);
+            await ExternalProcessTestHarness.RunWithCleanupAsync(
+                () => primaryFailure is null
+                    ? Task.CompletedTask
+                    : Task.FromException(primaryFailure),
+                () => WriteReportAsync(
+                    runtime,
+                    results,
+                    CancellationToken.None),
+                () => runtime.DisposeAsync().AsTask()).ConfigureAwait(true);
         }
     }
 

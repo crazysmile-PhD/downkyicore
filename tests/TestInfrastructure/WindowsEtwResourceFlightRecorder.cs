@@ -525,17 +525,14 @@ internal sealed class WindowsEtwResourceFlightRecorder : IDisposable
             startInfo.ArgumentList.Add(argument);
         }
 
-        using var process = Process.Start(startInfo) ??
-            throw new InvalidOperationException($"Unable to start {executable}.");
-        var output = process.StandardOutput.ReadToEnd() + process.StandardError.ReadToEnd();
-        if (!process.WaitForExit(TimeSpan.FromSeconds(15)))
-        {
-            process.Kill(entireProcessTree: true);
-            throw new TimeoutException($"{executable} did not finish within the diagnostic timeout.");
-        }
+        var result = ExternalProcessTestHarness.Run(
+            startInfo,
+            TimeSpan.FromSeconds(15),
+            TimeSpan.FromSeconds(5));
+        var output = result.StandardOutput + result.StandardError;
 
         return new ToolResult(
-            process.ExitCode,
+            result.ExitCode,
             Sanitize(output.ReplaceLineEndings(" ").Trim()));
     }
 
