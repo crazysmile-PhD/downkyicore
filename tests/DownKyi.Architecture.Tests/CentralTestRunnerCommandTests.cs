@@ -53,12 +53,29 @@ public sealed class CentralTestRunnerCommandTests
                 File.Delete(projectPath);
                 Assert.False(File.Exists(projectPath));
 
+                var cancellationRequestedUtc = DateTimeOffset.UtcNow;
                 await cancellation.CancelAsync().ConfigureAwait(true);
                 var exitCode = await run.ConfigureAwait(true);
 
                 Assert.Equal(130, exitCode);
                 Assert.False(IsProcessAlive(processId.Value));
-                Directory.Delete(projectDirectory);
+                try
+                {
+                    Directory.Delete(projectDirectory);
+                }
+                catch (IOException exception) when (
+                    OperatingSystem.IsWindows() && IsSharingViolation(exception))
+                {
+                    var evidence = WindowsDirectoryHandleForensics.Capture(
+                        projectDirectory,
+                        processId.Value,
+                        Environment.ProcessId,
+                        cancellationRequestedUtc);
+                    throw new IOException(
+                        $"{exception.Message}{Environment.NewLine}" +
+                        $"Failure-only handle forensics:{Environment.NewLine}{evidence}",
+                        exception);
+                }
                 Assert.False(Directory.Exists(projectDirectory));
             },
             () =>
@@ -72,6 +89,9 @@ public sealed class CentralTestRunnerCommandTests
                 return Task.CompletedTask;
             }).ConfigureAwait(true);
     }
+
+    private static bool IsSharingViolation(IOException exception) =>
+        (exception.HResult & 0xffff) is 32 or 33;
 
     [Fact]
     public async Task RunSolutionRejectsEmptyProjectDiscovery()
