@@ -236,7 +236,9 @@ internal sealed class WindowsEtwResourceFlightRecorder : IDisposable
         var targetEvents = events
             .Where(ContainsTargetResource)
             .ToList();
-        var identities = targetEvents
+        var retainedTargetEvents = SelectRepresentativeTargetEvents(targetEvents);
+        var retainedTargetSet = retainedTargetEvents.ToHashSet();
+        var identities = retainedTargetEvents
             .SelectMany(element => element.Descendants())
             .Where(element =>
                 element.Name.LocalName == "Data" &&
@@ -278,8 +280,9 @@ internal sealed class WindowsEtwResourceFlightRecorder : IDisposable
         var selected = events.Where(
             element =>
             {
-                return ContainsTargetResource(element) ||
-                    EventReferencesResourceIdentity(element, identities) ||
+                return retainedTargetSet.Contains(element) ||
+                    (IsResourceCleanupOrCloseEvent(element) &&
+                     EventReferencesResourceIdentity(element, identities)) ||
                     (IsProcessLifecycleEvent(element) &&
                      processIds.Any(processId => EventReferencesProcess(element, processId)));
             }).ToList();
@@ -288,6 +291,7 @@ internal sealed class WindowsEtwResourceFlightRecorder : IDisposable
         var summary = new StringBuilder()
             .Append("etlEvents=").Append(events.Count)
             .Append(" directTargetEvents=").Append(targetEvents.Count)
+            .Append(" retainedTargetEvents=").Append(retainedTargetEvents.Count)
             .Append(" resourceIdentities=").Append(identities.Count)
             .Append(" selectedEvents=").Append(selected.Count)
             .ToString();
@@ -354,6 +358,72 @@ internal sealed class WindowsEtwResourceFlightRecorder : IDisposable
         element.ToString(SaveOptions.DisableFormatting)
             .Contains(targetPathSuffix, StringComparison.OrdinalIgnoreCase);
 
+    private static List<XElement> SelectRepresentativeTargetEvents(
+        IReadOnlyList<XElement> targetEvents)
+    {
+        var retained = targetEvents
+            .Where(element => !IsDeleteProbeOpen(element))
+            .ToHashSet();
+        foreach (var group in targetEvents
+                     .Where(IsDeleteProbeOpen)
+                     .GroupBy(BuildSemanticEventKey, StringComparer.Ordinal))
+        {
+            retained.Add(group.First());
+            retained.Add(group.Last());
+        }
+
+        return targetEvents.Where(retained.Contains).ToList();
+    }
+
+    private static bool IsDeleteProbeOpen(XElement element) =>
+        string.Equals(
+            ReadDataValue(element, "ShareAccess")?.Trim(),
+            "7",
+            StringComparison.Ordinal);
+
+    private static string BuildSemanticEventKey(XElement element) =>
+        string.Join(
+            '|',
+            ReadEventName(element),
+            ReadRenderedOpcode(element),
+            ReadExecutionProcessId(element),
+            ReadDataValue(element, "Status")?.Trim(),
+            ReadDataValue(element, "NtStatus")?.Trim(),
+            ReadDataValue(element, "CreateOptions")?.Trim(),
+            ReadDataValue(element, "CreateAttributes")?.Trim());
+
+    private static bool IsResourceCleanupOrCloseEvent(XElement element)
+    {
+        var opcode = ReadRenderedOpcode(element);
+        return string.Equals(opcode, "Cleanup", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(opcode, "Close", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? ReadDataValue(XElement element, string name) =>
+        element.Descendants()
+            .FirstOrDefault(descendant =>
+                descendant.Name.LocalName == "Data" &&
+                descendant.Attribute("Name")?.Value.Equals(name, StringComparison.OrdinalIgnoreCase) == true)
+            ?.Value;
+
+    private static string? ReadEventName(XElement element) =>
+        element.Descendants()
+            .FirstOrDefault(descendant => descendant.Name.LocalName == "EventName")?.Value;
+
+    private static string? ReadRenderedOpcode(XElement element) =>
+        element.Descendants()
+            .FirstOrDefault(descendant =>
+                descendant.Name.LocalName == "Opcode" &&
+                descendant.Parent?.Name.LocalName == "RenderingInfo")?.Value;
+
+    private static string? ReadExecutionProcessId(XElement element) =>
+        element.Descendants()
+            .FirstOrDefault(descendant => descendant.Name.LocalName == "Execution")
+            ?.Attributes()
+            .FirstOrDefault(attribute =>
+                attribute.Name.LocalName.Equals("ProcessID", StringComparison.OrdinalIgnoreCase))
+            ?.Value;
+
     private static bool IsResourceIdentity(string? name) =>
         name is not null &&
         (name.Contains("FileObject", StringComparison.OrdinalIgnoreCase) ||
@@ -376,12 +446,8 @@ internal sealed class WindowsEtwResourceFlightRecorder : IDisposable
 
     private static bool IsProcessLifecycleEvent(XElement element)
     {
-        var eventName = element.Descendants()
-            .FirstOrDefault(descendant => descendant.Name.LocalName == "EventName")?.Value;
-        var opcode = element.Descendants()
-            .FirstOrDefault(descendant =>
-                descendant.Name.LocalName == "Opcode" &&
-                descendant.Parent?.Name.LocalName == "RenderingInfo")?.Value;
+        var eventName = ReadEventName(element);
+        var opcode = ReadRenderedOpcode(element);
         return eventName?.Equals("Process", StringComparison.OrdinalIgnoreCase) == true &&
             (opcode?.Equals("Start", StringComparison.OrdinalIgnoreCase) == true ||
              opcode?.Equals("End", StringComparison.OrdinalIgnoreCase) == true ||

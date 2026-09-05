@@ -141,6 +141,7 @@ public sealed class TargetedResourceForensicsWindowsTests
             var artifactPath = forensics.ArtifactPath;
             Assert.False(string.IsNullOrWhiteSpace(artifactPath), summary);
             Assert.True(File.Exists(artifactPath), summary);
+            Assert.InRange(new FileInfo(artifactPath).Length, 1, 1_000_000);
             var artifact = await File.ReadAllTextAsync(
                 artifactPath,
                 TestContext.Current.CancellationToken).ConfigureAwait(true);
