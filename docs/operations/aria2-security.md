@@ -109,8 +109,9 @@ LocalMachine Root; a non-elevated runner selects CurrentUser Root before any
 store write. Both are Windows system trust stores used by WinTLS. macOS uses
 the System keychain. Each registration is removed during test teardown.
 
-The report contains only environment metadata, backend, aria2 version, case
-names and pass/fail diagnostics. Header names may identify the tested policy;
+Each independently discoverable case writes one report fragment containing only
+environment metadata, backend, aria2 version, its case name and pass/fail
+diagnostics. Header names may identify the tested policy;
 header values, request URLs, filesystem paths, Cookie values, RPC tokens and
 account identifiers are forbidden.
 
@@ -119,11 +120,14 @@ For a local packaged binary:
 ```powershell
 $env:DOWNKYI_ARIA2_BINARY = '<absolute aria2c path>'
 $env:DOWNKYI_ARIA2_RID = 'win-x64'
-$env:DOWNKYI_ARIA2_TLS_REPORT = './artifacts/aria2-tls/win-x64.json'
+$env:DOWNKYI_ARIA2_TLS_REPORT = './artifacts/aria2-tls/win-x64'
 pwsh ./script/test-project.ps1 `
   -ProjectPath ./tests/DownKyi.Tests/DownKyi.Tests.csproj `
   -Configuration Release `
-  -ClassName DownKyi.Tests.Aria2TlsIntegrationTests `
+  -ClassName @(
+    'DownKyi.Tests.Aria2RpcLifecycleIntegrationTests'
+    'DownKyi.Tests.Aria2TlsIntegrationTests'
+  ) `
   -ResultsDirectory ./artifacts/test-results/aria2-local
 ```
 
