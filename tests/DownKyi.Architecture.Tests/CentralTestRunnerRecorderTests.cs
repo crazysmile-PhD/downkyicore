@@ -243,7 +243,7 @@ public sealed class CentralTestRunnerRecorderTests
         try
         {
             using var cancellation = new CancellationTokenSource();
-            var build = CentralTestCommand.RunBuildProcessAsync(
+            var build = BuildProcessRunner.RunAsync(
                 CreateFixtureStartInfo("fixture-hold-marker", markerPath),
                 cancellation.Token,
                 TimeSpan.FromSeconds(3));
@@ -300,7 +300,7 @@ public sealed class CentralTestRunnerRecorderTests
                 "<TestRun><ResultSummary><Counters executed=\"1\" failed=\"0\" /></ResultSummary></TestRun>",
                 TestContext.Current.CancellationToken);
 
-            var discovered = CentralTestCommand.DiscoverProjects(repositoryRoot);
+            var discovered = TestProjectCatalog.DiscoverProjects(repositoryRoot);
             var definition = Assert.Single(discovered);
             Assert.Equal("tests/Fixture.Tests/Fixture.Tests.csproj", definition.Project);
             Assert.Equal(["Windows", "Linux", "macOS"], definition.Platforms);
@@ -352,7 +352,7 @@ public sealed class CentralTestRunnerRecorderTests
                 TestContext.Current.CancellationToken);
 
             var exception = Assert.Throws<InvalidDataException>(
-                () => CentralTestCommand.DiscoverProjects(repositoryRoot));
+                () => TestProjectCatalog.DiscoverProjects(repositoryRoot));
             Assert.Contains("Linuz", exception.Message, StringComparison.Ordinal);
         }
         finally
@@ -391,7 +391,7 @@ public sealed class CentralTestRunnerRecorderTests
                 TestContext.Current.CancellationToken);
 
             var exception = Assert.Throws<InvalidDataException>(
-                () => CentralTestCommand.DiscoverProjects(repositoryRoot));
+                () => TestProjectCatalog.DiscoverProjects(repositoryRoot));
             Assert.Contains("unconditionally", exception.Message, StringComparison.Ordinal);
         }
         finally
