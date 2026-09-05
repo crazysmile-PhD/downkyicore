@@ -45,7 +45,9 @@ public sealed class MacOsProcessLifecycleExperimentTests
                 $"cleanup={hit.CleanupResult}]";
         }
 
-        Console.WriteLine(summary);
+        var output = TestContext.Current.TestOutputHelper;
+        Assert.NotNull(output);
+        output.WriteLine(summary);
     }
 
     private static async Task<LifecycleExperimentHit> RunTrialAsync()
