@@ -64,6 +64,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DownKyi.Windows.Tests", "te
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DownKyi.Linux.Tests", "tests\DownKyi.Linux.Tests\DownKyi.Linux.Tests.csproj", "{AE63391B-6A4B-4FB3-9452-FE2C3D505FD8}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DownKyi.CodeMetricsAudit", "tools\DownKyi.CodeMetricsAudit\DownKyi.CodeMetricsAudit.csproj", "{2D22B66D-D019-4533-A817-789FEE209F00}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -326,6 +328,18 @@ Global
 		{AE63391B-6A4B-4FB3-9452-FE2C3D505FD8}.Release|x64.Build.0 = Release|Any CPU
 		{AE63391B-6A4B-4FB3-9452-FE2C3D505FD8}.Release|x86.ActiveCfg = Release|Any CPU
 		{AE63391B-6A4B-4FB3-9452-FE2C3D505FD8}.Release|x86.Build.0 = Release|Any CPU
+		{2D22B66D-D019-4533-A817-789FEE209F00}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2D22B66D-D019-4533-A817-789FEE209F00}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2D22B66D-D019-4533-A817-789FEE209F00}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{2D22B66D-D019-4533-A817-789FEE209F00}.Debug|x64.Build.0 = Debug|Any CPU
+		{2D22B66D-D019-4533-A817-789FEE209F00}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{2D22B66D-D019-4533-A817-789FEE209F00}.Debug|x86.Build.0 = Debug|Any CPU
+		{2D22B66D-D019-4533-A817-789FEE209F00}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2D22B66D-D019-4533-A817-789FEE209F00}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2D22B66D-D019-4533-A817-789FEE209F00}.Release|x64.ActiveCfg = Release|Any CPU
+		{2D22B66D-D019-4533-A817-789FEE209F00}.Release|x64.Build.0 = Release|Any CPU
+		{2D22B66D-D019-4533-A817-789FEE209F00}.Release|x86.ActiveCfg = Release|Any CPU
+		{2D22B66D-D019-4533-A817-789FEE209F00}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -350,5 +364,6 @@ Global
 		{55B2C90F-9EF8-40BE-9156-EF7384B2601B} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{D1F36CA9-2EF9-433F-8AA6-0D89077B2458} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{AE63391B-6A4B-4FB3-9452-FE2C3D505FD8} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+		{2D22B66D-D019-4533-A817-789FEE209F00} = {07C2787E-EAC7-C090-1BA3-A61EC2A24D84}
 	EndGlobalSection
 EndGlobal

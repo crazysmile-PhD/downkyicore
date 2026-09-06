@@ -59,5 +59,6 @@ contract tests 使用 fixture 或 loopback server。OS-specific behavioral tests
 其他 authority locator：
 
 - module dependency policy：`module-boundary-ratchets.md`
+- CA1506 advisory architecture audit：`code-metrics-audit.md`
 - dependency、binary 與 release maintenance：`../maintenance.md`
 - formal verification 與 rollback：`../operations/verification-and-rollback.md`

@@ -152,6 +152,7 @@ flowchart TD
     FFmpegAssetUpdate["workflow.ffmpeg-asset-update\nimmutable mirror + manifest PR"]
     Nightly["workflow.system-baselines\nnightly cross-platform reports"]
     AnalyzerInventory["workflow.analyzer-inventory\nscript/analyzer-inventory.ps1"]
+    CodeMetricsAudit["workflow.code-metrics-audit\nCA1506 advisory inventory"]
 
     Program -->|calls| App
     App -->|creates| Host
@@ -280,6 +281,7 @@ flowchart TD
     Release -->|gates and packages| App
     Release -->|runs| Tests
     AnalyzerInventory -->|documents diagnostics| CI
+    CI -->|runs advisory audit| CodeMetricsAudit
 ```
 
 ## Canonical Nodes
@@ -2485,6 +2487,7 @@ contracts:
   - Every test project explicitly lists its supported subset of Windows, Linux and macOS; CentralTestRunner rejects unknown declarations and selects only projects that include the current OS.
   - Every test project writes a distinct assembly-named TRX; no solution-level logger filename may overwrite earlier project evidence.
   - Every PR runs the six-RID real-binary aria2 TLS security matrix; a unit-test-only pass cannot replace it.
+  - Tier 1 analyzer rules are blocking errors. CA1506 remains a separate advisory audit whose findings do not fail the job; infrastructure and report failures do.
 hazards:
   - Turning every historical analyzer suggestion into PR failure makes unrelated PRs impossible.
   - Broad NoWarn, global suppressions, nullable disable, or analyzer exclusions hide new defects.
@@ -2636,6 +2639,36 @@ hazards:
 tests:
   - clean Release build with AnalysisMode=All
   - git diff --check
+```
+
+### workflow.code-metrics-audit
+
+```yaml
+id: workflow.code-metrics-audit
+type: workflow
+paths:
+  - .github/workflows/quality.yml
+  - script/audit-code-metrics.ps1
+  - script/code-metrics
+  - tools/DownKyi.CodeMetricsAudit
+  - docs/testing/code-metrics-audit.md
+responsibility: Produces a deterministic, non-blocking CA1506 architecture inventory while failing closed on build, input, parsing, or report infrastructure errors.
+inbound:
+  - workflow.strict-pr-ci
+outbound:
+  - doc.code-metrics-audit
+contracts:
+  - The normal analyzer build does not enable CA1506; only this isolated full-solution build does.
+  - Diagnostics are deduplicated and reported separately for production and test code in human-readable Markdown and machine-readable JSON.
+  - Production findings are explicitly classified. New unclassified production findings remain visible as needs manual review.
+  - PowerShell owns only the ordered build-and-run process boundary required to avoid rebuilding a running C# reporter on Windows. C# owns Git inspection, SARIF parsing, deduplication, classification, and report generation.
+  - CA1506 findings return success. Missing or malformed SARIF, failed builds, invalid classifications, and failed report writes return failure.
+hazards:
+  - Moving report logic into the PowerShell entry creates a second implementation language and untested maintenance surface.
+  - Mechanical composition-root or integration-test splitting can lower the metric while increasing indirection without improving behavior.
+tests:
+  - tests/DownKyi.Architecture.Tests/CodeMetricsAuditTests.cs
+  - tests/DownKyi.Architecture.Tests/CodeMetricsPolicyTests.cs
 ```
 
 ### workflow.system-baselines

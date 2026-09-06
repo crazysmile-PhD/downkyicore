@@ -22,6 +22,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\tools\DownKyi.CentralTestRunner\DownKyi.CentralTestRunner.csproj" />
+    <ProjectReference Include="..\..\tools\DownKyi.CodeMetricsAudit\DownKyi.CodeMetricsAudit.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using DownKyi.CentralTestRunner;
 
 namespace DownKyi.Architecture.Tests;
@@ -345,6 +346,154 @@ public sealed class CentralTestRunnerCancellationComponentTests
         Assert.Equal(2, exitCode);
     }
 
+    [Theory]
+    [InlineData((int)MacOsProcessIdentityState.SameIdentityZombie)]
+    [InlineData((int)MacOsProcessIdentityState.Reused)]
+    public async Task MacOsIdentityFallbackTreatsTerminalOrReusedPidAsComplete(
+        int stateValue)
+    {
+        var state = (MacOsProcessIdentityState)stateValue;
+        Process? fixture = null;
+        await FailurePreservingTestCleanup.RunAsync(
+            async () =>
+            {
+                fixture = await StartHoldingFixtureAsync().ConfigureAwait(true);
+                var expectedStartTime = fixture.StartTime.ToUniversalTime();
+
+                await BuildProcessRunner.WaitForObservedProcessExitAsync(
+                    CreateObservedProcess(fixture, expectedStartTime),
+                    _ => throw new Win32Exception("identity unavailable"),
+                    _ => false,
+                    _ => true,
+                    (pid, startTime) => CreateMacIdentityResult(state, pid, startTime))
+                    .ConfigureAwait(true);
+
+                Assert.False(fixture.HasExited);
+            },
+            () => StopFixtureAsync(fixture)).ConfigureAwait(true);
+    }
+
+    [Theory]
+    [InlineData((int)MacOsProcessIdentityState.Gone, 0, 3, 0, 0U, 0UL)]
+    [InlineData((int)MacOsProcessIdentityState.SameIdentityZombie, 136, 0, 1234, 5U, 1_700_000_000UL)]
+    [InlineData((int)MacOsProcessIdentityState.SameIdentityLive, 136, 0, 1234, 2U, 1_700_000_000UL)]
+    [InlineData((int)MacOsProcessIdentityState.Reused, 136, 0, 1235, 2U, 1_700_000_000UL)]
+    [InlineData((int)MacOsProcessIdentityState.Unavailable, 135, 0, 1234, 5U, 1_700_000_000UL)]
+    public void MacOsIdentityProbeClassifiesBsdProcessInformation(
+        int expectedStateValue,
+        int returned,
+        int error,
+        int nativeProcessId,
+        uint status,
+        ulong startTimeSeconds)
+    {
+        var expectedStartTime = DateTimeOffset.UnixEpoch +
+            TimeSpan.FromSeconds(1_700_000_000 + 0.123456d);
+
+        var result = MacOsProcessIdentityProbe.Classify(
+            1234,
+            expectedStartTime,
+            returned,
+            error,
+            unchecked((uint)nativeProcessId),
+            42,
+            status,
+            startTimeSeconds,
+            startTimeSeconds == 0 ? 0UL : 123_456UL);
+
+        Assert.Equal(136, Marshal.SizeOf<MacOsProcessIdentityProbe.ProcBsdInfo>());
+        Assert.Equal(120, Marshal.OffsetOf<MacOsProcessIdentityProbe.ProcBsdInfo>(
+            nameof(MacOsProcessIdentityProbe.ProcBsdInfo.StartTimeSeconds)).ToInt32());
+        Assert.Equal(128, Marshal.OffsetOf<MacOsProcessIdentityProbe.ProcBsdInfo>(
+            nameof(MacOsProcessIdentityProbe.ProcBsdInfo.StartTimeMicroseconds)).ToInt32());
+        Assert.Equal((MacOsProcessIdentityState)expectedStateValue, result.State);
+    }
+
+    [Theory]
+    [InlineData((int)MacOsProcessIdentityState.SameIdentityLive)]
+    [InlineData((int)MacOsProcessIdentityState.Unavailable)]
+    public async Task MacOsIdentityFallbackPreservesFailureWhenProcessIsNotProvenTerminal(
+        int stateValue)
+    {
+        var state = (MacOsProcessIdentityState)stateValue;
+        Process? fixture = null;
+        await FailurePreservingTestCleanup.RunAsync(
+            async () =>
+            {
+                fixture = await StartHoldingFixtureAsync().ConfigureAwait(true);
+                var expectedStartTime = fixture.StartTime.ToUniversalTime();
+                var identityFailure = new Win32Exception("identity unavailable");
+
+                var exception = await Record.ExceptionAsync(
+                    () => BuildProcessRunner.WaitForObservedProcessExitAsync(
+                        CreateObservedProcess(fixture, expectedStartTime),
+                        _ => throw identityFailure,
+                        _ => false,
+                        _ => true,
+                        (pid, startTime) => CreateMacIdentityResult(
+                            state,
+                            pid,
+                            startTime))).ConfigureAwait(true);
+
+                Assert.Same(identityFailure, exception);
+                Assert.False(fixture.HasExited);
+            },
+            () => StopFixtureAsync(fixture)).ConfigureAwait(true);
+    }
+
+    [Fact]
+    public async Task MacOsIdentityProbeFailureDoesNotReplaceOriginalIdentityFailure()
+    {
+        Process? fixture = null;
+        await FailurePreservingTestCleanup.RunAsync(
+            async () =>
+            {
+                fixture = await StartHoldingFixtureAsync().ConfigureAwait(true);
+                var expectedStartTime = fixture.StartTime.ToUniversalTime();
+                var identityFailure = new Win32Exception("identity unavailable");
+
+                var exception = await Record.ExceptionAsync(
+                    () => BuildProcessRunner.WaitForObservedProcessExitAsync(
+                        CreateObservedProcess(fixture, expectedStartTime),
+                        _ => throw identityFailure,
+                        _ => false,
+                        _ => true,
+                        (_, _) => throw new DllNotFoundException("libproc unavailable")))
+                    .ConfigureAwait(true);
+
+                Assert.Same(identityFailure, exception);
+                Assert.False(fixture.HasExited);
+            },
+            () => StopFixtureAsync(fixture)).ConfigureAwait(true);
+    }
+
+    [Fact]
+    public async Task MissingPidCompletesWithoutMacOsIdentityProbe()
+    {
+        Process? fixture = null;
+        await FailurePreservingTestCleanup.RunAsync(
+            async () =>
+            {
+                fixture = await StartHoldingFixtureAsync().ConfigureAwait(true);
+                var expectedStartTime = fixture.StartTime.ToUniversalTime();
+                var probeCalls = 0;
+
+                await BuildProcessRunner.WaitForObservedProcessExitAsync(
+                    CreateObservedProcess(fixture, expectedStartTime),
+                    _ => throw new Win32Exception("identity unavailable"),
+                    _ => false,
+                    _ => false,
+                    (_, _) =>
+                    {
+                        probeCalls++;
+                        return default;
+                    }).ConfigureAwait(true);
+
+                Assert.Equal(0, probeCalls);
+            },
+            () => StopFixtureAsync(fixture)).ConfigureAwait(true);
+    }
+
     [Fact]
     public async Task ExitCodeMappingReturns2ForLiveProcessIdentityFailure()
     {
@@ -453,6 +602,23 @@ public sealed class CentralTestRunnerCancellationComponentTests
             "InvalidOperationException" => new InvalidOperationException("identity unavailable"),
             _ => throw new ArgumentOutOfRangeException(nameof(exceptionType))
         };
+    }
+
+    private static MacOsProcessIdentityResult CreateMacIdentityResult(
+        MacOsProcessIdentityState state,
+        int processId,
+        DateTimeOffset expectedStartTimeUtc)
+    {
+        return new MacOsProcessIdentityResult(
+            state,
+            MacOsProcessIdentityProbe.NativeBufferSize,
+            processId,
+            Environment.ProcessId,
+            state == MacOsProcessIdentityState.SameIdentityZombie ? 5U : 2U,
+            state == MacOsProcessIdentityState.Reused
+                ? expectedStartTimeUtc.AddSeconds(1)
+                : expectedStartTimeUtc,
+            0);
     }
 
     private static Task<Process> StartHoldingFixtureAsync()

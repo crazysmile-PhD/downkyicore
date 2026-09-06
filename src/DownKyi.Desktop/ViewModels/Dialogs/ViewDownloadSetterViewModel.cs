@@ -400,7 +400,16 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
         // 将Directory移动到第一项
         // 如果直接在ComboBox中选择的就需要
         // 否则选中项不会在下次出现在第一项
-        ListHelper.InsertUnique(DirectoryList, Directory, 0, ref _directory);
+        var selectedDirectory = _directory;
+        var restoreSelection = DirectoryList.Contains(selectedDirectory);
+        ListHelper.InsertUnique(DirectoryList, selectedDirectory, 0);
+        if (restoreSelection && !string.Equals(_directory, selectedDirectory, StringComparison.Ordinal))
+        {
+            // Moving the selected item can synchronously clear the ComboBox binding.
+            // Restore the backing selection exactly as the former ref contract did,
+            // without publishing an additional property-change notification.
+            _directory = selectedDirectory;
+        }
 
         // 将更新后的目录设置一次写入，避免其他消费者看到半套状态
         _settingsStore.Update(settings => settings with

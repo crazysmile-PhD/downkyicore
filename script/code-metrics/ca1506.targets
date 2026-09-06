@@ -1,0 +1,9 @@
+<Project>
+  <PropertyGroup Condition="'$(CodeMetricsAuditSarifDirectory)' != ''">
+    <ErrorLog>$(CodeMetricsAuditSarifDirectory)/$(MSBuildProjectName).sarif</ErrorLog>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <EditorConfigFiles Include="$(MSBuildThisFileDirectory)ca1506.globalconfig" />
+  </ItemGroup>
+</Project>

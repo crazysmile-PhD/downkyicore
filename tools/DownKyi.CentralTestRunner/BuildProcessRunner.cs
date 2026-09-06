@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.ExceptionServices;
+using System.Runtime.InteropServices;
 
 namespace DownKyi.CentralTestRunner;
 
@@ -160,7 +161,8 @@ internal static class BuildProcessRunner
         ObservedProcess observedProcess,
         Func<Process, DateTimeOffset>? readStartTimeUtc = null,
         Func<Process, bool>? readHasExited = null,
-        Func<int, bool>? isProcessPresent = null)
+        Func<int, bool>? isProcessPresent = null,
+        Func<int, DateTimeOffset, MacOsProcessIdentityResult>? macOsIdentityProbe = null)
     {
         Process process;
         try
@@ -189,9 +191,10 @@ internal static class BuildProcessRunner
             {
                 if (!HasExitedAfterIdentityFailure(
                         process,
-                        observedProcess.Pid,
+                        observedProcess,
                         readHasExited ?? ReadHasExited,
-                        isProcessPresent ?? IsProcessPresent))
+                        isProcessPresent ?? IsProcessPresent,
+                        macOsIdentityProbe))
                 {
                     throw;
                 }
@@ -203,9 +206,10 @@ internal static class BuildProcessRunner
 
     private static bool HasExitedAfterIdentityFailure(
         Process process,
-        int processId,
+        ObservedProcess observedProcess,
         Func<Process, bool> readHasExited,
-        Func<int, bool> isProcessPresent)
+        Func<int, bool> isProcessPresent,
+        Func<int, DateTimeOffset, MacOsProcessIdentityResult>? macOsIdentityProbe)
     {
         try
         {
@@ -221,18 +225,52 @@ internal static class BuildProcessRunner
 
         try
         {
-            return !isProcessPresent(processId);
+            if (!isProcessPresent(observedProcess.Pid))
+            {
+                return true;
+            }
         }
         catch (Exception exception) when (IsProcessObservationFailure(exception))
         {
             // An inconclusive secondary observation must not replace the first identity failure.
             return false;
         }
+
+        if (observedProcess.StartTimeUtc is not { } expectedStartTimeUtc ||
+            (!OperatingSystem.IsMacOS() && macOsIdentityProbe is null))
+        {
+            return false;
+        }
+
+        MacOsProcessIdentityResult identity;
+        try
+        {
+            identity = (macOsIdentityProbe ?? MacOsProcessIdentityProbe.Probe)(
+                observedProcess.Pid,
+                expectedStartTimeUtc);
+        }
+        catch (Exception exception) when (IsMacOsIdentityProbeUnavailable(exception))
+        {
+            return false;
+        }
+
+        return identity.State is
+            MacOsProcessIdentityState.Gone or
+            MacOsProcessIdentityState.SameIdentityZombie or
+            MacOsProcessIdentityState.Reused;
     }
 
     private static bool IsProcessObservationFailure(Exception exception)
     {
         return exception is InvalidOperationException or System.ComponentModel.Win32Exception;
+    }
+
+    private static bool IsMacOsIdentityProbeUnavailable(Exception exception)
+    {
+        return exception is DllNotFoundException or
+            EntryPointNotFoundException or
+            BadImageFormatException or
+            MarshalDirectiveException;
     }
 
     private static bool ReadHasExited(Process process)

@@ -44,13 +44,8 @@ public sealed class TargetedResourceForensicsWindowsTests
         Process? owner = null;
         try
         {
-            owner = StartDirectoryOwner(targetDirectory);
-            var ready = await owner.StandardOutput.ReadLineAsync(
-                    TestContext.Current.CancellationToken).AsTask()
-                .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken)
-                .ConfigureAwait(true);
-            Assert.StartsWith("fixture-ready pid=", ready, StringComparison.Ordinal);
-            DuplicateDirectoryHandleIntoProcess(targetDirectory, owner);
+            owner = StartDirectoryLockOwner(targetDirectory);
+            await WaitForDirectoryLockReadyAsync(owner).ConfigureAwait(true);
 
             Assert.Equal(
                 DeleteAccessState.SharingViolation,
@@ -307,18 +302,13 @@ public sealed class TargetedResourceForensicsWindowsTests
         TargetedResourceForensics? forensics = null;
         try
         {
+            owner = StartDirectoryLockOwner(targetDirectory);
+            await WaitForDirectoryLockReadyAsync(owner).ConfigureAwait(true);
             forensics = TargetedResourceForensics.Start(
                 targetDirectory,
                 nameof(ControlledDirectoryOwnerProducesCorrelatedLifecycleArtifact),
                 Environment.ProcessId);
-            owner = StartDirectoryOwner(targetDirectory);
-            var ready = await owner.StandardOutput.ReadLineAsync(
-                    TestContext.Current.CancellationToken).AsTask()
-                .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken)
-                .ConfigureAwait(true);
-            Assert.StartsWith("fixture-ready pid=", ready, StringComparison.Ordinal);
             forensics.AddKnownProcessId(owner.Id, "root-owner");
-            DuplicateDirectoryHandleIntoProcess(targetDirectory, owner);
 
             Assert.Equal(
                 DeleteAccessState.SharingViolation,
@@ -367,7 +357,7 @@ public sealed class TargetedResourceForensicsWindowsTests
             Assert.Contains("readyForOperationUtc=", artifact, StringComparison.Ordinal);
             Assert.Contains(">Process</EventName>", artifact, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("ParentId", artifact, StringComparison.OrdinalIgnoreCase);
-            Assert.Contains("fixture-hold", artifact, StringComparison.Ordinal);
+            Assert.Contains("fixture-directory-lock", artifact, StringComparison.Ordinal);
             Assert.Contains(">Create</Opcode>", artifact, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("Cleanup", artifact, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("Close", artifact, StringComparison.OrdinalIgnoreCase);
@@ -419,6 +409,32 @@ public sealed class TargetedResourceForensicsWindowsTests
             throw new InvalidOperationException("Unable to start the controlled directory owner.");
     }
 
+    private static Process StartDirectoryLockOwner(string workingDirectory)
+    {
+        var runtimeConfig = Path.Combine(
+            AppContext.BaseDirectory,
+            "DownKyi.Windows.Tests.runtimeconfig.json");
+        var fixtureAssembly = Path.Combine(
+            AppContext.BaseDirectory,
+            "DownKyi.CentralTestRunner.dll");
+        var startInfo = new ProcessStartInfo("dotnet")
+        {
+            WorkingDirectory = AppContext.BaseDirectory,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+        };
+        startInfo.ArgumentList.Add("exec");
+        startInfo.ArgumentList.Add("--runtimeconfig");
+        startInfo.ArgumentList.Add(runtimeConfig);
+        startInfo.ArgumentList.Add(fixtureAssembly);
+        startInfo.ArgumentList.Add("fixture-directory-lock");
+        startInfo.ArgumentList.Add(workingDirectory);
+        return Process.Start(startInfo) ??
+            throw new InvalidOperationException("Unable to start the controlled directory lock owner.");
+    }
+
     private static async Task WaitForOwnerReadyAsync(Process owner)
     {
         var ready = await owner.StandardOutput.ReadLineAsync(
@@ -426,6 +442,22 @@ public sealed class TargetedResourceForensicsWindowsTests
             .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken)
             .ConfigureAwait(true);
         Assert.StartsWith("fixture-ready pid=", ready, StringComparison.Ordinal);
+    }
+
+    private static async Task WaitForDirectoryLockReadyAsync(Process owner)
+    {
+        var ready = await owner.StandardOutput.ReadLineAsync(
+                TestContext.Current.CancellationToken).AsTask()
+            .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
+        if (ready is null)
+        {
+            var error = await owner.StandardError.ReadToEndAsync(TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+            Assert.Fail($"Directory lock owner exited before its barrier: {error}");
+        }
+
+        Assert.Equal("fixture-lock-ready", ready);
     }
 
     private static async Task StopOwnerAsync(Process? owner)
