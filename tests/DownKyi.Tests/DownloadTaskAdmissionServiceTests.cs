@@ -13,6 +13,8 @@ namespace DownKyi.Tests;
 
 public sealed class DownloadTaskAdmissionServiceTests : IDisposable
 {
+    public static bool IsWindows => OperatingSystem.IsWindows();
+
     private readonly string _directory = Path.Combine(
         Path.GetTempPath(),
         "downkyi-admission-tests",
@@ -169,14 +171,9 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         Assert.Empty(await tasks.GetUnfinishedAsync(TestContext.Current.CancellationToken));
     }
 
-    [Fact]
+    [Fact(Skip = "Requires Windows directory-junction semantics.", SkipUnless = nameof(IsWindows))]
     public async Task JunctionAliasUsesDistinctLogicalSuffix()
     {
-        if (!OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
         Directory.CreateDirectory(_directory);
 
         var realDirectory =
@@ -245,14 +242,9 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         }
     }
 
-    [Fact]
+    [Fact(Skip = "Requires Windows directory-junction semantics.", SkipUnless = nameof(IsWindows))]
     public async Task JunctionAliasFailsClosedWhenAutoSuffixDisabled()
     {
-        if (!OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
         Directory.CreateDirectory(_directory);
 
         var realDirectory =

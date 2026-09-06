@@ -8,6 +8,8 @@ namespace DownKyi.Infrastructure.Tests;
 
 public sealed class SqliteDownloadTaskStoreTests : IDisposable
 {
+    public static bool IsWindows => OperatingSystem.IsWindows();
+
     private readonly string _directory = Path.Combine(
         Path.GetTempPath(),
         "downkyi-download-store-tests",
@@ -168,14 +170,9 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
         Assert.Equal(0, await CountDownloadingRecordAsync("orphaned-download"));
     }
 
-    [Fact]
+    [Fact(Skip = "Requires Windows directory-junction semantics.", SkipUnless = nameof(IsWindows))]
     public async Task JunctionAliasCannotClaimSamePhysicalOutputPath()
     {
-        if (!OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
         var cancellationToken =
             TestContext.Current.CancellationToken;
 
@@ -247,14 +244,9 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
                 .ConfigureAwait(true));
     }
 
-    [Fact]
+    [Fact(Skip = "Requires Windows directory-junction semantics.", SkipUnless = nameof(IsWindows))]
     public async Task VersionThreeReservationKeysAreRebuiltUsingFilesystemIdentity()
     {
-        if (!OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
         var cancellationToken =
             TestContext.Current.CancellationToken;
 
@@ -507,14 +499,9 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
         Assert.Empty(await store.GetUnfinishedAsync(TestContext.Current.CancellationToken));
     }
 
-    [Fact]
+    [Fact(Skip = "Requires Windows directory-junction semantics.", SkipUnless = nameof(IsWindows))]
     public async Task AtomicBatchJunctionAliasRollsBackBothTasks()
     {
-        if (!OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
         var realDirectory = Path.Combine(_directory, "atomic-junction-real");
         var aliasDirectory = Path.Combine(_directory, "atomic-junction-alias");
         Directory.CreateDirectory(realDirectory);
