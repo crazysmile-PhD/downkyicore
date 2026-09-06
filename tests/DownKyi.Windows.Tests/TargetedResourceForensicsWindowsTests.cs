@@ -357,7 +357,7 @@ public sealed class TargetedResourceForensicsWindowsTests
             Assert.Contains("readyForOperationUtc=", artifact, StringComparison.Ordinal);
             Assert.Contains(">Process</EventName>", artifact, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("ParentId", artifact, StringComparison.OrdinalIgnoreCase);
-            Assert.Contains("fixture-hold", artifact, StringComparison.Ordinal);
+            Assert.Contains("fixture-directory-lock", artifact, StringComparison.Ordinal);
             Assert.Contains(">Create</Opcode>", artifact, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("Cleanup", artifact, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("Close", artifact, StringComparison.OrdinalIgnoreCase);
