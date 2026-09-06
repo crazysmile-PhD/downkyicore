@@ -289,8 +289,12 @@ public sealed class FileSystemOutputIdentityProviderTests : IDisposable
     private void AssertStemAliasIsNotResolved(string stemAlias, string target)
     {
         var stemKey = _provider.CreateReservationKey(stemAlias, ignoreCase: false);
+        var siblingKey = _provider.CreateReservationKey(
+            Path.Combine(Path.GetDirectoryName(stemAlias)!, "ordinary-sibling"),
+            ignoreCase: false);
 
-        Assert.Equal(DownloadOutputPathKey.Create(stemAlias, ignoreCase: false), stemKey);
+        Assert.Equal(Path.GetDirectoryName(siblingKey), Path.GetDirectoryName(stemKey));
+        Assert.Equal(Path.GetFileName(stemAlias), Path.GetFileName(stemKey));
         Assert.NotEqual(
             _provider.CreateReservationKey(target, ignoreCase: false),
             stemKey);
