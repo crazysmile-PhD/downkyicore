@@ -9,7 +9,8 @@ internal sealed record ProcessExecutionRequest(
     TimeSpan Timeout,
     TimeSpan CleanupTimeout,
     string EvidenceDirectory,
-    Func<int, TimeSpan, Task<FinalProcessSnapshot>>? SnapshotCapture = null);
+    Func<int, TimeSpan, Task<FinalProcessSnapshot>>? SnapshotCapture = null,
+    Func<Process, DateTimeOffset>? RootStartTimeReader = null);
 
 internal sealed record ProcessExecutionResult(
     int ExitCode,
@@ -45,31 +46,6 @@ internal static class FlightRecorderExecution
             return new ProcessExecutionResult(2, 0, default, recorder.EvidencePath, recorder);
         }
 
-        var rootPid = process.Id;
-        DateTimeOffset rootStartTime;
-        try
-        {
-            rootStartTime = process.StartTime.ToUniversalTime();
-        }
-        catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception)
-        {
-            await recorder.RecordAsync(
-                "root_identity_failed",
-                pid: rootPid,
-                detail: exception.Message).ConfigureAwait(false);
-            await recorder.CaptureFinalSnapshotOnceAsync().ConfigureAwait(false);
-            await StopAsync(process, request.CleanupTimeout, recorder).ConfigureAwait(false);
-            await recorder.FinalizeFailureAsync("root_identity_failed", standardOutput, standardError)
-                .ConfigureAwait(false);
-            return new ProcessExecutionResult(2, rootPid, default, recorder.EvidencePath, recorder);
-        }
-
-        recorder.SetRootIdentity(rootPid, rootStartTime);
-        await recorder.RecordAsync(
-            "process_start",
-            pid: rootPid,
-            startTimeUtc: rootStartTime).ConfigureAwait(false);
-
         using var outputCapture = new CancellationTokenSource();
         var outputTask = BoundedOutputCapture.CaptureAsync(
             process.StandardOutput,
@@ -83,6 +59,38 @@ internal static class FlightRecorderExecution
             Console.Error,
             recorder.Redactor,
             outputCapture.Token);
+        var rootPid = process.Id;
+        DateTimeOffset rootStartTime;
+        try
+        {
+            rootStartTime = (request.RootStartTimeReader ?? ReadRootStartTimeUtc)(process);
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            await recorder.RecordAsync(
+                "root_identity_failed",
+                pid: rootPid,
+                detail: exception.Message).ConfigureAwait(false);
+            await recorder.CaptureFinalSnapshotOnceAsync().ConfigureAwait(false);
+            await StopAsync(process, request.CleanupTimeout, recorder).ConfigureAwait(false);
+            await DrainOutputAsync(
+                outputTask,
+                errorTask,
+                outputCapture,
+                request.CleanupTimeout,
+                recorder,
+                rootPid).ConfigureAwait(false);
+            await recorder.FinalizeFailureAsync("root_identity_failed", standardOutput, standardError)
+                .ConfigureAwait(false);
+            return new ProcessExecutionResult(2, rootPid, default, recorder.EvidencePath, recorder);
+        }
+
+        recorder.SetRootIdentity(rootPid, rootStartTime);
+        await recorder.RecordAsync(
+            "process_start",
+            pid: rootPid,
+            startTimeUtc: rootStartTime).ConfigureAwait(false);
+
         using var timeout = new CancellationTokenSource(request.Timeout);
         using var waitCancellation = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken,
@@ -162,6 +170,11 @@ internal static class FlightRecorderExecution
             rootStartTime,
             recorder.EvidencePath,
             recorder);
+    }
+
+    private static DateTimeOffset ReadRootStartTimeUtc(Process process)
+    {
+        return process.StartTime.ToUniversalTime();
     }
 
     public static async Task PreservePostExitFailureAsync(
