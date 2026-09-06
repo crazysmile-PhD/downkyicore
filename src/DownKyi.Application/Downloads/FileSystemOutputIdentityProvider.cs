@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace DownKyi.Application.Downloads;
 
 public sealed class FileSystemOutputIdentityProvider : IOutputIdentityProvider
@@ -22,9 +24,13 @@ public sealed class FileSystemOutputIdentityProvider : IOutputIdentityProvider
             ResolveExistingAliases(
                 logicalPath);
 
+        var normalizedPhysicalPath =
+            physicalPath.Normalize(
+                NormalizationForm.FormC);
+
         return ignoreCase
-            ? physicalPath.ToUpperInvariant()
-            : physicalPath;
+            ? normalizedPhysicalPath.ToUpperInvariant()
+            : normalizedPhysicalPath;
     }
 
     private static string ResolveExistingAliases(

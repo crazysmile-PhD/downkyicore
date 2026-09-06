@@ -13,6 +13,8 @@ namespace DownKyi.Tests;
 
 public sealed class DownloadTaskAdmissionServiceTests : IDisposable
 {
+    public static bool IsWindows => OperatingSystem.IsWindows();
+
     private readonly string _directory = Path.Combine(
         Path.GetTempPath(),
         "downkyi-admission-tests",
@@ -169,14 +171,9 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         Assert.Empty(await tasks.GetUnfinishedAsync(TestContext.Current.CancellationToken));
     }
 
-    [Fact]
+    [Fact(Skip = "Requires Windows directory-junction semantics.", SkipUnless = nameof(IsWindows))]
     public async Task JunctionAliasUsesDistinctLogicalSuffix()
     {
-        if (!OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
         Directory.CreateDirectory(_directory);
 
         var realDirectory =
@@ -245,14 +242,9 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         }
     }
 
-    [Fact]
+    [Fact(Skip = "Requires Windows directory-junction semantics.", SkipUnless = nameof(IsWindows))]
     public async Task JunctionAliasFailsClosedWhenAutoSuffixDisabled()
     {
-        if (!OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
         Directory.CreateDirectory(_directory);
 
         var realDirectory =
@@ -339,6 +331,50 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         Assert.NotEqual(
             DownloadOutputPathKey.Create(first, ignoreCase: false),
             DownloadOutputPathKey.Create(second, ignoreCase: false));
+    }
+
+    [Fact]
+    public void PathKeyTreatsCanonicalUnicodeVariantsAsOneOutput()
+    {
+        var composed = Path.Combine(_directory, "caf\u00E9");
+        var decomposed = Path.Combine(_directory, "cafe\u0301");
+
+        Assert.Equal(
+            DownloadOutputPathKey.Create(composed, ignoreCase: false),
+            DownloadOutputPathKey.Create(decomposed, ignoreCase: false));
+        Assert.Equal(
+            DownloadOutputPathKey.Create(composed, ignoreCase: true),
+            DownloadOutputPathKey.Create(decomposed, ignoreCase: true));
+    }
+
+    [Fact]
+    public async Task CanonicalUnicodeAliasUsesFirstFreeSuffix()
+    {
+        Directory.CreateDirectory(_directory);
+        using var store = CreateStore();
+        var clock = new SystemClock();
+        using var tasks = new DownloadTaskApplicationService(store, clock);
+        using var projections = new DownloadTaskProjectionStore(tasks, clock);
+        using var admission = new DownloadTaskAdmissionService(
+            new DownloadListState(),
+            tasks,
+            projections,
+            new RecordingDownloadTaskQueue());
+        var composed = Path.Combine(_directory, "caf\u00E9");
+        var decomposed = Path.Combine(_directory, "cafe\u0301");
+        var first = CreateItem("unicode-composed", composed);
+        var second = CreateItem("unicode-decomposed", decomposed);
+
+        await admission.AdmitAsync(
+            first,
+            true,
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+        await admission.AdmitAsync(
+            second,
+            true,
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.Equal(Path.GetFullPath($"{decomposed}(1)"), second.DownloadBase.FilePath);
     }
 
     [Fact]
