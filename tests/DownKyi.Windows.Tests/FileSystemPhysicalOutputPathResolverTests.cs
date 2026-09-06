@@ -24,6 +24,18 @@ public sealed class FileSystemPhysicalOutputPathResolverTests : IDisposable
     }
 
     [Fact]
+    public async Task JunctionAfterCanceledMissingComponentIsResolved()
+    {
+        var target = CreateDirectory("canceled-missing-target");
+        var alias = Path.Combine(_directory, "canceled-missing-alias");
+        await CreateJunctionAsync(alias, target).ConfigureAwait(true);
+
+        AssertSamePath(
+            Path.Combine(_directory, "missing", "..", "canceled-missing-alias", "video"),
+            Path.Combine(target, "video"));
+    }
+
+    [Fact]
     public async Task CanonicallyDistinctAliasNameUsesRawTraversalState()
     {
         var decomposedTarget = CreateDirectory("cafe\u0301");

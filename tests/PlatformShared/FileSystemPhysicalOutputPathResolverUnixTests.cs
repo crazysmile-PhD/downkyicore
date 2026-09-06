@@ -23,6 +23,17 @@ public sealed class FileSystemPhysicalOutputPathResolverUnixTests : IDisposable
     }
 
     [Fact]
+    public void SymlinkAfterCanceledMissingComponentIsResolved()
+    {
+        var target = CreateDirectory("canceled-missing-target");
+        CreateSymlink("canceled-missing-alias", target);
+
+        AssertSamePath(
+            Path.Combine(_directory, "missing", "..", "canceled-missing-alias", "video"),
+            Path.Combine(target, "video"));
+    }
+
+    [Fact]
     public void RelativeTargetResolvesLinkSegmentBeforeDotDot()
     {
         var target = CreateDirectory(Path.Combine("other", "real"));

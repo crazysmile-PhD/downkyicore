@@ -53,6 +53,7 @@ public sealed class FileSystemPhysicalOutputPathResolver : IPhysicalOutputPathRe
             [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
             StringSplitOptions.RemoveEmptyEntries);
         var current = root;
+        var unresolvedComponentDepth = 0;
         for (var index = 0; index < segments.Length; index++)
         {
             if (segments[index] == ".")
@@ -63,6 +64,18 @@ public sealed class FileSystemPhysicalOutputPathResolver : IPhysicalOutputPathRe
             if (segments[index] == "..")
             {
                 current = MoveToParent(current, root);
+                if (unresolvedComponentDepth > 0)
+                {
+                    unresolvedComponentDepth--;
+                }
+
+                continue;
+            }
+
+            if (unresolvedComponentDepth > 0)
+            {
+                current = Path.Combine(current, segments[index]);
+                unresolvedComponentDepth++;
                 continue;
             }
 
@@ -82,12 +95,9 @@ public sealed class FileSystemPhysicalOutputPathResolver : IPhysicalOutputPathRe
 
             if (!TryReadAttributes(candidate, out var attributes))
             {
-                for (var remaining = index; remaining < segments.Length; remaining++)
-                {
-                    current = ApplyPathComponent(current, root, segments[remaining]);
-                }
-
-                return current;
+                current = candidate;
+                unresolvedComponentDepth = 1;
+                continue;
             }
 
             if ((attributes & FileAttributes.ReparsePoint) != 0 ||
@@ -145,16 +155,6 @@ public sealed class FileSystemPhysicalOutputPathResolver : IPhysicalOutputPathRe
         }
 
         return Path.Combine(parentRoot, linkTarget[linkRoot.Length..]);
-    }
-
-    private static string ApplyPathComponent(string current, string root, string component)
-    {
-        return component switch
-        {
-            "." => current,
-            ".." => MoveToParent(current, root),
-            _ => Path.Combine(current, component)
-        };
     }
 
     private static string MoveToParent(string path, string root)
