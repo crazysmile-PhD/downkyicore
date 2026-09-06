@@ -88,6 +88,11 @@ internal static class Program
         {
             await Console.Out.WriteAsync($"token={args[1]}{new string('x', 32768)}").ConfigureAwait(false);
             await Console.Out.FlushAsync().ConfigureAwait(false);
+            if (args.Length > 2)
+            {
+                await File.WriteAllTextAsync(args[2], "ready").ConfigureAwait(false);
+                await Task.Delay(Timeout.InfiniteTimeSpan).ConfigureAwait(false);
+            }
             return 1;
         }
 

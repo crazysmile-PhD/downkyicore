@@ -6,6 +6,8 @@ namespace DownKyi.Architecture.Tests;
 
 public sealed class FlightRecorderOutputTests
 {
+    private const string DiscardedLineMarker = "[output line exceeded 8192 characters and was discarded]";
+
     [Fact]
     public async Task UnterminatedOversizedOutputIsDiscardedWithoutUnboundedEvidence()
     {
@@ -34,7 +36,7 @@ public sealed class FlightRecorderOutputTests
             Assert.True(new FileInfo(result.EvidencePath).Length < 16_384);
             using var document = JsonDocument.Parse(artifact);
             Assert.Contains(
-                "[output line exceeded 8192 characters and was discarded]",
+                DiscardedLineMarker,
                 document.RootElement.GetProperty("StdoutTail").GetString(),
                 StringComparison.Ordinal);
         }
@@ -44,7 +46,55 @@ public sealed class FlightRecorderOutputTests
         }
     }
 
-    private static ProcessStartInfo CreateFixtureStartInfo(string secret)
+    [Fact]
+    public async Task RootIdentityFailureStillDrainsOutputProducedByTheOwnedProcess()
+    {
+        const string secret = "fixture-root-identity-secret";
+        var evidenceDirectory = Path.Combine(
+            Path.GetTempPath(),
+            $"downkyi-flight-recorder-identity-{Guid.NewGuid():N}");
+        var readyPath = Path.Combine(evidenceDirectory, "fixture-ready");
+        Directory.CreateDirectory(evidenceDirectory);
+        try
+        {
+            var result = await FlightRecorderExecution.RunAsync(
+                new ProcessExecutionRequest(
+                    "fixture.identity-failure.slice",
+                    "fixture.identity-failure.test",
+                    CreateFixtureStartInfo(secret, readyPath),
+                    TimeSpan.FromSeconds(10),
+                    TimeSpan.FromSeconds(3),
+                    evidenceDirectory,
+                    RootStartTimeReader: _ =>
+                    {
+                        if (!SpinWait.SpinUntil(() => File.Exists(readyPath), TimeSpan.FromSeconds(3)))
+                        {
+                            throw new InvalidOperationException("The fixture did not produce output before identity capture.");
+                        }
+
+                        throw new System.ComponentModel.Win32Exception("fixture identity unavailable");
+                    }),
+                CancellationToken.None);
+
+            Assert.Equal(2, result.ExitCode);
+            var artifact = await File.ReadAllTextAsync(
+                result.EvidencePath,
+                TestContext.Current.CancellationToken);
+            Assert.DoesNotContain(secret, artifact, StringComparison.Ordinal);
+            using var document = JsonDocument.Parse(artifact);
+            Assert.Equal("root_identity_failed", document.RootElement.GetProperty("Outcome").GetString());
+            Assert.Contains(
+                DiscardedLineMarker,
+                document.RootElement.GetProperty("StdoutTail").GetString(),
+                StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(evidenceDirectory, recursive: true);
+        }
+    }
+
+    private static ProcessStartInfo CreateFixtureStartInfo(string secret, string? readyPath = null)
     {
         var runnerAssembly = typeof(FlightRecorderExecution).Assembly.Location;
         var runtimeConfig = Path.Combine(
@@ -63,6 +113,10 @@ public sealed class FlightRecorderOutputTests
         startInfo.ArgumentList.Add(runnerAssembly);
         startInfo.ArgumentList.Add("fixture-long-line");
         startInfo.ArgumentList.Add(secret);
+        if (readyPath is not null)
+        {
+            startInfo.ArgumentList.Add(readyPath);
+        }
         return startInfo;
     }
 }
