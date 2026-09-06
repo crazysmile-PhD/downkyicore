@@ -6,6 +6,7 @@ using DownKyi.Infrastructure.Time;
 using DownKyi.Models;
 using DownKyi.Services.Download;
 using DownKyi.ViewModels.DownloadManager;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DownKyi.Tests;
@@ -72,21 +73,18 @@ public sealed class DurlDownloadIdentityTests
     }
 
     [Fact]
-    public async Task PlaybackStageDoesNotRewriteFrozenBasePathWhenDirectoryPreparationFails()
+    public async Task PlaybackStageUsesLegacySeparatorsWithoutRewritingFrozenBasePath()
     {
         var directory = Path.Combine(
             Path.GetTempPath(),
             "downkyi-playback-path-tests",
             Guid.NewGuid().ToString("N"));
+        var databasePath = Path.Combine(directory, "download.db");
         Directory.CreateDirectory(directory);
         try
         {
-            var blockedDirectory = Path.Combine(directory, "blocked");
-            await File.WriteAllTextAsync(
-                blockedDirectory,
-                "not a directory",
-                TestContext.Current.CancellationToken);
-            var frozenBasePath = Path.Combine(blockedDirectory, "frozen\\alias");
+            var frozenBasePath = Path.Combine(directory, "legacy\\nested\\video");
+            var expectedDirectory = Path.Combine(directory, "legacy", "nested");
             var downloadBase = new DownloadBase
             {
                 Id = "frozen-playback-path",
@@ -98,25 +96,36 @@ public sealed class DurlDownloadIdentityTests
                 Downloading = new Downloading
                 {
                     Id = downloadBase.Id,
-                    DownloadBase = downloadBase
+                    DownloadBase = downloadBase,
+                    DownloadStatus = DownloadStatus.WaitForDownload
                 },
                 PlayUrl = new PlayUrl()
             };
             using var store = new SqliteDownloadTaskStore(
-                new SqliteDownloadTaskStoreOptions(Path.Combine(directory, "download.db")),
+                new SqliteDownloadTaskStoreOptions(databasePath),
                 new SystemClock());
             using var tasks = new DownloadTaskApplicationService(store, new SystemClock());
             using var settings = new TestSettingsStore();
+            var taskId = new DownloadTaskId(downloadBase.Id);
+            var stateWriter = new DownloadTaskStateWriter(tasks);
+            var task = DownloadTaskProjectionMapper.CreateNewTask(
+                downloading,
+                DateTimeOffset.UnixEpoch);
+            Assert.True((await tasks.AddAsync(
+                task,
+                TestContext.Current.CancellationToken).ConfigureAwait(true)).IsSuccess);
+            await stateWriter.StartAsync(taskId, TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
             var stage = new ResolvePlaybackStage(
                 new TestDesktopInteractionContext().Notifications,
-                new DownloadActivityPresenter(new DownloadTaskStateWriter(tasks)),
+                new DownloadActivityPresenter(stateWriter),
                 new DownloadPlaybackResolver(
                     new TestWbiKeyProvider(),
                     TimeProvider.System,
                     new TestBilibiliApiClient()),
                 NullLogger<ResolvePlaybackStage>.Instance);
             var context = new DownloadExecutionContext(
-                new DownloadTaskId(downloadBase.Id),
+                taskId,
                 downloading,
                 settings.Store.Current,
                 static (_, token) => token.ThrowIfCancellationRequested());
@@ -125,11 +134,20 @@ public sealed class DurlDownloadIdentityTests
                 context,
                 TestContext.Current.CancellationToken);
 
-            Assert.False(result.IsSuccess);
+            Assert.True(result.IsSuccess);
+            Assert.Equal(expectedDirectory, context.DownloadDirectory);
             Assert.Equal(frozenBasePath, downloading.DownloadBase.FilePath, ignoreCase: false);
         }
         finally
         {
+            using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+            {
+                DataSource = databasePath,
+                Mode = SqliteOpenMode.ReadWriteCreate,
+                Pooling = true,
+                DefaultTimeout = 5
+            }.ToString());
+            SqliteConnection.ClearPool(connection);
             Directory.Delete(directory, recursive: true);
         }
     }

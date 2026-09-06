@@ -258,13 +258,26 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
                         .ConfigureAwait(true);
                 }
 
-                await _admission
-                    .AdmitAsync(
-                        downloadingItem,
-                        settings.Basic.RepeatFileAutoAddNumberSuffix,
-                        cancellationToken)
-                    .ConfigureAwait(true);
-                addedCount++;
+                try
+                {
+                    await _admission
+                        .AdmitAsync(
+                            downloadingItem,
+                            settings.Basic.RepeatFileAutoAddNumberSuffix,
+                            cancellationToken)
+                        .ConfigureAwait(true);
+                    addedCount++;
+                }
+                catch (IOException exception)
+                {
+                    _logger.LogWarningMessage("Download task admission failed.", exception);
+                    var alert = new AlertService(_dialogService);
+                    await alert
+                        .ShowError(
+                            DictionaryResource.GetString("DirectoryError"),
+                            cancellationToken)
+                        .ConfigureAwait(true);
+                }
             }
         }
 
