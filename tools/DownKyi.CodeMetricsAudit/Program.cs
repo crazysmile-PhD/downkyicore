@@ -36,6 +36,7 @@ internal static class Program
             return 1;
         }
         catch (Exception exception) when (exception is ArgumentException
+            or FormatException
             or IOException
             or InvalidDataException
             or InvalidOperationException
@@ -51,6 +52,7 @@ internal static class Program
         return exception switch
         {
             ArgumentException => "invalid arguments or missing input",
+            FormatException => "invalid audit input",
             InvalidDataException => "invalid audit input",
             UnauthorizedAccessException => "access denied",
             IOException => "audit I/O failure",

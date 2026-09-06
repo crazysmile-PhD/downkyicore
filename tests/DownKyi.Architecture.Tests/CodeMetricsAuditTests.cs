@@ -353,6 +353,53 @@ public sealed class CodeMetricsAuditTests
             StringComparison.OrdinalIgnoreCase);
     }
 
+    [Theory]
+    [InlineData("schemaVersion", "1e100")]
+    [InlineData("startLine", "1.5")]
+    [InlineData("startColumn", "1e100")]
+    public async Task InvalidNumericJsonFailsWithBoundedOutput(string field, string numericLiteral)
+    {
+        using var directory = new TemporaryDirectory();
+        var repositoryRoot = directory.CreateDirectory("repository");
+        InitializeGitRepository(repositoryRoot);
+        var sarifDirectory = directory.CreateDirectory("sarif");
+        var schemaVersion = field == "schemaVersion" ? numericLiteral : "2";
+        var classifications = TemporaryDirectory.CreateFile(
+            repositoryRoot,
+            "classifications.json",
+            $$"""{"schemaVersion":{{schemaVersion}},"production":[]}""");
+        var sourceFile = TemporaryDirectory.CreateFile(
+            repositoryRoot,
+            "src/Product.cs",
+            "internal sealed class Product;");
+        var line = field == "startLine" ? numericLiteral : "10";
+        var column = field == "startColumn" ? numericLiteral : "4";
+        TemporaryDirectory.CreateFile(
+            sarifDirectory,
+            "Product.sarif",
+            CreateSarifWithNumericLocation(sourceFile, line, column));
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = await Program.RunAsync(
+            [
+                "--repository-root", repositoryRoot,
+                "--sarif-directory", sarifDirectory,
+                "--classification-file", classifications,
+                "--output-directory", Path.Combine(repositoryRoot, "reports")
+            ],
+            output,
+            error);
+
+        Assert.Equal(1, exitCode);
+        Assert.Equal("CA1506 audit failed: invalid audit input.", error.ToString().Trim());
+        Assert.DoesNotContain(repositoryRoot, error.ToString(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            error.ToString(),
+            StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public void MalformedSarifFailsClosed()
     {
@@ -406,6 +453,36 @@ public sealed class CodeMetricsAuditTests
                 new { results }
             }
         });
+    }
+
+    private static string CreateSarifWithNumericLocation(string file, string line, string column)
+    {
+        var uri = JsonSerializer.Serialize(new Uri(file).AbsoluteUri);
+        return $$"""
+            {
+              "runs": [
+                {
+                  "results": [
+                    {
+                      "ruleId": "CA1506",
+                      "message": "Coupling finding",
+                      "locations": [
+                        {
+                          "resultFile": {
+                            "uri": {{uri}},
+                            "region": {
+                              "startLine": {{line}},
+                              "startColumn": {{column}}
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+            """;
     }
 
     private static string ToClassificationIdentity(Ca1506Finding finding)

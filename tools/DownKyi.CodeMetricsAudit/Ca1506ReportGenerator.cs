@@ -64,7 +64,10 @@ internal static class Ca1506ReportGenerator
     {
         using var document = JsonDocument.Parse(File.ReadAllText(path));
         var root = document.RootElement;
-        if (!root.TryGetProperty("schemaVersion", out var schemaVersion) || schemaVersion.GetInt32() != 2)
+        if (!root.TryGetProperty("schemaVersion", out var schemaVersion) ||
+            schemaVersion.ValueKind != JsonValueKind.Number ||
+            !schemaVersion.TryGetInt32(out var schemaVersionValue) ||
+            schemaVersionValue != 2)
         {
             throw new InvalidDataException("Unsupported CA1506 classification schema version.");
         }

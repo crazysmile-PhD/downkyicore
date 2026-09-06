@@ -51,6 +51,14 @@ internal sealed record SarifSourceLocation(string File, int Line, int Column)
             throw new InvalidDataException($"CA1506 result resolved outside the repository: {uriText}");
         }
 
-        return new SarifSourceLocation(relativePath, line.GetInt32(), column.GetInt32());
+        if (line.ValueKind != JsonValueKind.Number ||
+            !line.TryGetInt32(out var lineNumber) ||
+            column.ValueKind != JsonValueKind.Number ||
+            !column.TryGetInt32(out var columnNumber))
+        {
+            throw new InvalidDataException("SARIF source line and column must be Int32 values.");
+        }
+
+        return new SarifSourceLocation(relativePath, lineNumber, columnNumber);
     }
 }
