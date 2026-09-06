@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 
@@ -6,6 +7,9 @@ namespace DownKyi.CodeMetricsAudit;
 
 internal static class Ca1506ReportWriter
 {
+    internal const string JsonReportFileName = "ca1506-report.json";
+    internal const string MarkdownReportFileName = "ca1506-report.md";
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -14,7 +18,7 @@ internal static class Ca1506ReportWriter
 
     public static void Write(string outputDirectory, Ca1506Report report)
     {
-        Write(outputDirectory, report, static (source, destination) => File.Move(source, destination));
+        Write(outputDirectory, report, static (source, destination) => File.Move(source, destination, overwrite: true));
     }
 
     internal static void Write(
@@ -22,13 +26,33 @@ internal static class Ca1506ReportWriter
         Ca1506Report report,
         Action<string, string> publishFile)
     {
+        Write(
+            outputDirectory,
+            report,
+            publishFile,
+            CreateBackupBundle,
+            ValidateBackupBundle,
+            File.Delete);
+    }
+
+    internal static void Write(
+        string outputDirectory,
+        Ca1506Report report,
+        Action<string, string> publishFile,
+        Action<string, string, string> createBackupBundle,
+        Action<string, string, string> validateBackupBundle,
+        Action<string> deleteBackupBundle)
+    {
         ArgumentException.ThrowIfNullOrWhiteSpace(outputDirectory);
         ArgumentNullException.ThrowIfNull(report);
         ArgumentNullException.ThrowIfNull(publishFile);
+        ArgumentNullException.ThrowIfNull(createBackupBundle);
+        ArgumentNullException.ThrowIfNull(validateBackupBundle);
+        ArgumentNullException.ThrowIfNull(deleteBackupBundle);
         Directory.CreateDirectory(outputDirectory);
 
-        var jsonPath = Path.Combine(outputDirectory, "ca1506-report.json");
-        var markdownPath = Path.Combine(outputDirectory, "ca1506-report.md");
+        var jsonPath = Path.Combine(outputDirectory, JsonReportFileName);
+        var markdownPath = Path.Combine(outputDirectory, MarkdownReportFileName);
         if (Directory.Exists(jsonPath) || Directory.Exists(markdownPath))
         {
             throw new IOException("CA1506 audit report destination is not a file.");
@@ -37,10 +61,10 @@ internal static class Ca1506ReportWriter
         var operationId = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
         var stagedJsonPath = Path.Combine(outputDirectory, $".ca1506-report-{operationId}.json.tmp");
         var stagedMarkdownPath = Path.Combine(outputDirectory, $".ca1506-report-{operationId}.md.tmp");
-        var backupJsonPath = Path.Combine(outputDirectory, $".ca1506-report-{operationId}.json.bak");
-        var backupMarkdownPath = Path.Combine(outputDirectory, $".ca1506-report-{operationId}.md.bak");
-        var publishedJson = false;
-        var publishedMarkdown = false;
+        var stagedBackupBundlePath = Path.Combine(
+            outputDirectory,
+            $".ca1506-report-{operationId}.backup.zip.tmp");
+        var backupBundlePath = Path.Combine(outputDirectory, $".ca1506-report-{operationId}.backup.zip");
         try
         {
             File.WriteAllText(
@@ -49,44 +73,71 @@ internal static class Ca1506ReportWriter
                 new UTF8Encoding(false));
             File.WriteAllText(stagedMarkdownPath, BuildMarkdown(report), new UTF8Encoding(false));
 
-            BackupExistingReport(jsonPath, backupJsonPath);
-            try
+            var jsonExists = File.Exists(jsonPath);
+            var markdownExists = File.Exists(markdownPath);
+            if (jsonExists != markdownExists)
             {
-                BackupExistingReport(markdownPath, backupMarkdownPath);
+                throw new IOException("Existing CA1506 audit reports are not a complete pair.");
             }
-            catch
+
+            var hasPreviousReports = jsonExists;
+            if (hasPreviousReports)
             {
-                RestoreReport(backupJsonPath, jsonPath);
-                throw;
+                createBackupBundle(jsonPath, markdownPath, stagedBackupBundlePath);
+                validateBackupBundle(stagedBackupBundlePath, jsonPath, markdownPath);
+                File.Move(stagedBackupBundlePath, backupBundlePath);
             }
 
             try
             {
                 publishFile(stagedJsonPath, jsonPath);
-                publishedJson = true;
                 publishFile(stagedMarkdownPath, markdownPath);
-                publishedMarkdown = true;
             }
-            catch (Exception exception)
+            catch (Exception publicationFailure)
             {
-                RollBackPublication(
-                    jsonPath,
-                    markdownPath,
-                    backupJsonPath,
-                    backupMarkdownPath,
-                    publishedJson,
-                    publishedMarkdown,
-                    exception);
+                try
+                {
+                    RollBackPublication(
+                        jsonPath,
+                        markdownPath,
+                        backupBundlePath,
+                        operationId,
+                        hasPreviousReports);
+                }
+                catch (Exception rollbackFailure)
+                {
+                    throw new IOException(
+                        "CA1506 audit report publication and rollback failed.",
+                        new AggregateException(publicationFailure, rollbackFailure));
+                }
+
+                if (hasPreviousReports)
+                {
+                    try
+                    {
+                        DeleteBackupBundle(backupBundlePath, deleteBackupBundle);
+                    }
+                    catch (Exception cleanupFailure)
+                    {
+                        throw new IOException(
+                            "CA1506 audit report publication failed and backup cleanup failed.",
+                            new AggregateException(publicationFailure, cleanupFailure));
+                    }
+                }
+
                 throw;
             }
 
-            File.Delete(backupJsonPath);
-            File.Delete(backupMarkdownPath);
+            if (hasPreviousReports)
+            {
+                DeleteBackupBundle(backupBundlePath, deleteBackupBundle);
+            }
         }
         finally
         {
             File.Delete(stagedJsonPath);
             File.Delete(stagedMarkdownPath);
+            File.Delete(stagedBackupBundlePath);
         }
 
         if (!File.Exists(jsonPath) || !File.Exists(markdownPath))
@@ -95,51 +146,110 @@ internal static class Ca1506ReportWriter
         }
     }
 
-    private static void BackupExistingReport(string reportPath, string backupPath)
+    internal static void CreateBackupBundle(string jsonPath, string markdownPath, string bundlePath)
     {
-        if (File.Exists(reportPath))
-        {
-            File.Move(reportPath, backupPath);
-        }
+        using var archive = ZipFile.Open(bundlePath, ZipArchiveMode.Create);
+        archive.CreateEntryFromFile(jsonPath, JsonReportFileName, CompressionLevel.NoCompression);
+        archive.CreateEntryFromFile(markdownPath, MarkdownReportFileName, CompressionLevel.NoCompression);
     }
 
-    private static void RestoreReport(string backupPath, string reportPath)
+    internal static void ValidateBackupBundle(string bundlePath, string jsonPath, string markdownPath)
     {
-        if (File.Exists(backupPath))
+        using var archive = ZipFile.OpenRead(bundlePath);
+        if (archive.Entries.Count != 2)
         {
-            File.Move(backupPath, reportPath, overwrite: true);
+            throw new InvalidDataException("CA1506 audit backup bundle does not contain exactly two reports.");
         }
+
+        ValidateBackupEntry(archive, JsonReportFileName, jsonPath);
+        ValidateBackupEntry(archive, MarkdownReportFileName, markdownPath);
     }
 
     private static void RollBackPublication(
         string jsonPath,
         string markdownPath,
-        string backupJsonPath,
-        string backupMarkdownPath,
-        bool publishedJson,
-        bool publishedMarkdown,
-        Exception publicationFailure)
+        string backupBundlePath,
+        string operationId,
+        bool hasPreviousReports)
+    {
+        if (!hasPreviousReports)
+        {
+            File.Delete(jsonPath);
+            File.Delete(markdownPath);
+            return;
+        }
+
+        RestorePublishedReports(
+            backupBundlePath,
+            jsonPath,
+            markdownPath,
+            operationId);
+    }
+
+    private static void RestorePublishedReports(
+        string bundlePath,
+        string jsonPath,
+        string markdownPath,
+        string operationId)
+    {
+        var outputDirectory = Path.GetDirectoryName(jsonPath)
+            ?? throw new InvalidOperationException("CA1506 audit report has no output directory.");
+        var restoreJsonPath = Path.Combine(outputDirectory, $".ca1506-report-{operationId}.json.restore.tmp");
+        var restoreMarkdownPath = Path.Combine(outputDirectory, $".ca1506-report-{operationId}.md.restore.tmp");
+        try
+        {
+            using (var archive = ZipFile.OpenRead(bundlePath))
+            {
+                ExtractBackupEntry(archive, JsonReportFileName, restoreJsonPath);
+                ExtractBackupEntry(archive, MarkdownReportFileName, restoreMarkdownPath);
+            }
+
+            File.Move(restoreJsonPath, jsonPath, overwrite: true);
+            File.Move(restoreMarkdownPath, markdownPath, overwrite: true);
+        }
+        finally
+        {
+            File.Delete(restoreJsonPath);
+            File.Delete(restoreMarkdownPath);
+        }
+    }
+
+    private static void ValidateBackupEntry(ZipArchive archive, string entryName, string reportPath)
+    {
+        var entry = archive.GetEntry(entryName)
+            ?? throw new InvalidDataException($"CA1506 audit backup bundle is missing {entryName}.");
+        using var entryStream = entry.Open();
+        using var content = new MemoryStream();
+        entryStream.CopyTo(content);
+        if (!File.ReadAllBytes(reportPath).AsSpan().SequenceEqual(content.ToArray()))
+        {
+            throw new InvalidDataException($"CA1506 audit backup bundle has incomplete {entryName} content.");
+        }
+    }
+
+    private static void ExtractBackupEntry(ZipArchive archive, string entryName, string destinationPath)
+    {
+        var entry = archive.GetEntry(entryName)
+            ?? throw new InvalidDataException($"CA1506 audit backup bundle is missing {entryName}.");
+        using var entryStream = entry.Open();
+        using var destination = File.Create(destinationPath);
+        entryStream.CopyTo(destination);
+    }
+
+    private static void DeleteBackupBundle(string bundlePath, Action<string> deleteBackupBundle)
     {
         try
         {
-            if (publishedJson)
-            {
-                File.Delete(jsonPath);
-            }
-
-            if (publishedMarkdown)
-            {
-                File.Delete(markdownPath);
-            }
-
-            RestoreReport(backupJsonPath, jsonPath);
-            RestoreReport(backupMarkdownPath, markdownPath);
+            deleteBackupBundle(bundlePath);
         }
-        catch (Exception rollbackFailure)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
-            throw new IOException(
-                "CA1506 audit report publication and rollback failed.",
-                new AggregateException(publicationFailure, rollbackFailure));
+            throw new IOException("CA1506 audit backup bundle cleanup failed.", exception);
+        }
+
+        if (File.Exists(bundlePath))
+        {
+            throw new IOException("CA1506 audit backup bundle cleanup did not remove the bundle.");
         }
     }
 

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO.Compression;
 using System.Text.Json;
 using DownKyi.CodeMetricsAudit;
 
@@ -113,14 +114,157 @@ public sealed class CodeMetricsAuditTests
             {
                 if (destination.EndsWith(".md", StringComparison.Ordinal))
                 {
+                    File.Move(source, destination, overwrite: true);
                     throw new IOException("Injected Markdown publication failure.");
                 }
 
-                File.Move(source, destination);
+                File.Move(source, destination, overwrite: true);
             }));
 
         Assert.Equal("previous-json", File.ReadAllText(jsonPath));
         Assert.Equal("previous-markdown", File.ReadAllText(markdownPath));
+        Assert.DoesNotContain(
+            Directory.EnumerateFiles(output),
+            path => Path.GetFileName(path).StartsWith(".ca1506-report-", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void WriterLeavesOneCompleteBundleWhenBackupCleanupFails()
+    {
+        using var directory = new TemporaryDirectory();
+        var output = directory.CreateDirectory("output");
+        var jsonPath = TemporaryDirectory.CreateFile(output, Ca1506ReportWriter.JsonReportFileName, "previous-json");
+        var markdownPath = TemporaryDirectory.CreateFile(
+            output,
+            Ca1506ReportWriter.MarkdownReportFileName,
+            "previous-markdown");
+
+        var exception = Assert.Throws<IOException>(() => Ca1506ReportWriter.Write(
+            output,
+            CreateReport(),
+            static (source, destination) => File.Move(source, destination, overwrite: true),
+            Ca1506ReportWriter.CreateBackupBundle,
+            Ca1506ReportWriter.ValidateBackupBundle,
+            path => throw new IOException($"Injected cleanup failure for {path}.")));
+
+        Assert.Equal("CA1506 audit backup bundle cleanup failed.", exception.Message);
+        Assert.DoesNotContain(output, exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            exception.Message,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.NotEqual("previous-json", File.ReadAllText(jsonPath));
+        Assert.NotEqual("previous-markdown", File.ReadAllText(markdownPath));
+        var bundlePath = Assert.Single(Directory.EnumerateFiles(output, "*.backup.zip"));
+        using var archive = ZipFile.OpenRead(bundlePath);
+        Assert.Equal(
+            [Ca1506ReportWriter.JsonReportFileName, Ca1506ReportWriter.MarkdownReportFileName],
+            archive.Entries.Select(entry => entry.FullName).Order(StringComparer.Ordinal));
+        Assert.Equal("previous-json", ReadBackupEntry(archive, Ca1506ReportWriter.JsonReportFileName));
+        Assert.Equal("previous-markdown", ReadBackupEntry(archive, Ca1506ReportWriter.MarkdownReportFileName));
+        Assert.DoesNotContain(Directory.EnumerateFiles(output), path => path.EndsWith(".bak", StringComparison.Ordinal));
+        Assert.DoesNotContain(Directory.EnumerateFiles(output), path => path.EndsWith(".tmp", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void WriterDeletesBackupBundleAfterSuccessfulPublication()
+    {
+        using var directory = new TemporaryDirectory();
+        var output = directory.CreateDirectory("output");
+        TemporaryDirectory.CreateFile(output, Ca1506ReportWriter.JsonReportFileName, "previous-json");
+        TemporaryDirectory.CreateFile(output, Ca1506ReportWriter.MarkdownReportFileName, "previous-markdown");
+
+        Ca1506ReportWriter.Write(output, CreateReport());
+
+        Assert.DoesNotContain(
+            Directory.EnumerateFiles(output),
+            path => Path.GetFileName(path).StartsWith(".ca1506-report-", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void WriterLeavesPreviousPairUntouchedWhenBackupPreparationFails(bool failValidation)
+    {
+        using var directory = new TemporaryDirectory();
+        var output = directory.CreateDirectory("output");
+        var jsonPath = TemporaryDirectory.CreateFile(output, Ca1506ReportWriter.JsonReportFileName, "previous-json");
+        var markdownPath = TemporaryDirectory.CreateFile(
+            output,
+            Ca1506ReportWriter.MarkdownReportFileName,
+            "previous-markdown");
+        var publicationAttempted = false;
+        Action<string, string, string> createBackupBundle;
+        if (failValidation)
+        {
+            createBackupBundle = static (sourceJsonPath, _, bundlePath) =>
+            {
+                using var archive = ZipFile.Open(bundlePath, ZipArchiveMode.Create);
+                archive.CreateEntryFromFile(
+                    sourceJsonPath,
+                    Ca1506ReportWriter.JsonReportFileName,
+                    CompressionLevel.NoCompression);
+            };
+        }
+        else
+        {
+            createBackupBundle = static (_, _, bundlePath) =>
+            {
+                File.WriteAllText(bundlePath, "partial bundle");
+                throw new IOException("Injected backup creation failure.");
+            };
+        }
+
+        var exception = Record.Exception(() => Ca1506ReportWriter.Write(
+            output,
+            CreateReport(),
+            (source, destination) =>
+            {
+                publicationAttempted = true;
+                File.Move(source, destination, overwrite: true);
+            },
+            createBackupBundle,
+            Ca1506ReportWriter.ValidateBackupBundle,
+            File.Delete));
+
+        Assert.IsType(failValidation ? typeof(InvalidDataException) : typeof(IOException), exception);
+        Assert.False(publicationAttempted);
+        Assert.Equal("previous-json", File.ReadAllText(jsonPath));
+        Assert.Equal("previous-markdown", File.ReadAllText(markdownPath));
+        Assert.DoesNotContain(
+            Directory.EnumerateFiles(output),
+            path => Path.GetFileName(path).StartsWith(".ca1506-report-", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void WriterRejectsOneSidedExistingReportBeforePublication(bool existingJson)
+    {
+        using var directory = new TemporaryDirectory();
+        var output = directory.CreateDirectory("output");
+        var existingPath = TemporaryDirectory.CreateFile(
+            output,
+            existingJson ? Ca1506ReportWriter.JsonReportFileName : Ca1506ReportWriter.MarkdownReportFileName,
+            "previous-report");
+        var missingPath = Path.Combine(
+            output,
+            existingJson ? Ca1506ReportWriter.MarkdownReportFileName : Ca1506ReportWriter.JsonReportFileName);
+        var publicationAttempted = false;
+
+        var exception = Assert.Throws<IOException>(() => Ca1506ReportWriter.Write(
+            output,
+            CreateReport(),
+            (source, destination) =>
+            {
+                publicationAttempted = true;
+                File.Move(source, destination, overwrite: true);
+            }));
+
+        Assert.Equal("Existing CA1506 audit reports are not a complete pair.", exception.Message);
+        Assert.False(publicationAttempted);
+        Assert.Equal("previous-report", File.ReadAllText(existingPath));
+        Assert.False(File.Exists(missingPath));
         Assert.DoesNotContain(
             Directory.EnumerateFiles(output),
             path => Path.GetFileName(path).StartsWith(".ca1506-report-", StringComparison.Ordinal));
@@ -488,6 +632,14 @@ public sealed class CodeMetricsAuditTests
     private static string ToClassificationIdentity(Ca1506Finding finding)
     {
         return $"{finding.File}|{finding.Line}|{finding.Column}|{finding.Classification}|{finding.Rationale}";
+    }
+
+    private static string ReadBackupEntry(ZipArchive archive, string entryName)
+    {
+        var entry = archive.GetEntry(entryName);
+        Assert.NotNull(entry);
+        using var reader = new StreamReader(entry.Open());
+        return reader.ReadToEnd();
     }
 
     private static Ca1506Report CreateReport()
