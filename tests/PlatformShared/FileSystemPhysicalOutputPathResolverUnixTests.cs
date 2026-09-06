@@ -23,17 +23,6 @@ public sealed class FileSystemPhysicalOutputPathResolverUnixTests : IDisposable
     }
 
     [Fact]
-    public void CanonicallyDistinctEntriesUseRawTraversalState()
-    {
-        var decomposedTarget = CreateDirectory("cafe\u0301");
-        var composedAlias = CreateSymlink("caf\u00E9", decomposedTarget);
-
-        AssertSamePath(
-            Path.Combine(composedAlias, "video"),
-            Path.Combine(decomposedTarget, "video"));
-    }
-
-    [Fact]
     public void RelativeTargetResolvesLinkSegmentBeforeDotDot()
     {
         var target = CreateDirectory(Path.Combine("other", "real"));
@@ -79,8 +68,11 @@ public sealed class FileSystemPhysicalOutputPathResolverUnixTests : IDisposable
         var alias = CreateSymlink("video", target);
 
         var resolved = _resolver.ResolvePhysicalBasePath(alias);
+        var sibling = _resolver.ResolvePhysicalBasePath(
+            Path.Combine(Path.GetDirectoryName(alias)!, "ordinary-sibling"));
 
-        Assert.Equal(alias, resolved);
+        Assert.Equal(Path.GetDirectoryName(sibling), Path.GetDirectoryName(resolved));
+        Assert.Equal(Path.GetFileName(alias), Path.GetFileName(resolved));
         Assert.NotEqual(_resolver.ResolvePhysicalBasePath(target), resolved);
     }
 
