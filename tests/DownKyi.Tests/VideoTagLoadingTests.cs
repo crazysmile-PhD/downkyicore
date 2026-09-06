@@ -4,6 +4,7 @@ using DownKyi.Application.Desktop;
 using DownKyi.Application.Downloads;
 using DownKyi.Domain.Downloads;
 using DownKyi.Domain.Results;
+using DownKyi.Infrastructure.Downloads;
 using DownKyi.Infrastructure.Time;
 using DownKyi.Presentation;
 using DownKyi.Services;
@@ -279,7 +280,8 @@ public sealed class VideoTagLoadingTests : IDisposable
                 ListState,
                 _taskService,
                 _projectionStore,
-                Queue);
+                Queue,
+                new FileSystemPhysicalOutputPathResolver());
             var duplicatePolicy = new DownloadDuplicatePolicy(
                 ListState,
                 _projectionStore,

@@ -28,7 +28,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         using var projections = new DownloadTaskProjectionStore(tasks, clock);
         var listState = new DownloadListState();
         var queue = new RecordingDownloadTaskQueue();
-        using var admission = new DownloadTaskAdmissionService(listState, tasks, projections, queue);
+        using var admission = CreateAdmission(listState, tasks, projections, queue);
         var basePath = Path.Combine(_directory, "same-output");
         var first = CreateItem("first", basePath);
         var second = CreateItem("second", basePath);
@@ -56,7 +56,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         var clock = new SystemClock();
         using var tasks = new DownloadTaskApplicationService(store, clock);
         using var projections = new DownloadTaskProjectionStore(tasks, clock);
-        using var admission = new DownloadTaskAdmissionService(
+        using var admission = CreateAdmission(
             new DownloadListState(),
             tasks,
             projections,
@@ -89,7 +89,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         var clock = new SystemClock();
         using var tasks = new DownloadTaskApplicationService(store, clock);
         using var projections = new DownloadTaskProjectionStore(tasks, clock);
-        using var admission = new DownloadTaskAdmissionService(
+        using var admission = CreateAdmission(
             new DownloadListState(),
             tasks,
             projections,
@@ -123,7 +123,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         var clock = new SystemClock();
         using var tasks = new DownloadTaskApplicationService(store, clock);
         using var projections = new DownloadTaskProjectionStore(tasks, clock);
-        using var admission = new DownloadTaskAdmissionService(
+        using var admission = CreateAdmission(
             new DownloadListState(),
             tasks,
             projections,
@@ -148,7 +148,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         var clock = new SystemClock();
         using var tasks = new DownloadTaskApplicationService(store, clock);
         using var projections = new DownloadTaskProjectionStore(tasks, clock);
-        using var admission = new DownloadTaskAdmissionService(
+        using var admission = CreateAdmission(
             new DownloadListState(),
             tasks,
             projections,
@@ -167,6 +167,149 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
 
         Assert.Equal(basePath, item.DownloadBase.FilePath);
         Assert.Empty(await tasks.GetUnfinishedAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task CollisionResolutionPreservesRawCandidateSpelling()
+    {
+        var basePath = Path.Combine(_directory, "cafe\u0301-output");
+
+        var resolved = await DownloadOutputPathResolver.ResolveAdmissionCollisionAsync(
+            basePath,
+            autoAddNumberSuffix: true,
+            static (_, _) => Task.FromResult(false),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(Path.GetFullPath(basePath), resolved, ignoreCase: false);
+    }
+
+    [Fact]
+    public async Task AdmissionFreezesPhysicalPathBeforeReservationPersistenceProjectionAndQueue()
+    {
+        Directory.CreateDirectory(_directory);
+        using var innerStore = CreateStore();
+        var store = new CountingDownloadTaskStore(innerStore);
+        var clock = new SystemClock();
+        using var tasks = new DownloadTaskApplicationService(store, clock);
+        using var projections = new DownloadTaskProjectionStore(tasks, clock);
+        var listState = new DownloadListState();
+        var queue = new AdmissionObservingQueue(listState, projections);
+        var logicalBasePath = Path.Combine(_directory, "logical-alias", "cafe\u0301-output");
+        var frozenBasePath = Path.Combine(_directory, "physical-target", "cafe\u0301-output");
+        var resolver = new RecordingPhysicalOutputPathResolver(_ => frozenBasePath);
+        using var admission = CreateAdmission(listState, tasks, projections, queue, resolver);
+        var item = CreateItem("frozen", logicalBasePath);
+
+        await admission.AdmitAsync(item, true, TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
+
+        var persisted = Assert.Single(await tasks.GetUnfinishedAsync(
+            TestContext.Current.CancellationToken));
+        var taskId = new DownloadTaskId(item.DownloadBase.Id);
+        Assert.Equal([logicalBasePath], resolver.Inputs);
+        Assert.Equal([frozenBasePath], store.ReservationPaths);
+        Assert.Equal(frozenBasePath, item.DownloadBase.FilePath, ignoreCase: false);
+        Assert.Equal(frozenBasePath, persisted.Output.BasePath, ignoreCase: false);
+        Assert.Equal(
+            frozenBasePath,
+            projections.GetRequiredSnapshot(taskId).Output.BasePath,
+            ignoreCase: false);
+        Assert.Same(item, Assert.Single(listState.Downloading));
+        Assert.Equal(taskId, Assert.Single(queue.Enqueued));
+        Assert.Equal([frozenBasePath], queue.ObservedPaths);
+        Assert.DoesNotContain(
+            logicalBasePath,
+            new[] { item.DownloadBase.FilePath, persisted.Output.BasePath },
+            StringComparer.Ordinal);
+    }
+
+    [Fact]
+    public async Task ResolverFailureHasNoPersistenceListOrQueueSideEffects()
+    {
+        Directory.CreateDirectory(_directory);
+        using var store = CreateStore();
+        var clock = new SystemClock();
+        using var tasks = new DownloadTaskApplicationService(store, clock);
+        using var projections = new DownloadTaskProjectionStore(tasks, clock);
+        var listState = new DownloadListState();
+        var queue = new RecordingDownloadTaskQueue();
+        var logicalBasePath = Path.Combine(_directory, "broken-alias", "output");
+        var resolver = new RecordingPhysicalOutputPathResolver(
+            _ => throw new IOException("Alias resolution failed."));
+        using var admission = CreateAdmission(listState, tasks, projections, queue, resolver);
+        var item = CreateItem("unresolved", logicalBasePath);
+
+        await Assert.ThrowsAsync<IOException>(() => admission.AdmitAsync(
+            item,
+            true,
+            TestContext.Current.CancellationToken));
+
+        Assert.Equal([logicalBasePath], resolver.Inputs);
+        Assert.Equal(logicalBasePath, item.DownloadBase.FilePath, ignoreCase: false);
+        Assert.Empty(await tasks.GetUnfinishedAsync(TestContext.Current.CancellationToken));
+        Assert.Empty(listState.Downloading);
+        Assert.Empty(queue.Enqueued);
+    }
+
+    [Fact]
+    public async Task PersistenceFailureDoesNotPublishToListOrQueue()
+    {
+        Directory.CreateDirectory(_directory);
+        using var innerStore = CreateStore();
+        var store = new CountingDownloadTaskStore(innerStore) { RejectAdds = true };
+        var clock = new SystemClock();
+        using var tasks = new DownloadTaskApplicationService(store, clock);
+        using var projections = new DownloadTaskProjectionStore(tasks, clock);
+        var listState = new DownloadListState();
+        var queue = new RecordingDownloadTaskQueue();
+        using var admission = CreateAdmission(listState, tasks, projections, queue);
+        var item = CreateItem("rejected", Path.Combine(_directory, "rejected-output"));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => admission.AdmitAsync(
+            item,
+            true,
+            TestContext.Current.CancellationToken));
+
+        Assert.Empty(await innerStore.GetUnfinishedAsync(TestContext.Current.CancellationToken));
+        Assert.Empty(listState.Downloading);
+        Assert.Empty(queue.Enqueued);
+    }
+
+    [Fact]
+    public async Task AliasesSharePhysicalCollisionSequenceAndRemainFrozenAfterRetarget()
+    {
+        Directory.CreateDirectory(_directory);
+        using var store = CreateStore();
+        var clock = new SystemClock();
+        using var tasks = new DownloadTaskApplicationService(store, clock);
+        using var projections = new DownloadTaskProjectionStore(tasks, clock);
+        var frozenBasePath = Path.Combine(_directory, "physical-target", "output");
+        var currentTarget = frozenBasePath;
+        var resolver = new RecordingPhysicalOutputPathResolver(_ => currentTarget);
+        using var admission = CreateAdmission(
+            new DownloadListState(),
+            tasks,
+            projections,
+            new RecordingDownloadTaskQueue(),
+            resolver);
+        var first = CreateItem("first-alias", Path.Combine(_directory, "alias-a", "output"));
+        var second = CreateItem("second-alias", Path.Combine(_directory, "alias-b", "output"));
+
+        await admission.AdmitAsync(first, true, TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
+        currentTarget = Path.Combine(_directory, "retargeted", "output");
+        Assert.Equal(frozenBasePath, first.DownloadBase.FilePath, ignoreCase: false);
+        Assert.Equal(
+            frozenBasePath,
+            projections.GetRequiredSnapshot(new DownloadTaskId(first.DownloadBase.Id)).Output.BasePath,
+            ignoreCase: false);
+        currentTarget = frozenBasePath;
+        await admission.AdmitAsync(second, true, TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
+
+        Assert.Equal(frozenBasePath, first.DownloadBase.FilePath, ignoreCase: false);
+        Assert.Equal($"{frozenBasePath}(1)", second.DownloadBase.FilePath, ignoreCase: false);
+        Assert.Equal(2, resolver.Inputs.Count);
     }
 
     [Fact]
@@ -202,7 +345,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         var clock = new SystemClock();
         using var tasks = new DownloadTaskApplicationService(store, clock);
         using var projections = new DownloadTaskProjectionStore(tasks, clock);
-        using var admission = new DownloadTaskAdmissionService(
+        using var admission = CreateAdmission(
             new DownloadListState(),
             tasks,
             projections,
@@ -224,6 +367,21 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         return new SqliteDownloadTaskStore(
             new SqliteDownloadTaskStoreOptions(Path.Combine(_directory, "download.db")),
             new SystemClock());
+    }
+
+    private static DownloadTaskAdmissionService CreateAdmission(
+        DownloadListState listState,
+        IDownloadTaskApplicationService tasks,
+        DownloadTaskProjectionStore projections,
+        IDownloadTaskQueue queue,
+        IPhysicalOutputPathResolver? resolver = null)
+    {
+        return new DownloadTaskAdmissionService(
+            listState,
+            tasks,
+            projections,
+            queue,
+            resolver ?? new FileSystemPhysicalOutputPathResolver());
     }
 
     private static DownloadingItem CreateItem(string id, string basePath)
@@ -249,16 +407,24 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
 
     private sealed class CountingDownloadTaskStore(IDownloadTaskStore inner) : IDownloadTaskStore
     {
+        public bool RejectAdds { get; init; }
+
         public int GetUnfinishedCallCount { get; private set; }
 
         public int ReservationProbeCount { get; private set; }
+
+        public List<string> ReservationPaths { get; } = [];
 
         public Task InitializeAsync(CancellationToken cancellationToken) =>
             inner.InitializeAsync(cancellationToken);
 
         public Task<OperationResult> AddAsync(
             DownloadTask task,
-            CancellationToken cancellationToken) => inner.AddAsync(task, cancellationToken);
+            CancellationToken cancellationToken) => RejectAdds
+                ? Task.FromResult(OperationResult.Failure(new OperationError(
+                    "test.persistence_rejected",
+                    "Persistence rejected the task.")))
+                : inner.AddAsync(task, cancellationToken);
 
         public Task<OperationResult> UpdateAsync(
             DownloadTask task,
@@ -288,6 +454,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
             CancellationToken cancellationToken)
         {
             ReservationProbeCount++;
+            ReservationPaths.Add(basePath);
             return inner.IsOutputPathReservedAsync(basePath, ignoreCase, cancellationToken);
         }
 
@@ -306,6 +473,46 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
 
         public Task<IReadOnlyList<QuarantinedDownloadRecord>> GetQuarantinedRecordsAsync(
             CancellationToken cancellationToken) => inner.GetQuarantinedRecordsAsync(cancellationToken);
+    }
+
+    private sealed class RecordingPhysicalOutputPathResolver(Func<string, string> resolve)
+        : IPhysicalOutputPathResolver
+    {
+        public List<string> Inputs { get; } = [];
+
+        public string ResolvePhysicalBasePath(string logicalBasePath)
+        {
+            Inputs.Add(logicalBasePath);
+            return resolve(logicalBasePath);
+        }
+    }
+
+    private sealed class AdmissionObservingQueue(
+        DownloadListState listState,
+        DownloadTaskProjectionStore projections) : IDownloadTaskQueue
+    {
+        public List<DownloadTaskId> Enqueued { get; } = [];
+
+        public List<string> ObservedPaths { get; } = [];
+
+        public Task EnqueueAsync(
+            DownloadTaskId taskId,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var listItem = Assert.Single(
+                listState.Downloading,
+                item => item.DownloadBase.Id == taskId.Value);
+            Assert.Equal(
+                listItem.DownloadBase.FilePath,
+                projections.GetRequiredSnapshot(taskId).Output.BasePath,
+                ignoreCase: false);
+            Enqueued.Add(taskId);
+            ObservedPaths.Add(listItem.DownloadBase.FilePath);
+            return Task.CompletedTask;
+        }
+
+        public Task<bool> CancelAsync(DownloadTaskId taskId) => Task.FromResult(true);
     }
 
     public void Dispose()

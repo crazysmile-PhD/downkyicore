@@ -1,5 +1,7 @@
 using DownKyi.Core.BiliApi.VideoStream.Models;
+using DownKyi.Models;
 using DownKyi.Services.Download;
+using DownKyi.ViewModels.DownloadManager;
 
 namespace DownKyi.Tests;
 
@@ -62,5 +64,20 @@ public sealed class DurlDownloadIdentityTests
         Assert.Equal(
             Path.Combine("downloads", "nested"),
             ResolvePlaybackStage.GetDownloadDirectoryPath(filePath));
+    }
+
+    [Fact]
+    public void PlaybackPathResolutionDoesNotRewriteFrozenBasePath()
+    {
+        var frozenBasePath = Path.Combine("downloads", "cafe\u0301", "video");
+        var downloading = new DownloadingItem
+        {
+            DownloadBase = new DownloadBase { FilePath = frozenBasePath }
+        };
+
+        var directory = ResolvePlaybackStage.GetDownloadDirectoryPath(downloading);
+
+        Assert.Equal(Path.GetDirectoryName(frozenBasePath), directory);
+        Assert.Equal(frozenBasePath, downloading.DownloadBase.FilePath, ignoreCase: false);
     }
 }
