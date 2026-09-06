@@ -5,7 +5,6 @@ using System.Threading.Tasks;
 using DownKyi.Application.Desktop;
 using DownKyi.Application.Diagnostics;
 using DownKyi.Domain.Results;
-using DownKyi.ViewModels.DownloadManager;
 using Microsoft.Extensions.Logging;
 
 namespace DownKyi.Services.Download;
@@ -43,7 +42,7 @@ internal sealed class ResolvePlaybackStage : IDownloadPipelineStage
         string path;
         try
         {
-            path = GetDownloadDirectoryPath(downloading);
+            path = GetDownloadDirectoryPath(downloading.DownloadBase.FilePath);
             Directory.CreateDirectory(path);
         }
         catch (Exception exception) when (exception is IOException
@@ -91,9 +90,4 @@ internal sealed class ResolvePlaybackStage : IDownloadPipelineStage
                    nameof(filePath));
     }
 
-    internal static string GetDownloadDirectoryPath(DownloadingItem downloading)
-    {
-        ArgumentNullException.ThrowIfNull(downloading);
-        return GetDownloadDirectoryPath(downloading.DownloadBase.FilePath);
-    }
 }

@@ -1,7 +1,12 @@
+using DownKyi.Application.Downloads;
 using DownKyi.Core.BiliApi.VideoStream.Models;
+using DownKyi.Domain.Downloads;
+using DownKyi.Infrastructure.Downloads;
+using DownKyi.Infrastructure.Time;
 using DownKyi.Models;
 using DownKyi.Services.Download;
 using DownKyi.ViewModels.DownloadManager;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DownKyi.Tests;
 
@@ -67,17 +72,65 @@ public sealed class DurlDownloadIdentityTests
     }
 
     [Fact]
-    public void PlaybackPathResolutionDoesNotRewriteFrozenBasePath()
+    public async Task PlaybackStageDoesNotRewriteFrozenBasePathWhenDirectoryPreparationFails()
     {
-        var frozenBasePath = Path.Combine("downloads", "cafe\u0301", "video");
-        var downloading = new DownloadingItem
+        var directory = Path.Combine(
+            Path.GetTempPath(),
+            "downkyi-playback-path-tests",
+            Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
         {
-            DownloadBase = new DownloadBase { FilePath = frozenBasePath }
-        };
+            var blockedDirectory = Path.Combine(directory, "blocked");
+            await File.WriteAllTextAsync(
+                blockedDirectory,
+                "not a directory",
+                TestContext.Current.CancellationToken);
+            var frozenBasePath = Path.Combine(blockedDirectory, "frozen\\alias");
+            var downloadBase = new DownloadBase
+            {
+                Id = "frozen-playback-path",
+                FilePath = frozenBasePath
+            };
+            var downloading = new DownloadingItem
+            {
+                DownloadBase = downloadBase,
+                Downloading = new Downloading
+                {
+                    Id = downloadBase.Id,
+                    DownloadBase = downloadBase
+                },
+                PlayUrl = new PlayUrl()
+            };
+            using var store = new SqliteDownloadTaskStore(
+                new SqliteDownloadTaskStoreOptions(Path.Combine(directory, "download.db")),
+                new SystemClock());
+            using var tasks = new DownloadTaskApplicationService(store, new SystemClock());
+            using var settings = new TestSettingsStore();
+            var stage = new ResolvePlaybackStage(
+                new TestDesktopInteractionContext().Notifications,
+                new DownloadActivityPresenter(new DownloadTaskStateWriter(tasks)),
+                new DownloadPlaybackResolver(
+                    new TestWbiKeyProvider(),
+                    TimeProvider.System,
+                    new TestBilibiliApiClient()),
+                NullLogger<ResolvePlaybackStage>.Instance);
+            var context = new DownloadExecutionContext(
+                new DownloadTaskId(downloadBase.Id),
+                downloading,
+                settings.Store.Current,
+                static (_, token) => token.ThrowIfCancellationRequested());
 
-        var directory = ResolvePlaybackStage.GetDownloadDirectoryPath(downloading);
+            var result = await stage.ExecuteAsync(
+                context,
+                TestContext.Current.CancellationToken);
 
-        Assert.Equal(Path.GetDirectoryName(frozenBasePath), directory);
-        Assert.Equal(frozenBasePath, downloading.DownloadBase.FilePath, ignoreCase: false);
+            Assert.False(result.IsSuccess);
+            Assert.Equal(frozenBasePath, downloading.DownloadBase.FilePath, ignoreCase: false);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
     }
 }
