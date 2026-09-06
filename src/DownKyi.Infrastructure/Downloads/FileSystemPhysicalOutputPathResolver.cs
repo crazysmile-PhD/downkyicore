@@ -2,28 +2,27 @@ using DownKyi.Application.Downloads;
 
 namespace DownKyi.Infrastructure.Downloads;
 
-public sealed class FileSystemOutputIdentityProvider : IOutputIdentityProvider
+public sealed class FileSystemPhysicalOutputPathResolver : IPhysicalOutputPathResolver
 {
     private const int MaximumLinkDepth = 40;
     private const string ResolutionFailureMessage =
-        "Unable to resolve output filesystem identity.";
+        "Unable to resolve physical output path.";
 
-    public string CreateReservationKey(string basePath, bool ignoreCase)
+    public string ResolvePhysicalBasePath(string logicalBasePath)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(basePath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(logicalBasePath);
 
         try
         {
-            var fullStemPath = Path.TrimEndingDirectorySeparator(Path.GetFullPath(basePath));
+            var fullStemPath = Path.TrimEndingDirectorySeparator(
+                MakeFullyQualifiedPath(logicalBasePath));
             var directoryPath = Path.GetDirectoryName(fullStemPath);
             var stem = Path.GetFileName(fullStemPath);
-            var physicalStemPath = string.IsNullOrEmpty(directoryPath) || string.IsNullOrEmpty(stem)
+            return string.IsNullOrEmpty(directoryPath) || string.IsNullOrEmpty(stem)
                 ? fullStemPath
                 : Path.Combine(
                     ResolveDirectoryAncestors(directoryPath, new ResolutionState()),
                     stem);
-            var normalized = DownloadOutputPathKey.NormalizeLogicalPath(physicalStemPath);
-            return ignoreCase ? normalized.ToUpperInvariant() : normalized;
         }
         catch (Exception exception) when (IsTopologyException(exception))
         {
@@ -35,7 +34,7 @@ public sealed class FileSystemOutputIdentityProvider : IOutputIdentityProvider
         string directoryPath,
         ResolutionState state)
     {
-        var fullPath = Path.GetFullPath(directoryPath);
+        var fullPath = MakeFullyQualifiedPath(directoryPath);
         state.EnterDirectoryPath(fullPath);
         var root = Path.GetPathRoot(fullPath);
         if (string.IsNullOrEmpty(root))
@@ -44,8 +43,8 @@ public sealed class FileSystemOutputIdentityProvider : IOutputIdentityProvider
         }
 
         EnsureDirectoryRoot(root);
-        var relativePath = Path.GetRelativePath(root, fullPath);
-        if (relativePath == ".")
+        var relativePath = fullPath[root.Length..];
+        if (relativePath.Length == 0)
         {
             return root;
         }
@@ -56,6 +55,17 @@ public sealed class FileSystemOutputIdentityProvider : IOutputIdentityProvider
         var current = root;
         for (var index = 0; index < segments.Length; index++)
         {
+            if (segments[index] == ".")
+            {
+                continue;
+            }
+
+            if (segments[index] == "..")
+            {
+                current = MoveToParent(current, root);
+                continue;
+            }
+
             var candidate = Path.Combine(current, segments[index]);
             var linkTarget = new DirectoryInfo(candidate).LinkTarget;
             if (linkTarget != null)
@@ -74,7 +84,7 @@ public sealed class FileSystemOutputIdentityProvider : IOutputIdentityProvider
             {
                 for (var remaining = index; remaining < segments.Length; remaining++)
                 {
-                    current = Path.Combine(current, segments[remaining]);
+                    current = ApplyPathComponent(current, root, segments[remaining]);
                 }
 
                 return current;
@@ -92,11 +102,28 @@ public sealed class FileSystemOutputIdentityProvider : IOutputIdentityProvider
         return current;
     }
 
+    private static string MakeFullyQualifiedPath(string path)
+    {
+        if (Path.IsPathFullyQualified(path))
+        {
+            return path;
+        }
+
+        var root = Path.GetPathRoot(path);
+        if (string.IsNullOrEmpty(root))
+        {
+            return Path.Combine(Environment.CurrentDirectory, path);
+        }
+
+        var absoluteRoot = Path.GetFullPath(root);
+        return Path.Combine(absoluteRoot, path[root.Length..]);
+    }
+
     private static string ResolveLinkTargetPath(string linkPath, string linkTarget)
     {
         if (Path.IsPathFullyQualified(linkTarget))
         {
-            return Path.GetFullPath(linkTarget);
+            return linkTarget;
         }
 
         var parent = Path.GetDirectoryName(linkPath);
@@ -105,7 +132,35 @@ public sealed class FileSystemOutputIdentityProvider : IOutputIdentityProvider
             throw new IOException(ResolutionFailureMessage);
         }
 
-        return Path.GetFullPath(Path.Combine(parent, linkTarget));
+        if (!Path.IsPathRooted(linkTarget))
+        {
+            return Path.Combine(parent, linkTarget);
+        }
+
+        var linkRoot = Path.GetPathRoot(linkTarget);
+        var parentRoot = Path.GetPathRoot(parent);
+        if (string.IsNullOrEmpty(linkRoot) || string.IsNullOrEmpty(parentRoot))
+        {
+            throw new IOException(ResolutionFailureMessage);
+        }
+
+        return Path.Combine(parentRoot, linkTarget[linkRoot.Length..]);
+    }
+
+    private static string ApplyPathComponent(string current, string root, string component)
+    {
+        return component switch
+        {
+            "." => current,
+            ".." => MoveToParent(current, root),
+            _ => Path.Combine(current, component)
+        };
+    }
+
+    private static string MoveToParent(string path, string root)
+    {
+        var parent = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(path));
+        return string.IsNullOrEmpty(parent) ? root : parent;
     }
 
     private static void EnsureDirectoryRoot(string root)
@@ -147,16 +202,12 @@ public sealed class FileSystemOutputIdentityProvider : IOutputIdentityProvider
 
     private sealed class ResolutionState
     {
-        private readonly HashSet<string> _visitedDirectoryStates = new(
-            DownloadOutputPathKey.UsesCaseInsensitiveComparison
-                ? StringComparer.OrdinalIgnoreCase
-                : StringComparer.Ordinal);
+        private readonly HashSet<string> _visitedDirectoryStates = new(StringComparer.Ordinal);
         private int _linkDepth;
 
         public void EnterDirectoryPath(string directoryPath)
         {
-            if (!_visitedDirectoryStates.Add(
-                    DownloadOutputPathKey.NormalizeLogicalPath(directoryPath)))
+            if (!_visitedDirectoryStates.Add(directoryPath))
             {
                 throw new IOException(ResolutionFailureMessage);
             }
