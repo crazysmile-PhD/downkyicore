@@ -18,6 +18,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\DownKyi.Architecture.Tests\DownKyi.Architecture.Tests.csproj" />
+    <ProjectReference Include="..\..\src\DownKyi.Infrastructure\DownKyi.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\PlatformShared\FileSystemPhysicalOutputPathResolverUnixTests.cs" Link="FileSystemPhysicalOutputPathResolverUnixTests.cs" />
   </ItemGroup>
 
   <ItemGroup>

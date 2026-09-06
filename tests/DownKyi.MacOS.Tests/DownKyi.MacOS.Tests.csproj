@@ -17,7 +17,15 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\DownKyi.Infrastructure\DownKyi.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\PlatformShared\FileSystemPhysicalOutputPathResolverUnixTests.cs" Link="FileSystemPhysicalOutputPathResolverUnixTests.cs" />
   </ItemGroup>
 
   <ItemGroup>

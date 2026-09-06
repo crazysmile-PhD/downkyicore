@@ -40,7 +40,7 @@ flowchart TD
 - `DownKyi.Desktop` 是 Avalonia App、Views、ViewModels、`Presentation` projections、desktop adapters、Host composition 與 desktop runtime owner。Service contracts 不再引用 `DownKyi.ViewModels`。
 - `DownKyi.Core` 不含 `.axaml`、Avalonia 或 QRCoder；登入 API 留在 Core，QR bitmap renderer 與 Bilibili image dictionaries 位於 Desktop。
 - `DownKyi.Domain.DownloadTask` 已是持久化狀態轉換的權威；worker 與 pipeline 入口使用 `DownloadTaskId`，但 orchestrator channel 與部分 media stage 仍暫時持有 UI projection。
-- `DownKyi.Application` 已擁有 Bilibili HTTP/buvid/cookie ports 與 logging contracts；`DownKyi.Infrastructure` 已擁有 async `IHttpClientFactory` transport、single-flight buvid provider、SQLite、write-behind，以及私有 NLog logging sink、retention 與 diagnostic exporter。aria2、FFmpeg 與 file system 的最終 ownership 尚待後續切片。
+- `DownKyi.Application` 已擁有 Bilibili HTTP/buvid/cookie、logging 與 physical output path contracts；`DownKyi.Infrastructure` 已擁有 async `IHttpClientFactory` transport、single-flight buvid provider、SQLite、write-behind、filesystem physical output path resolver，以及私有 NLog logging sink、retention 與 diagnostic exporter。aria2、FFmpeg 與其餘 file system ownership 尚待後續切片。
 - Prism、DryIoc、EventAggregator、RegionManager 和 ContainerLocator 已從 production source 移除，不得重新引入。
 
 ## 目前啟動鏈
