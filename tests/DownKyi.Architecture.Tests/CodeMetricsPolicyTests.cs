@@ -34,6 +34,7 @@ public sealed class CodeMetricsPolicyTests
     {
         AssertPathsExist(
             "script/audit-code-metrics.ps1",
+            "script/code-metrics/Ca1506TemporaryWorkspace.psm1",
             "script/code-metrics/ca1506.globalconfig",
             "script/code-metrics/ca1506.targets",
             "script/code-metrics/ca1506-classifications.json",
@@ -54,6 +55,14 @@ public sealed class CodeMetricsPolicyTests
         Assert.DoesNotContain("Select-String", script, StringComparison.Ordinal);
         Assert.DoesNotContain("ForEach-Object", script, StringComparison.Ordinal);
         Assert.DoesNotContain(" git ", script, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("New-Ca1506TemporaryWorkspace", script, StringComparison.Ordinal);
+        Assert.Contains("Remove-Ca1506TemporaryWorkspace", script, StringComparison.Ordinal);
+        Assert.Contains(
+            "CA1506 audit temporary workspace cleanup failed.",
+            script,
+            StringComparison.Ordinal);
+        Assert.Contains("CA1506 audit build failed", script, StringComparison.Ordinal);
+        Assert.Contains("CA1506 report generation failed", script, StringComparison.Ordinal);
         Assert.True(
             script.Split('\n').Length <= 90,
             "The PowerShell audit entry must remain an extremely thin process boundary.");

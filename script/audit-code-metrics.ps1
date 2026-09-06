@@ -14,12 +14,16 @@ $targetsPath = Join-Path $PSScriptRoot "code-metrics/ca1506.targets"
 $classificationPath = Join-Path $PSScriptRoot "code-metrics/ca1506-classifications.json"
 $toolProject = Join-Path $repositoryRoot "tools/DownKyi.CodeMetricsAudit/DownKyi.CodeMetricsAudit.csproj"
 $tempBase = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
-$auditRoot = [IO.Path]::GetFullPath(
-    (Join-Path $tempBase "downkyi-ca1506-$([Guid]::NewGuid().ToString('N'))"))
-if (-not $auditRoot.StartsWith($tempBase, [StringComparison]::OrdinalIgnoreCase)) {
-    throw "The CA1506 audit root resolved outside the system temporary directory."
+Import-Module (Join-Path $PSScriptRoot "code-metrics/Ca1506TemporaryWorkspace.psm1") -Force
+try {
+    $workspace = New-Ca1506TemporaryWorkspace -TemporaryBasePath $tempBase
+}
+catch {
+    [Console]::Error.WriteLine("CA1506 audit temporary workspace initialization failed.")
+    exit 1
 }
 
+$auditRoot = $workspace.OperationDirectory
 $sarifDirectory = Join-Path $auditRoot "sarif"
 [IO.Directory]::CreateDirectory($sarifDirectory) | Out-Null
 $previousUiLanguage = $env:DOTNET_CLI_UI_LANGUAGE
@@ -63,8 +67,11 @@ try {
 }
 finally {
     $env:DOTNET_CLI_UI_LANGUAGE = $previousUiLanguage
-    if ($auditRoot.StartsWith($tempBase, [StringComparison]::OrdinalIgnoreCase) -and
-        [IO.Directory]::Exists($auditRoot)) {
-        [IO.Directory]::Delete($auditRoot, $true)
+    $removed = Remove-Ca1506TemporaryWorkspace `
+        -OwnershipRoot $workspace.OwnershipRoot `
+        -OperationDirectory $workspace.OperationDirectory
+    if (-not $removed) {
+        [Console]::Error.WriteLine("CA1506 audit temporary workspace cleanup failed.")
+        exit 1
     }
 }

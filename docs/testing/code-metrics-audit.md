@@ -34,6 +34,14 @@ owned by C# and covered by architecture tests. If another cross-platform entry
 can provide the same ordered process boundary without self-rebuild complexity,
 PowerShell is not otherwise required.
 
+Temporary SARIF data is owned below the fixed system-temporary root
+`downkyi-ca1506`, with one 32-character operation directory per run. Startup
+examines only its direct children and removes matching operations older than 24
+hours. A locked stale operation remains for a later run without changing the
+current audit result. Immediate cleanup failure remains fail-closed, but leaves
+the operation discoverable below the ownership root. Unrelated names,
+non-direct paths, and reparse-point directories are never deleted.
+
 ## Current inventory
 
 The issue #194 implementation inventory on `main` at
