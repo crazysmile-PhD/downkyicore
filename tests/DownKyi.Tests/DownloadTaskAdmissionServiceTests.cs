@@ -381,7 +381,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
             tasks,
             projections,
             queue,
-            resolver ?? new FileSystemPhysicalOutputPathResolver());
+            resolver ?? new RecordingPhysicalOutputPathResolver(static path => path));
     }
 
     private static DownloadingItem CreateItem(string id, string basePath)
