@@ -94,7 +94,7 @@ internal sealed class ApplicationLogRetentionManager
                 Interlocked.Increment(ref _capacityDeletionCount);
             }
 
-            RemoveEmptyDayDirectories();
+            RemoveEmptyDayDirectories(activePath);
             Interlocked.Exchange(ref _retainedBytes, Math.Max(0, retainedBytes));
             Interlocked.Exchange(ref _lastMaintenanceUtcTicks, nowUtc.UtcTicks);
         }
@@ -231,18 +231,26 @@ internal sealed class ApplicationLogRetentionManager
         }
     }
 
-    private void RemoveEmptyDayDirectories()
+    private void RemoveEmptyDayDirectories(string? activePath)
     {
         if (!Directory.Exists(_options.LogDirectory))
         {
             return;
         }
 
+        var activeDirectory = activePath == null
+            ? null
+            : Path.GetDirectoryName(Path.GetFullPath(activePath));
         foreach (var directory in Directory.GetDirectories(
                      _options.LogDirectory,
                      "????-??-??",
                      SearchOption.TopDirectoryOnly))
         {
+            if (activeDirectory != null && PathsEqual(directory, activeDirectory))
+            {
+                continue;
+            }
+
             try
             {
                 if (!Directory.EnumerateFileSystemEntries(directory).Any())
