@@ -160,6 +160,40 @@ public sealed class OutputArtifactOwnershipAdversarialTests : IDisposable
                 .ConfigureAwait(true));
     }
 
+    [Fact]
+    public async Task UnsupportedDefaultOwnershipPreservesFailedTemporaryObject()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.Skip("The default Windows provider supports identity-bound temporary cleanup.");
+        }
+
+        var destination = Path.Combine(_directory, "unsupported-cleanup.mp4");
+        var publisher = new AtomicOutputPublisher();
+
+        var exception = await Record.ExceptionAsync(() => publisher.PublishAsync(
+            destination,
+            async (temporaryPath, cancellationToken) =>
+            {
+                await File.WriteAllTextAsync(
+                    temporaryPath,
+                    "producer output",
+                    cancellationToken).ConfigureAwait(true);
+                throw new IOException("producer failed after writing");
+            },
+            TestContext.Current.CancellationToken)).ConfigureAwait(true);
+
+        Assert.IsType<IOException>(exception);
+        Assert.False(File.Exists(destination));
+        var temporaryPath = Assert.Single(
+            Directory.EnumerateFiles(_directory, "*.downkyi-tmp*"));
+        Assert.Equal(
+            "producer output",
+            await File.ReadAllTextAsync(
+                temporaryPath,
+                TestContext.Current.CancellationToken).ConfigureAwait(true));
+    }
+
     [Theory]
     [InlineData(MergePath)]
     [InlineData(ConcatPath)]

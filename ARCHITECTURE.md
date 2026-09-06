@@ -196,7 +196,7 @@ FinalizeStage
 
 下載來源、續傳 sidecar 與 completed transfer key 在所有必要 stage 通過前都屬於可重試狀態。FFmpeg 只能發布已驗證輸出，不得刪除輸入；只有 `FinalizeStage` 成功提交 Domain `Completed` 後，才能透過既有 `DownloadTaskFileService` 清理該任務的精確來源與 sidecar。Artifact、mux、validation、取消或 SQLite completion 失敗都必須保留這些 retry checkpoint。
 
-Atomic artifact、FFmpeg merge 與 concat 在交給 producer 前，必須以仍開啟的 creation handle claim temporary object identity。Producer 完成後，只有 pathname 仍解析到同一 object 才能產生 final provenance；publication move 前必須重新觀察 cancellation。Temporary cleanup 僅由 identity-bound claim 授權，final output cleanup 則需要 persisted identity、length 與 hash；兩者不可互換。Windows native cleanup 必須在同一 live handle 上完成 evidence validation 與 destructive syscall，pathname normalization 或存在性檢查都不能取代 object ownership。
+Atomic artifact、FFmpeg merge 與 concat 在交給 producer 前，必須以仍開啟的 creation handle claim temporary object identity。Producer 完成後，只有 pathname 仍解析到同一 object 才能產生 final provenance；publication move 前必須重新觀察 cancellation。Temporary cleanup 僅由 identity-bound claim 授權，final output cleanup 則需要 persisted identity、length 與 hash；兩者不可互換。Windows native cleanup 必須在同一 live handle 上完成 evidence validation 與 destructive syscall，pathname normalization 或存在性檢查都不能取代 object ownership。Linux 與 macOS 尚無同等的 native identity-bound delete provider；無法取得 authoritative claim 時必須保留 temporary/final output，不得退回 pathname delete。
 
 下載重試只有一個預算 owner：
 

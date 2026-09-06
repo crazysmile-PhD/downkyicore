@@ -417,11 +417,13 @@ public sealed class DownloadArtifactStageTests
     {
         var kind = Enum.Parse<ArtifactKind>(kindName);
         string? foreignPath = null;
-        var publisher = new AtomicOutputPublisher(path =>
-        {
-            foreignPath = path;
-            File.WriteAllText(path, "foreign artifact");
-        });
+        var publisher = new AtomicOutputPublisher(
+            path =>
+            {
+                foreignPath = path;
+                File.WriteAllText(path, "foreign artifact");
+            },
+            new RecordingPublicationOwnershipProvider());
         var client = CreateSuccessfulArtifactClient(kind);
         using var context = await ArtifactTestContext.CreateAsync(
             client,
@@ -452,16 +454,18 @@ public sealed class DownloadArtifactStageTests
     public async Task DefaultSubtitleLateDestinationCollisionPreservesForeignFileAndCleansTemporaryFile()
     {
         string? foreignPath = null;
-        var publisher = new AtomicOutputPublisher(path =>
-        {
-            if (!string.Equals(Path.GetFileName(path), "output.srt", StringComparison.Ordinal))
+        var publisher = new AtomicOutputPublisher(
+            path =>
             {
-                return;
-            }
+                if (!string.Equals(Path.GetFileName(path), "output.srt", StringComparison.Ordinal))
+                {
+                    return;
+                }
 
-            foreignPath = path;
-            File.WriteAllText(path, "foreign subtitle");
-        });
+                foreignPath = path;
+                File.WriteAllText(path, "foreign subtitle");
+            },
+            new RecordingPublicationOwnershipProvider());
         using var context = await ArtifactTestContext.CreateAsync(
             CreateSuccessfulArtifactClient(ArtifactKind.Subtitle),
             subtitle: true,
@@ -1212,6 +1216,8 @@ public sealed class DownloadArtifactStageTests
             await stateWriter.StartAsync(taskId, TestContext.Current.CancellationToken)
                 .ConfigureAwait(true);
             downloading.Downloading.DownloadStatus = DownloadStatus.Downloading;
+            outputPublisher ??= new AtomicOutputPublisher(
+                new RecordingPublicationOwnershipProvider());
             var writer = new DownloadArtifactWriter(
                 new TestWbiKeyProvider(),
                 stateWriter,
