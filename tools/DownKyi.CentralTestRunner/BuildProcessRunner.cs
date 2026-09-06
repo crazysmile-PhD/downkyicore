@@ -147,20 +147,35 @@ internal static class BuildProcessRunner
     internal static async Task WaitForOwnedProcessesToExitAsync(
         IReadOnlyList<ObservedProcess> ownedProcesses,
         TimeSpan cleanupTimeout,
-        Func<Process, DateTimeOffset>? readStartTimeUtc = null)
+        Func<Process, DateTimeOffset>? readStartTimeUtc = null,
+        Func<Process, CancellationToken, Task>? waitForExitAsync = null)
     {
+        using var timeout = new CancellationTokenSource(cleanupTimeout);
         var waits = ownedProcesses.Select(
             observedProcess => WaitForObservedProcessExitAsync(
                 observedProcess,
-                readStartTimeUtc ?? ReadStartTimeUtc));
-        await Task.WhenAll(waits).WaitAsync(cleanupTimeout).ConfigureAwait(false);
+                readStartTimeUtc ?? ReadStartTimeUtc,
+                waitForExitAsync: waitForExitAsync,
+                cancellationToken: timeout.Token));
+        try
+        {
+            await Task.WhenAll(waits).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException exception) when (timeout.IsCancellationRequested)
+        {
+            throw new TimeoutException(
+                "Owned process cleanup exceeded the cleanup timeout.",
+                exception);
+        }
     }
 
     internal static async Task WaitForObservedProcessExitAsync(
         ObservedProcess observedProcess,
         Func<Process, DateTimeOffset>? readStartTimeUtc = null,
         Func<Process, bool>? readHasExited = null,
-        Func<int, bool>? isProcessPresent = null)
+        Func<int, bool>? isProcessPresent = null,
+        Func<Process, CancellationToken, Task>? waitForExitAsync = null,
+        CancellationToken cancellationToken = default)
     {
         Process process;
         try
@@ -183,25 +198,40 @@ internal static class BuildProcessRunner
                     return;
                 }
 
-                await process.WaitForExitAsync().ConfigureAwait(false);
+                await (waitForExitAsync ?? WaitForExitAsync)(process, cancellationToken)
+                    .ConfigureAwait(false);
             }
             catch (Exception exception) when (IsProcessObservationFailure(exception))
             {
-                if (!HasExitedAfterIdentityFailure(
+                var terminalState = ObserveTerminalStateAfterIdentityFailure(
                         process,
                         observedProcess.Pid,
                         readHasExited ?? ReadHasExited,
-                        isProcessPresent ?? IsProcessPresent))
+                        isProcessPresent ?? IsProcessPresent);
+                if (terminalState is true)
+                {
+                    return;
+                }
+
+                if (terminalState is null)
                 {
                     throw;
                 }
 
-                // The observed process exited between opening it and reading or waiting on its identity.
+                // A dying Unix process can retain its PID after identity reads become unavailable.
+                // The caller's cleanup window bounds this wait and remains fail-closed if it expires.
+                await (waitForExitAsync ?? WaitForExitAsync)(process, cancellationToken)
+                    .ConfigureAwait(false);
             }
         }
     }
 
-    private static bool HasExitedAfterIdentityFailure(
+    private static Task WaitForExitAsync(Process process, CancellationToken cancellationToken)
+    {
+        return process.WaitForExitAsync(cancellationToken);
+    }
+
+    private static bool? ObserveTerminalStateAfterIdentityFailure(
         Process process,
         int processId,
         Func<Process, bool> readHasExited,
@@ -226,7 +256,7 @@ internal static class BuildProcessRunner
         catch (Exception exception) when (IsProcessObservationFailure(exception))
         {
             // An inconclusive secondary observation must not replace the first identity failure.
-            return false;
+            return null;
         }
     }
 

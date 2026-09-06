@@ -36,7 +36,8 @@ public sealed class CentralTestRunnerCancellationComponentTests
                     {
                         identityRead.TrySetResult();
                         return process.StartTime.ToUniversalTime();
-                    });
+                    },
+                    cancellationToken: TestContext.Current.CancellationToken);
 
                 await identityRead.Task.WaitAsync(TestTimeout).ConfigureAwait(true);
                 BuildProcessRunner.KillOwnedProcessTree(fixture);
@@ -70,7 +71,8 @@ public sealed class CentralTestRunnerCancellationComponentTests
                         }
 
                         throw CreateIdentityReadException(exceptionType);
-                    }).ConfigureAwait(true);
+                    },
+                    cancellationToken: TestContext.Current.CancellationToken).ConfigureAwait(true);
 
                 Assert.True(fixture.HasExited);
             },
@@ -80,7 +82,7 @@ public sealed class CentralTestRunnerCancellationComponentTests
     [Theory]
     [InlineData("Win32Exception")]
     [InlineData("InvalidOperationException")]
-    public async Task IdentityObservationPreservesReadFailureForALiveProcess(string exceptionType)
+    public async Task IdentityObservationWaitsAfterReadFailureUntilProcessExits(string exceptionType)
     {
         Process? fixture = null;
         await FailurePreservingTestCleanup.RunAsync(
@@ -88,14 +90,22 @@ public sealed class CentralTestRunnerCancellationComponentTests
             {
                 fixture = await StartHoldingFixtureAsync().ConfigureAwait(true);
                 var expectedStartTime = fixture.StartTime.ToUniversalTime();
+                var identityRead = new TaskCompletionSource(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
 
-                var exception = await Record.ExceptionAsync(
-                    () => BuildProcessRunner.WaitForObservedProcessExitAsync(
-                        CreateObservedProcess(fixture, expectedStartTime),
-                        _ => throw CreateIdentityReadException(exceptionType))).ConfigureAwait(true);
+                var wait = BuildProcessRunner.WaitForOwnedProcessesToExitAsync(
+                    [CreateObservedProcess(fixture, expectedStartTime)],
+                    TestTimeout,
+                    _ =>
+                    {
+                        identityRead.TrySetResult();
+                        throw CreateIdentityReadException(exceptionType);
+                    });
+                await identityRead.Task.WaitAsync(TestTimeout).ConfigureAwait(true);
+                BuildProcessRunner.KillOwnedProcessTree(fixture);
+                await wait.ConfigureAwait(true);
 
-                Assert.IsType(CreateIdentityReadException(exceptionType).GetType(), exception);
-                Assert.False(fixture.HasExited);
+                Assert.True(fixture.HasExited);
             },
             () => StopFixtureAsync(fixture)).ConfigureAwait(true);
     }
@@ -123,7 +133,8 @@ public sealed class CentralTestRunnerCancellationComponentTests
                         throw new Win32Exception("identity unavailable");
                     },
                     _ => throw new Win32Exception("exit state unavailable"),
-                    _ => false).ConfigureAwait(true);
+                    _ => false,
+                    cancellationToken: TestContext.Current.CancellationToken).ConfigureAwait(true);
 
                 Assert.True(fixture.HasExited);
             },
@@ -146,10 +157,55 @@ public sealed class CentralTestRunnerCancellationComponentTests
                         CreateObservedProcess(fixture, expectedStartTime),
                         _ => throw identityFailure,
                         _ => throw new Win32Exception("exit state unavailable"),
-                        _ => throw new InvalidOperationException("presence unavailable")))
+                        _ => throw new InvalidOperationException("presence unavailable"),
+                        cancellationToken: TestContext.Current.CancellationToken))
                     .ConfigureAwait(true);
 
                 Assert.Same(identityFailure, exception);
+                Assert.False(fixture.HasExited);
+            },
+            () => StopFixtureAsync(fixture)).ConfigureAwait(true);
+    }
+
+    [Fact]
+    public async Task IdentityObservationTimeoutCancelsAndJoinsInnerWait()
+    {
+        Process? fixture = null;
+        await FailurePreservingTestCleanup.RunAsync(
+            async () =>
+            {
+                fixture = await StartHoldingFixtureAsync().ConfigureAwait(true);
+                var expectedStartTime = fixture.StartTime.ToUniversalTime();
+                var innerWaitStarted = new TaskCompletionSource(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+                var innerWaitStopped = new TaskCompletionSource(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+                var pendingExit = new TaskCompletionSource(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+
+                var exception = await Record.ExceptionAsync(
+                    () => BuildProcessRunner.WaitForOwnedProcessesToExitAsync(
+                        [CreateObservedProcess(fixture, expectedStartTime)],
+                        TimeSpan.Zero,
+                        _ => throw new Win32Exception("identity unavailable"),
+                        async (_, cancellationToken) =>
+                        {
+                            innerWaitStarted.TrySetResult();
+                            try
+                            {
+                                await pendingExit.Task.WaitAsync(cancellationToken)
+                                    .ConfigureAwait(false);
+                            }
+                            finally
+                            {
+                                innerWaitStopped.TrySetResult();
+                            }
+                        }))
+                    .ConfigureAwait(true);
+
+                Assert.IsType<TimeoutException>(exception);
+                Assert.True(innerWaitStarted.Task.IsCompletedSuccessfully);
+                Assert.True(innerWaitStopped.Task.IsCompletedSuccessfully);
                 Assert.False(fixture.HasExited);
             },
             () => StopFixtureAsync(fixture)).ConfigureAwait(true);
