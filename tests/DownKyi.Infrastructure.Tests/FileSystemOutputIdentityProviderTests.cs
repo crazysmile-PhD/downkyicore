@@ -132,6 +132,23 @@ public sealed class FileSystemOutputIdentityProviderTests : IDisposable
     }
 
     [Fact(Skip = "Requires Windows directory-junction semantics.", SkipUnless = nameof(IsWindows))]
+    public async Task WindowsRepeatedAncestorAliasWithDifferentPendingSuffixIsNotCycle()
+    {
+        var physicalTarget = CreateDirectory(Path.Combine("reentry-physical", "target"));
+        var physicalRoot = Path.GetDirectoryName(physicalTarget)!;
+        var entryAlias = Path.Combine(_directory, "reentry-logical");
+        await CreateWindowsJunctionAsync(entryAlias, physicalRoot).ConfigureAwait(true);
+        var innerAlias = Path.Combine(physicalRoot, "reenter");
+        await CreateWindowsJunctionAsync(
+            innerAlias,
+            Path.Combine(entryAlias, "target")).ConfigureAwait(true);
+
+        AssertAliasesShareIdentity(
+            Path.Combine(entryAlias, "reenter", "video"),
+            Path.Combine(physicalTarget, "video"));
+    }
+
+    [Fact(Skip = "Requires Windows directory-junction semantics.", SkipUnless = nameof(IsWindows))]
     public async Task WindowsJunctionCycleFailsClosedWithoutPath()
     {
         Directory.CreateDirectory(_directory);
@@ -216,6 +233,21 @@ public sealed class FileSystemOutputIdentityProviderTests : IDisposable
     }
 
     [Fact(Skip = "Requires Unix directory-symlink semantics.", SkipUnless = nameof(IsUnix))]
+    public void UnixRepeatedAncestorAliasWithDifferentPendingSuffixIsNotCycle()
+    {
+        var physicalTarget = CreateDirectory(Path.Combine("reentry-physical", "target"));
+        var physicalRoot = Path.GetDirectoryName(physicalTarget)!;
+        var entryAlias = Path.Combine(_directory, "reentry-logical");
+        CreateUnixDirectorySymlink(entryAlias, physicalRoot);
+        var innerAlias = Path.Combine(physicalRoot, "reenter");
+        CreateUnixDirectorySymlink(innerAlias, Path.Combine(entryAlias, "target"));
+
+        AssertAliasesShareIdentity(
+            Path.Combine(entryAlias, "reenter", "video"),
+            Path.Combine(physicalTarget, "video"));
+    }
+
+    [Fact(Skip = "Requires Unix directory-symlink semantics.", SkipUnless = nameof(IsUnix))]
     public void UnixSymlinkCycleFailsClosedWithoutPath()
     {
         Directory.CreateDirectory(_directory);
@@ -231,11 +263,7 @@ public sealed class FileSystemOutputIdentityProviderTests : IDisposable
     {
         foreach (var alias in _aliases.Distinct(StringComparer.Ordinal).Reverse())
         {
-            var information = new DirectoryInfo(alias);
-            if (information.LinkTarget != null || information.Exists)
-            {
-                information.Delete();
-            }
+            DeleteOwnedAlias(alias);
         }
 
         if (Directory.Exists(_directory))
@@ -319,8 +347,20 @@ public sealed class FileSystemOutputIdentityProviderTests : IDisposable
         _aliases.Add(alias);
     }
 
-    private static void DeleteAlias(string alias)
+    private void DeleteAlias(string alias)
     {
-        new DirectoryInfo(alias).Delete();
+        DeleteOwnedAlias(alias);
+        _aliases.Remove(alias);
+    }
+
+    private static void DeleteOwnedAlias(string alias)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            Directory.Delete(alias);
+            return;
+        }
+
+        File.Delete(alias);
     }
 }

@@ -36,6 +36,7 @@ public sealed class FileSystemOutputIdentityProvider : IOutputIdentityProvider
         ResolutionState state)
     {
         var fullPath = Path.GetFullPath(directoryPath);
+        state.EnterDirectoryPath(fullPath);
         var root = Path.GetPathRoot(fullPath);
         if (string.IsNullOrEmpty(root))
         {
@@ -59,7 +60,7 @@ public sealed class FileSystemOutputIdentityProvider : IOutputIdentityProvider
             var linkTarget = new DirectoryInfo(candidate).LinkTarget;
             if (linkTarget != null)
             {
-                state.RecordLink(candidate);
+                state.RecordLink();
                 var redirectedPath = ResolveLinkTargetPath(candidate, linkTarget);
                 for (var remaining = index + 1; remaining < segments.Length; remaining++)
                 {
@@ -146,18 +147,29 @@ public sealed class FileSystemOutputIdentityProvider : IOutputIdentityProvider
 
     private sealed class ResolutionState
     {
-        private readonly HashSet<string> _visitedLinks = new(
+        private readonly HashSet<string> _visitedDirectoryStates = new(
             DownloadOutputPathKey.UsesCaseInsensitiveComparison
                 ? StringComparer.OrdinalIgnoreCase
                 : StringComparer.Ordinal);
+        private int _linkDepth;
 
-        public void RecordLink(string linkPath)
+        public void EnterDirectoryPath(string directoryPath)
         {
-            if (_visitedLinks.Count >= MaximumLinkDepth ||
-                !_visitedLinks.Add(DownloadOutputPathKey.NormalizeLogicalPath(linkPath)))
+            if (!_visitedDirectoryStates.Add(
+                    DownloadOutputPathKey.NormalizeLogicalPath(directoryPath)))
             {
                 throw new IOException(ResolutionFailureMessage);
             }
+        }
+
+        public void RecordLink()
+        {
+            if (_linkDepth >= MaximumLinkDepth)
+            {
+                throw new IOException(ResolutionFailureMessage);
+            }
+
+            _linkDepth++;
         }
     }
 }
