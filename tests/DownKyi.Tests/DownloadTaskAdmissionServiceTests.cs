@@ -374,7 +374,27 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
             true,
             TestContext.Current.CancellationToken).ConfigureAwait(true);
 
-        Assert.Equal(Path.GetFullPath($"{decomposed}(1)"), second.DownloadBase.FilePath);
+        Assert.Equal(Path.GetFullPath($"{composed}(1)"), second.DownloadBase.FilePath);
+    }
+
+    [Fact]
+    public async Task ExistingCanonicalUnicodeAliasUsesFirstFreeSuffix()
+    {
+        Directory.CreateDirectory(_directory);
+        var composed = Path.Combine(_directory, "caf\u00E9");
+        var decomposed = Path.Combine(_directory, "cafe\u0301");
+        await File.WriteAllTextAsync(
+            $"{composed}.mp4",
+            "occupied",
+            TestContext.Current.CancellationToken);
+
+        var resolved = await DownloadOutputPathResolver.ResolveAdmissionCollisionAsync(
+            decomposed,
+            autoAddNumberSuffix: true,
+            static (_, _) => Task.FromResult(false),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(Path.GetFullPath($"{composed}(1)"), resolved);
     }
 
     [Fact]

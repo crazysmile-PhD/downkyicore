@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace DownKyi.Application.Downloads;
 
 public static class DownloadOutputPathKey
@@ -13,9 +15,12 @@ public static class DownloadOutputPathKey
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(basePath);
 
-        return Path.TrimEndingDirectorySeparator(
-            Path.GetFullPath(
-                basePath));
+        return Path
+            .TrimEndingDirectorySeparator(
+                Path.GetFullPath(
+                    basePath))
+            .Normalize(
+                NormalizationForm.FormC);
     }
 
     public static string Create(
