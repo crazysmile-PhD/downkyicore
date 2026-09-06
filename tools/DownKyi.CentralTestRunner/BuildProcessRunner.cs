@@ -147,20 +147,35 @@ internal static class BuildProcessRunner
     internal static async Task WaitForOwnedProcessesToExitAsync(
         IReadOnlyList<ObservedProcess> ownedProcesses,
         TimeSpan cleanupTimeout,
-        Func<Process, DateTimeOffset>? readStartTimeUtc = null)
+        Func<Process, DateTimeOffset>? readStartTimeUtc = null,
+        Func<Process, CancellationToken, Task>? waitForExitAsync = null)
     {
+        using var timeout = new CancellationTokenSource(cleanupTimeout);
         var waits = ownedProcesses.Select(
             observedProcess => WaitForObservedProcessExitAsync(
                 observedProcess,
-                readStartTimeUtc ?? ReadStartTimeUtc));
-        await Task.WhenAll(waits).WaitAsync(cleanupTimeout).ConfigureAwait(false);
+                readStartTimeUtc ?? ReadStartTimeUtc,
+                waitForExitAsync: waitForExitAsync,
+                cancellationToken: timeout.Token));
+        try
+        {
+            await Task.WhenAll(waits).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException exception) when (timeout.IsCancellationRequested)
+        {
+            throw new TimeoutException(
+                "Owned process cleanup exceeded the cleanup timeout.",
+                exception);
+        }
     }
 
     internal static async Task WaitForObservedProcessExitAsync(
         ObservedProcess observedProcess,
         Func<Process, DateTimeOffset>? readStartTimeUtc = null,
         Func<Process, bool>? readHasExited = null,
-        Func<int, bool>? isProcessPresent = null)
+        Func<int, bool>? isProcessPresent = null,
+        Func<Process, CancellationToken, Task>? waitForExitAsync = null,
+        CancellationToken cancellationToken = default)
     {
         Process process;
         try
@@ -183,7 +198,8 @@ internal static class BuildProcessRunner
                     return;
                 }
 
-                await process.WaitForExitAsync().ConfigureAwait(false);
+                await (waitForExitAsync ?? WaitForExitAsync)(process, cancellationToken)
+                    .ConfigureAwait(false);
             }
             catch (Exception exception) when (IsProcessObservationFailure(exception))
             {
@@ -204,9 +220,15 @@ internal static class BuildProcessRunner
 
                 // A dying Unix process can retain its PID after identity reads become unavailable.
                 // The caller's cleanup window bounds this wait and remains fail-closed if it expires.
-                await process.WaitForExitAsync().ConfigureAwait(false);
+                await (waitForExitAsync ?? WaitForExitAsync)(process, cancellationToken)
+                    .ConfigureAwait(false);
             }
         }
+    }
+
+    private static Task WaitForExitAsync(Process process, CancellationToken cancellationToken)
+    {
+        return process.WaitForExitAsync(cancellationToken);
     }
 
     private static bool? ObserveTerminalStateAfterIdentityFailure(
