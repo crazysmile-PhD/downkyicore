@@ -1,14 +1,20 @@
+using DownKyi.Infrastructure.Downloads;
+
 namespace DownKyi.Architecture.Tests;
 
 public sealed class DownloadStoreSchemaArchitectureTests
 {
+    private const string MigrationOwnerNamespace = "DownKyi.Infrastructure.Downloads";
+    private const string MigrationOwnerPrefix = "DownloadStoreSchemaV";
+    private const string MigrationOwnerSuffix = "Migration";
     private static readonly string RepositoryRoot = FindRepositoryRoot();
-    private static readonly string[] MigrationOwners =
-    [
-        "DownloadStoreSchemaV1Migration",
-        "DownloadStoreSchemaV2Migration",
-        "DownloadStoreSchemaV3Migration"
-    ];
+    private static readonly string[] MigrationOwners = typeof(SqliteDownloadTaskStoreOptions)
+        .Assembly
+        .GetTypes()
+        .Where(IsMigrationOwner)
+        .Select(type => type.Name)
+        .Order(StringComparer.Ordinal)
+        .ToArray();
 
     [Fact]
     public void CoordinatorOwnsUpgradeOrderWithoutOwningMigrationSql()
@@ -44,6 +50,17 @@ public sealed class DownloadStoreSchemaArchitectureTests
     }
 
     [Fact]
+    public void VersionOwnerDiscoveryIncludesFutureVersionsAndRejectsLookalikes()
+    {
+        Assert.NotEmpty(MigrationOwners);
+        Assert.True(IsMigrationOwner(MigrationOwnerNamespace, "DownloadStoreSchemaV4Migration"));
+        Assert.False(IsMigrationOwner(MigrationOwnerNamespace, "DownloadStoreSchemaV0Migration"));
+        Assert.False(IsMigrationOwner(MigrationOwnerNamespace, "DownloadStoreSchemaV04Migration"));
+        Assert.False(IsMigrationOwner(MigrationOwnerNamespace, "DownloadStoreSchemaV4MigrationHelper"));
+        Assert.False(IsMigrationOwner("DownKyi.Infrastructure.Other", "DownloadStoreSchemaV4Migration"));
+    }
+
+    [Fact]
     public void VersionOwnersDoNotDependOnOneAnother()
     {
         foreach (var owner in MigrationOwners)
@@ -65,6 +82,39 @@ public sealed class DownloadStoreSchemaArchitectureTests
             "DownKyi.Infrastructure",
             "Downloads",
             fileName));
+    }
+
+    private static bool IsMigrationOwner(Type type)
+    {
+        return type.DeclaringType is null && IsMigrationOwner(type.Namespace, type.Name);
+    }
+
+    private static bool IsMigrationOwner(string? typeNamespace, string typeName)
+    {
+        if (!string.Equals(typeNamespace, MigrationOwnerNamespace, StringComparison.Ordinal)
+            || !typeName.StartsWith(MigrationOwnerPrefix, StringComparison.Ordinal)
+            || !typeName.EndsWith(MigrationOwnerSuffix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var version = typeName.AsSpan(
+            MigrationOwnerPrefix.Length,
+            typeName.Length - MigrationOwnerPrefix.Length - MigrationOwnerSuffix.Length);
+        if (version.IsEmpty || version[0] == '0')
+        {
+            return false;
+        }
+
+        foreach (var character in version)
+        {
+            if (character is < '0' or > '9')
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static string FindRepositoryRoot()
