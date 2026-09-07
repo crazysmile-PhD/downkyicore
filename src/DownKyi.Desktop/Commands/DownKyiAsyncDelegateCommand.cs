@@ -15,7 +15,7 @@ internal class DownKyiAsyncDelegateCommand<T> : ICommand
     private readonly Func<T, bool>? _canExecute;
     private readonly ILogger _logger;
     private readonly Func<bool>? _isCancellationExpected;
-    private int _isExecuting;
+    private readonly DownKyiAsyncCommandGate _executionGate;
 
     public event EventHandler? CanExecuteChanged;
 
@@ -23,32 +23,34 @@ internal class DownKyiAsyncDelegateCommand<T> : ICommand
         Func<T?, Task> execute,
         ILogger logger,
         Func<T, bool>? canExecute = null,
-        Func<bool>? isCancellationExpected = null)
+        Func<bool>? isCancellationExpected = null,
+        DownKyiAsyncCommandGate? executionGate = null)
     {
         _execute = execute ?? throw new ArgumentNullException(nameof(execute));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _canExecute = canExecute;
         _isCancellationExpected = isCancellationExpected;
+        _executionGate = executionGate ?? new DownKyiAsyncCommandGate();
+        _executionGate.IsExecutingChanged += OnExecutionGateChanged;
     }
 
     public bool CanExecute(object? parameter)
     {
         if (parameter is null && typeof(T) == typeof(object))
         {
-            return Volatile.Read(ref _isExecuting) == 0 && (_canExecute?.Invoke(default!) ?? true);
+            return !_executionGate.IsExecuting && (_canExecute?.Invoke(default!) ?? true);
         }
 
         if (parameter is not T typedParameter)
         {
             return false;
         }
-        return Volatile.Read(ref _isExecuting) == 0 && (_canExecute?.Invoke(typedParameter) ?? true);
+        return !_executionGate.IsExecuting && (_canExecute?.Invoke(typedParameter) ?? true);
     }
 
     public void Execute(object? parameter)
     {
-        if (!CanExecute(parameter)
-            || Interlocked.CompareExchange(ref _isExecuting, 1, 0) != 0)
+        if (!CanExecute(parameter) || !_executionGate.TryEnter())
         {
             return;
         }
@@ -63,24 +65,22 @@ internal class DownKyiAsyncDelegateCommand<T> : ICommand
 
     private async Task ExecuteAsync(object? parameter)
     {
-        T? executionParameter;
-        if (parameter is null && typeof(T) == typeof(object))
-        {
-            executionParameter = default;
-        }
-        else if (parameter is T typedParameter)
-        {
-            executionParameter = typedParameter;
-        }
-        else
-        {
-            return;
-        }
-
-        OnCanExecuteChanged();
-
         try
         {
+            T? executionParameter;
+            if (parameter is null && typeof(T) == typeof(object))
+            {
+                executionParameter = default;
+            }
+            else if (parameter is T typedParameter)
+            {
+                executionParameter = typedParameter;
+            }
+            else
+            {
+                return;
+            }
+
             await _execute(executionParameter).ConfigureAwait(true);
         }
         catch (OperationCanceledException e) when (IsExpectedCancellation(e))
@@ -97,8 +97,7 @@ internal class DownKyiAsyncDelegateCommand<T> : ICommand
         }
         finally
         {
-            Volatile.Write(ref _isExecuting, 0);
-            OnCanExecuteChanged();
+            _executionGate.Exit();
         }
     }
 
@@ -112,6 +111,11 @@ internal class DownKyiAsyncDelegateCommand<T> : ICommand
     {
         CanExecuteChanged?.Invoke(this, EventArgs.Empty);
     }
+
+    private void OnExecutionGateChanged(object? sender, EventArgs e)
+    {
+        OnCanExecuteChanged();
+    }
 }
 
 internal class DownKyiAsyncDelegateCommand : DownKyiAsyncDelegateCommand<object>
@@ -120,8 +124,9 @@ internal class DownKyiAsyncDelegateCommand : DownKyiAsyncDelegateCommand<object>
         Func<object?, Task> execute,
         ILogger logger,
         Func<object, bool>? canExecute = null,
-        Func<bool>? isCancellationExpected = null)
-        : base(execute, logger, canExecute, isCancellationExpected)
+        Func<bool>? isCancellationExpected = null,
+        DownKyiAsyncCommandGate? executionGate = null)
+        : base(execute, logger, canExecute, isCancellationExpected, executionGate)
     {
     }
 
@@ -129,10 +134,12 @@ internal class DownKyiAsyncDelegateCommand : DownKyiAsyncDelegateCommand<object>
         Func<Task> execute,
         ILogger logger,
         Func<bool>? canExecute = null,
-        Func<bool>? isCancellationExpected = null)
+        Func<bool>? isCancellationExpected = null,
+        DownKyiAsyncCommandGate? executionGate = null)
         : this(_ => execute(), logger,
             canExecute != null ? _ => canExecute() : null,
-            isCancellationExpected)
+            isCancellationExpected,
+            executionGate)
     {
     }
 }

@@ -73,7 +73,9 @@ internal static class ImageLoader
                 try
                 {
                     await Task.Delay(10, cts.Token).ConfigureAwait(false);
-                    var loaded = await AsyncImageLoader.ProvideImageAsync(url).ConfigureAwait(false);
+                    var loaded = await AsyncImageLoader
+                        .ProvideImageAsync(url, cts.Token)
+                        .ConfigureAwait(false);
                     if (loaded == null || !targetSize.HasValue)
                     {
                         return loaded;

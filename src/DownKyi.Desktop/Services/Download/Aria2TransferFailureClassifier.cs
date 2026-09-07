@@ -24,9 +24,9 @@ internal static class Aria2TransferFailureClassifier
 
         if (TlsFailureClassifier.TryClassify(errorMessage, out var tlsErrorCode))
         {
-            return DownloadTransferResult.Failed(
-                DownloadTransferFailureKind.Tls,
-                tlsErrorCode);
+            return TlsFailureClassifier.CreateTransferFailure(
+                tlsErrorCode,
+                SanitizeErrorCode(errorCode));
         }
 
         if (errorMessage?.Contains(
@@ -94,10 +94,16 @@ internal static class Aria2TransferFailureClassifier
         DownloadTransferFailureKind kind,
         string? ariaErrorCode)
     {
-        var sanitizedCode = string.IsNullOrWhiteSpace(ariaErrorCode)
+        return DownloadTransferResult.Failed(
+            kind,
+            SanitizeErrorCode(ariaErrorCode));
+    }
+
+    private static string SanitizeErrorCode(string? ariaErrorCode)
+    {
+        return string.IsNullOrWhiteSpace(ariaErrorCode)
             ? "download.transfer.aria2"
             : $"download.transfer.aria2-{ariaErrorCode}";
-        return DownloadTransferResult.Failed(kind, sanitizedCode);
     }
 
     private static bool ContainsHttpStatus(string? message, string statusCode)

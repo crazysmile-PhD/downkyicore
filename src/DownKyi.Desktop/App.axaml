@@ -66,6 +66,7 @@
         <FluentTheme />
         <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml" />
         <StyleInclude Source="/Themes/Styles/loading.axaml" />
+        <StyleInclude Source="/Themes/Styles/download-preparation-status.axaml" />
         <Style Selector="Window">
             <Setter Property="FontFamily" Value="{DynamicResource ProgramFont}" />
         </Style>

@@ -11,6 +11,20 @@ namespace DownKyi.Tests;
 public sealed class DownloadPipelineStageTests
 {
     [Fact]
+    public void CreateAddressesTreatsExplicitNullBackupUrlsAsEmpty()
+    {
+        var media = new PlayUrlDashVideo
+        {
+            BaseAddress = "https://example.test/media.m4s",
+            BackupUrl = null!
+        };
+
+        var addresses = DownloadMediaStage.CreateAddresses(media);
+
+        Assert.Equal(["https://example.test/media.m4s"], addresses);
+    }
+
+    [Fact]
     public async Task StageSequenceStopsAtFirstFailureAndPreservesOrder()
     {
         using var settings = new TestSettingsStore();

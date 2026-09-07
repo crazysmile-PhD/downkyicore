@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
 
@@ -11,5 +12,7 @@ internal interface IAsyncImageLoader : IDisposable
     /// </summary>
     /// <param name="url">Target url</param>
     /// <returns>Bitmap</returns>
-    public Task<Bitmap?> ProvideImageAsync(string url);
+    public Task<Bitmap?> ProvideImageAsync(
+        string url,
+        CancellationToken cancellationToken = default);
 }

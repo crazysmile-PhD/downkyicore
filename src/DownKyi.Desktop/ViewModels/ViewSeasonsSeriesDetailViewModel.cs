@@ -35,6 +35,8 @@ internal class ViewSeasonsSeriesDetailViewModel : ViewModelBase
     private readonly ILogger<ViewSeasonsSeriesDetailViewModel> _logger;
     private CancellationTokenSource? _loadCancellation;
     private CancellationTokenSource? _downloadCancellation;
+
+    public DownKyiAsyncCommandGate DownloadCommandGate { get; } = new();
     private long _mid = -1;
     private long _id = -1;
     private SeasonsSeriesKind _kind;
@@ -201,12 +203,23 @@ internal class ViewSeasonsSeriesDetailViewModel : ViewModelBase
     private DownKyiAsyncDelegateCommand? _addToDownloadCommand;
 
     public DownKyiAsyncDelegateCommand AddToDownloadCommand =>
-        _addToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(true), _logger);
+        _addToDownloadCommand ??= new DownKyiAsyncDelegateCommand(
+            () => AddToDownloadAsync(true),
+            _logger,
+            executionGate: DownloadCommandGate);
 
     private DownKyiAsyncDelegateCommand? _addAllToDownloadCommand;
 
     public DownKyiAsyncDelegateCommand AddAllToDownloadCommand =>
-        _addAllToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(false), _logger);
+        _addAllToDownloadCommand ??= new DownKyiAsyncDelegateCommand(
+            () => AddToDownloadAsync(false),
+            _logger,
+            executionGate: DownloadCommandGate);
+
+    private RelayCommand? _cancelDownloadPreparationCommand;
+
+    public RelayCommand CancelDownloadPreparationCommand =>
+        _cancelDownloadPreparationCommand ??= new RelayCommand(() => _downloadCancellation?.Cancel());
 
     private async Task AddToDownloadAsync(bool onlySelected)
     {

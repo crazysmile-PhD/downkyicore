@@ -4,12 +4,15 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Bilibili;
+using DownKyi.Application.Diagnostics;
 using DownKyi.Application.Downloads;
 using DownKyi.Core.BiliApi.Sign;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.Settings;
 using DownKyi.Services.Download;
 using DownKyi.Services.Video;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DownKyi.Services.Media;
 
@@ -86,13 +89,23 @@ internal sealed class ContentDownloadCoordinator : IContentDownloadCoordinator
 {
     private readonly IAddToDownloadServiceFactory _serviceFactory;
     private readonly IContentInfoServiceFactory _infoServiceFactory;
+    private readonly ILogger<ContentDownloadCoordinator> _logger;
 
     public ContentDownloadCoordinator(
         IAddToDownloadServiceFactory serviceFactory,
         IContentInfoServiceFactory infoServiceFactory)
+        : this(serviceFactory, infoServiceFactory, NullLogger<ContentDownloadCoordinator>.Instance)
+    {
+    }
+
+    public ContentDownloadCoordinator(
+        IAddToDownloadServiceFactory serviceFactory,
+        IContentInfoServiceFactory infoServiceFactory,
+        ILogger<ContentDownloadCoordinator> logger)
     {
         _serviceFactory = serviceFactory ?? throw new ArgumentNullException(nameof(serviceFactory));
         _infoServiceFactory = infoServiceFactory ?? throw new ArgumentNullException(nameof(infoServiceFactory));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     public async Task<int?> AddAsync(
@@ -111,26 +124,40 @@ internal sealed class ContentDownloadCoordinator : IContentDownloadCoordinator
             return 0;
         }
 
-        var addToDownloadSession = _serviceFactory.Create(ToPlayStreamType(selectedItems[0].Kind));
-        return await DownloadAddCoordinator.AddToDownloadIfDirectorySelectedAsync(
-            () => addToDownloadSession.SetDirectory(cancellationToken),
-            directory => AddItemsAsync(
-                addToDownloadSession,
-                selectedItems,
-                directory,
-                cancellationToken),
-            cancellationToken).ConfigureAwait(true);
+        _logger.LogInformationMessage($"Preparing {selectedItems.Length} item(s) for the download queue.");
+        try
+        {
+            var addToDownloadSession = _serviceFactory.Create(ToPlayStreamType(selectedItems[0].Kind));
+            var addedCount = await DownloadAddCoordinator.AddToDownloadIfDirectorySelectedAsync(
+                () => addToDownloadSession.SetDirectory(cancellationToken),
+                directory => AddItemsAsync(
+                    addToDownloadSession,
+                    selectedItems,
+                    directory,
+                    cancellationToken),
+                cancellationToken).ConfigureAwait(true);
+            _logger.LogInformationMessage(addedCount == null
+                ? "Download preparation stopped because no directory was selected."
+                : $"Download preparation completed with {addedCount.Value} queued item(s).");
+            return addedCount;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogInformationMessage("Download preparation was canceled.");
+            throw;
+        }
     }
 
     private Task<int> AddItemsAsync(
         IAddToDownloadSession addToDownloadSession,
-        IReadOnlyList<ContentDownloadItem> items,
+        ContentDownloadItem[] items,
         string directory,
         CancellationToken cancellationToken)
     {
         return Task.Run(async () =>
         {
             var addedCount = 0;
+            var processedCount = 0;
             foreach (var item in items)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -146,6 +173,8 @@ internal sealed class ContentDownloadCoordinator : IContentDownloadCoordinator
                 addedCount += await addToDownloadSession
                     .AddToDownload(directory, cancellationToken: cancellationToken)
                     .ConfigureAwait(false);
+                processedCount++;
+                _logger.LogDebugMessage($"Prepared download item {processedCount} of {items.Length}.");
             }
 
             return addedCount;

@@ -1,0 +1,28 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:DownKyi.CustomControl">
+    <Style Selector="local|DownloadPreparationStatus">
+        <Setter Property="HorizontalAlignment" Value="Center" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="Template">
+            <ControlTemplate>
+                <StackPanel
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    IsVisible="{TemplateBinding IsActive}"
+                    Orientation="{TemplateBinding Orientation}"
+                    Spacing="8">
+                    <ProgressBar Width="60" IsIndeterminate="True" />
+                    <TextBlock
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Text="{DynamicResource PreparingDownloads}" />
+                    <Button
+                        HorizontalAlignment="Center"
+                        Command="{TemplateBinding CancelCommand}"
+                        Content="{DynamicResource Cancel}" />
+                </StackPanel>
+            </ControlTemplate>
+        </Setter>
+    </Style>
+</Styles>

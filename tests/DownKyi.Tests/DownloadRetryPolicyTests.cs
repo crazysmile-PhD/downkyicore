@@ -538,6 +538,22 @@ public sealed class DownloadRetryPolicyTests
         Assert.Equal(DownloadTransferFailureKind.TransientNetwork, result.FailureKind);
     }
 
+    [Fact]
+    public void BuiltinBackendClassifiesCertificateFreeSecureConnectionFailureAsTransient()
+    {
+        var exception = new HttpRequestException(
+            HttpRequestError.SecureConnectionError,
+            "The SSL connection could not be established.",
+            new IOException("The remote endpoint closed the transport stream."));
+
+        var result = BuiltinTransferBackend.ClassifyFailure(
+            exception,
+            reportedCanceled: false);
+
+        Assert.Equal(DownloadTransferFailureKind.TransientNetwork, result.FailureKind);
+        Assert.Equal("download.transfer.network", result.ErrorCode);
+    }
+
     [Theory]
     [MemberData(nameof(TransientDownloaderFailures))]
     public void BuiltinBackendClassifiesDownloaderTransportFailuresAsTransient(
@@ -586,13 +602,56 @@ public sealed class DownloadRetryPolicyTests
         Assert.Equal("download.transfer.tls.untrusted", result.ErrorCode);
     }
 
+    [Fact]
+    public void AriaAddressProbeClassifiesCertificateFreeHandshakeFailureAsTransient()
+    {
+        var exception = new HttpRequestException(
+            HttpRequestError.SecureConnectionError,
+            "The SSL connection could not be established.",
+            new IOException("The remote endpoint closed the transport stream."));
+
+        var result = Aria2TransferBackend.ClassifyHttpTransportFailure(
+            exception,
+            "download.transfer.network");
+
+        Assert.Equal(DownloadTransferFailureKind.TransientNetwork, result.FailureKind);
+        Assert.Equal("download.transfer.network", result.ErrorCode);
+    }
+
+    [Fact]
+    public void AriaAddressProbeKeepsExplicitCertificateFailureFailClosed()
+    {
+        var exception = new HttpRequestException(
+            HttpRequestError.SecureConnectionError,
+            "The SSL connection could not be established.",
+            new AuthenticationException(
+                "The remote certificate is invalid because the certificate chain is untrusted."));
+
+        var result = Aria2TransferBackend.ClassifyHttpTransportFailure(
+            exception,
+            "download.transfer.network");
+
+        Assert.Equal(DownloadTransferFailureKind.Tls, result.FailureKind);
+        Assert.Equal("download.transfer.tls.untrusted", result.ErrorCode);
+    }
+
+    [Fact]
+    public void AriaAddressProbeDiagnosticHostExcludesSensitiveUrlComponents()
+    {
+        var host = Aria2TransferBackend.GetSafeHost(
+            "https://cdn.example/media?token=private#fragment");
+
+        Assert.Equal("cdn.example", host);
+        Assert.DoesNotContain("private", host, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData("SSL/TLS handshake failure: unknown CA", "download.transfer.tls.untrusted")]
     [InlineData("certificate has expired", "download.transfer.tls.expired")]
     [InlineData("certificate is not yet valid", "download.transfer.tls.not-yet-valid")]
     [InlineData("certificate hostname does not match", "download.transfer.tls.hostname")]
     [InlineData("certificate chain building failed", "download.transfer.tls.chain")]
-    [InlineData("SSL/TLS handshake failure", "download.transfer.tls.handshake")]
+    [InlineData("remote certificate is invalid", "download.transfer.tls.validation")]
     [InlineData("SSL/TLS handshake failure (80090325)", "download.transfer.tls.untrusted")]
     [InlineData("SSL/TLS handshake failure (80090322)", "download.transfer.tls.hostname")]
     public void AriaBackendClassifiesTlsFailuresWithoutExposingRawMessages(
@@ -604,6 +663,17 @@ public sealed class DownloadRetryPolicyTests
         Assert.Equal(DownloadTransferFailureKind.Tls, result.FailureKind);
         Assert.Equal(expectedCode, result.ErrorCode);
         Assert.DoesNotContain(errorMessage, result.ErrorCode, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AriaBackendClassifiesCertificateFreeHandshakeFailureAsTransient()
+    {
+        var result = Aria2TransferFailureClassifier.Classify(
+            "1",
+            "SSL/TLS handshake failure");
+
+        Assert.Equal(DownloadTransferFailureKind.TransientNetwork, result.FailureKind);
+        Assert.Equal("download.transfer.aria2-1", result.ErrorCode);
     }
 
     [Theory]

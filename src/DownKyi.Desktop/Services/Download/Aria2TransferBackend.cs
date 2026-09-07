@@ -103,11 +103,47 @@ internal sealed partial class Aria2TransferBackend : ITransferBackend
                 "download.transfer.single-address-required");
         }
 
+        AriaDownloadAddressResolution resolution;
+        try
+        {
+            resolution = await _addressResolver.ResolveAsync(
+                request.Urls[0],
+                _networkSettings.UserAgent,
+                LoginHelper.GetLoginInfoCookiesString(),
+                request.CancellationToken).ConfigureAwait(true);
+        }
+        catch (HttpRequestException exception)
+        {
+            var result = ClassifyHttpTransportFailure(
+                exception,
+                "download.transfer.network");
+            _logger.LogWarningMessage(
+                $"aria2 address validation transport failed; " +
+                $"host={GetSafeHost(request.Urls[0])}; " +
+                $"httpError={exception.HttpRequestError}; " +
+                $"innerType={exception.InnerException?.GetType().Name ?? "none"}; " +
+                $"failure={result.FailureKind}; code={result.ErrorCode}");
+            return result;
+        }
+        catch (Exception exception) when (exception is IOException or TimeoutException)
+        {
+            _logger.LogWarningMessage(
+                $"aria2 address validation transport failed; " +
+                $"host={GetSafeHost(request.Urls[0])}; " +
+                $"type={exception.GetType().Name}; " +
+                $"failure={DownloadTransferFailureKind.TransientNetwork}; " +
+                $"code=download.transfer.network");
+            return DownloadTransferResult.Failed(
+                DownloadTransferFailureKind.TransientNetwork,
+                "download.transfer.network");
+        }
+
         string? activeGid;
         try
         {
             var preparation = await EnsureAriaTaskAsync(
-                request).ConfigureAwait(true);
+                request,
+                resolution).ConfigureAwait(true);
             if (preparation.ErrorCode != null)
             {
                 _logger.LogWarningMessage(
@@ -123,11 +159,15 @@ internal sealed partial class Aria2TransferBackend : ITransferBackend
         catch (HttpRequestException exception) when (
             TlsFailureClassifier.TryClassify(exception, out var tlsErrorCode))
         {
+            var result = TlsFailureClassifier.CreateTransferFailure(
+                tlsErrorCode,
+                "download.transfer.aria2-rpc");
             _logger.LogWarningMessage(
-                $"aria2 address validation failed TLS policy; code={tlsErrorCode}");
-            return DownloadTransferResult.Failed(
-                DownloadTransferFailureKind.Tls,
-                tlsErrorCode);
+                $"aria2 RPC secure transport failed; " +
+                $"httpError={exception.HttpRequestError}; " +
+                $"innerType={exception.InnerException?.GetType().Name ?? "none"}; " +
+                $"failure={result.FailureKind}; code={result.ErrorCode}");
+            return result;
         }
         catch (Exception exception) when (exception is HttpRequestException
             or IOException
@@ -240,13 +280,9 @@ internal sealed partial class Aria2TransferBackend : ITransferBackend
     }
 
     private async Task<AriaTaskPreparation> EnsureAriaTaskAsync(
-        DownloadTransferRequest request)
+        DownloadTransferRequest request,
+        AriaDownloadAddressResolution resolution)
     {
-        var resolution = await _addressResolver.ResolveAsync(
-            request.Urls[0],
-            _networkSettings.UserAgent,
-            LoginHelper.GetLoginInfoCookiesString(),
-            request.CancellationToken).ConfigureAwait(true);
         if (resolution.ErrorCode != null)
         {
             return AriaTaskPreparation.Rejected(resolution.ErrorCode);

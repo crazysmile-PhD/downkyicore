@@ -214,9 +214,8 @@ public sealed partial class SqliteDownloadTaskStore : IDownloadTaskStore, IDispo
         await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
         using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         using var command = connection.CreateCommand();
-        command.CommandText = DownloadTaskSqlReader.SelectColumns + "\n" + """
-            WHERE dl.id IS NOT NULL
-              AND NOT EXISTS (
+        command.CommandText = DownloadTaskSqlReader.SelectUnfinishedColumns + "\n" + """
+            WHERE NOT EXISTS (
                   SELECT 1 FROM download_quarantine q
                   WHERE q.source_table = 'downloading' AND q.record_id = db.id)
             ORDER BY db.main_title COLLATE NOCASE, db.[order] ASC, db.id ASC

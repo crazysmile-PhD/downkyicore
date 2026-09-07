@@ -139,6 +139,86 @@ public sealed class UiSmokeTests
     }
 
     [AvaloniaFact]
+    public async Task FavoritesDownloadCommandsAreMutuallyExclusiveAndCancelable()
+    {
+        await AvaloniaTestDispatcher.RunAsync(async () =>
+        {
+            DesktopTestResources.EnsureProductThemeResources();
+            var directory = Path.Combine(Path.GetTempPath(), $"downkyi-favorites-download-gate-{Guid.NewGuid():N}");
+            var settings = new SettingsStore(Path.Combine(directory, "settings.json"));
+            try
+            {
+                using var navigation = new AvaloniaNavigationService(
+                    _ => new NavigationProbe(AppRoute.MyFavorites),
+                    static action => action());
+                var downloadCoordinator = new ContentDownloadCoordinatorStub
+                {
+                    WaitForCancellation = true
+                };
+                using var favorites = new ViewMyFavoritesViewModel(
+                    new DesktopInteractionContextStub(navigation),
+                    downloadCoordinator,
+                    new FavoritesCoordinatorStub(navigation, settings),
+                    NullLogger<ViewMyFavoritesViewModel>.Instance);
+                var view = new ViewMyFavorites { DataContext = favorites };
+                var window = new Window { Content = view };
+                var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                favorites.AddAllToDownloadCommand.CanExecuteChanged += (_, _) =>
+                {
+                    if (favorites.AddAllToDownloadCommand.CanExecute(null))
+                    {
+                        completion.TrySetResult();
+                    }
+                };
+
+                try
+                {
+                    window.Show();
+                    var status = Assert.IsType<DownKyi.CustomControl.DownloadPreparationStatus>(
+                        view.FindControl<DownKyi.CustomControl.DownloadPreparationStatus>("DownloadPreparationStatus"));
+                    Assert.False(status.IsActive);
+
+                    favorites.AddAllToDownloadCommand.Execute(null);
+                    await downloadCoordinator.Requested.Task
+                        .WaitAsync(TestContext.Current.CancellationToken)
+                        .ConfigureAwait(true);
+
+                    Assert.True(favorites.DownloadCommandGate.IsExecuting);
+                    Assert.True(status.IsActive);
+                    Assert.False(favorites.AddAllToDownloadCommand.CanExecute(null));
+                    Assert.False(favorites.AddToDownloadCommand.CanExecute(null));
+
+                    favorites.AddToDownloadCommand.Execute(null);
+                    Assert.Equal(1, downloadCoordinator.RequestCount);
+
+                    favorites.CancelDownloadPreparationCommand.Execute(null);
+                    await completion.Task
+                        .WaitAsync(TestContext.Current.CancellationToken)
+                        .ConfigureAwait(true);
+
+                    Assert.False(favorites.DownloadCommandGate.IsExecuting);
+                    Assert.False(status.IsActive);
+                    Assert.True(favorites.AddAllToDownloadCommand.CanExecute(null));
+                    Assert.True(favorites.AddToDownloadCommand.CanExecute(null));
+                }
+                finally
+                {
+                    window.Close();
+                }
+            }
+            finally
+            {
+                await settings.DisposeAsync().ConfigureAwait(true);
+            }
+
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }).ConfigureAwait(true);
+    }
+
+    [AvaloniaFact]
     public Task PublicFavoritesBackArrowRemainsVisibleInLightAndDarkThemes()
     {
         return AvaloniaTestDispatcher.RunAsync(() =>
@@ -827,13 +907,27 @@ public sealed class UiSmokeTests
 
     private sealed class ContentDownloadCoordinatorStub : IContentDownloadCoordinator
     {
-        public Task<int?> AddAsync(
+        public bool WaitForCancellation { get; init; }
+
+        public int RequestCount { get; private set; }
+
+        public TaskCompletionSource Requested { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task<int?> AddAsync(
             IReadOnlyList<ContentDownloadItem> items,
             bool onlySelected,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult<int?>(0);
+            RequestCount++;
+            Requested.TrySetResult();
+            if (WaitForCancellation)
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(true);
+            }
+
+            return 0;
         }
     }
 

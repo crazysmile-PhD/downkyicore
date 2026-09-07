@@ -413,7 +413,7 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
         return durl == null ? null : CreateDurlDownloadDescriptor([durl]);
     }
 
-    private static List<string> CreateAddresses(PlayUrlDashVideo media)
+    internal static List<string> CreateAddresses(PlayUrlDashVideo media)
     {
         var addresses = new List<string>();
         if (!string.IsNullOrWhiteSpace(media.BaseAddress))
@@ -421,7 +421,8 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
             addresses.Add(media.BaseAddress);
         }
 
-        addresses.AddRange(media.BackupUrl.Where(url => !string.IsNullOrWhiteSpace(url)));
+        addresses.AddRange((media.BackupUrl ?? Array.Empty<string>())
+            .Where(url => !string.IsNullOrWhiteSpace(url)));
         return addresses;
     }
 

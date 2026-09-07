@@ -289,9 +289,9 @@ internal sealed class BuiltinTransferBackend : ITransferBackend
     {
         if (TlsFailureClassifier.TryClassify(exception, out var tlsErrorCode))
         {
-            return DownloadTransferResult.Failed(
-                DownloadTransferFailureKind.Tls,
-                tlsErrorCode);
+            return TlsFailureClassifier.CreateTransferFailure(
+                tlsErrorCode,
+                "download.transfer.network");
         }
 
         if (FindException<HttpRequestException>(exception) is { } httpException)
