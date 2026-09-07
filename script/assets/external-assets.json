@@ -38,7 +38,7 @@
     }
   },
   "ffmpeg": {
-    "version": "btbn-autobuild-2026-08-30-13-12",
+    "version": "btbn-autobuild-2026-09-06-13-06",
     "repository": "Windows x64/Linux: https://github.com/BtbN/FFmpeg-Builds; Windows x86: https://github.com/yt-dlp/FFmpeg-Builds; macOS: https://ffmpeg.martin-riedl.de",
     "assets": {
       "win-x86": {
@@ -55,42 +55,42 @@
         }
       },
       "win-x64": {
-        "url": "https://github.com/crazysmile-PhD/downkyi-runtime-assets/releases/download/ffmpeg-btbn-autobuild-2026-08-30-13-12/ffmpeg-win-x64-autobuild-2026-08-30-13-12-ed59cb91788b6893.zip",
-        "sha256": "ed59cb91788b6893bf78ac8a732cc2c1367f8e17ebcbdef61c72e4865cc3df2b",
-        "fileName": "ffmpeg-win-x64-autobuild-2026-08-30-13-12-ed59cb91788b6893.zip",
+        "url": "https://github.com/crazysmile-PhD/downkyi-runtime-assets/releases/download/ffmpeg-btbn-autobuild-2026-09-06-13-06/ffmpeg-win-x64-autobuild-2026-09-06-13-06-cd75d5135fdd98f3.zip",
+        "sha256": "cd75d5135fdd98f386043607179f4d5d471dee1707dc63509e292dff170586f3",
+        "fileName": "ffmpeg-win-x64-autobuild-2026-09-06-13-06-cd75d5135fdd98f3.zip",
         "provenance": {
           "upstreamRepository": "https://github.com/BtbN/FFmpeg-Builds",
-          "upstreamRelease": "autobuild-2026-08-30-13-12",
-          "originalAssetName": "ffmpeg-N-126335-gb32f8d1c23-win64-gpl.zip",
-          "upstreamUrl": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-30-13-12/ffmpeg-N-126335-gb32f8d1c23-win64-gpl.zip",
-          "mirroredAt": "2026-08-31T09:40:59Z",
-          "ffmpegVersion": "ffmpeg-N-126335-gb32f8d1c23-win64-gpl.zip"
+          "upstreamRelease": "autobuild-2026-09-06-13-06",
+          "originalAssetName": "ffmpeg-N-126435-gf93cd72dde-win64-gpl.zip",
+          "upstreamUrl": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-06-13-06/ffmpeg-N-126435-gf93cd72dde-win64-gpl.zip",
+          "mirroredAt": "2026-09-07T08:15:09Z",
+          "ffmpegVersion": "ffmpeg-N-126435-gf93cd72dde-win64-gpl.zip"
         }
       },
       "linux-x64": {
-        "url": "https://github.com/crazysmile-PhD/downkyi-runtime-assets/releases/download/ffmpeg-btbn-autobuild-2026-08-30-13-12/ffmpeg-linux-x64-autobuild-2026-08-30-13-12-fb34e514f5769652.tar.xz",
-        "sha256": "fb34e514f57696521ec6858df4fed7a6cf88cb212fd98d23a4d7b6e76340ace0",
-        "fileName": "ffmpeg-linux-x64-autobuild-2026-08-30-13-12-fb34e514f5769652.tar.xz",
+        "url": "https://github.com/crazysmile-PhD/downkyi-runtime-assets/releases/download/ffmpeg-btbn-autobuild-2026-09-06-13-06/ffmpeg-linux-x64-autobuild-2026-09-06-13-06-85282dfbfc699cb2.tar.xz",
+        "sha256": "85282dfbfc699cb23b0ae20509deaa0974bfb5d14b8743f4c02537ea21de595b",
+        "fileName": "ffmpeg-linux-x64-autobuild-2026-09-06-13-06-85282dfbfc699cb2.tar.xz",
         "provenance": {
           "upstreamRepository": "https://github.com/BtbN/FFmpeg-Builds",
-          "upstreamRelease": "autobuild-2026-08-30-13-12",
-          "originalAssetName": "ffmpeg-N-126335-gb32f8d1c23-linux64-gpl.tar.xz",
-          "upstreamUrl": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-30-13-12/ffmpeg-N-126335-gb32f8d1c23-linux64-gpl.tar.xz",
-          "mirroredAt": "2026-08-31T09:40:59Z",
-          "ffmpegVersion": "ffmpeg-N-126335-gb32f8d1c23-linux64-gpl.tar.xz"
+          "upstreamRelease": "autobuild-2026-09-06-13-06",
+          "originalAssetName": "ffmpeg-N-126435-gf93cd72dde-linux64-gpl.tar.xz",
+          "upstreamUrl": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-06-13-06/ffmpeg-N-126435-gf93cd72dde-linux64-gpl.tar.xz",
+          "mirroredAt": "2026-09-07T08:15:09Z",
+          "ffmpegVersion": "ffmpeg-N-126435-gf93cd72dde-linux64-gpl.tar.xz"
         }
       },
       "linux-arm64": {
-        "url": "https://github.com/crazysmile-PhD/downkyi-runtime-assets/releases/download/ffmpeg-btbn-autobuild-2026-08-30-13-12/ffmpeg-linux-arm64-autobuild-2026-08-30-13-12-26a3b409cdb56bf3.tar.xz",
-        "sha256": "26a3b409cdb56bf3a607bc59b4d8cc6e6c067b48052c55090106bc852604e708",
-        "fileName": "ffmpeg-linux-arm64-autobuild-2026-08-30-13-12-26a3b409cdb56bf3.tar.xz",
+        "url": "https://github.com/crazysmile-PhD/downkyi-runtime-assets/releases/download/ffmpeg-btbn-autobuild-2026-09-06-13-06/ffmpeg-linux-arm64-autobuild-2026-09-06-13-06-4cd1a8dde65120e9.tar.xz",
+        "sha256": "4cd1a8dde65120e9fa7e168371687560e3f6446b7cdd7e84ccba88933634b478",
+        "fileName": "ffmpeg-linux-arm64-autobuild-2026-09-06-13-06-4cd1a8dde65120e9.tar.xz",
         "provenance": {
           "upstreamRepository": "https://github.com/BtbN/FFmpeg-Builds",
-          "upstreamRelease": "autobuild-2026-08-30-13-12",
-          "originalAssetName": "ffmpeg-N-126335-gb32f8d1c23-linuxarm64-gpl.tar.xz",
-          "upstreamUrl": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-30-13-12/ffmpeg-N-126335-gb32f8d1c23-linuxarm64-gpl.tar.xz",
-          "mirroredAt": "2026-08-31T09:40:59Z",
-          "ffmpegVersion": "ffmpeg-N-126335-gb32f8d1c23-linuxarm64-gpl.tar.xz"
+          "upstreamRelease": "autobuild-2026-09-06-13-06",
+          "originalAssetName": "ffmpeg-N-126435-gf93cd72dde-linuxarm64-gpl.tar.xz",
+          "upstreamUrl": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-06-13-06/ffmpeg-N-126435-gf93cd72dde-linuxarm64-gpl.tar.xz",
+          "mirroredAt": "2026-09-07T08:15:09Z",
+          "ffmpegVersion": "ffmpeg-N-126435-gf93cd72dde-linuxarm64-gpl.tar.xz"
         }
       },
       "osx-x64": {
