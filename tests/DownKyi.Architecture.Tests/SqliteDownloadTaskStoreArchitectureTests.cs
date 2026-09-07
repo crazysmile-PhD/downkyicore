@@ -191,6 +191,23 @@ public sealed class SqliteDownloadTaskStoreArchitectureTests
     }
 
     [Fact]
+    public void OwnerDependencyRuleRejectsNullConditionalReflectionInvocationSequence()
+    {
+        const string source = """
+            internal sealed class Owner
+            {
+                public object? Build(object target) =>
+                    target.GetType().GetMethod("Build")?.Invoke(target, parameters: null);
+            }
+            """;
+
+        var violations = FindForbiddenOwnerDependencyViolations("Owner", source);
+
+        Assert.Contains(violations, violation =>
+            violation.Contains("GetType().GetMethod(...).Invoke", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void OwnerDependencyRuleIgnoresReflectionWordsInCommentsAndLiterals()
     {
         const string source = """"
@@ -358,6 +375,11 @@ public sealed class SqliteDownloadTaskStoreArchitectureTests
 
             var cursor = lookupClose + 1;
             while (cursor < tokens.Count && tokens[cursor] == "!")
+            {
+                cursor++;
+            }
+
+            if (cursor + 1 < tokens.Count && tokens[cursor] == "?" && tokens[cursor + 1] == ".")
             {
                 cursor++;
             }
