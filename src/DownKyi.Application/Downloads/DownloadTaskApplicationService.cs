@@ -64,6 +64,19 @@ public sealed class DownloadTaskApplicationService : IDownloadTaskApplicationSer
         return _store.IsOutputPathReservedAsync(basePath, ignoreCase, cancellationToken);
     }
 
+    public Task<bool> IsLegacyUpgradeAdmissionBlockedAsync(CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return _store.IsLegacyUpgradeAdmissionBlockedAsync(cancellationToken);
+    }
+
+    public Task<OperationResult> ConfirmLegacyRemoteTasksStoppedAsync(
+        CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return _store.ConfirmLegacyRemoteTasksStoppedAsync(cancellationToken);
+    }
+
     public Task<DownloadHistoryPage> GetHistoryPageAsync(
         DownloadHistoryCursor? cursor,
         int pageSize,

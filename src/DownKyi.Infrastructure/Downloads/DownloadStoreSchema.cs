@@ -1,3 +1,4 @@
+using DownKyi.Application.Downloads;
 using DownKyi.Application.Time;
 using Microsoft.Data.Sqlite;
 
@@ -5,13 +6,14 @@ namespace DownKyi.Infrastructure.Downloads;
 
 internal static class DownloadStoreSchema
 {
-    public const int CurrentVersion = 3;
+    public const int CurrentVersion = 4;
 
     public static async Task InitializeAsync(
         SqliteConnection connection,
         string databasePath,
         bool databaseExisted,
         IClock clock,
+        IPhysicalOutputPathResolver physicalOutputPathResolver,
         CancellationToken cancellationToken)
     {
         var currentVersion = await DownloadStoreSchemaLifecycle
@@ -58,6 +60,18 @@ internal static class DownloadStoreSchema
             {
                 await DownloadStoreSchemaV3Migration
                     .ApplyAsync(connection, transaction, clock.UtcNow, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            if (currentVersion < 4)
+            {
+                await DownloadStoreSchemaV4Migration
+                    .ApplyAsync(
+                        connection,
+                        transaction,
+                        clock.UtcNow,
+                        physicalOutputPathResolver,
+                        cancellationToken)
                     .ConfigureAwait(false);
             }
 

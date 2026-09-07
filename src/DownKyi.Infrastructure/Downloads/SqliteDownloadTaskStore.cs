@@ -16,7 +16,19 @@ public sealed class SqliteDownloadTaskStore : IDownloadTaskStore, IDisposable
     private readonly SqliteDownloadStoreQuarantine _quarantine;
 
     public SqliteDownloadTaskStore(SqliteDownloadTaskStoreOptions options, IClock clock)
-        : this(options, clock, NullLogger<SqliteDownloadTaskStore>.Instance)
+        : this(
+            options,
+            clock,
+            new FileSystemPhysicalOutputPathResolver(),
+            NullLogger<SqliteDownloadTaskStore>.Instance)
+    {
+    }
+
+    public SqliteDownloadTaskStore(
+        SqliteDownloadTaskStoreOptions options,
+        IClock clock,
+        IPhysicalOutputPathResolver physicalOutputPathResolver)
+        : this(options, clock, physicalOutputPathResolver, NullLogger<SqliteDownloadTaskStore>.Instance)
     {
     }
 
@@ -24,9 +36,19 @@ public sealed class SqliteDownloadTaskStore : IDownloadTaskStore, IDisposable
         SqliteDownloadTaskStoreOptions options,
         IClock clock,
         ILogger<SqliteDownloadTaskStore> logger)
+        : this(options, clock, new FileSystemPhysicalOutputPathResolver(), logger)
+    {
+    }
+
+    public SqliteDownloadTaskStore(
+        SqliteDownloadTaskStoreOptions options,
+        IClock clock,
+        IPhysicalOutputPathResolver physicalOutputPathResolver,
+        ILogger<SqliteDownloadTaskStore> logger)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(clock);
+        ArgumentNullException.ThrowIfNull(physicalOutputPathResolver);
         ArgumentNullException.ThrowIfNull(logger);
         if (options.BusyTimeout <= TimeSpan.Zero || options.BusyTimeout > TimeSpan.FromMinutes(1))
         {
@@ -36,6 +58,7 @@ public sealed class SqliteDownloadTaskStore : IDownloadTaskStore, IDisposable
         _database = new SqliteDownloadStoreDatabase(
             options,
             clock,
+            physicalOutputPathResolver,
             logger,
             typeof(SqliteDownloadTaskStore));
         _quarantine = new SqliteDownloadStoreQuarantine(_database);
@@ -94,6 +117,16 @@ public sealed class SqliteDownloadTaskStore : IDownloadTaskStore, IDisposable
     public async Task<IReadOnlyList<QuarantinedDownloadRecord>> GetQuarantinedRecordsAsync(
         CancellationToken cancellationToken) =>
         await _quarantine.GetRecordsAsync(cancellationToken).ConfigureAwait(false);
+
+    public async Task<bool> IsLegacyUpgradeAdmissionBlockedAsync(
+        CancellationToken cancellationToken) =>
+        await _quarantine.IsLegacyUpgradeAdmissionBlockedAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+    public async Task<OperationResult> ConfirmLegacyRemoteTasksStoppedAsync(
+        CancellationToken cancellationToken) =>
+        await _quarantine.ConfirmLegacyRemoteTasksStoppedAsync(cancellationToken)
+            .ConfigureAwait(false);
 
     public void Dispose() => _database.Dispose();
 }

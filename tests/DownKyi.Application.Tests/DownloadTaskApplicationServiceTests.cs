@@ -214,6 +214,22 @@ public sealed class DownloadTaskApplicationServiceTests
         Assert.Same(task, store.Current);
     }
 
+    [Fact]
+    public async Task LegacyUpgradeAdmissionStateAndConfirmationDelegateToStore()
+    {
+        var store = new RecordingStore { LegacyUpgradeAdmissionBlocked = true };
+        using var service = new DownloadTaskApplicationService(store, new AdvancingClock());
+
+        Assert.True(await service.IsLegacyUpgradeAdmissionBlockedAsync(
+            TestContext.Current.CancellationToken));
+        Assert.True((await service.ConfirmLegacyRemoteTasksStoppedAsync(
+            TestContext.Current.CancellationToken)).IsSuccess);
+
+        Assert.False(await service.IsLegacyUpgradeAdmissionBlockedAsync(
+            TestContext.Current.CancellationToken));
+        Assert.Equal(1, store.LegacyRemoteStopConfirmationCount);
+    }
+
     private static DownloadTask CreateTask()
     {
         return DownloadTask.Create(
@@ -256,6 +272,10 @@ public sealed class DownloadTaskApplicationServiceTests
         public DownloadTask? Current { get; private set; }
 
         public List<long> ExpectedVersions { get; } = [];
+
+        public bool LegacyUpgradeAdmissionBlocked { get; set; }
+
+        public int LegacyRemoteStopConfirmationCount { get; private set; }
 
         public Task InitializeAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
@@ -322,6 +342,18 @@ public sealed class DownloadTaskApplicationServiceTests
             string basePath,
             bool ignoreCase,
             CancellationToken cancellationToken) => Task.FromResult(false);
+
+        public Task<bool> IsLegacyUpgradeAdmissionBlockedAsync(
+            CancellationToken cancellationToken) =>
+            Task.FromResult(LegacyUpgradeAdmissionBlocked);
+
+        public Task<OperationResult> ConfirmLegacyRemoteTasksStoppedAsync(
+            CancellationToken cancellationToken)
+        {
+            LegacyRemoteStopConfirmationCount++;
+            LegacyUpgradeAdmissionBlocked = false;
+            return Task.FromResult(OperationResult.Success());
+        }
 
         public Task<DownloadHistoryPage> GetHistoryPageAsync(
             DownloadHistoryCursor? cursor,

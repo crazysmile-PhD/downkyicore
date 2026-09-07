@@ -65,6 +65,12 @@ public sealed class SqliteDownloadTaskStoreArchitectureTests
             "await _commands.ClearHistoryAsync(cancellationToken).ConfigureAwait(false)",
         ["GetQuarantinedRecordsAsync"] =
             "await _quarantine.GetRecordsAsync(cancellationToken).ConfigureAwait(false)",
+        ["IsLegacyUpgradeAdmissionBlockedAsync"] =
+            "await _quarantine.IsLegacyUpgradeAdmissionBlockedAsync(cancellationToken)" +
+            ".ConfigureAwait(false)",
+        ["ConfirmLegacyRemoteTasksStoppedAsync"] =
+            "await _quarantine.ConfirmLegacyRemoteTasksStoppedAsync(cancellationToken)" +
+            ".ConfigureAwait(false)",
         ["Dispose"] = "_database.Dispose()"
     };
     private static readonly string[] Collaborators =

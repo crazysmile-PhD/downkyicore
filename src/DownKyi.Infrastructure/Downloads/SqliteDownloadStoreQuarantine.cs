@@ -1,5 +1,6 @@
 using DownKyi.Application.Downloads;
 using DownKyi.Domain.Downloads;
+using DownKyi.Domain.Results;
 using Microsoft.Data.Sqlite;
 
 namespace DownKyi.Infrastructure.Downloads;
@@ -32,6 +33,34 @@ internal sealed class SqliteDownloadStoreQuarantine(SqliteDownloadStoreDatabase 
         }
 
         return records;
+    }
+
+    public async Task<bool> IsLegacyUpgradeAdmissionBlockedAsync(
+        CancellationToken cancellationToken)
+    {
+        using var connection = await _database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT EXISTS (
+                SELECT 1 FROM download_upgrade_admission_gate
+                WHERE singleton_id = 1 AND remote_stopped_confirmed = 0)
+            """;
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return Convert.ToInt64(result, System.Globalization.CultureInfo.InvariantCulture) != 0;
+    }
+
+    public async Task<OperationResult> ConfirmLegacyRemoteTasksStoppedAsync(
+        CancellationToken cancellationToken)
+    {
+        using var connection = await _database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE download_upgrade_admission_gate
+            SET remote_stopped_confirmed = 1
+            WHERE singleton_id = 1
+            """;
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        return OperationResult.Success();
     }
 
     public static async Task RecordAsync(

@@ -21,7 +21,7 @@ public sealed class DownloadStoreSchemaArchitectureTests
     {
         var source = ReadDownloadSource("DownloadStoreSchema.cs");
 
-        Assert.Contains("public const int CurrentVersion = 3", source, StringComparison.Ordinal);
+        Assert.Contains("public const int CurrentVersion = 4", source, StringComparison.Ordinal);
         Assert.Contains("BeginTransactionAsync", source, StringComparison.Ordinal);
         Assert.Contains("CommitAsync", source, StringComparison.Ordinal);
         Assert.Contains("RollbackAsync", source, StringComparison.Ordinal);
@@ -72,6 +72,29 @@ public sealed class DownloadStoreSchemaArchitectureTests
                 otherOwners,
                 otherOwner => Assert.DoesNotContain(otherOwner, source, StringComparison.Ordinal));
         }
+    }
+
+    [Fact]
+    public void VersionFourOwnsOnlyLegacyClassificationQuarantineAndAdmissionState()
+    {
+        var source = ReadDownloadSource("DownloadStoreSchemaV4Migration.cs");
+
+        Assert.Contains("IPhysicalOutputPathResolver", source, StringComparison.Ordinal);
+        Assert.Contains("DownloadOutputPathKey.Create", source, StringComparison.Ordinal);
+        Assert.Contains("download_quarantine", source, StringComparison.Ordinal);
+        Assert.Contains("download_upgrade_admission_gate", source, StringComparison.Ordinal);
+        Assert.Contains("NOT EXISTS (", source, StringComparison.Ordinal);
+        Assert.Contains("FROM downloaded", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("UPDATE download_base", source, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("UPDATE downloading", source, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("DELETE FROM", source, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("File.Delete", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Directory.Delete", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("File.Move", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Directory.Move", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Aria2", source, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(".Stop", source, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("ResetAsync", source, StringComparison.OrdinalIgnoreCase);
     }
 
     private static string ReadDownloadSource(string fileName)
