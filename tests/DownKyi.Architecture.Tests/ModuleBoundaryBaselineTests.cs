@@ -264,22 +264,35 @@ public sealed class ModuleBoundaryBaselineTests
     }
 
     [Fact]
-    public void SqliteDownloadStoreCoordinatesDedicatedRecordAndCommandOwners()
+    public void SqliteDownloadStoreCoordinatesDedicatedPersistenceOwners()
     {
         var downloadRoot = Path.Combine(RepositoryRoot, "src", "DownKyi.Infrastructure", "Downloads");
         var storeSource = File.ReadAllText(Path.Combine(downloadRoot, "SqliteDownloadTaskStore.cs"));
+        var querySource = File.ReadAllText(Path.Combine(downloadRoot, "SqliteDownloadStoreQueries.cs"));
+        var commandSource = File.ReadAllText(Path.Combine(downloadRoot, "SqliteDownloadStoreCommands.cs"));
+        var reservationSource = File.ReadAllText(Path.Combine(
+            downloadRoot,
+            "SqliteDownloadStoreOutputReservations.cs"));
+        var quarantineSource = File.ReadAllText(Path.Combine(
+            downloadRoot,
+            "SqliteDownloadStoreQuarantine.cs"));
         var mapperSource = File.ReadAllText(Path.Combine(downloadRoot, "DownloadTaskRecordMapper.cs"));
         var readerSource = File.ReadAllText(Path.Combine(downloadRoot, "DownloadTaskSqlReader.cs"));
         var writerSource = File.ReadAllText(Path.Combine(downloadRoot, "DownloadTaskSqlWriter.cs"));
 
-        Assert.Contains("DownloadTaskRecordMapper.Read", storeSource, StringComparison.Ordinal);
-        Assert.Contains("DownloadTaskSqlReader.ReadManyAsync", storeSource, StringComparison.Ordinal);
-        Assert.Contains("DownloadTaskSqlWriter", storeSource, StringComparison.Ordinal);
-        Assert.Contains("WriteStateRowAsync", storeSource, StringComparison.Ordinal);
+        Assert.Contains("SqliteDownloadStoreQueries", storeSource, StringComparison.Ordinal);
+        Assert.Contains("SqliteDownloadStoreCommands", storeSource, StringComparison.Ordinal);
+        Assert.Contains("SqliteDownloadStoreOutputReservations", storeSource, StringComparison.Ordinal);
+        Assert.Contains("SqliteDownloadStoreQuarantine", storeSource, StringComparison.Ordinal);
+        Assert.Contains("DownloadTaskRecordMapper.Read", querySource, StringComparison.Ordinal);
+        Assert.Contains("DownloadTaskSqlReader.SelectColumns", querySource, StringComparison.Ordinal);
+        Assert.Contains("DownloadTaskSqlWriter", commandSource, StringComparison.Ordinal);
+        Assert.Contains("DownloadTaskSqlWriter", reservationSource, StringComparison.Ordinal);
         Assert.DoesNotContain("DownloadTask.Restore", storeSource, StringComparison.Ordinal);
         Assert.DoesNotContain("INSERT INTO downloading", storeSource, StringComparison.Ordinal);
         Assert.Contains("DownloadTask.Restore", mapperSource, StringComparison.Ordinal);
-        Assert.Contains("INSERT INTO download_quarantine", readerSource, StringComparison.Ordinal);
+        Assert.Contains("SELECT", readerSource, StringComparison.Ordinal);
+        Assert.Contains("INSERT INTO download_quarantine", quarantineSource, StringComparison.Ordinal);
         Assert.Contains("INSERT INTO downloading", writerSource, StringComparison.Ordinal);
     }
 
