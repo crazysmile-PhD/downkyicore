@@ -33,7 +33,11 @@ public sealed class SqliteDownloadTaskStore : IDownloadTaskStore, IDisposable
             throw new ArgumentOutOfRangeException(nameof(options));
         }
 
-        _database = new SqliteDownloadStoreDatabase(options, clock, logger);
+        _database = new SqliteDownloadStoreDatabase(
+            options,
+            clock,
+            logger,
+            typeof(SqliteDownloadTaskStore));
         _quarantine = new SqliteDownloadStoreQuarantine(_database);
         _queries = new SqliteDownloadStoreQueries(_database, clock);
         _commands = new SqliteDownloadStoreCommands(_database);

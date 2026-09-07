@@ -14,6 +14,7 @@ internal sealed class SqliteDownloadStoreDatabase : IDisposable
     private readonly SqliteDownloadTaskStoreOptions _options;
     private readonly IClock _clock;
     private readonly ILogger _logger;
+    private readonly Type _disposedObjectType;
     private readonly string _connectionString;
     private readonly SemaphoreSlim _initializationGate = new(1, 1);
     private volatile bool _initialized;
@@ -22,11 +23,13 @@ internal sealed class SqliteDownloadStoreDatabase : IDisposable
     public SqliteDownloadStoreDatabase(
         SqliteDownloadTaskStoreOptions options,
         IClock clock,
-        ILogger logger)
+        ILogger logger,
+        Type disposedObjectType)
     {
         _options = options;
         _clock = clock;
         _logger = logger;
+        _disposedObjectType = disposedObjectType;
         _connectionString = new SqliteConnectionStringBuilder
         {
             DataSource = options.DatabasePath,
@@ -100,7 +103,7 @@ internal sealed class SqliteDownloadStoreDatabase : IDisposable
 
     private async Task EnsureInitializedAsync(CancellationToken cancellationToken)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ObjectDisposedException.ThrowIf(_disposed, _disposedObjectType);
         if (_initialized)
         {
             return;

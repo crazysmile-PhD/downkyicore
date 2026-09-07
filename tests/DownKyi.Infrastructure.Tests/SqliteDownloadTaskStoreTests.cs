@@ -399,6 +399,20 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
             (long)(await findProbe.ExecuteScalarAsync(TestContext.Current.CancellationToken))!);
     }
 
+    [Fact]
+    public async Task DisposedStoreReportsThePublicStoreAsObjectName()
+    {
+        var store = CreateStore();
+        await store.InitializeAsync(TestContext.Current.CancellationToken);
+        store.Dispose();
+
+        var operation = store.GetUnfinishedAsync(TestContext.Current.CancellationToken);
+        var exception = await Assert.ThrowsAsync<ObjectDisposedException>(async () =>
+            await operation.ConfigureAwait(true));
+
+        Assert.Equal(typeof(SqliteDownloadTaskStore).FullName, exception.ObjectName);
+    }
+
     public void Dispose()
     {
         using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
