@@ -28,6 +28,22 @@ public sealed class SqliteDownloadTaskStoreArchitectureTests
         "Activator",
         "dynamic"
     ];
+    private static readonly HashSet<string> ReflectionLookups =
+    [
+        "GetMethod",
+        "GetProperty",
+        "GetField",
+        "GetConstructor",
+        "GetEvent",
+        "GetMember"
+    ];
+    private static readonly HashSet<string> ReflectionInvocations =
+    [
+        "Invoke",
+        "GetValue",
+        "SetValue",
+        "CreateDelegate"
+    ];
     private static readonly Dictionary<string, string> ExpectedFacadeDelegations = new(StringComparer.Ordinal)
     {
         ["InitializeAsync"] = "_database.InitializeAsync(cancellationToken)",
@@ -158,6 +174,38 @@ public sealed class SqliteDownloadTaskStoreArchitectureTests
     }
 
     [Fact]
+    public void OwnerDependencyRuleRejectsReflectionLookupInvocationSequence()
+    {
+        const string source = """
+            internal sealed class Owner
+            {
+                public object? Build(object target) =>
+                    target.GetType().GetMethod("Build")!.Invoke(target, parameters: null);
+            }
+            """;
+
+        var violations = FindForbiddenOwnerDependencyViolations("Owner", source);
+
+        Assert.Contains(violations, violation =>
+            violation.Contains("GetType().GetMethod(...).Invoke", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void OwnerDependencyRuleIgnoresReflectionWordsInCommentsAndLiterals()
+    {
+        const string source = """"
+            internal sealed class Owner
+            {
+                // target.GetType().GetMethod("Build")!.Invoke(...)
+                private const string Text = "GetType GetMethod Invoke";
+                private const string RawText = """target.GetType().GetMethod("Build")!.Invoke(...)""";
+            }
+            """";
+
+        Assert.Empty(FindForbiddenOwnerDependencyViolations("Owner", source));
+    }
+
+    [Fact]
     public void DatabaseOwnsConnectionsInitializationAndStoreTransactionBoundaries()
     {
         var database = ReadDownloadSource($"{Database}.cs");
@@ -260,7 +308,8 @@ public sealed class SqliteDownloadTaskStoreArchitectureTests
         string owner,
         string source)
     {
-        var identifiers = Tokenize(source)
+        var tokens = Tokenize(source);
+        var identifiers = tokens
             .Where(token => token.Length > 0 && (char.IsLetter(token[0]) || token[0] == '_'))
             .ToHashSet(StringComparer.Ordinal);
         var violations = new List<string>();
@@ -282,7 +331,45 @@ public sealed class SqliteDownloadTaskStoreArchitectureTests
             violations.Add($"{owner} references forbidden general context token '{context}'.");
         }
 
+        AddReflectionSequenceViolations(owner, tokens, violations);
+
         return violations;
+    }
+
+    private static void AddReflectionSequenceViolations(
+        string owner,
+        List<string> tokens,
+        List<string> violations)
+    {
+        for (var index = 0; index + 5 < tokens.Count; index++)
+        {
+            if (tokens[index] != "GetType" || tokens[index + 1] != "(" || tokens[index + 2] != ")" ||
+                tokens[index + 3] != "." || !ReflectionLookups.Contains(tokens[index + 4]) ||
+                tokens[index + 5] != "(")
+            {
+                continue;
+            }
+
+            var lookupClose = FindMatchingParenthesis(tokens, index + 5);
+            if (lookupClose < 0)
+            {
+                continue;
+            }
+
+            var cursor = lookupClose + 1;
+            while (cursor < tokens.Count && tokens[cursor] == "!")
+            {
+                cursor++;
+            }
+
+            if (cursor + 2 < tokens.Count && tokens[cursor] == "." &&
+                ReflectionInvocations.Contains(tokens[cursor + 1]) && tokens[cursor + 2] == "(")
+            {
+                violations.Add(
+                    $"{owner} uses forbidden reflection call sequence " +
+                    $"'GetType().{tokens[index + 4]}(...).{tokens[cursor + 1]}(...)'.");
+            }
+        }
     }
 
     private static int FindHeaderDelimiter(List<string> tokens, int start)
