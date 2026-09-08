@@ -22,9 +22,17 @@ internal static class DownloadStoreSchemaV4Migration
             connection,
             transaction,
             cancellationToken).ConfigureAwait(false);
-        foreach (var task in legacyTasks)
+        var pathResolutions = legacyTasks
+            .Select(task => ResolveLegacyPath(task, physicalOutputPathResolver))
+            .ToArray();
+        var aliasedPhysicalKeys = pathResolutions
+            .Where(resolution => resolution.OriginalKeyDiffersFromPhysical)
+            .Select(resolution => resolution.PhysicalKey!)
+            .ToHashSet(StringComparer.Ordinal);
+        foreach (var resolution in pathResolutions)
         {
-            if (IsSamePhysicalPath(task.BasePath, physicalOutputPathResolver))
+            if (resolution.PhysicalKey is not null
+                && !aliasedPhysicalKeys.Contains(resolution.PhysicalKey))
             {
                 continue;
             }
@@ -32,7 +40,7 @@ internal static class DownloadStoreSchemaV4Migration
             await QuarantineAndBlockAdmissionAsync(
                 connection,
                 transaction,
-                task.Id,
+                resolution.Task.Id,
                 appliedAtUtc,
                 cancellationToken).ConfigureAwait(false);
         }
@@ -85,18 +93,21 @@ internal static class DownloadStoreSchemaV4Migration
         return tasks;
     }
 
-    private static bool IsSamePhysicalPath(
-        string originalPath,
+    private static LegacyPathResolution ResolveLegacyPath(
+        LegacyUnfinishedTask task,
         IPhysicalOutputPathResolver physicalOutputPathResolver)
     {
         try
         {
             var ignoreCase = DownloadOutputPathKey.UsesCaseInsensitiveComparison;
-            var originalKey = DownloadOutputPathKey.Create(originalPath, ignoreCase);
+            var originalKey = DownloadOutputPathKey.Create(task.BasePath, ignoreCase);
             var physicalKey = DownloadOutputPathKey.Create(
-                physicalOutputPathResolver.ResolvePhysicalBasePath(originalPath),
+                physicalOutputPathResolver.ResolvePhysicalBasePath(task.BasePath),
                 ignoreCase);
-            return StringComparer.Ordinal.Equals(originalKey, physicalKey);
+            return new LegacyPathResolution(
+                task,
+                physicalKey,
+                !StringComparer.Ordinal.Equals(originalKey, physicalKey));
         }
         catch (Exception exception) when (exception is ArgumentException
             or IOException
@@ -104,7 +115,7 @@ internal static class DownloadStoreSchemaV4Migration
             or UnauthorizedAccessException
             or System.Security.SecurityException)
         {
-            return false;
+            return new LegacyPathResolution(task, null, false);
         }
     }
 
@@ -137,4 +148,9 @@ internal static class DownloadStoreSchemaV4Migration
     }
 
     private sealed record LegacyUnfinishedTask(string Id, string BasePath);
+
+    private sealed record LegacyPathResolution(
+        LegacyUnfinishedTask Task,
+        string? PhysicalKey,
+        bool OriginalKeyDiffersFromPhysical);
 }

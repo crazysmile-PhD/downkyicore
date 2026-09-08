@@ -120,17 +120,62 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
     }
 
     [Fact]
-    public async Task VersionThreePhysicalResolverFailureQuarantinesAndBlocksAdmission()
+    public async Task VersionThreePhysicalAliasCollisionQuarantinesEntireGroupOnly()
     {
-        var originalPath = Path.Combine(_directory, "unresolved", "video");
-        await CreateVersionThreeDatabaseAsync(CreatePausedTask("unresolved", originalPath));
-        var before = await ReadStoredStateAsync("unresolved");
-        using var store = CreateStore(new StubPhysicalOutputPathResolver(
-            _ => throw new IOException("Synthetic resolver failure.")));
+        var physicalPath = Path.Combine(_directory, "physical", "video");
+        var aliasPath = Path.Combine(_directory, "alias", "video");
+        var otherPath = Path.Combine(_directory, "other", "video");
+        await CreateVersionThreeDatabaseAsync(
+            CreatePausedTask("physical", physicalPath),
+            CreatePausedTask("alias", aliasPath),
+            CreatePausedTask("other", otherPath));
+        var physicalBefore = await ReadStoredStateAsync("physical");
+        var aliasBefore = await ReadStoredStateAsync("alias");
+        var otherBefore = await ReadStoredStateAsync("other");
+        var resolutionCalls = new Dictionary<string, int>(StringComparer.Ordinal);
+        using var store = CreateStore(new StubPhysicalOutputPathResolver(path =>
+        {
+            resolutionCalls[path] = resolutionCalls.GetValueOrDefault(path) + 1;
+            return path == aliasPath ? physicalPath : path;
+        }));
 
         await store.InitializeAsync(TestContext.Current.CancellationToken);
 
-        Assert.Empty(await store.GetUnfinishedAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(3, resolutionCalls.Count);
+        Assert.All(resolutionCalls.Values, count => Assert.Equal(1, count));
+        Assert.Equal(
+            "other",
+            Assert.Single(await store.GetUnfinishedAsync(TestContext.Current.CancellationToken)).Id.Value);
+        Assert.Equal(
+            ["alias", "physical"],
+            (await store.GetQuarantinedRecordsAsync(TestContext.Current.CancellationToken))
+                .Select(record => record.RecordId));
+        Assert.True(await store.IsLegacyUpgradeAdmissionBlockedAsync(
+            TestContext.Current.CancellationToken));
+        Assert.Equal(physicalBefore, await ReadStoredStateAsync("physical"));
+        Assert.Equal(aliasBefore, await ReadStoredStateAsync("alias"));
+        Assert.Equal(otherBefore, await ReadStoredStateAsync("other"));
+    }
+
+    [Fact]
+    public async Task VersionThreePhysicalResolverFailureQuarantinesAndBlocksAdmission()
+    {
+        var originalPath = Path.Combine(_directory, "unresolved", "video");
+        var safePath = Path.Combine(_directory, "safe", "video");
+        await CreateVersionThreeDatabaseAsync(
+            CreatePausedTask("unresolved", originalPath),
+            CreatePausedTask("safe", safePath));
+        var before = await ReadStoredStateAsync("unresolved");
+        using var store = CreateStore(new StubPhysicalOutputPathResolver(
+            path => path == originalPath
+                ? throw new IOException("Synthetic resolver failure.")
+                : path));
+
+        await store.InitializeAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            "safe",
+            Assert.Single(await store.GetUnfinishedAsync(TestContext.Current.CancellationToken)).Id.Value);
         Assert.Equal(
             "unresolved",
             Assert.Single(
