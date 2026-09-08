@@ -5,9 +5,11 @@ using Microsoft.Data.Sqlite;
 
 namespace DownKyi.Infrastructure.Downloads;
 
-public sealed partial class SqliteDownloadTaskStore
+internal sealed class SqliteDownloadStoreOutputReservations(SqliteDownloadStoreDatabase database)
 {
-    public async Task<OperationResult> AddAsync(
+    private readonly SqliteDownloadStoreDatabase _database = database;
+
+    public Task<OperationResult> AddAsync(
         DownloadTask task,
         CancellationToken cancellationToken)
     {
@@ -17,46 +19,40 @@ public sealed partial class SqliteDownloadTaskStore
             throw new ArgumentException("A deleted task cannot be inserted.", nameof(task));
         }
 
-        await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
-        using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        using var transaction = BeginImmediateTransaction(connection);
-        try
-        {
-            if (task.Phase != DownloadPhase.Completed &&
-                await IsOutputPathReservedCoreAsync(
-                    connection,
-                    transaction,
-                    task.Output.BasePath,
-                    DownloadOutputPathKey.UsesCaseInsensitiveComparison,
-                    cancellationToken).ConfigureAwait(false))
+        return _database.ExecuteImmediateTransactionAsync(
+            async (connection, transaction, token) =>
             {
-                await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
-                return OutputPathConflict();
-            }
+                try
+                {
+                    if (task.Phase != DownloadPhase.Completed &&
+                        await IsOutputPathReservedCoreAsync(
+                            connection,
+                            transaction,
+                            task.Output.BasePath,
+                            DownloadOutputPathKey.UsesCaseInsensitiveComparison,
+                            token).ConfigureAwait(false))
+                    {
+                        return DownloadStoreOperationResults.OutputPathConflict();
+                    }
 
-            await DownloadTaskSqlWriter
-                .InsertBaseAsync(connection, transaction, task, cancellationToken)
-                .ConfigureAwait(false);
-            await DownloadTaskSqlWriter
-                .WriteStateRowAsync(connection, transaction, task, cancellationToken)
-                .ConfigureAwait(false);
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-            return OperationResult.Success();
-        }
-        catch (SqliteException exception) when (exception.SqliteErrorCode == 19)
-        {
-            await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
-            return exception.Message.Contains(
-                "output_reservation_key",
-                StringComparison.OrdinalIgnoreCase)
-                ? OutputPathConflict()
-                : Conflict(task.Id, "already exists");
-        }
-        catch
-        {
-            await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
-            throw;
-        }
+                    await DownloadTaskSqlWriter
+                        .InsertBaseAsync(connection, transaction, task, token)
+                        .ConfigureAwait(false);
+                    await DownloadTaskSqlWriter
+                        .WriteStateRowAsync(connection, transaction, task, token)
+                        .ConfigureAwait(false);
+                    return OperationResult.Success();
+                }
+                catch (SqliteException exception) when (exception.SqliteErrorCode == 19)
+                {
+                    return exception.Message.Contains(
+                        "output_reservation_key",
+                        StringComparison.OrdinalIgnoreCase)
+                        ? DownloadStoreOperationResults.OutputPathConflict()
+                        : DownloadStoreOperationResults.Conflict(task.Id, "already exists");
+                }
+            },
+            cancellationToken);
     }
 
     public async Task<bool> IsOutputPathReservedAsync(
@@ -65,8 +61,7 @@ public sealed partial class SqliteDownloadTaskStore
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(basePath);
-        await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
-        using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        using var connection = await _database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         return await IsOutputPathReservedCoreAsync(
             connection,
             transaction: null,
@@ -118,16 +113,4 @@ public sealed partial class SqliteDownloadTaskStore
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return Convert.ToInt64(result, System.Globalization.CultureInfo.InvariantCulture) != 0;
     }
-
-    private static OperationResult OutputPathConflict()
-    {
-        return OperationResult.Failure(new OperationError(
-            "download.store.output_path_reserved",
-            "The selected output path is already reserved by another active download.",
-            OperationErrorKind.Conflict));
-    }
-
-    private static SqliteTransaction BeginImmediateTransaction(SqliteConnection connection) =>
-        connection.BeginTransaction(deferred: false);
-
 }

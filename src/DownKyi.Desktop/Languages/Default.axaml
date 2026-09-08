@@ -137,6 +137,8 @@
     <system:String x:Key="TipAddDownloadingZero">没有选中项符合下载要求！</system:String>
     <system:String x:Key="TipAddDownloadingFinished1">成功添加了</system:String>
     <system:String x:Key="TipAddDownloadingFinished2">项~</system:String>
+    <system:String x:Key="LegacyDownloadAdmissionBlocked">升级时发现部分旧的未完成任务保存位置不安全或已经变化。程序无法确认这些任务是否由原来的自定义远端 aria2 负责；旧的远端 aria2 可能仍在写入文件。为避免两个 aria2 同时写入，现已暂时阻止新增下载。&#10;&#10;请先到原来的远端 aria2 停止这些旧任务。确认已经停止后，点击“确定”恢复新增下载；取消或关闭不会解除阻止。</system:String>
+    <system:String x:Key="LegacyDownloadAdmissionConfirmationFailed">无法保存确认，新增下载仍被阻止。</system:String>
     
     <!--  DownloadManager  -->
     <system:String x:Key="Downloading">正在下载</system:String>

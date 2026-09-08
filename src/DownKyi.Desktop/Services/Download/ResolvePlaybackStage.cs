@@ -38,13 +38,13 @@ internal sealed class ResolvePlaybackStage : IDownloadPipelineStage
     {
         ArgumentNullException.ThrowIfNull(context);
         var downloading = context.Downloading;
-        downloading.DownloadBase.FilePath = downloading.DownloadBase.FilePath
+        var playbackBasePath = downloading.DownloadBase.FilePath
             .Replace("\\", "/", StringComparison.Ordinal);
 
         string path;
         try
         {
-            path = GetDownloadDirectoryPath(downloading.DownloadBase.FilePath);
+            path = GetDownloadDirectoryPath(playbackBasePath);
             Directory.CreateDirectory(path);
         }
         catch (Exception exception) when (exception is IOException

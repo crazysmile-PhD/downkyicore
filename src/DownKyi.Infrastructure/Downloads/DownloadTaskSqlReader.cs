@@ -1,6 +1,3 @@
-using DownKyi.Domain.Downloads;
-using Microsoft.Data.Sqlite;
-
 namespace DownKyi.Infrastructure.Downloads;
 
 internal static class DownloadTaskSqlReader
@@ -22,69 +19,4 @@ internal static class DownloadTaskSqlReader
         LEFT JOIN downloaded d ON d.id = db.id
         """;
 
-    public static async Task<IReadOnlyList<DownloadTask>> ReadManyAsync(
-        SqliteConnection connection,
-        SqliteCommand command,
-        string sourceTable,
-        DateTimeOffset quarantinedAtUtc,
-        CancellationToken cancellationToken)
-    {
-        var tasks = new List<DownloadTask>();
-        var corrupt = new List<(string RecordId, DownloadRecordCorruptException Error)>();
-        using (var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
-        {
-            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-            {
-                var recordId = reader.GetString(reader.GetOrdinal("id"));
-                try
-                {
-                    tasks.Add(DownloadTaskRecordMapper.Read(reader));
-                }
-                catch (DownloadRecordCorruptException exception)
-                {
-                    corrupt.Add((recordId, exception));
-                }
-            }
-        }
-
-        foreach (var item in corrupt)
-        {
-            await QuarantineAsync(
-                    connection,
-                    sourceTable,
-                    item.RecordId,
-                    item.Error,
-                    quarantinedAtUtc,
-                    cancellationToken)
-                .ConfigureAwait(false);
-        }
-
-        return tasks;
-    }
-
-    public static async Task QuarantineAsync(
-        SqliteConnection connection,
-        string sourceTable,
-        string recordId,
-        DownloadRecordCorruptException error,
-        DateTimeOffset quarantinedAtUtc,
-        CancellationToken cancellationToken)
-    {
-        using var command = connection.CreateCommand();
-        command.CommandText = """
-            INSERT INTO download_quarantine
-                (source_table, record_id, field_name, reason, quarantined_at_utc)
-            VALUES (@source_table, @record_id, @field_name, @reason, @quarantined_at_utc)
-            ON CONFLICT(source_table, record_id) DO UPDATE SET
-                field_name = excluded.field_name,
-                reason = excluded.reason,
-                quarantined_at_utc = excluded.quarantined_at_utc
-            """;
-        command.Parameters.AddWithValue("@source_table", sourceTable);
-        command.Parameters.AddWithValue("@record_id", recordId);
-        command.Parameters.AddWithValue("@field_name", error.FieldName);
-        command.Parameters.AddWithValue("@reason", error.Message);
-        command.Parameters.AddWithValue("@quarantined_at_utc", quarantinedAtUtc.ToUnixTimeMilliseconds());
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-    }
 }

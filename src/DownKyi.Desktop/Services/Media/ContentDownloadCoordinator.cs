@@ -113,6 +113,7 @@ internal sealed class ContentDownloadCoordinator : IContentDownloadCoordinator
 
         var addToDownloadSession = _serviceFactory.Create(ToPlayStreamType(selectedItems[0].Kind));
         return await DownloadAddCoordinator.AddToDownloadIfDirectorySelectedAsync(
+            () => addToDownloadSession.EnsureAdmissionAsync(cancellationToken),
             () => addToDownloadSession.SetDirectory(cancellationToken),
             directory => AddItemsAsync(
                 addToDownloadSession,

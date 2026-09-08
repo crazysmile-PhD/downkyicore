@@ -91,6 +91,7 @@ internal static class DesktopComposition
         });
         services.AddSingleton<IWbiKeyProvider, WbiKeyProvider>();
         services.AddSingleton<FfmpegProcessor>();
+        services.AddSingleton<IPhysicalOutputPathResolver, FileSystemPhysicalOutputPathResolver>();
         services.AddSingleton<IDownloadTaskStore, SqliteDownloadTaskStore>();
         services.AddSingleton<IDownloadTaskApplicationService, DownloadTaskApplicationService>();
         services.AddSingleton<DownloadTaskProjectionStore>();
@@ -99,6 +100,7 @@ internal static class DesktopComposition
         services.AddSingleton<IDownloadTaskQueue>(provider =>
             provider.GetRequiredService<DownloadTaskQueueGateway>());
         services.AddSingleton<DownloadTaskAdmissionService>();
+        services.AddSingleton<LegacyDownloadAdmissionPresenter>();
         services.AddSingleton<DownloadListState>();
         services.AddSingleton<DownloadTaskFileService>();
         services.AddSingleton<AriaRuntimeClientRegistry>();

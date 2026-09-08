@@ -581,6 +581,11 @@ type: core
 paths:
   - src/DownKyi.Infrastructure/Time/SystemClock.cs
   - src/DownKyi.Infrastructure/Downloads/SqliteDownloadTaskStore.cs
+  - src/DownKyi.Infrastructure/Downloads/SqliteDownloadStoreDatabase.cs
+  - src/DownKyi.Infrastructure/Downloads/SqliteDownloadStoreQueries.cs
+  - src/DownKyi.Infrastructure/Downloads/SqliteDownloadStoreCommands.cs
+  - src/DownKyi.Infrastructure/Downloads/SqliteDownloadStoreOutputReservations.cs
+  - src/DownKyi.Infrastructure/Downloads/SqliteDownloadStoreQuarantine.cs
   - src/DownKyi.Infrastructure/Downloads/DownloadTaskRecordMapper.cs
   - src/DownKyi.Infrastructure/Downloads/DownloadTaskSqlReader.cs
   - src/DownKyi.Infrastructure/Downloads/DownloadTaskSqlWriter.cs
@@ -596,7 +601,7 @@ contracts:
   - Infrastructure never references Desktop or Prism.
   - SystemClock returns UTC time; deterministic tests replace IClock at the composition boundary.
   - SQLite uses one short pooled connection per operation, WAL, parameterized queries, optimistic versions, and transactional state moves.
-  - `SqliteDownloadTaskStore` owns initialization, transactions, and public query coordination; record restoration, quarantine reads, and SQL write commands stay in their dedicated owners.
+  - `SqliteDownloadTaskStore` is a non-partial compatibility facade with no SQL. `SqliteDownloadStoreDatabase` owns connections, initialization, orphan cleanup, and store-operation transaction boundaries; queries, commands, output reservations, and quarantine stay in explicit inward collaborators.
   - Existing databases are backed up before schema migration; failed migrations roll back and never advance `user_version`.
   - One malformed row is quarantined with record ID, field, and sanitized reason; raw JSON and personal paths are not copied into diagnostics.
   - The progress writer has a one-slot bounded wake channel, a bounded task set, contiguous coalescing, and a final shutdown flush.
@@ -1994,7 +1999,7 @@ contracts:
   - New, resumed, and persisted startup tasks enqueue `DownloadTaskId` directly; no runtime owner scans an observable UI collection for work.
   - `DownloadTaskAdmissionService` is the singleton admission coordinator. Under one asynchronous gate it probes indexed candidates, resolves on-disk collisions, persists the selected base path, then publishes the UI projection and queue ID; it never reloads all unfinished tasks for each admission.
   - SQLite schema v3 stores the normalized active reservation key in `download_base`. Task insertion claims that key in the same transaction, and a partial unique index rejects check-then-insert races. The Domain/SQLite store remains the ownership truth; no mutable path registry, cache, or UI collection owns reservations.
-  - `SqliteDownloadTaskStore` owns only its initialization gate and operation-scoped connections. Its disposal cannot clear the provider-global connection pool shared by sibling stores or connections; process/test-host teardown is the only layer allowed to perform global pool cleanup.
+  - `SqliteDownloadStoreDatabase` owns the initialization gate and operation-scoped connections behind the `SqliteDownloadTaskStore` facade. Its disposal cannot clear the provider-global connection pool shared by sibling stores or connections; process/test-host teardown is the only layer allowed to perform global pool cleanup.
   - Queued, Downloading, Pausing, Paused, Failed, and Canceled tasks retain normalized output reservations. Canceled tasks release the claim only after generated-file cleanup succeeds and the task commits Deleted; Completed tasks release it during the completion transaction. Existing output files still prevent reuse.
   - Output-path comparison is ordinal and case-insensitive on Windows and macOS, and ordinal on Linux. The macOS rule is deliberately fail-closed for the default case-insensitive filesystems. When automatic numeric suffixing is disabled, any active or on-disk collision rejects admission instead of silently renaming the output.
   - `DownloadTransferCoordinator` is the only media-transfer retry budget owner. It supplies exactly one URL to a backend call, rotates backup addresses, and permits one playback-address refresh.

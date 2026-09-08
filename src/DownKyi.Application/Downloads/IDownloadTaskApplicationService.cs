@@ -11,6 +11,9 @@ public interface IDownloadTaskApplicationService
         DownloadTask task,
         CancellationToken cancellationToken);
 
+    Task<OperationResult> CheckNewDownloadAdmissionAsync(
+        CancellationToken cancellationToken);
+
     Task<DownloadTask?> FindAsync(
         DownloadTaskId taskId,
         CancellationToken cancellationToken);
@@ -20,6 +23,11 @@ public interface IDownloadTaskApplicationService
     Task<bool> IsOutputPathReservedAsync(
         string basePath,
         bool ignoreCase,
+        CancellationToken cancellationToken);
+
+    Task<bool> IsLegacyUpgradeAdmissionBlockedAsync(CancellationToken cancellationToken);
+
+    Task<OperationResult> ConfirmLegacyRemoteTasksStoppedAsync(
         CancellationToken cancellationToken);
 
     Task<DownloadHistoryPage> GetHistoryPageAsync(

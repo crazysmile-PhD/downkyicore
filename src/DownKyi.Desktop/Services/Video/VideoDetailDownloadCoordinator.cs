@@ -46,6 +46,7 @@ internal sealed class VideoDetailDownloadCoordinator : IVideoDetailDownloadCoord
 
         var addService = _serviceFactory.Create(streamType.Value);
         return DownloadAddCoordinator.AddToDownloadIfDirectorySelectedAsync(
+            () => addService.EnsureAdmissionAsync(cancellationToken),
             () => addService.SetDirectory(cancellationToken),
             async directory =>
             {
