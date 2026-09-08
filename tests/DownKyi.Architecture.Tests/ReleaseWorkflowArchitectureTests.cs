@@ -6,7 +6,7 @@ using System.Xml.Linq;
 
 namespace DownKyi.Architecture.Tests;
 
-public sealed class ReleaseWorkflowArchitectureTests
+public sealed partial class ReleaseWorkflowArchitectureTests
 {
     private static readonly string RepositoryRoot = FindRepositoryRoot();
 

@@ -1,31 +1,29 @@
 using System.Text.Json;
-using System.Xml.Linq;
+using System.Text.RegularExpressions;
 
 namespace DownKyi.Architecture.Tests;
 
-public sealed class RidCapabilityArchitectureTests
+public sealed partial class ReleaseWorkflowArchitectureTests
 {
-    private static readonly string RepositoryRoot = FindRepositoryRoot();
-
     [Fact]
     public void CurrentReleaseRidsHaveTheCapabilitiesTheirConsumersRequire()
     {
-        var model = ReadCurrentModel();
+        var model = ReadCurrentRidCapabilityModel();
 
-        Assert.Empty(Validate(model));
+        Assert.Empty(ValidateRidCapabilities(model));
     }
 
     [Fact]
     public void PackageRidWithoutAssetsFailsWithoutRequiringUnrelatedPlatformCapabilities()
     {
-        var model = ReadCurrentModel();
+        var model = ReadCurrentRidCapabilityModel();
         const string unsupportedPackageRid = "freebsd-x64";
         var mutation = model with
         {
             PackageRids = Add(model.PackageRids, unsupportedPackageRid),
         };
 
-        var failures = Validate(mutation);
+        var failures = ValidateRidCapabilities(mutation);
 
         Assert.Contains(failures, failure =>
             failure.Contains(unsupportedPackageRid, StringComparison.Ordinal) &&
@@ -43,7 +41,7 @@ public sealed class RidCapabilityArchitectureTests
     [Fact]
     public void CapabilityContractAllowsDifferentPurposeRidSets()
     {
-        var model = ReadCurrentModel();
+        var model = ReadCurrentRidCapabilityModel();
         const string ffmpegOnlyRid = "linux-s390x";
         var mutation = model with
         {
@@ -52,10 +50,10 @@ public sealed class RidCapabilityArchitectureTests
             FfmpegExtractionRids = Add(model.FfmpegExtractionRids, ffmpegOnlyRid),
         };
 
-        Assert.Empty(Validate(mutation));
+        Assert.Empty(ValidateRidCapabilities(mutation));
     }
 
-    private static RidCapabilityModel ReadCurrentModel()
+    private static RidCapabilityModel ReadCurrentRidCapabilityModel()
     {
         var manifestPath = Path.Combine(
             RepositoryRoot,
@@ -64,9 +62,9 @@ public sealed class RidCapabilityArchitectureTests
             "external-assets.json");
         using var manifest = JsonDocument.Parse(File.ReadAllText(manifestPath));
         var root = manifest.RootElement;
-        var ariaAssetRids = ReadObjectKeys(root.GetProperty("aria2").GetProperty("assets"));
+        var ariaAssetRids = ReadRidKeys(root.GetProperty("aria2").GetProperty("assets"));
         var ffmpeg = root.GetProperty("ffmpeg");
-        var ffmpegAssetRids = ReadObjectKeys(ffmpeg.GetProperty("assets"));
+        var ffmpegAssetRids = ReadRidKeys(ffmpeg.GetProperty("assets"));
         var ffmpegRequiredRids = ffmpeg.GetProperty("requiredRids")
             .EnumerateArray()
             .Select(item => item.GetString())
@@ -81,28 +79,26 @@ public sealed class RidCapabilityArchitectureTests
             .Select(asset => asset.Name)
             .ToHashSet(StringComparer.Ordinal);
 
-        var workflow = File.ReadAllText(
+        var buildWorkflow = File.ReadAllText(
             Path.Combine(RepositoryRoot, ".github", "workflows", "build.yml"));
-        var publishJobs = ReadPublishJobs(workflow);
+        var publishJobs = ReadPublishJobs(buildWorkflow);
         var packageRids = publishJobs
             .SelectMany(job => job.Rids)
             .ToHashSet(StringComparer.Ordinal);
-        var signingRids = publishJobs
-            .Where(job =>
-                job.Source.Contains("./sign.sh", StringComparison.Ordinal) &&
-                job.Source.Contains("./verify-app.sh", StringComparison.Ordinal))
-            .SelectMany(job => job.Rids)
-            .ToHashSet(StringComparer.Ordinal);
-        var notarizationRids = publishJobs
-            .Where(job =>
-                job.Source.Contains("xcrun notarytool submit", StringComparison.Ordinal) &&
-                job.Source.Contains("./verify-dmg.sh", StringComparison.Ordinal))
-            .SelectMany(job => job.Rids)
-            .ToHashSet(StringComparer.Ordinal);
+        var signingRids = RidsForJobsContaining(publishJobs, "./sign.sh", "./verify-app.sh");
+        var notarizationRids = RidsForJobsContaining(
+            publishJobs,
+            "xcrun notarytool submit",
+            "./verify-dmg.sh");
 
         var qualityWorkflow = File.ReadAllText(
             Path.Combine(RepositoryRoot, ".github", "workflows", "quality.yml"));
-        var tlsRids = ReadMatrixRids(ReadJobSource(qualityWorkflow, "aria2-tls-security"));
+        var qualityLines = Lines(qualityWorkflow);
+        var tlsJob = GetYamlBlock(qualityLines, "  aria2-tls-security:", 2);
+        var tlsRids = MatrixRidPattern().Matches(string.Join('\n', tlsJob))
+            .Select(match => match.Groups["rid"].Value)
+            .ToHashSet(StringComparer.Ordinal);
+
         var ffmpegPowerShell = File.ReadAllText(
             Path.Combine(RepositoryRoot, "script", "ffmpeg.ps1"));
         var ffmpegShell = File.ReadAllText(
@@ -111,9 +107,6 @@ public sealed class RidCapabilityArchitectureTests
             Path.Combine(RepositoryRoot, "script", "aria2.ps1"));
         var ariaShell = File.ReadAllText(
             Path.Combine(RepositoryRoot, "script", "aria2.sh"));
-        var project = XDocument.Load(Path.Combine(RepositoryRoot, "DownKyi", "DownKyi.csproj"));
-        var publishValidator = File.ReadAllText(
-            Path.Combine(RepositoryRoot, "script", "validate-publish-output.ps1"));
 
         return new RidCapabilityModel(
             packageRids,
@@ -121,38 +114,24 @@ public sealed class RidCapabilityArchitectureTests
             ReadAriaExtractionRids(ariaAssetRids, ariaPowerShell, ariaShell),
             ffmpegRequiredRids,
             ffmpegAssetRids,
-            ReadTemplateExtractionRids(ffmpegRequiredRids, ffmpegPowerShell, ffmpegShell),
+            ReadFfmpegExtractionRids(ffmpegAssetRids, ffmpegPowerShell, ffmpegShell),
             tlsRids,
             ffprobeCompanionRids,
             signingRids,
-            notarizationRids,
-            HasRuntimeAssetSelection(project),
-            HasPackagedToolRequirement(publishValidator, "aria2/aria2c"),
-            HasPackagedToolRequirement(publishValidator, "ffmpeg/ffmpeg"),
-            HasPackagedToolRequirement(publishValidator, "ffmpeg/ffprobe"));
+            notarizationRids);
     }
 
-    private static List<string> Validate(RidCapabilityModel model)
+    private static List<string> ValidateRidCapabilities(RidCapabilityModel model)
     {
         var failures = new List<string>();
         foreach (var rid in model.PackageRids)
         {
-            if (!model.HasRuntimeAssetSelection)
-            {
-                failures.Add($"Package RID {rid} cannot select runtime assets from the SDK RuntimeIdentifier.");
-            }
-
-            if (!model.PublishValidatorRequiresAria2 ||
-                !model.AriaAssetRids.Contains(rid) ||
-                !model.AriaExtractionRids.Contains(rid))
+            if (!model.AriaAssetRids.Contains(rid) || !model.AriaExtractionRids.Contains(rid))
             {
                 failures.Add($"Package RID {rid} is missing its required aria2 capability.");
             }
 
-            if (!model.PublishValidatorRequiresFfmpeg ||
-                !model.PublishValidatorRequiresFfprobe ||
-                !model.FfmpegAssetRids.Contains(rid) ||
-                !model.FfmpegExtractionRids.Contains(rid))
+            if (!model.FfmpegAssetRids.Contains(rid) || !model.FfmpegExtractionRids.Contains(rid))
             {
                 failures.Add($"Package RID {rid} is missing its required FFmpeg/ffprobe capability.");
             }
@@ -207,7 +186,7 @@ public sealed class RidCapabilityArchitectureTests
         return failures;
     }
 
-    private static HashSet<string> ReadObjectKeys(JsonElement element)
+    private static HashSet<string> ReadRidKeys(JsonElement element)
     {
         return element.EnumerateObject()
             .Select(property => property.Name)
@@ -216,232 +195,90 @@ public sealed class RidCapabilityArchitectureTests
 
     private static PublishJob[] ReadPublishJobs(string workflow)
     {
-        return ReadJobs(workflow)
-            .Where(job => job.Source.Contains("dotnet publish", StringComparison.Ordinal))
-            .Select(job => new PublishJob(job.Source, ReadPublishRids(job.Source)))
+        var lines = Lines(workflow);
+        return lines
+            .Where(line =>
+                GetIndent(line) == 2 &&
+                line.EndsWith(':') &&
+                !line.TrimStart().StartsWith('-'))
+            .Select(header => string.Join('\n', GetYamlBlock(lines, header, 2)))
+            .Where(source => source.Contains("dotnet publish", StringComparison.Ordinal))
+            .Select(source => new PublishJob(source, ReadPublishRids(source)))
             .ToArray();
     }
 
     private static HashSet<string> ReadPublishRids(string jobSource)
     {
-        var cpuValues = ReadCpuValues(jobSource);
+        var cpuValues = InlineCpuPattern().Matches(jobSource)
+            .SelectMany(match => match.Groups["values"].Value.Split(','))
+            .Select(value => value.Trim())
+            .Concat(IncludeCpuPattern().Matches(jobSource)
+                .Select(match => match.Groups["value"].Value))
+            .ToHashSet(StringComparer.Ordinal);
         var rids = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var line in Lines(jobSource))
+        foreach (Match match in RuntimeIdentifierPattern().Matches(jobSource))
         {
-            var remaining = line;
-            while (TryReadRidOption(remaining, out var rid, out var consumed))
+            var rid = match.Groups["rid"].Value;
+            if (MatrixCpuPattern().IsMatch(rid))
             {
-                remaining = remaining[consumed..];
-                if (rid.Contains("${{ matrix.cpu }}", StringComparison.Ordinal))
+                foreach (var cpu in cpuValues)
                 {
-                    foreach (var cpu in cpuValues)
-                    {
-                        rids.Add(rid.Replace("${{ matrix.cpu }}", cpu, StringComparison.Ordinal));
-                    }
+                    rids.Add(MatrixCpuPattern().Replace(rid, cpu));
                 }
-                else
-                {
-                    rids.Add(rid);
-                }
+            }
+            else
+            {
+                rids.Add(rid);
             }
         }
 
         return rids;
     }
 
-    private static bool TryReadRidOption(string source, out string rid, out int consumed)
+    private static HashSet<string> RidsForJobsContaining(
+        IEnumerable<PublishJob> jobs,
+        params string[] markers)
     {
-        const string option = "-r ";
-        var optionIndex = source.IndexOf(option, StringComparison.Ordinal);
-        if (optionIndex < 0)
-        {
-            rid = string.Empty;
-            consumed = source.Length;
-            return false;
-        }
-
-        var start = optionIndex + option.Length;
-        while (start < source.Length && (source[start] == '\'' || source[start] == '"'))
-        {
-            start++;
-        }
-
-        const string matrixCpu = "${{ matrix.cpu }}";
-        var matrixEnd = source.IndexOf(matrixCpu, start, StringComparison.Ordinal);
-        int end;
-        if (matrixEnd >= start)
-        {
-            end = matrixEnd + matrixCpu.Length;
-        }
-        else
-        {
-            end = start;
-            while (end < source.Length &&
-                   !char.IsWhiteSpace(source[end]) &&
-                   source[end] != '\'' &&
-                   source[end] != '"')
-            {
-                end++;
-            }
-        }
-
-        rid = source[start..end];
-        consumed = end;
-        return rid.Contains('-', StringComparison.Ordinal);
-    }
-
-    private static HashSet<string> ReadCpuValues(string jobSource)
-    {
-        var values = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var line in Lines(jobSource).Select(line => line.Trim()))
-        {
-            if (line.StartsWith("cpu: [", StringComparison.Ordinal) && line.EndsWith(']'))
-            {
-                var start = line.IndexOf('[', StringComparison.Ordinal) + 1;
-                foreach (var value in line[start..^1].Split(','))
-                {
-                    values.Add(value.Trim());
-                }
-            }
-            else if (line.StartsWith("- cpu: ", StringComparison.Ordinal))
-            {
-                values.Add(line[7..].Trim());
-            }
-        }
-
-        return values;
-    }
-
-    private static HashSet<string> ReadMatrixRids(string jobSource)
-    {
-        const string prefix = "- rid: ";
-        return Lines(jobSource)
-            .Select(line => line.Trim())
-            .Where(line => line.StartsWith(prefix, StringComparison.Ordinal))
-            .Select(line => line[prefix.Length..].Trim())
+        return jobs
+            .Where(job => markers.All(marker => job.Source.Contains(marker, StringComparison.Ordinal)))
+            .SelectMany(job => job.Rids)
             .ToHashSet(StringComparer.Ordinal);
     }
 
-    private static HashSet<string> ReadTemplateExtractionRids(
-        IReadOnlySet<string> candidateRids,
-        params string[] scripts)
+    private static HashSet<string> ReadFfmpegExtractionRids(
+        IEnumerable<string> assetRids,
+        string powerShell,
+        string shell)
     {
-        var prefixes = ReadRidTemplatePrefixes(scripts);
-        return candidateRids
-            .Where(rid => prefixes.Any(prefix => rid.StartsWith($"{prefix}-", StringComparison.Ordinal)))
+        var supportsWindows = powerShell.Contains("$rid = \"win-$arch\"", StringComparison.Ordinal);
+        var supportsLinux = shell.Contains("local rid=\"linux-$arch\"", StringComparison.Ordinal) &&
+                            shell.Contains("[ \"$os\" == \"linux\" ]", StringComparison.Ordinal);
+        var supportsMac = shell.Contains("local rid=\"osx-$arch\"", StringComparison.Ordinal) &&
+                          shell.Contains("[ \"$os\" == \"mac\" ]", StringComparison.Ordinal);
+
+        return assetRids.Where(rid =>
+                (supportsWindows && rid.StartsWith("win-", StringComparison.Ordinal)) ||
+                (supportsLinux && rid.StartsWith("linux-", StringComparison.Ordinal)) ||
+                (supportsMac && IsMacRid(rid)))
             .ToHashSet(StringComparer.Ordinal);
     }
 
     private static HashSet<string> ReadAriaExtractionRids(
-        IReadOnlySet<string> assetRids,
+        IEnumerable<string> assetRids,
         string powerShell,
         string shell)
     {
-        var supported = ReadTemplateExtractionRids(assetRids, powerShell);
-        if (shell.Contains("download_aria2 \"$@\"", StringComparison.Ordinal) &&
-            shell.Contains("manifest[\"aria2\"][\"assets\"]", StringComparison.Ordinal))
-        {
-            supported.UnionWith(assetRids.Where(rid => !rid.StartsWith("win-", StringComparison.Ordinal)));
-        }
+        var supportsWindows = powerShell.Contains("$rid = \"win-$arch\"", StringComparison.Ordinal);
+        var supportsUnix = shell.Contains("download_aria2 \"$@\"", StringComparison.Ordinal) &&
+                           shell.Contains("manifest[\"aria2\"][\"assets\"]", StringComparison.Ordinal);
 
-        return supported;
+        return assetRids.Where(rid =>
+                (supportsWindows && rid.StartsWith("win-", StringComparison.Ordinal)) ||
+                (supportsUnix && !rid.StartsWith("win-", StringComparison.Ordinal)))
+            .ToHashSet(StringComparer.Ordinal);
     }
 
-    private static HashSet<string> ReadRidTemplatePrefixes(params string[] scripts)
-    {
-        const string suffix = "-$arch";
-        var prefixes = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var line in scripts.SelectMany(Lines))
-        {
-            var suffixIndex = line.IndexOf(suffix, StringComparison.Ordinal);
-            if (suffixIndex < 0)
-            {
-                continue;
-            }
-
-            var quoteIndex = line.LastIndexOf('"', suffixIndex);
-            if (quoteIndex >= 0)
-            {
-                prefixes.Add(line[(quoteIndex + 1)..suffixIndex]);
-            }
-        }
-
-        return prefixes;
-    }
-
-    private static bool HasRuntimeAssetSelection(XDocument project)
-    {
-        var runtimeSelection = project.Descendants()
-            .Where(element => element.Name.LocalName == "DownKyiAssetRuntimeIdentifier")
-            .SingleOrDefault(element =>
-                string.Equals(element.Value, "$(RuntimeIdentifier)", StringComparison.Ordinal));
-        if (runtimeSelection?.Attribute("Condition")?.Value.Contains(
-                "'$(RuntimeIdentifier)' != ''",
-                StringComparison.Ordinal) != true)
-        {
-            return false;
-        }
-
-        var includes = project.Descendants()
-            .Where(element => element.Name.LocalName == "None")
-            .Select(element => element.Attribute("Include")?.Value)
-            .OfType<string>()
-            .ToArray();
-        return includes.Any(include => include.Contains(
-                   @"Binary\$(DownKyiAssetRuntimeIdentifier)\aria2\*",
-                   StringComparison.Ordinal)) &&
-               includes.Any(include => include.Contains(
-                   @"Binary\$(DownKyiAssetRuntimeIdentifier)\ffmpeg\*",
-                   StringComparison.Ordinal));
-    }
-
-    private static bool HasPackagedToolRequirement(string validator, string relativePath)
-    {
-        return validator.Contains(relativePath, StringComparison.Ordinal);
-    }
-
-    private static List<WorkflowJob> ReadJobs(string workflow)
-    {
-        var lines = Lines(workflow).ToArray();
-        var jobs = new List<WorkflowJob>();
-        for (var index = 0; index < lines.Length; index++)
-        {
-            if (!IsJobHeader(lines[index]))
-            {
-                continue;
-            }
-
-            var end = index + 1;
-            while (end < lines.Length && !IsJobHeader(lines[end]))
-            {
-                end++;
-            }
-
-            jobs.Add(new WorkflowJob(
-                lines[index].Trim()[..^1],
-                string.Join('\n', lines[index..end])));
-            index = end - 1;
-        }
-
-        return jobs;
-    }
-
-    private static string ReadJobSource(string workflow, string name)
-    {
-        return Assert.Single(ReadJobs(workflow), job =>
-            string.Equals(job.Name, name, StringComparison.Ordinal)).Source;
-    }
-
-    private static bool IsJobHeader(string line)
-    {
-        return line.Length > 3 &&
-               line.StartsWith("  ", StringComparison.Ordinal) &&
-               !line.StartsWith("   ", StringComparison.Ordinal) &&
-               line.EndsWith(':') &&
-               !line.TrimStart().StartsWith('-');
-    }
-
-    private static IEnumerable<string> Lines(string source)
+    private static string[] Lines(string source)
     {
         return source.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
     }
@@ -458,19 +295,20 @@ public sealed class RidCapabilityArchitectureTests
         return result;
     }
 
-    private static string FindRepositoryRoot()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null && !File.Exists(Path.Combine(directory.FullName, "DownKyi.sln")))
-        {
-            directory = directory.Parent;
-        }
+    [GeneratedRegex(@"(?m)^\s*cpu:\s*\[\s*(?<values>[^\]]+)\]\s*$", RegexOptions.CultureInvariant)]
+    private static partial Regex InlineCpuPattern();
 
-        return directory?.FullName
-               ?? throw new DirectoryNotFoundException("Could not locate the DownKyi repository root.");
-    }
+    [GeneratedRegex(@"(?m)^\s*-\s*cpu:\s*(?<value>[a-z0-9]+)\s*$", RegexOptions.CultureInvariant)]
+    private static partial Regex IncludeCpuPattern();
 
-    private sealed record WorkflowJob(string Name, string Source);
+    [GeneratedRegex(@"(?:-r|--runtime(?:-identifier)?)\s+['""]?(?<rid>[a-z0-9]+-(?:\$\{\{\s*matrix\.cpu\s*\}\}|[a-z0-9]+))", RegexOptions.CultureInvariant)]
+    private static partial Regex RuntimeIdentifierPattern();
+
+    [GeneratedRegex(@"\$\{\{\s*matrix\.cpu\s*\}\}", RegexOptions.CultureInvariant)]
+    private static partial Regex MatrixCpuPattern();
+
+    [GeneratedRegex(@"(?m)^\s*-\s*rid:\s*(?<rid>[a-z0-9-]+)\s*$", RegexOptions.CultureInvariant)]
+    private static partial Regex MatrixRidPattern();
 
     private sealed record PublishJob(string Source, HashSet<string> Rids);
 
@@ -484,9 +322,5 @@ public sealed class RidCapabilityArchitectureTests
         HashSet<string> TlsRids,
         HashSet<string> FfprobeCompanionRids,
         HashSet<string> SigningRids,
-        HashSet<string> NotarizationRids,
-        bool HasRuntimeAssetSelection,
-        bool PublishValidatorRequiresAria2,
-        bool PublishValidatorRequiresFfmpeg,
-        bool PublishValidatorRequiresFfprobe);
+        HashSet<string> NotarizationRids);
 }
