@@ -5,8 +5,8 @@
 ## 閱讀入口
 
 - 模組、呼叫關係與穩定契約：`docs/ai-knowledge-graph.md`
-- 目前尚未完成的工作：`docs/refactoring-live-plan.md`
-- 模組邊界審查：`docs/design-docs/module-boundary-naming-audit.md`
+- 穩定的 release 與驗證政策：`docs/refactoring-live-plan.md`
+- 歷史模組邊界 audit snapshot：`docs/design-docs/module-boundary-naming-audit.md`
 - 建置、測試、發布與外部 binary：`docs/maintenance.md`
 - 驗證及回滾：`docs/operations/verification-and-rollback.md`
 
@@ -39,8 +39,8 @@ flowchart TD
 - `DownKyi.exe` 只含 `Program.cs`，只引用 `DownKyi.Desktop`，不持有 UI、套件、資源或生命週期實作。
 - `DownKyi.Desktop` 是 Avalonia App、Views、ViewModels、`Presentation` projections、desktop adapters、Host composition 與 desktop runtime owner。Service contracts 不再引用 `DownKyi.ViewModels`。
 - `DownKyi.Core` 不含 `.axaml`、Avalonia 或 QRCoder；登入 API 留在 Core，QR bitmap renderer 與 Bilibili image dictionaries 位於 Desktop。
-- `DownKyi.Domain.DownloadTask` 已是持久化狀態轉換的權威；worker 與 pipeline 入口使用 `DownloadTaskId`，但 orchestrator channel 與部分 media stage 仍暫時持有 UI projection。
-- `DownKyi.Application` 已擁有 Bilibili HTTP/buvid/cookie、logging 與 physical output path contracts；`DownKyi.Infrastructure` 已擁有 async `IHttpClientFactory` transport、single-flight buvid provider、SQLite、write-behind、filesystem physical output path resolver，以及私有 NLog logging sink、retention 與 diagnostic exporter。aria2、FFmpeg 與其餘 file system ownership 尚待後續切片。
+- `DownKyi.Domain.DownloadTask` 已是持久化狀態轉換的權威；orchestrator channels、workers 與 pipeline 入口都使用 `DownloadTaskId`，但 `DownloadExecutionContext` 與部分 media stages 仍暫時持有 `DownloadingItem` UI projection。
+- `DownKyi.Application` 已擁有 Bilibili HTTP/buvid/cookie、logging 與 physical output path contracts；`DownKyi.Infrastructure` 已擁有 async `IHttpClientFactory` transport、single-flight buvid provider、SQLite、write-behind、filesystem physical output path resolver，以及私有 NLog logging sink、retention 與 diagnostic exporter。aria2 與 FFmpeg 實作目前仍主要位於 `DownKyi.Core`，其 runtime adapters 與其餘 file-system workflow 仍位於 Desktop/Core；將這些實作收斂至 Infrastructure 是目標 ownership，不是目前已實作的狀態。
 - Prism、DryIoc、EventAggregator、RegionManager 和 ContainerLocator 已從 production source 移除，不得重新引入。
 
 ## 目前啟動鏈
@@ -121,6 +121,8 @@ flowchart LR
 佇列已不再掃描 UI collection；新增、續傳與一次性啟動恢復都直接傳遞 `DownloadTaskId`。啟動查詢在同一份結果中提供 Domain snapshots 與 UI projections，runtime 只使用前者。`DownloadPipeline` 只建立單次 execution context 並依序執行 typed stages；階段失敗會立即停止並經 typed state writer 標記失敗。Presenter、projector 與 projection models 已由 Desktop 擁有，`DownloadListState` 只公開穩定的 `ReadOnlyObservableCollection<T>`。剩餘過渡債是 media execution context 仍讀取 `DownloadingItem` 作為播放流與畫面上下文，後續需改為明確 execution input，而不是讓 UI projection 進入 runtime。
 
 ## 目標拓樸
+
+本節以及後文的「目標」描述是未來 dependency/ownership 方向，不代表目前程式已搬移完成。現行 owner 以上方「目前拓樸」與「目前的正確事實」為準。
 
 ```text
 DownKyi.exe
@@ -241,7 +243,7 @@ address failure rather than a reason to downgrade. The six-RID real-binary gate,
 legacy `UseSsl` migration and third-party binary evidence are documented in
 `docs/operations/aria2-security.md`.
 
-## 邊界規則
+## 邊界規則（現行限制與目標 ownership）
 
 ### Domain
 
@@ -258,8 +260,8 @@ legacy `UseSsl` migration and third-party binary evidence are documented in
 
 ### Infrastructure
 
-- 實作 Application ports。
-- 擁有 SQLite、HTTP、aria2、FFmpeg、file system 與 logging sink 的生命週期。
+- 目前實作 Application ports，並擁有 SQLite、Bilibili HTTP/buvid、physical output path resolver 與 logging sink 生命週期。
+- 目標是再接手 aria2、FFmpeg 與其餘 file-system implementation；在該搬移發生前，Core/Desktop 仍是這些實作的現行 owner。
 - 不依賴 Desktop types 或 UI collections。
 
 ### Desktop

@@ -1,13 +1,15 @@
 # DownKyi Module Boundary And Naming Audit
 
-Status: maintained verified audit
-Last verified: 2026-07-29
-Verification base: integration merge `fb8c9220cea18a79e42b521005f0bcb983c1241e`
-Verification branch: `release/v1.1.0-integration`
+Status: historical verified snapshot; not current repository status
+Snapshot verified: 2026-07-29
+Snapshot base: integration merge `fb8c9220cea18a79e42b521005f0bcb983c1241e`
+Snapshot branch: `release/v1.1.0-integration`
 
-## 結論
+Reading rule: 本文保留當時 audit 的 finding、數據與 release context。下文的「目前」、「現在」與 status 都只相對於上述 snapshot，不是當前 `main` 的 implemented state。現行 owner 與 dependency direction 請以根層 `ARCHITECTURE.md`、`docs/ai-knowledge-graph.md` 與可重現 audit output 為準。
 
-附件報告指出的七類問題大多成立，但原始證據已被後續重構取代。以目前工作樹重新量測後，Desktop 已成為實際 UI owner、Core 已 headless、下載佇列、HTTP 與 logging 邊界也已收斂；剩餘主要缺口是 media execution context 仍讀取一個 UI projection，以及 aria2、FFmpeg 與 filesystem 的最終 Infrastructure ownership。
+## 歷史結論
+
+附件報告指出的七類問題大多成立，但原始證據已被後續重構取代。以該 snapshot 工作樹重新量測後，Desktop 已成為實際 UI owner、Core 已 headless、下載佇列、HTTP 與 logging 邊界也已收斂；當時剩餘的主要缺口是 media execution context 仍讀取一個 UI projection，以及 aria2、FFmpeg 與 filesystem 的最終 Infrastructure ownership。
 
 Gate 1-9 已在 stacked release-hardening branch 完成，並由 `fb8c922` 无冲突整合到从最新 `main` 建立的 v1.1.0 integration branch。尚不得建立 tag：integration PR、最终同 SHA 跨平台 package rehearsal、artifact/checksum 检查与 main 合并仍是发布阻塞项。
 

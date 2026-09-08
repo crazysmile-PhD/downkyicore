@@ -10,6 +10,7 @@
 - `DownKyi.Tests`：executable compatibility 與 end-to-end service tests。
 - `DownKyi.Architecture.Tests`：重要 dependency direction 與 repository wiring。
 - `DownKyi.Windows.Tests`：Windows process、Job Object 與 native handle 行為。
+- `DownKyi.Linux.Tests`：Linux process、signal 與 descendant lifecycle 行為。
 - `DownKyi.MacOS.Tests`：macOS system Bash、signing 與 packaging 行為。
 
 ## Formal Test Entry
@@ -18,10 +19,13 @@
 `script/test-project.ps1` 與 `script/test-solution.ps1` 經由
 `script/test-project-runner.ps1` 呼叫它。Runner 擁有：
 
-- 明確的 test-project allowlist 與 `DownKyiTestPlatforms` platform selection；
+- 對 `tests` 下所有 `*.Tests.csproj` 的自動 discovery（排除 `bin`/`obj`）；
+- 每個 discovered project 無條件宣告的 `DownKyiTestPlatforms` platform selection；
 - canonical invocation 與 slice/test identity；
-- `docs/testing/test-runner-policy.json` 中必要的 xUnit in-process routing；
+- `docs/testing/test-runner-policy.json` 中必要的 xUnit in-process routing exceptions；
 - per-project TRX validation 與 target exit result。
+
+`test-runner-policy.json` 不是 test-project registry 或 allowlist。新增 test project 會被自動發現，必須宣告 `DownKyiTestPlatforms`；只有需要偏離預設 VSTest 路由的專案才加入 policy exception。
 
 正式 PowerShell boundary 每次先 build CentralTestRunner，再執行目前
 repository state 的 runner。不要直接新增平行的 `dotnet test` / `vstest`
