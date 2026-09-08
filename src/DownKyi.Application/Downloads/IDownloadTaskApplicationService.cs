@@ -11,6 +11,9 @@ public interface IDownloadTaskApplicationService
         DownloadTask task,
         CancellationToken cancellationToken);
 
+    Task<OperationResult> CheckNewDownloadAdmissionAsync(
+        CancellationToken cancellationToken);
+
     Task<DownloadTask?> FindAsync(
         DownloadTaskId taskId,
         CancellationToken cancellationToken);

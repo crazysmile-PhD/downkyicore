@@ -345,6 +345,7 @@ public sealed class VideoTagLoadingTests : IDisposable
             Service = new AddToDownloadService(
                 DownKyi.Core.BiliApi.VideoStream.PlayStreamType.Video,
                 _admission,
+                new LegacyDownloadAdmissionPresenter(_taskService, Dialogs),
                 duplicatePolicy,
                 new DownloadMovieMetadataBuilder(Logger),
                 _settings,

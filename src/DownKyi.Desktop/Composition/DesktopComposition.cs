@@ -100,6 +100,7 @@ internal static class DesktopComposition
         services.AddSingleton<IDownloadTaskQueue>(provider =>
             provider.GetRequiredService<DownloadTaskQueueGateway>());
         services.AddSingleton<DownloadTaskAdmissionService>();
+        services.AddSingleton<LegacyDownloadAdmissionPresenter>();
         services.AddSingleton<DownloadListState>();
         services.AddSingleton<DownloadTaskFileService>();
         services.AddSingleton<AriaRuntimeClientRegistry>();

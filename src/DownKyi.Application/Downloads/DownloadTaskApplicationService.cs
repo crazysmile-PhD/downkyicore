@@ -29,6 +29,16 @@ public sealed class DownloadTaskApplicationService : IDownloadTaskApplicationSer
     {
         ArgumentNullException.ThrowIfNull(task);
         ObjectDisposedException.ThrowIf(_disposed, this);
+        if (task.Phase == DownloadPhase.Queued)
+        {
+            var admission = await CheckNewDownloadAdmissionAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (!admission.IsSuccess)
+            {
+                return OperationResult.Failure<DownloadTask>(RequireError(admission));
+            }
+        }
+
         var result = await _store.AddAsync(task, cancellationToken).ConfigureAwait(false);
         if (!result.IsSuccess)
         {
@@ -37,6 +47,16 @@ public sealed class DownloadTaskApplicationService : IDownloadTaskApplicationSer
 
         Publish(task, DownloadTaskChangeKind.Added);
         return OperationResult.Success(task);
+    }
+
+    public async Task<OperationResult> CheckNewDownloadAdmissionAsync(
+        CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return await _store.IsLegacyUpgradeAdmissionBlockedAsync(cancellationToken)
+            .ConfigureAwait(false)
+            ? OperationResult.Failure(DownloadAdmissionErrors.LegacyUpgradeBlocked())
+            : OperationResult.Success();
     }
 
     public Task<DownloadTask?> FindAsync(
