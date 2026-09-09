@@ -72,7 +72,7 @@ public sealed class DownloadShutdownCoordinatorTests
     }
 
     [Fact]
-    public async Task StopAsyncFailsClosedWhenOwnedWorkerMissesTimeout()
+    public async Task StopAsyncWorkerTimeoutDoesNotRecoverWhileWorkerIsStillRunning()
     {
         var workerCompletion = new TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously);
@@ -94,7 +94,7 @@ public sealed class DownloadShutdownCoordinatorTests
                     }));
 
             Assert.True(timeoutObserved);
-            Assert.Equal(1, recoveryCount);
+            Assert.Equal(0, recoveryCount);
             Assert.False(workerCompletion.Task.IsCompleted);
         }
         finally
