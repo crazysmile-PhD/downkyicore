@@ -9,6 +9,7 @@ on:
 
 permissions:
   actions: write
+  checks: read
 
 concurrency:
   group: retry-timed-out-strict-pr-ci-${{ github.event.workflow_run.id }}
@@ -68,9 +69,24 @@ jobs:
               return;
             }
 
-            const timedOut = buildJobs.filter(
-              (job) => job.status === "completed" && job.conclusion === "timed_out",
+            const cancelledBuildJobs = buildJobs.filter(
+              (job) => job.status === "completed" && job.conclusion === "cancelled",
             );
+            const timedOut = [];
+            for (const job of cancelledBuildJobs) {
+              const annotations = await github.paginate(
+                "GET /repos/{owner}/{repo}/check-runs/{check_run_id}/annotations",
+                { owner, repo, check_run_id: job.id, per_page: 100 },
+              );
+              const hasTimeoutAnnotation = annotations.some(
+                (annotation) =>
+                  annotation.annotation_level === "failure" &&
+                  annotation.message === "The job has exceeded the maximum execution time of 20m0s",
+              );
+              if (hasTimeoutAnnotation) {
+                timedOut.push(job);
+              }
+            }
             if (timedOut.length !== 1) {
               core.info(`No retry: expected one timed-out build-test job, found ${timedOut.length}.`);
               return;

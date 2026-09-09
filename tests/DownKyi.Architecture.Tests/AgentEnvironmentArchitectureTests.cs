@@ -111,7 +111,7 @@ public sealed class AgentEnvironmentArchitectureTests
         Assert.Contains("types:\n      - completed", retryWorkflow.Replace("\r\n", "\n", StringComparison.Ordinal), StringComparison.Ordinal);
         Assert.Matches(
             new System.Text.RegularExpressions.Regex(
-                @"(?m)^permissions:\r?$\n^  actions: write\r?$\n^\r?$\n^concurrency:",
+                @"(?m)^permissions:\r?$\n^  actions: write\r?$\n^  checks: read\r?$\n^\r?$\n^concurrency:",
                 System.Text.RegularExpressions.RegexOptions.CultureInvariant),
             retryWorkflow);
         Assert.Contains("github.event.workflow_run.run_attempt == 1", retryWorkflow, StringComparison.Ordinal);
@@ -129,8 +129,15 @@ public sealed class AgentEnvironmentArchitectureTests
         Assert.Contains("Build and test (ubuntu-latest)", retryWorkflow, StringComparison.Ordinal);
         Assert.Contains("Build and test (macos-latest)", retryWorkflow, StringComparison.Ordinal);
         Assert.Contains("buildJobs.length === expectedBuildTests.length", retryWorkflow, StringComparison.Ordinal);
+        Assert.Contains("job.conclusion === \"cancelled\"", retryWorkflow, StringComparison.Ordinal);
+        Assert.Contains("/check-runs/{check_run_id}/annotations", retryWorkflow, StringComparison.Ordinal);
+        Assert.Contains("annotation.annotation_level === \"failure\"", retryWorkflow, StringComparison.Ordinal);
+        Assert.Contains("The job has exceeded the maximum execution time of 20m0s", retryWorkflow, StringComparison.Ordinal);
         Assert.Contains("timedOut.length !== 1", retryWorkflow, StringComparison.Ordinal);
         Assert.Contains("job.conclusion !== \"success\"", retryWorkflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("job.conclusion === \"timed_out\"", retryWorkflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("job.started_at", retryWorkflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("job.completed_at", retryWorkflow, StringComparison.Ordinal);
         Assert.Single(System.Text.RegularExpressions.Regex.Matches(
             retryWorkflow,
             @"POST /repos/\{owner\}/\{repo\}/actions/jobs/\{job_id\}/rerun"));
