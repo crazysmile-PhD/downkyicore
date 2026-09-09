@@ -171,7 +171,7 @@ public sealed class DownloadBootstrapHostedServiceTests
                 string.Empty,
                 string.Empty,
                 0),
-            new DownloadPlan([], [], 0),
+            new DownloadPlan([], [], 0, nfoRequest: null),
             new DownloadOutput(id, null),
             DateTimeOffset.UnixEpoch);
     }

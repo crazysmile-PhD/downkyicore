@@ -188,6 +188,40 @@ public sealed class VideoTagLoadingTests : IDisposable
     }
 
     [Fact]
+    public async Task MalformedOptionalApiTagsDoNotBlockDownloadTaskCreation()
+    {
+        var client = new TestBilibiliApiClient
+        {
+            GetStringAsyncHandler = static (_, _) => Task.FromResult(
+                """
+                {
+                  "code": 0,
+                  "data": [
+                    { "tag_id": 1, "tag_name": null },
+                    { "tag_id": 2, "tag_name": "" },
+                    { "tag_id": 3, "tag_name": "   " },
+                    { "tag_id": 4, "tag_name": "kept" }
+                  ]
+                }
+                """)
+        };
+        var provider = new VideoTagProvider(client);
+        using var context = CreateContext(generateMetadata: true);
+        context.Prepare(CreatePage(cancellationToken => provider.GetTagsAsync(
+            "BV1test",
+            84,
+            cancellationToken)));
+
+        var added = await context.Service
+            .AddToDownload(_directory, cancellationToken: TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
+
+        Assert.Equal(1, added);
+        Assert.Equal(["kept"], Assert.Single(context.ListState.Downloading).Metadata!.Tags);
+        Assert.Single(context.Queue.Enqueued);
+    }
+
+    [Fact]
     public async Task DisabledMovieMetadataDoesNotLoadTags()
     {
         using var context = CreateContext(generateMetadata: false);

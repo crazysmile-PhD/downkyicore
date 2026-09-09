@@ -165,7 +165,11 @@ public sealed class DownloadTaskApplicationService : IDownloadTaskApplicationSer
         return MutateAsync(taskId, (task, now) =>
         {
             var files = task.Plan.TransferFiles.SetItem(key, filePath);
-            var plan = new DownloadPlan(task.Plan.RequestedAssets, files, task.Plan.StreamType);
+            var plan = new DownloadPlan(
+                task.Plan.RequestedAssets,
+                files,
+                task.Plan.StreamType,
+                task.Plan.NfoRequest);
             var transfer = CopyTransfer(task.Transfer, backendIdentity: null, replaceBackendIdentity: true);
             return task.UpdatePlan(plan, transfer, now);
         }, cancellationToken);
@@ -205,7 +209,8 @@ public sealed class DownloadTaskApplicationService : IDownloadTaskApplicationSer
             var plan = new DownloadPlan(
                 task.Plan.RequestedAssets,
                 claimedFiles,
-                task.Plan.StreamType);
+                task.Plan.StreamType,
+                task.Plan.NfoRequest);
             return task.UpdatePlan(plan, task.Transfer, now);
         }, cancellationToken);
     }

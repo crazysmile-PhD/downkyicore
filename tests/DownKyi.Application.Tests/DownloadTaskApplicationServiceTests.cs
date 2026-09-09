@@ -44,6 +44,7 @@ public sealed class DownloadTaskApplicationServiceTests
         var stored = Assert.IsType<DownloadTask>(store.Current);
         Assert.Equal(DownloadPhase.Downloading, stored.Phase);
         Assert.Equal("segment.m4s", stored.Plan.TransferFiles["video-1"]);
+        Assert.Equal(task.Plan.NfoRequest, stored.Plan.NfoRequest);
         Assert.Null(stored.Transfer.BackendIdentity);
         Assert.Equal("video-1", Assert.Single(stored.Transfer.CompletedFileKeys));
         Assert.Equal([0L, 1L, 2L, 3L, 4L], publishedVersions);
@@ -113,6 +114,7 @@ public sealed class DownloadTaskApplicationServiceTests
         Assert.Equal(2, stored.Plan.TransferFiles.Count);
         Assert.Equal("episode_Chinese.srt", stored.Plan.TransferFiles["subtitle-0001"]);
         Assert.Contains("episode_Traditional-Chinese.srt", stored.Plan.TransferFiles.Values);
+        Assert.Equal(task.Plan.NfoRequest, stored.Plan.NfoRequest);
     }
 
     [Fact]
@@ -293,7 +295,17 @@ public sealed class DownloadTaskApplicationServiceTests
             new DownloadPlan(
                 new Dictionary<string, bool> { ["downloadVideo"] = true },
                 [],
-                1),
+                1,
+                new DownloadNfoRequest(
+                    "Title",
+                    "Plot",
+                    "2026",
+                    ["Genre"],
+                    ["Tag"],
+                    [new DownloadNfoActor("Actor", "Role")],
+                    new DownloadNfoUniqueId("bilibili", "BV1"),
+                    "2026-09-09",
+                    [new DownloadNfoRating("bilibili", 9, 10, true)])),
             new DownloadOutput("episode", null),
             Epoch);
     }

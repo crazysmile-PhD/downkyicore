@@ -59,7 +59,12 @@ internal static class DownloadTaskRecordMapper
             transferFiles,
             reader.IsDBNull(reader.GetOrdinal("play_stream_type"))
                 ? 0
-                : reader.GetInt32(reader.GetOrdinal("play_stream_type")));
+                : reader.GetInt32(reader.GetOrdinal("play_stream_type")),
+            reader.IsDBNull(reader.GetOrdinal("nfo_request"))
+                ? null
+                : DownloadStoreJson.ReadNfoRequest(
+                    reader.GetString(reader.GetOrdinal("nfo_request")),
+                    "nfo_request"));
         var progress = new DownloadProgress(
             reader.IsDBNull(reader.GetOrdinal("progress")) ? 0 : reader.GetDouble(reader.GetOrdinal("progress")),
             GetNullableInt64(reader, "downloaded_bytes"),

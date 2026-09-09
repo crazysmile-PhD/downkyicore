@@ -2,17 +2,132 @@ using Bilibili.Community.Service.Dm.V1;
 using DownKyi.Application.Downloads;
 using DownKyi.Domain.Downloads;
 using DownKyi.Domain.Results;
+using DownKyi.Infrastructure.Downloads;
 using DownKyi.Infrastructure.Time;
 using DownKyi.Models;
 using DownKyi.Services.Download;
 using DownKyi.ViewModels.DownloadManager;
 using Google.Protobuf;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DownKyi.Tests;
 
 public sealed class DownloadArtifactStageTests
 {
+    [Fact]
+    public async Task ReopenedTaskGeneratesPersistedNfoAfterCurrentSettingIsDisabled()
+    {
+        var directory = Path.Combine(
+            Path.GetTempPath(),
+            "downkyi-reopened-nfo-tests",
+            Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        var databasePath = Path.Combine(directory, "download.db");
+        var settingsPath = Path.Combine(directory, "settings.json");
+        var taskId = new DownloadTaskId("persisted-nfo");
+        try
+        {
+            using var settings = new DownKyi.Core.Settings.SettingsStore(settingsPath);
+            settings.Update(current => current with
+            {
+                Video = current.Video with
+                {
+                    Content = current.Video.Content with { GenerateMovieMetadata = true }
+                }
+            });
+            var downloadBase = new DownloadBase
+            {
+                Id = taskId.Value,
+                FilePath = Path.Combine(directory, "persisted-output")
+            };
+            foreach (var key in downloadBase.NeedDownloadContent.Keys.ToArray())
+            {
+                downloadBase.NeedDownloadContent[key] = false;
+            }
+
+            var admitted = new DownloadingItem
+            {
+                DownloadBase = downloadBase,
+                Downloading = new Downloading
+                {
+                    Id = taskId.Value,
+                    DownloadBase = downloadBase,
+                    DownloadStatus = DownloadStatus.WaitForDownload
+                },
+                Metadata = new MovieMetadata
+                {
+                    Title = "Persisted title",
+                    Plot = "Persisted plot",
+                    Year = "2026",
+                    Premiered = "2026-09-09",
+                    BilibiliId = new UniqueId("bilibili", "BV1PERSISTED")
+                }
+            };
+            admitted.Metadata.Genres.Add("Persisted genre");
+
+            using (var firstStore = CreateSqliteStore(databasePath))
+            {
+                await firstStore.InitializeAsync(TestContext.Current.CancellationToken);
+                using var firstTasks = new DownloadTaskApplicationService(firstStore, new SystemClock());
+                using var firstProjections = new DownloadTaskProjectionStore(firstTasks, new SystemClock());
+                await firstProjections.AddDownloadingAsync(
+                    admitted,
+                    TestContext.Current.CancellationToken);
+                var firstWriter = new DownloadTaskStateWriter(firstTasks);
+                await firstWriter.StartAsync(taskId, TestContext.Current.CancellationToken);
+                await firstWriter.PauseAsync(taskId, TestContext.Current.CancellationToken);
+                await firstWriter.ConfirmPausedAsync(taskId, TestContext.Current.CancellationToken);
+            }
+
+            settings.Update(current => current with
+            {
+                Video = current.Video with
+                {
+                    Content = current.Video.Content with { GenerateMovieMetadata = false }
+                }
+            });
+            using var reopenedStore = CreateSqliteStore(databasePath);
+            await reopenedStore.InitializeAsync(TestContext.Current.CancellationToken);
+            using var reopenedTasks = new DownloadTaskApplicationService(reopenedStore, new SystemClock());
+            using var reopenedProjections = new DownloadTaskProjectionStore(reopenedTasks, new SystemClock());
+            var startup = await reopenedProjections.GetDownloadingStateAsync(
+                TestContext.Current.CancellationToken);
+            var reopenedItem = Assert.Single(startup.Projections);
+            var stateWriter = new DownloadTaskStateWriter(reopenedTasks);
+            await stateWriter.ResumeAsync(taskId, TestContext.Current.CancellationToken);
+            await stateWriter.StartAsync(taskId, TestContext.Current.CancellationToken);
+            var stage = new DownloadArtifactsStage(new DownloadArtifactWriter(
+                new TestWbiKeyProvider(),
+                stateWriter,
+                NullLogger<DownloadArtifactWriter>.Instance,
+                new TestBilibiliApiClient()));
+            var execution = new DownloadExecutionContext(
+                taskId,
+                reopenedItem,
+                settings.Current,
+                static (_, token) => token.ThrowIfCancellationRequested());
+
+            var result = await stage.ExecuteAsync(execution, TestContext.Current.CancellationToken);
+
+            Assert.True(result.IsSuccess, result.Error?.Message);
+            Assert.False(settings.Current.Video.Content.GenerateMovieMetadata);
+            var nfo = await File.ReadAllTextAsync(
+                $"{downloadBase.FilePath}.nfo",
+                TestContext.Current.CancellationToken);
+            Assert.Contains("Persisted title", nfo, StringComparison.Ordinal);
+            Assert.Contains("Persisted genre", nfo, StringComparison.Ordinal);
+        }
+        finally
+        {
+            ClearSqlitePool(databasePath);
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+    }
+
     [Fact]
     public async Task CoverHttpFailureStopsBeforeFinalize()
     {
@@ -550,6 +665,25 @@ public sealed class DownloadArtifactStageTests
             callback();
             return Task.FromResult(DownloadStageResult.Success(Name));
         }
+    }
+
+    private static SqliteDownloadTaskStore CreateSqliteStore(string databasePath)
+    {
+        return new SqliteDownloadTaskStore(
+            new SqliteDownloadTaskStoreOptions(databasePath),
+            new SystemClock());
+    }
+
+    private static void ClearSqlitePool(string databasePath)
+    {
+        using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = databasePath,
+            Mode = SqliteOpenMode.ReadWriteCreate,
+            Pooling = true,
+            DefaultTimeout = 5
+        }.ToString());
+        SqliteConnection.ClearPool(connection);
     }
 
     private enum CoverFailureMode
