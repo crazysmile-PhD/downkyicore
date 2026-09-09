@@ -39,8 +39,5 @@ $result = Invoke-DownKyiTestProject `
     -Filter $Filter `
     -ExecutionTimeoutSeconds $ExecutionTimeoutSeconds `
     -EvidenceDirectory $EvidenceDirectory
-if ($result.ExitCode -ne 0) {
-    throw "Focused test command failed with exit code $($result.ExitCode)."
-}
-
 $result
+exit $result.ExitCode

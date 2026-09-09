@@ -74,7 +74,7 @@ public sealed class AgentEnvironmentArchitectureTests
 
         var testScript = Read("script/test-solution.ps1");
         Assert.Contains("Invoke-DownKyiTestSolution", testScript, StringComparison.Ordinal);
-        Assert.Contains("CentralTestRunner failed", testScript, StringComparison.Ordinal);
+        Assert.Contains("exit $result.ExitCode", testScript, StringComparison.Ordinal);
 
         var runnerScript = Read("script/test-project-runner.ps1");
         Assert.Contains("DownKyi.CentralTestRunner.csproj", runnerScript, StringComparison.Ordinal);
