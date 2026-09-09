@@ -41,35 +41,69 @@ public sealed class SettingsRoundtripCompletenessTests
             var settingsPath = Path.Combine(directory, "settings.json");
             try
             {
-                var candidate = CreateCandidate(baseline, leaf);
-                var validation = ApplicationSettingsValidator.Validate(candidate);
-                Assert.True(
-                    validation.Corrections.IsEmpty,
-                    $"The legal roundtrip value for '{leaf.Path}' was rejected: " +
-                    string.Join(", ", validation.Corrections));
+                var candidates = CreateCandidates(baseline, leaf, leaves);
+
+                string? futureSettings = null;
+                if (leaf.Path == nameof(ApplicationSettings.SchemaVersion))
+                {
+                    futureSettings = JsonSerializer.Serialize(
+                        baseline with
+                        {
+                            SchemaVersion = ApplicationSettingsValidator.CurrentSchemaVersion + 1,
+                            Video = baseline.Video with { FfmpegMaxParallelJobs = 2 }
+                        },
+                        SnapshotJsonOptions);
+                    await File.WriteAllTextAsync(
+                        settingsPath,
+                        futureSettings,
+                        TestContext.Current.CancellationToken);
+                }
 
                 using var manager = new SettingsManager(settingsPath);
+                if (leaf.Path == nameof(ApplicationSettings.SchemaVersion))
+                {
+                    Assert.Equal(
+                        ApplicationSettingsValidator.CurrentSchemaVersion + 1,
+                        manager.CreateSnapshot(persistDefaultValues: false).SchemaVersion);
+                }
+
                 using (var store = new SettingsStore(manager))
                 {
-                    store.Update(_ => candidate);
-                    AssertSnapshotsEqual(candidate, manager.CreateSnapshot(), $"Apply/Create for {leaf.Path}");
-                    await store.FlushAsync(TestContext.Current.CancellationToken);
+                    if (leaf.Path == nameof(ApplicationSettings.SchemaVersion))
+                    {
+                        Assert.Equal(
+                            ApplicationSettingsValidator.CurrentSchemaVersion,
+                            manager.CreateSnapshot(persistDefaultValues: false).SchemaVersion);
+                    }
+
+                    foreach (var candidate in candidates)
+                    {
+                        var validation = ApplicationSettingsValidator.Validate(candidate);
+                        Assert.True(
+                            validation.Corrections.IsEmpty,
+                            $"The legal roundtrip value for '{leaf.Path}' was rejected: " +
+                            string.Join(", ", validation.Corrections));
+
+                        store.Update(_ => candidate);
+                        AssertSnapshotsEqual(candidate, manager.CreateSnapshot(), $"Apply/Create for {leaf.Path}");
+                        await store.FlushAsync(TestContext.Current.CancellationToken);
+
+                        if (!IsValidatorDerived(leaf))
+                        {
+                            using var reopened = new SettingsStore(settingsPath);
+                            AssertSnapshotsEqual(candidate, reopened.Current, $"Persistence/Create for {leaf.Path}");
+                        }
+                    }
                 }
 
                 if (leaf.Path == nameof(ApplicationSettings.SchemaVersion))
                 {
-                    // SchemaVersion is validator-derived and has exactly one legal current value,
-                    // so raw persistence (rather than a distinct value) proves its mapping.
-                    using var persisted = JsonDocument.Parse(await File.ReadAllTextAsync(
-                        settingsPath,
-                        TestContext.Current.CancellationToken));
+                    // A future schema is retained on disk, while SettingsStore validates and applies
+                    // the supported schema to SettingsManager's live snapshot.
                     Assert.Equal(
-                        ApplicationSettingsValidator.CurrentSchemaVersion,
-                        persisted.RootElement.GetProperty(nameof(ApplicationSettings.SchemaVersion)).GetInt32());
+                        futureSettings,
+                        await File.ReadAllTextAsync(settingsPath, TestContext.Current.CancellationToken));
                 }
-
-                using var reopened = new SettingsStore(settingsPath);
-                AssertSnapshotsEqual(candidate, reopened.Current, $"Persistence/Create for {leaf.Path}");
             }
             finally
             {
@@ -78,30 +112,81 @@ public sealed class SettingsRoundtripCompletenessTests
         }
     }
 
-    private static ApplicationSettings CreateCandidate(ApplicationSettings baseline, SettingsLeaf leaf)
+    private static ApplicationSettings[] CreateCandidates(
+        ApplicationSettings baseline,
+        SettingsLeaf leaf,
+        IReadOnlyList<SettingsLeaf> leaves)
     {
         var currentValue = leaf.Read(baseline);
         var replacement = CreateLegalAlternative(leaf.Path, leaf.ValueType, currentValue);
+        if (!IsValidatorDerived(leaf))
+        {
+            Assert.False(
+                LeafValuesEqual(currentValue, replacement),
+                $"Roundtrip candidate for '{leaf.Path}' did not differ from its baseline.");
+        }
+
+        var first = CreateCandidate(baseline, leaf, replacement);
+        var candidates = IsValidatorDerived(leaf)
+            ? new[] { first }
+            : new[] { first, CreateCandidate(first, leaf, currentValue!) };
+        if (!IsValidatorDerived(leaf))
+        {
+            Assert.False(
+                LeafValuesEqual(leaf.Read(first), leaf.Read(candidates[1])),
+                $"Second roundtrip candidate for '{leaf.Path}' did not differ from its baseline.");
+        }
+
+        foreach (var sameTypeLeaf in leaves.Where(candidate =>
+                     !IsValidatorDerived(leaf)
+                     && candidate.Path != leaf.Path
+                     && candidate.ValueType == leaf.ValueType))
+        {
+            Assert.True(
+                candidates.Any(candidate => !LeafValuesEqual(
+                    leaf.Read(candidate),
+                    sameTypeLeaf.Read(candidate))),
+                $"'{leaf.Path}' is indistinguishable from same-type source '{sameTypeLeaf.Path}'.");
+        }
+
+        return candidates;
+    }
+
+    private static ApplicationSettings CreateCandidate(
+        ApplicationSettings baseline,
+        SettingsLeaf leaf,
+        object replacement)
+    {
         var root = JsonSerializer.SerializeToNode(baseline, SnapshotJsonOptions)
             ?? throw new InvalidOperationException("ApplicationSettings could not be serialized.");
         SetJsonValue(root, leaf.Path, leaf.ValueType, replacement);
 
-        if (leaf.Path == "Network.IsAriaHttpProxy")
+        var candidate = root.Deserialize<ApplicationSettings>(SnapshotJsonOptions)
+            ?? throw new InvalidOperationException($"Candidate for '{leaf.Path}' could not be deserialized.");
+        if (candidate.Network.IsAriaHttpProxy == AllowStatus.Yes)
         {
             // Enabling this capability is validator-dependent on a complete local endpoint.
             SetJsonValue(root, "Network.AriaHttpProxy", typeof(string), "127.0.0.1");
             SetJsonValue(root, "Network.AriaHttpProxyListenPort", typeof(int), 17890);
         }
 
-        if (leaf.Path == "Network.CustomNetworkProxy")
+        if (leaf.Path == "Network.CustomNetworkProxy"
+            && !string.IsNullOrEmpty((string)replacement))
         {
             // The custom address is intentionally cleared unless the custom mode owns it.
             SetJsonValue(root, "Network.NetworkProxy", typeof(NetworkProxy), NetworkProxy.Custom);
         }
 
-        return root.Deserialize<ApplicationSettings>(SnapshotJsonOptions)
+        candidate = root.Deserialize<ApplicationSettings>(SnapshotJsonOptions)
             ?? throw new InvalidOperationException($"Candidate for '{leaf.Path}' could not be deserialized.");
+        Assert.True(
+            LeafValuesEqual(replacement, leaf.Read(candidate)),
+            $"Serialized candidate for '{leaf.Path}' did not retain replacement '{FormatValue(replacement)}'.");
+        return candidate;
     }
+
+    private static bool IsValidatorDerived(SettingsLeaf leaf) =>
+        leaf.Path == nameof(ApplicationSettings.SchemaVersion);
 
     private static object CreateLegalAlternative(string path, Type valueType, object? currentValue)
     {
