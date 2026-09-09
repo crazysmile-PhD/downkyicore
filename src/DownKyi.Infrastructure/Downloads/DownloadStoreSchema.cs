@@ -6,7 +6,7 @@ namespace DownKyi.Infrastructure.Downloads;
 
 internal static class DownloadStoreSchema
 {
-    public const int CurrentVersion = 4;
+    public const int CurrentVersion = 5;
 
     public static async Task InitializeAsync(
         SqliteConnection connection,
@@ -72,6 +72,13 @@ internal static class DownloadStoreSchema
                         clock.UtcNow,
                         physicalOutputPathResolver,
                         cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            if (currentVersion < 5)
+            {
+                await DownloadStoreSchemaV5Migration
+                    .ApplyAsync(connection, transaction, clock.UtcNow, cancellationToken)
                     .ConfigureAwait(false);
             }
 

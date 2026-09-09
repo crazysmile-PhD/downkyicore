@@ -24,7 +24,8 @@ internal static class DownloadBenchmarkData
             new DownloadPlan(
                 new Dictionary<string, bool>(StringComparer.Ordinal) { ["video"] = true },
                 new Dictionary<string, string>(StringComparer.Ordinal) { ["video"] = "video.m4s" },
-                streamType: 1),
+                streamType: 1,
+                nfoRequest: null),
             new DownloadOutput(identifier, "64 MiB"),
             createdAtUtc);
         return task.Start(createdAtUtc.AddTicks(1)).RequireValue();

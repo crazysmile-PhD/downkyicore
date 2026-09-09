@@ -24,7 +24,7 @@ internal sealed class DownloadArtifactsStage : IDownloadPipelineStage
     {
         ArgumentNullException.ThrowIfNull(context);
         var downloading = context.Downloading;
-        if (context.Settings.Video.Content.GenerateMovieMetadata)
+        if (downloading.Metadata != null)
         {
             var nfoResult = await _artifactWriter.GenerateNfoFileAsync(
                 downloading,

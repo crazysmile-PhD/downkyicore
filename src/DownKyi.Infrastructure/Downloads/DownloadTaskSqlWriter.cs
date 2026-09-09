@@ -18,12 +18,12 @@ internal static class DownloadTaskSqlWriter
             INSERT INTO download_base
                 (id, need_download_content, bvid, avid, cid, episode_id, cover_url, page_cover_url,
                  zone_id, [order], main_title, name, duration, video_codec_name, resolution,
-                 audio_codec, file_path, output_reservation_key, file_size, page, version,
+                 audio_codec, file_path, output_reservation_key, file_size, page, nfo_request, version,
                  created_at_utc, updated_at_utc)
             VALUES
                 (@id, @need_download_content, @bvid, @avid, @cid, @episode_id, @cover_url, @page_cover_url,
                  @zone_id, @order, @main_title, @name, @duration, @video_codec_name, @resolution,
-                 @audio_codec, @file_path, @output_reservation_key, @file_size, @page, @version,
+                  @audio_codec, @file_path, @output_reservation_key, @file_size, @page, @nfo_request, @version,
                  @created_at_utc, @updated_at_utc)
             """;
         BindBase(command, task);
@@ -52,7 +52,7 @@ internal static class DownloadTaskSqlWriter
                     WHEN output_reservation_key IS NULL THEN NULL
                     ELSE @output_reservation_key
                 END,
-                file_size = @file_size, page = @page,
+                 file_size = @file_size, page = @page, nfo_request = @nfo_request,
                 version = @version, created_at_utc = @created_at_utc, updated_at_utc = @updated_at_utc
             WHERE id = @id AND version = @expected_version
             """;
@@ -135,6 +135,11 @@ internal static class DownloadTaskSqlWriter
                     DownloadOutputPathKey.UsesCaseInsensitiveComparison));
         command.Parameters.AddWithValue("@file_size", task.Output.FileSizeText ?? (object)DBNull.Value);
         command.Parameters.AddWithValue("@page", task.Metadata.Media.Page);
+        command.Parameters.AddWithValue(
+            "@nfo_request",
+            task.Plan.NfoRequest == null
+                ? DBNull.Value
+                : DownloadStoreJson.WriteNfoRequest(task.Plan.NfoRequest));
         command.Parameters.AddWithValue("@version", task.Version);
         command.Parameters.AddWithValue("@created_at_utc", task.CreatedAtUtc.ToUnixTimeMilliseconds());
         command.Parameters.AddWithValue("@updated_at_utc", task.UpdatedAtUtc.ToUnixTimeMilliseconds());
