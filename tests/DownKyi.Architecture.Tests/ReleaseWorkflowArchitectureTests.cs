@@ -522,6 +522,13 @@ public sealed class ReleaseWorkflowArchitectureTests
     {
         var workflow = File.ReadAllText(
             Path.Combine(RepositoryRoot, ".github", "workflows", "macos-adhoc-package.yml"));
+        var lines = workflow.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+        var pullRequest = GetYamlBlock(lines, "  pull_request:", 2);
+        var pathBlock = GetYamlBlock(pullRequest.ToArray(), "    paths:", 4);
+        var triggerPaths = pathBlock
+            .Where(line => GetIndent(line) == 6 && line.TrimStart().StartsWith("- ", StringComparison.Ordinal))
+            .Select(line => line.Trim()[2..].Trim('\'', '"'))
+            .ToHashSet(StringComparer.Ordinal);
 
         Assert.Contains("runs-on: macos-26", workflow, StringComparison.Ordinal);
         Assert.Contains("MACOS_ADHOC_SIGNING: 'true'", workflow, StringComparison.Ordinal);
@@ -538,7 +545,7 @@ public sealed class ReleaseWorkflowArchitectureTests
                      "script/macos/**"
                  })
         {
-            Assert.Contains($"- '{packageInput}'", workflow, StringComparison.Ordinal);
+            Assert.Contains(packageInput, triggerPaths);
         }
 
         Assert.Contains("dotnet publish", workflow, StringComparison.Ordinal);
