@@ -1,0 +1,126 @@
+name: macOS ad-hoc package launch
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/macos-adhoc-package.yml'
+      - 'DownKyi/**'
+      - 'DownKyi.Core/**'
+      - 'src/**'
+      - 'Directory.Build.*'
+      - 'Directory.Packages.props'
+      - 'global.json'
+      - 'version.txt'
+      - 'script/aria2.sh'
+      - 'script/ffmpeg.sh'
+      - 'script/ffmpeg-assets.py'
+      - 'script/validate-publish-output.ps1'
+      - 'script/assets/**'
+      - 'script/macos/**'
+      - 'tests/DownKyi.MacOS.Tests/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_NOLOGO: '1'
+
+jobs:
+  package-launch-arm64:
+    name: Package and launch (macOS 26 arm64, ad-hoc)
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Record runner identity
+        run: |
+          sw_vers
+          uname -m
+      - name: Install packaging tools
+        run: |
+          export HOMEBREW_NO_AUTO_UPDATE=true
+          brew untap aws/tap || true
+          brew install create-dmg tree
+      - name: Install .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Install Python for FFmpeg manifest verification
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Read version
+        id: version
+        run: echo "content=$(tr -d '\r\n' < version.txt)" >> "$GITHUB_OUTPUT"
+      - name: Download runtime dependencies
+        working-directory: ./script
+        run: |
+          chmod +x aria2.sh ffmpeg.sh
+          ./aria2.sh osx-arm64
+          ./ffmpeg.sh mac arm64
+      - name: Publish arm64 app
+        run: |
+          dotnet restore DownKyi/DownKyi.csproj -r osx-arm64
+          dotnet publish DownKyi/DownKyi.csproj --no-restore --self-contained -r osx-arm64 -c Release -p:DebugType=None -p:DebugSymbols=false
+      - name: Package app bundle
+        working-directory: ./script/macos
+        run: |
+          chmod +x package.sh set-bundle-version.sh
+          ./package.sh arm64 ${{ steps.version.outputs.content }}
+      - name: Validate packaged runtime
+        shell: pwsh
+        run: |
+          ./script/validate-publish-output.ps1 `
+            -PublishDirectory "DownKyi/bin/Release/net10.0/osx-arm64/publish" `
+            -RuntimeIdentifier "osx-arm64" `
+            -ExpectedVersion "${{ steps.version.outputs.content }}" `
+            -OutputPath "script/macos/publish-manifest-osx-arm64.json"
+      - name: Ad-hoc sign app
+        working-directory: ./script/macos
+        env:
+          MACOS_ADHOC_SIGNING: 'true'
+        run: |
+          chmod +x codesign-common.sh prepare-app-layout.sh sign.sh verify-app.sh verify-app-launch.sh verify-dmg-contents.sh verify-runtime-architecture.sh
+          ./sign.sh
+      - name: Verify ad-hoc policy and bundle integrity
+        working-directory: ./script/macos
+        run: |
+          details="$(codesign -dvvv '哔哩下载姬.app' 2>&1)"
+          printf '%s\n' "$details"
+          if printf '%s\n' "$details" | grep -Eq 'flags=.*runtime'; then
+            echo '::error::Ad-hoc app unexpectedly enables Hardened Runtime.'
+            exit 1
+          fi
+          ./verify-app.sh
+      - name: Create DMG
+        working-directory: ./script/macos
+        run: |
+          create-dmg \
+            --hdiutil-quiet \
+            --icon 哔哩下载姬.app 165 175 \
+            --icon-size 120 \
+            --app-drop-link 495 175 \
+            --window-size 660 400 \
+            DownKyi-${{ steps.version.outputs.content }}-osx-arm64.dmg 哔哩下载姬.app
+      - name: Verify mounted and copied app launch
+        working-directory: ./script/macos
+        env:
+          MACOS_VERIFY_GATEKEEPER: 'false'
+        run: ./verify-dmg-contents.sh DownKyi-${{ steps.version.outputs.content }}-osx-arm64.dmg ${{ steps.version.outputs.content }} osx-arm64
+      - name: Hash DMG
+        shell: pwsh
+        run: |
+          $package = "script/macos/DownKyi-${{ steps.version.outputs.content }}-osx-arm64.dmg"
+          $hash = (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $([IO.Path]::GetFileName($package))" | Set-Content -LiteralPath "$package.sha256" -Encoding ascii
+      - name: Upload verified DMG
+        uses: actions/upload-artifact@v7
+        with:
+          name: DownKyi-${{ steps.version.outputs.content }}-osx-arm64-adhoc-macos26
+          path: |
+            script/macos/DownKyi-${{ steps.version.outputs.content }}-osx-arm64.dmg
+            script/macos/DownKyi-${{ steps.version.outputs.content }}-osx-arm64.dmg.sha256
+            script/macos/publish-manifest-osx-arm64.json

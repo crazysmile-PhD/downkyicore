@@ -18,7 +18,7 @@ fi
 codesign_app_path() {
   local path="$1"
   if [ "$SIGNING_IDENTITY" = "-" ]; then
-    codesign --force --options=runtime --entitlements "$ENTITLEMENTS" --sign "$SIGNING_IDENTITY" "$path"
+    codesign --force --sign "$SIGNING_IDENTITY" "$path"
   else
     codesign --force --timestamp --options=runtime --entitlements "$ENTITLEMENTS" --sign "$SIGNING_IDENTITY" "$path"
   fi

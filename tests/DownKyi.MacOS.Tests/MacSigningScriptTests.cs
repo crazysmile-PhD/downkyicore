@@ -18,6 +18,8 @@ public sealed class MacSigningScriptTests
         Assert.All(calls, arguments =>
         {
             Assert.DoesNotContain("--timestamp", arguments);
+            Assert.DoesNotContain("--options=runtime", arguments);
+            Assert.DoesNotContain("--entitlements", arguments);
             AssertCodesignIdentity(arguments, "-");
         });
     }
@@ -32,6 +34,8 @@ public sealed class MacSigningScriptTests
         Assert.All(calls, arguments =>
         {
             Assert.Contains("--timestamp", arguments);
+            Assert.Contains("--options=runtime", arguments);
+            Assert.Contains("--entitlements", arguments);
             AssertCodesignIdentity(arguments, identity);
         });
     }

@@ -411,6 +411,8 @@ public sealed class ReleaseWorkflowArchitectureTests
             Path.Combine(RepositoryRoot, "script", "macos", "verify-app-launch.sh"));
         var verifyDmgScript = File.ReadAllText(
             Path.Combine(RepositoryRoot, "script", "macos", "verify-dmg.sh"));
+        var verifyDmgContentsScript = File.ReadAllText(
+            Path.Combine(RepositoryRoot, "script", "macos", "verify-dmg-contents.sh"));
 
         Assert.DoesNotContain(
             "MACOS_SIGNING_REQUIRED",
@@ -472,6 +474,90 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.Contains("codesign --verify --verbose=2", verifyDmgScript, StringComparison.Ordinal);
         Assert.Contains("xcrun stapler validate", verifyDmgScript, StringComparison.Ordinal);
         Assert.Contains("spctl --assess --type open --context context:primary-signature", verifyDmgScript, StringComparison.Ordinal);
+        Assert.Contains("/usr/bin/ditto \"$APP_PATH\" \"$COPIED_APP_PATH\"", verifyDmgContentsScript, StringComparison.Ordinal);
+        Assert.Contains("verify-app.sh\" \"$COPIED_APP_PATH\"", verifyDmgContentsScript, StringComparison.Ordinal);
+        Assert.Contains("verify-app-launch.sh\" \"$COPIED_APP_PATH\"", verifyDmgContentsScript, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void MacBuildKeepsCredentialFreePackagingAndLaunchValidation()
+    {
+        var workflow = File.ReadAllText(
+            Path.Combine(RepositoryRoot, ".github", "workflows", "build.yml"));
+        var macSteps = GetWorkflowSteps(workflow, "  build-macos:");
+
+        Assert.Contains("MACOS_ADHOC_SIGNING: ${{ env.HAS_MACOS_SIGNING != 'true' }}", workflow, StringComparison.Ordinal);
+        foreach (var stepName in new[]
+                 {
+                     "Run macOS packaging regressions",
+                     "Build ${{ matrix.cpu }}",
+                     "Package app",
+                     "Sign app",
+                     "Verify app signature",
+                     "Create DMG",
+                     "Verify packaged DMG contents and launch app"
+                 })
+        {
+            AssertStepHasNoCondition(macSteps, stepName);
+        }
+
+        foreach (var stepName in new[]
+                 {
+                     "Import certificate",
+                     "Resolve signing identity",
+                     "Notarize app",
+                     "Verify notarized app",
+                     "Sign DMG",
+                     "Verify signed DMG",
+                     "Notarize DMG",
+                     "Verify notarized DMG"
+                 })
+        {
+            AssertStepCondition(macSteps, stepName, "${{ env.HAS_MACOS_SIGNING == 'true' }}");
+        }
+    }
+
+    [Fact]
+    public void MacAdHocPackageWorkflowUsesMacOs26Arm64WithoutAppleCredentials()
+    {
+        var workflow = File.ReadAllText(
+            Path.Combine(RepositoryRoot, ".github", "workflows", "macos-adhoc-package.yml"));
+        var lines = workflow.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+        var pullRequest = GetYamlBlock(lines, "  pull_request:", 2);
+        var pathBlock = GetYamlBlock(pullRequest.ToArray(), "    paths:", 4);
+        var triggerPaths = pathBlock
+            .Where(line => GetIndent(line) == 6 && line.TrimStart().StartsWith("- ", StringComparison.Ordinal))
+            .Select(line => line.Trim()[2..].Trim('\'', '"'))
+            .ToHashSet(StringComparer.Ordinal);
+
+        Assert.Contains("runs-on: macos-26", workflow, StringComparison.Ordinal);
+        Assert.Contains("MACOS_ADHOC_SIGNING: 'true'", workflow, StringComparison.Ordinal);
+        foreach (var packageInput in new[]
+                 {
+                     "DownKyi/**",
+                     "DownKyi.Core/**",
+                     "src/**",
+                     "script/aria2.sh",
+                     "script/ffmpeg.sh",
+                     "script/ffmpeg-assets.py",
+                     "script/validate-publish-output.ps1",
+                     "script/assets/**",
+                     "script/macos/**"
+                 })
+        {
+            Assert.Contains(packageInput, triggerPaths);
+        }
+
+        Assert.Contains("dotnet publish", workflow, StringComparison.Ordinal);
+        Assert.Contains("./sign.sh", workflow, StringComparison.Ordinal);
+        Assert.Contains("./verify-app.sh", workflow, StringComparison.Ordinal);
+        Assert.Contains("flags=.*runtime", workflow, StringComparison.Ordinal);
+        Assert.Contains("create-dmg", workflow, StringComparison.Ordinal);
+        Assert.Contains("./verify-dmg-contents.sh", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("secrets.", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("notarytool", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("stapler", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("spctl", workflow, StringComparison.Ordinal);
     }
 
     [Fact]
