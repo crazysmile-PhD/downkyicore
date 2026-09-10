@@ -105,21 +105,32 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
     {
         if (context.NeedsAudio)
         {
-            _presenter.ShowDownloadingAudio(context);
-            var result = await DownloadMediaFileAsync(
-                context,
-                SelectAudio(context),
-                playUrl => SelectAudio(context, playUrl),
-                cancellationToken).ConfigureAwait(true);
-            if (!result.TryGetValue(out var audioTransfer))
+            var audio = SelectAudio(context);
+            if (audio == null &&
+                !HasAnyAudio(context.PlayUrl?.Dash) &&
+                context.NeedsVideo)
             {
-                return DownloadStageResult.Failure(
-                    result.Error?.Code ?? "download.media.audio",
-                    result.Error?.Message ?? "Audio transfer failed.");
+                _logger.LogWarningMessage(
+                    "Playback does not provide an audio stream; continuing with the requested video.");
             }
+            else
+            {
+                _presenter.ShowDownloadingAudio(context);
+                var result = await DownloadMediaFileAsync(
+                    context,
+                    audio,
+                    playUrl => SelectAudio(context, playUrl),
+                    cancellationToken).ConfigureAwait(true);
+                if (!result.TryGetValue(out var audioTransfer))
+                {
+                    return DownloadStageResult.Failure(
+                        result.Error?.Code ?? "download.media.audio",
+                        result.Error?.Message ?? "Audio transfer failed.");
+                }
 
-            context.AudioFile = audioTransfer.FilePath;
-            context.AudioTransferKey = audioTransfer.Key;
+                context.AudioFile = audioTransfer.FilePath;
+                context.AudioTransferKey = audioTransfer.Key;
+            }
         }
 
         context.EnsureActive(cancellationToken);
@@ -329,7 +340,7 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
             "Invalid transfer artifacts could not be removed safely."));
     }
 
-    private static PlayUrlDashVideo? SelectAudio(DownloadExecutionContext context)
+    internal static PlayUrlDashVideo? SelectAudio(DownloadExecutionContext context)
     {
         return SelectAudio(context, context.PlayUrl);
     }
@@ -340,24 +351,38 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
     {
         var audioCodec = context.Input.Metadata.AudioCodec;
         var dash = playUrl?.Dash;
-        if (dash?.Audio is not { Count: > 0 } audio)
+        if (dash == null)
         {
             return null;
         }
 
-        var selected = audio.FirstOrDefault(item => item.Id == audioCodec.Id);
-        if (audioCodec.Id == 30250 &&
-            dash.Dolby?.Audio is { Count: > 0 } dolbyAudio)
+        if (audioCodec.Id == 30250)
         {
-            selected = dolbyAudio[0];
+            var dolbyAudio = dash.Dolby?.Audio;
+            return dolbyAudio is { Count: > 0 } ? dolbyAudio[0] : null;
         }
 
-        if (audioCodec.Id == 30251 && dash.Flac?.Audio is { } flacAudio)
+        if (audioCodec.Id == 30251)
         {
-            selected = flacAudio;
+            var flacAudio = dash.Flac?.Audio;
+            return HasMediaAddress(flacAudio) ? flacAudio : null;
         }
 
-        return selected;
+        return dash.Audio.FirstOrDefault(item => item.Id == audioCodec.Id);
+    }
+
+    private static bool HasAnyAudio(PlayUrlDash? dash)
+    {
+        return dash?.Audio.Count > 0 ||
+               dash?.Dolby?.Audio.Count > 0 ||
+               HasMediaAddress(dash?.Flac?.Audio);
+    }
+
+    private static bool HasMediaAddress(PlayUrlDashVideo? media)
+    {
+        return media != null &&
+               (!string.IsNullOrWhiteSpace(media.BaseAddress) ||
+                media.BackupUrl.Any(url => !string.IsNullOrWhiteSpace(url)));
     }
 
     internal static PlayUrlDashVideo? SelectVideo(DownloadExecutionContext context)
