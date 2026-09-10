@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/macos-adhoc-package.yml'
       - 'DownKyi/**'
+      - 'DownKyi.Core/**'
       - 'src/**'
       - 'Directory.Build.*'
       - 'Directory.Packages.props'
@@ -12,6 +13,8 @@ on:
       - 'version.txt'
       - 'script/aria2.sh'
       - 'script/ffmpeg.sh'
+      - 'script/ffmpeg-assets.py'
+      - 'script/validate-publish-output.ps1'
       - 'script/assets/**'
       - 'script/macos/**'
       - 'tests/DownKyi.MacOS.Tests/**'

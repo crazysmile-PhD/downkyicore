@@ -525,6 +525,22 @@ public sealed class ReleaseWorkflowArchitectureTests
 
         Assert.Contains("runs-on: macos-26", workflow, StringComparison.Ordinal);
         Assert.Contains("MACOS_ADHOC_SIGNING: 'true'", workflow, StringComparison.Ordinal);
+        foreach (var packageInput in new[]
+                 {
+                     "DownKyi/**",
+                     "DownKyi.Core/**",
+                     "src/**",
+                     "script/aria2.sh",
+                     "script/ffmpeg.sh",
+                     "script/ffmpeg-assets.py",
+                     "script/validate-publish-output.ps1",
+                     "script/assets/**",
+                     "script/macos/**"
+                 })
+        {
+            Assert.Contains($"- '{packageInput}'", workflow, StringComparison.Ordinal);
+        }
+
         Assert.Contains("dotnet publish", workflow, StringComparison.Ordinal);
         Assert.Contains("./sign.sh", workflow, StringComparison.Ordinal);
         Assert.Contains("./verify-app.sh", workflow, StringComparison.Ordinal);
