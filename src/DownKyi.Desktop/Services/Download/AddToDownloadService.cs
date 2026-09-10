@@ -278,6 +278,17 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
                         .ConfigureAwait(true);
                     addedCount++;
                 }
+                catch (DownloadRuntimeUnavailableException exception)
+                {
+                    _logger.LogWarningMessage("Download task admission rejected because runtime is unavailable.", exception);
+                    var alert = new AlertService(_dialogService);
+                    await alert
+                        .ShowError(
+                            DictionaryResource.GetString("DownloadRuntimeUnavailable"),
+                            cancellationToken)
+                        .ConfigureAwait(true);
+                    return addedCount;
+                }
                 catch (IOException exception)
                 {
                     _logger.LogWarningMessage("Download task admission failed.", exception);

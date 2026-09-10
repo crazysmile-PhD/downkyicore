@@ -8,6 +8,8 @@ public interface IApplicationLogService
 
     ApplicationLogMetrics GetMetrics();
 
+    string RedactDiagnosticText(string? text);
+
     Task FlushAsync(CancellationToken cancellationToken = default);
 
     Task<string> ExportDiagnosticLogAsync(CancellationToken cancellationToken = default);

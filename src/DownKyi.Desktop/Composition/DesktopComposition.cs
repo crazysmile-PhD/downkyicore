@@ -99,6 +99,8 @@ internal static class DesktopComposition
         services.AddSingleton<DownloadTaskQueueGateway>();
         services.AddSingleton<IDownloadTaskQueue>(provider =>
             provider.GetRequiredService<DownloadTaskQueueGateway>());
+        services.AddSingleton<IDownloadRuntimeAvailability>(provider =>
+            provider.GetRequiredService<DownloadTaskQueueGateway>());
         services.AddSingleton<DownloadTaskAdmissionService>();
         services.AddSingleton<LegacyDownloadAdmissionPresenter>();
         services.AddSingleton<DownloadListState>();
@@ -202,11 +204,13 @@ internal static class DesktopComposition
         services.AddTransient<ViewAlreadyDownloadedDialogViewModel>();
         services.AddTransient<NewVersionAvailableDialogViewModel>();
         services.AddTransient<ViewUpgradingDialogViewModel>();
+        services.AddTransient<DownloadRuntimeFailureDialogViewModel>();
         services.AddTransient<ViewAlertDialog>();
         services.AddTransient<ViewDownloadSetter>();
         services.AddTransient<ViewParsingSelector>();
         services.AddTransient<ViewAlreadyDownloadedDialog>();
         services.AddTransient<NewVersionAvailableDialog>();
         services.AddTransient<ViewUpgradingDialog>();
+        services.AddTransient<DownloadRuntimeFailureDialog>();
     }
 }

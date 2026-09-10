@@ -50,6 +50,55 @@ public sealed class DownloadManagerCoordinatorTests
     }
 
     [Fact]
+    public async Task RuntimeFailureDuringResumeDoesNotLeaveTaskQueued()
+    {
+        using var context = new CoordinatorContext(new RuntimeUnavailableTaskQueue());
+        var item = context.CreateDownloadingItem("resume-runtime-failure", DownloadStatus.WaitForDownload);
+        context.State.AddDownloading(item);
+        await context.Storage.AddDownloadingAsync(item, TestContext.Current.CancellationToken);
+        var taskId = new DownloadTaskId(item.DownloadBase.Id);
+        await context.StateWriter.StartAsync(taskId, TestContext.Current.CancellationToken);
+        await context.StateWriter.FailAsync(
+            taskId,
+            new DownloadFailure("download.synthetic", "Synthetic failure.", true),
+            TestContext.Current.CancellationToken);
+
+        await Assert.ThrowsAsync<DownloadRuntimeUnavailableException>(() =>
+            context.Coordinator.ToggleAsync(item, TestContext.Current.CancellationToken));
+
+        var persisted = Assert.IsType<DownloadTask>(
+            await context.Store.FindAsync(taskId, TestContext.Current.CancellationToken));
+        Assert.Equal(DownloadPhase.Failed, persisted.Phase);
+        Assert.Equal("download.runtime.unavailable", persisted.Failure?.Code);
+    }
+
+    [Fact]
+    public async Task UnavailableRuntimeRejectsResumeBeforeStateTransition()
+    {
+        using var context = new CoordinatorContext(
+            runtimeAvailability: new UnavailableDownloadRuntimeAvailability());
+        var item = context.CreateDownloadingItem(
+            "resume-known-runtime-failure",
+            DownloadStatus.WaitForDownload);
+        context.State.AddDownloading(item);
+        await context.Storage.AddDownloadingAsync(item, TestContext.Current.CancellationToken);
+        var taskId = new DownloadTaskId(item.DownloadBase.Id);
+        await context.StateWriter.StartAsync(taskId, TestContext.Current.CancellationToken);
+        await context.StateWriter.FailAsync(
+            taskId,
+            new DownloadFailure("download.synthetic", "Synthetic failure.", true),
+            TestContext.Current.CancellationToken);
+
+        await Assert.ThrowsAsync<DownloadRuntimeUnavailableException>(() =>
+            context.Coordinator.ToggleAsync(item, TestContext.Current.CancellationToken));
+
+        var persisted = Assert.IsType<DownloadTask>(
+            await context.Store.FindAsync(taskId, TestContext.Current.CancellationToken));
+        Assert.Equal(DownloadPhase.Failed, persisted.Phase);
+        Assert.Equal("download.synthetic", persisted.Failure?.Code);
+    }
+
+    [Fact]
     public async Task DeleteCanBeRetriedAfterAFormerFileCleanupLeftTaskCanceled()
     {
         using var context = new CoordinatorContext();
@@ -163,7 +212,9 @@ public sealed class DownloadManagerCoordinatorTests
             Guid.NewGuid().ToString("N"));
         private readonly string _databasePath;
 
-        public CoordinatorContext()
+        public CoordinatorContext(
+            IDownloadTaskQueue? taskQueue = null,
+            IDownloadRuntimeAvailability? runtimeAvailability = null)
         {
             Directory.CreateDirectory(_directory);
             _databasePath = Path.Combine(_directory, "download.db");
@@ -183,7 +234,8 @@ public sealed class DownloadManagerCoordinatorTests
             Coordinator = new DownloadManagerCoordinator(
                 Storage,
                 StateWriter,
-                Queue,
+                taskQueue ?? Queue,
+                runtimeAvailability ?? new ReadyDownloadRuntimeAvailability(),
                 fileService,
                 State,
                 Launcher);
@@ -289,6 +341,41 @@ public sealed class DownloadManagerCoordinatorTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult(true);
+        }
+    }
+
+    private sealed class RuntimeUnavailableTaskQueue : IDownloadTaskQueue
+    {
+        public Task EnqueueAsync(
+            DownloadTaskId taskId,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            throw new DownloadRuntimeUnavailableException(
+                "Synthetic unavailable download runtime.");
+        }
+
+        public Task<bool> CancelAsync(DownloadTaskId taskId)
+        {
+            return Task.FromResult(false);
+        }
+    }
+
+    private sealed class UnavailableDownloadRuntimeAvailability : IDownloadRuntimeAvailability
+    {
+        public void EnsureAcceptingTasks()
+        {
+            throw new DownloadRuntimeUnavailableException(
+                "Synthetic unavailable download runtime.");
+        }
+
+        public Task<DownloadRuntimeStartupOutcome> WaitForStartupOutcomeAsync(
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(DownloadRuntimeStartupOutcome.Faulted(
+                new DownloadRuntimeUnavailableException(
+                    "Synthetic unavailable download runtime.")));
         }
     }
 }

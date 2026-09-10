@@ -59,7 +59,17 @@ public interface IDownloadTaskApplicationService
         DownloadTaskId taskId,
         CancellationToken cancellationToken);
 
+    Task<OperationResult<DownloadTask>> ReconcileInterruptedAsync(
+        DownloadTaskId taskId,
+        long snapshotVersion,
+        CancellationToken cancellationToken);
+
     Task<OperationResult<DownloadTask>> FailAsync(
+        DownloadTaskId taskId,
+        DownloadFailure failure,
+        CancellationToken cancellationToken);
+
+    Task<OperationResult<DownloadTask>> FailIfDispatchableAsync(
         DownloadTaskId taskId,
         DownloadFailure failure,
         CancellationToken cancellationToken);

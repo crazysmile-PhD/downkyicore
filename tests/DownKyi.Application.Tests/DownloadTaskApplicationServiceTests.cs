@@ -81,6 +81,29 @@ public sealed class DownloadTaskApplicationServiceTests
     }
 
     [Fact]
+    public async Task InterruptedReconciliationPreservesNewerPauseIntent()
+    {
+        var store = new RecordingStore();
+        using var service = new DownloadTaskApplicationService(store, new AdvancingClock());
+        var task = CreateTask();
+        await service.AddAsync(task, TestContext.Current.CancellationToken);
+        var snapshot = (await service.StartAsync(
+            task.Id,
+            TestContext.Current.CancellationToken)).RequireValue();
+        await service.PauseAsync(task.Id, TestContext.Current.CancellationToken);
+
+        var result = await service.ReconcileInterruptedAsync(
+            task.Id,
+            snapshot.Version,
+            TestContext.Current.CancellationToken);
+
+        var reconciled = result.RequireValue();
+        Assert.Equal(DownloadPhase.Paused, reconciled.Phase);
+        Assert.Equal(3, reconciled.Version);
+        Assert.Equal([0L, 1L, 2L], store.ExpectedVersions);
+    }
+
+    [Fact]
     public async Task ArtifactClaimsPreservePriorPathsAndBackendIdentity()
     {
         var store = new RecordingStore();

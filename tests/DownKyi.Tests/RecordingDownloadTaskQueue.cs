@@ -30,3 +30,17 @@ internal sealed class RecordingDownloadTaskQueue : IDownloadTaskQueue
         return Task.FromResult(true);
     }
 }
+
+internal sealed class ReadyDownloadRuntimeAvailability : IDownloadRuntimeAvailability
+{
+    public void EnsureAcceptingTasks()
+    {
+    }
+
+    public Task<DownloadRuntimeStartupOutcome> WaitForStartupOutcomeAsync(
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(DownloadRuntimeStartupOutcome.Ready());
+    }
+}
