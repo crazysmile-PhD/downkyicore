@@ -105,21 +105,43 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
     {
         if (context.NeedsAudio)
         {
-            _presenter.ShowDownloadingAudio(context);
-            var result = await DownloadMediaFileAsync(
-                context,
-                SelectAudio(context),
-                playUrl => SelectAudio(context, playUrl),
-                cancellationToken).ConfigureAwait(true);
-            if (!result.TryGetValue(out var audioTransfer))
+            var audio = SelectAudio(context);
+            if (audio == null &&
+                !DownloadAudioSelection.HasAnyAudio(context.PlayUrl?.Dash) &&
+                context.NeedsVideo)
             {
-                return DownloadStageResult.Failure(
-                    result.Error?.Code ?? "download.media.audio",
-                    result.Error?.Message ?? "Audio transfer failed.");
+                var completedAudio = TryGetCompletedAudioTransfer(context);
+                if (completedAudio != null)
+                {
+                    context.AudioFile = completedAudio.FilePath;
+                    context.AudioTransferKey = completedAudio.Key;
+                    _logger.LogInformationMessage(
+                        "Playback does not provide an audio stream; reusing the completed audio transfer.");
+                }
+                else
+                {
+                    _logger.LogWarningMessage(
+                        "Playback does not provide an audio stream; continuing with the requested video.");
+                }
             }
+            else
+            {
+                _presenter.ShowDownloadingAudio(context);
+                var result = await DownloadMediaFileAsync(
+                    context,
+                    audio,
+                    playUrl => SelectAudio(context, playUrl),
+                    cancellationToken).ConfigureAwait(true);
+                if (!result.TryGetValue(out var audioTransfer))
+                {
+                    return DownloadStageResult.Failure(
+                        result.Error?.Code ?? "download.media.audio",
+                        result.Error?.Message ?? "Audio transfer failed.");
+                }
 
-            context.AudioFile = audioTransfer.FilePath;
-            context.AudioTransferKey = audioTransfer.Key;
+                context.AudioFile = audioTransfer.FilePath;
+                context.AudioTransferKey = audioTransfer.Key;
+            }
         }
 
         context.EnsureActive(cancellationToken);
@@ -329,7 +351,7 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
             "Invalid transfer artifacts could not be removed safely."));
     }
 
-    private static PlayUrlDashVideo? SelectAudio(DownloadExecutionContext context)
+    internal static PlayUrlDashVideo? SelectAudio(DownloadExecutionContext context)
     {
         return SelectAudio(context, context.PlayUrl);
     }
@@ -338,26 +360,38 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
         DownloadExecutionContext context,
         PlayUrl? playUrl)
     {
-        var audioCodec = context.Input.Metadata.AudioCodec;
-        var dash = playUrl?.Dash;
-        if (dash?.Audio is not { Count: > 0 } audio)
+        return DownloadAudioSelection.Select(context.Input.Metadata.AudioCodec.Id, playUrl);
+    }
+
+    private DownloadedMediaTransfer? TryGetCompletedAudioTransfer(
+        DownloadExecutionContext context)
+    {
+        var path = context.DownloadDirectory;
+        if (string.IsNullOrWhiteSpace(path))
         {
             return null;
         }
 
-        var selected = audio.FirstOrDefault(item => item.Id == audioCodec.Id);
-        if (audioCodec.Id == 30250 &&
-            dash.Dolby?.Audio is { Count: > 0 } dolbyAudio)
+        var keyPrefix = DownloadTransferKey.Create(
+            context.Input.Metadata.AudioCodec.Id,
+            string.Empty);
+        var snapshot = _projectionStore.GetRequiredSnapshot(context.TaskId);
+        foreach (var key in snapshot.Transfer.CompletedFileKeys.Where(
+                     key => key.StartsWith(keyPrefix, StringComparison.Ordinal)))
         {
-            selected = dolbyAudio[0];
+            if (!snapshot.Plan.TransferFiles.TryGetValue(key, out var fileName))
+            {
+                continue;
+            }
+
+            var completedFile = Path.Combine(path, fileName);
+            if (IsDownloadedMediaFileUsable(completedFile))
+            {
+                return new DownloadedMediaTransfer(key, completedFile);
+            }
         }
 
-        if (audioCodec.Id == 30251 && dash.Flac?.Audio is { } flacAudio)
-        {
-            selected = flacAudio;
-        }
-
-        return selected;
+        return null;
     }
 
     internal static PlayUrlDashVideo? SelectVideo(DownloadExecutionContext context)
