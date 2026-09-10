@@ -433,6 +433,56 @@ public sealed class DownloadRuntimeArchitectureTests
     }
 
     [Fact]
+    public void RequestedContentMagicKeysStayInTheCompatibilityCodec()
+    {
+        var allowedFiles = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "src/DownKyi.Domain/Downloads/DownloadContentSelection.cs"
+        };
+        var magicKeys = new[]
+        {
+            "\"downloadAudio\"",
+            "\"downloadVideo\"",
+            "\"downloadDanmaku\"",
+            "\"downloadSubtitle\"",
+            "\"downloadCover\""
+        };
+        var unexpectedFiles = Directory
+            .EnumerateFiles(Path.Combine(RepositoryRoot, "src"), "*.cs", SearchOption.AllDirectories)
+            .Where(file => magicKeys.Any(key => File.ReadAllText(file).Contains(key, StringComparison.Ordinal)))
+            .Select(file => Path.GetRelativePath(RepositoryRoot, file).Replace('\\', '/'))
+            .Where(file => !allowedFiles.Contains(file))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        var planSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "src",
+            "DownKyi.Domain",
+            "Downloads",
+            "DownloadPlan.cs"));
+        var addSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "src",
+            "DownKyi.Desktop",
+            "Services",
+            "Download",
+            "AddToDownloadService.cs"));
+        var dialogSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "src",
+            "DownKyi.Desktop",
+            "ViewModels",
+            "Dialogs",
+            "ViewDownloadSetterViewModel.cs"));
+
+        Assert.Empty(unexpectedFiles);
+        Assert.Contains("DownloadContentSelection RequestedContent", planSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("RequestedAssets", planSource, StringComparison.Ordinal);
+        Assert.Contains("DownloadContentSelection.FromLegacyMap", addSource, StringComparison.Ordinal);
+        Assert.Contains(".ToLegacyMap()", dialogSource, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void PauseIsAcknowledgedOnlyAfterTheTransferWorkerStops()
     {
         var directory = Path.Combine(RepositoryRoot, "src", "DownKyi.Desktop", "Services", "Download");

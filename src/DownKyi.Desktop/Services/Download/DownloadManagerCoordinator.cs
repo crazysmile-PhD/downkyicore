@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.IO;
@@ -54,15 +53,11 @@ internal interface IDownloadManagerCoordinator
 
 internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator
 {
-    private static readonly FrozenDictionary<string, ImmutableArray<string>> FileSuffixMap =
-        new Dictionary<string, ImmutableArray<string>>(StringComparer.Ordinal)
-        {
-            ["downloadVideo"] = [".mp4", ".flv"],
-            ["downloadAudio"] = [".aac", ".mp3"],
-            ["downloadCover"] = [".jpg", ".jpeg", ".png", ".webp"],
-            ["downloadDanmaku"] = [".ass"],
-            ["downloadSubtitle"] = [".srt"]
-        }.ToFrozenDictionary(StringComparer.Ordinal);
+    private static readonly ImmutableArray<string> VideoSuffixes = [".mp4", ".flv"];
+    private static readonly ImmutableArray<string> AudioSuffixes = [".aac", ".mp3"];
+    private static readonly ImmutableArray<string> CoverSuffixes = [".jpg", ".jpeg", ".png", ".webp"];
+    private static readonly ImmutableArray<string> DanmakuSuffixes = [".ass"];
+    private static readonly ImmutableArray<string> SubtitleSuffixes = [".srt"];
 
     private readonly DownloadTaskProjectionStore _storage;
     private readonly DownloadTaskStateWriter _stateWriter;
@@ -278,11 +273,36 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator
         return DownloadArtifactOpenResult.NotFound;
     }
 
-    private static IEnumerable<string> GetSelectedSuffixes(DownloadBase downloadBase)
+    private static ImmutableArray<string> GetSelectedSuffixes(DownloadBase downloadBase)
     {
-        return downloadBase.NeedDownloadContent
-            .Where(item => item.Value && FileSuffixMap.ContainsKey(item.Key))
-            .SelectMany(item => FileSuffixMap[item.Key]);
+        var content = downloadBase.NeedDownloadContent;
+        var suffixes = ImmutableArray.CreateBuilder<string>();
+        if (content.Video)
+        {
+            suffixes.AddRange(VideoSuffixes);
+        }
+
+        if (content.Audio)
+        {
+            suffixes.AddRange(AudioSuffixes);
+        }
+
+        if (content.Cover)
+        {
+            suffixes.AddRange(CoverSuffixes);
+        }
+
+        if (content.Danmaku)
+        {
+            suffixes.AddRange(DanmakuSuffixes);
+        }
+
+        if (content.Subtitle)
+        {
+            suffixes.AddRange(SubtitleSuffixes);
+        }
+
+        return suffixes.ToImmutable();
     }
 
     private static DownloadTaskId GetTaskId(DownloadingItem item)

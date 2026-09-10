@@ -110,7 +110,7 @@ internal static class DownloadTaskSqlWriter
         command.Parameters.AddWithValue("@id", task.Id.Value);
         command.Parameters.AddWithValue(
             "@need_download_content",
-            DownloadStoreJson.WriteBooleanMap(task.Plan.RequestedAssets));
+            DownloadStoreJson.WriteBooleanMap(task.Plan.RequestedContent.ToLegacyMap()));
         command.Parameters.AddWithValue("@bvid", task.Metadata.Media.Bvid);
         command.Parameters.AddWithValue("@avid", task.Metadata.Media.Avid);
         command.Parameters.AddWithValue("@cid", task.Metadata.Media.Cid);

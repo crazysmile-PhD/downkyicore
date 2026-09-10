@@ -41,10 +41,7 @@ public sealed class DownloadArtifactStageTests
                 Id = taskId.Value,
                 FilePath = Path.Combine(directory, "persisted-output")
             };
-            foreach (var key in downloadBase.NeedDownloadContent.Keys.ToArray())
-            {
-                downloadBase.NeedDownloadContent[key] = false;
-            }
+            downloadBase.NeedDownloadContent = DownloadContentSelection.None;
 
             var admitted = new DownloadingItem
             {
@@ -789,14 +786,12 @@ public sealed class DownloadArtifactStageTests
                 Cid = 2,
                 FilePath = Path.Combine(outputDirectory, "output")
             };
-            foreach (var key in downloadBase.NeedDownloadContent.Keys.ToArray())
+            downloadBase.NeedDownloadContent = DownloadContentSelection.None with
             {
-                downloadBase.NeedDownloadContent[key] = false;
-            }
-
-            downloadBase.NeedDownloadContent["downloadCover"] = cover;
-            downloadBase.NeedDownloadContent["downloadSubtitle"] = subtitle;
-            downloadBase.NeedDownloadContent["downloadDanmaku"] = danmaku;
+                Cover = cover,
+                Subtitle = subtitle,
+                Danmaku = danmaku
+            };
             var downloading = new DownloadingItem
             {
                 DownloadBase = downloadBase,

@@ -45,6 +45,9 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
         Assert.Equal("legacy-resume", restored.Id.Value);
         Assert.Equal(DownloadPhase.Paused, restored.Phase);
         Assert.Equal("aria-gid", restored.Transfer.BackendIdentity);
+        Assert.Equal(
+            DownloadContentSelection.None with { Video = true },
+            restored.Plan.RequestedContent);
         Assert.Equal("video.m4s", restored.Plan.TransferFiles["video"]);
         Assert.Equal("cover", Assert.Single(restored.Transfer.CompletedFileKeys));
         Assert.Equal(42.5, restored.Progress.Percentage);
@@ -456,6 +459,7 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
         Assert.Equal(expected.Phase, restored.Phase);
         Assert.Equal(expected.Transfer.BackendIdentity, restored.Transfer.BackendIdentity);
         Assert.Equal(expected.Transfer.CompletedFileKeys, restored.Transfer.CompletedFileKeys);
+        Assert.Equal(expected.Plan.RequestedContent, restored.Plan.RequestedContent);
         Assert.Equal(expected.Plan.TransferFiles, restored.Plan.TransferFiles);
         Assert.Equal(expected.Progress, restored.Progress);
     }
@@ -471,6 +475,7 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
             await store.GetUnfinishedAsync(TestContext.Current.CancellationToken));
 
         Assert.Null(restored.Plan.NfoRequest);
+        Assert.Equal(DownloadContentSelection.None, restored.Plan.RequestedContent);
         Assert.Equal(5, await ReadSchemaVersionAsync());
         Assert.Equal(1, await CountSchemaMigrationAsync(5));
     }
@@ -498,6 +503,41 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
         Assert.Equal(new DownloadNfoUniqueId("bilibili", "BV1NFO"), request.BilibiliId);
         Assert.Equal("2026-09-09", request.Premiered);
         Assert.Equal([new DownloadNfoRating("bilibili", 9.5f, 10, true)], request.Ratings);
+    }
+
+    [Fact]
+    public async Task TypedRequestedContentRoundTripsAcrossReopenUsingLegacyWireKeys()
+    {
+        var expected = new DownloadContentSelection(
+            Audio: true,
+            Video: false,
+            Danmaku: true,
+            Subtitle: false,
+            Cover: true);
+        using (var store = CreateStore())
+        {
+            Assert.True((await store.AddAsync(
+                CreatePausedTask("typed-content", requestedContent: expected),
+                TestContext.Current.CancellationToken)).IsSuccess);
+        }
+
+        using var reopened = CreateStore();
+        var restored = Assert.Single(
+            await reopened.GetUnfinishedAsync(TestContext.Current.CancellationToken));
+
+        Assert.Equal(expected, restored.Plan.RequestedContent);
+        using var connection = await OpenReadOnlyConnectionAsync().ConfigureAwait(true);
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT need_download_content FROM download_base WHERE id = 'typed-content'";
+        var json = Assert.IsType<string>(
+            await command.ExecuteScalarAsync(TestContext.Current.CancellationToken));
+        using var payload = System.Text.Json.JsonDocument.Parse(json);
+        Assert.Equal(5, payload.RootElement.EnumerateObject().Count());
+        Assert.True(payload.RootElement.GetProperty("downloadAudio").GetBoolean());
+        Assert.False(payload.RootElement.GetProperty("downloadVideo").GetBoolean());
+        Assert.True(payload.RootElement.GetProperty("downloadDanmaku").GetBoolean());
+        Assert.False(payload.RootElement.GetProperty("downloadSubtitle").GetBoolean());
+        Assert.True(payload.RootElement.GetProperty("downloadCover").GetBoolean());
     }
 
     [Theory]
@@ -775,12 +815,13 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
     private DownloadTask CreatePausedTask(
         string id,
         string? outputPath = null,
-        DownloadNfoRequest? nfoRequest = null)
+        DownloadNfoRequest? nfoRequest = null,
+        DownloadContentSelection? requestedContent = null)
     {
         var task = DownloadTask.Create(
             new DownloadTaskId(id),
             CreateMetadata(id),
-            CreatePlan(nfoRequest),
+            CreatePlan(nfoRequest, requestedContent),
             new DownloadOutput(outputPath ?? Path.Combine(_directory, id), "1 GB"),
             _clock.UtcNow);
         task = task.Start(_clock.UtcNow.AddSeconds(1)).RequireValue();
@@ -836,10 +877,12 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
             0);
     }
 
-    private static DownloadPlan CreatePlan(DownloadNfoRequest? nfoRequest = null)
+    private static DownloadPlan CreatePlan(
+        DownloadNfoRequest? nfoRequest = null,
+        DownloadContentSelection? requestedContent = null)
     {
         return new DownloadPlan(
-            new Dictionary<string, bool>(StringComparer.Ordinal) { ["video"] = true },
+            requestedContent ?? new DownloadContentSelection(false, true, false, false, false),
             new Dictionary<string, string>(StringComparer.Ordinal) { ["video"] = "video.m4s" },
             1,
             nfoRequest);

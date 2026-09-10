@@ -197,7 +197,7 @@ internal static class DownloadTaskProjectionMapper
         return new DownloadBase
         {
             Id = task.Id.Value,
-            NeedDownloadContent = task.Plan.RequestedAssets.ToDictionary(entry => entry.Key, entry => entry.Value),
+            NeedDownloadContent = task.Plan.RequestedContent,
             Bvid = task.Metadata.Media.Bvid,
             Avid = task.Metadata.Media.Avid,
             Cid = task.Metadata.Media.Cid,

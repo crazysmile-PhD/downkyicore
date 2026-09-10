@@ -5,21 +5,21 @@ namespace DownKyi.Domain.Downloads;
 public sealed class DownloadPlan
 {
     public DownloadPlan(
-        IEnumerable<KeyValuePair<string, bool>> requestedAssets,
+        DownloadContentSelection requestedContent,
         IEnumerable<KeyValuePair<string, string>> transferFiles,
         int streamType,
         DownloadNfoRequest? nfoRequest)
     {
-        ArgumentNullException.ThrowIfNull(requestedAssets);
+        ArgumentNullException.ThrowIfNull(requestedContent);
         ArgumentNullException.ThrowIfNull(transferFiles);
 
-        RequestedAssets = requestedAssets.ToImmutableDictionary(StringComparer.Ordinal);
+        RequestedContent = requestedContent;
         TransferFiles = transferFiles.ToImmutableDictionary(StringComparer.Ordinal);
         StreamType = streamType;
         NfoRequest = nfoRequest;
     }
 
-    public ImmutableDictionary<string, bool> RequestedAssets { get; }
+    public DownloadContentSelection RequestedContent { get; }
 
     public ImmutableDictionary<string, string> TransferFiles { get; }
 

@@ -9,6 +9,7 @@ using DownKyi.Application.Diagnostics;
 using DownKyi.Core.BiliApi.Sign;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.Settings;
+using DownKyi.Domain.Downloads;
 using DownKyi.Presentation;
 using DownKyi.Services.Video;
 using DownKyi.Utils;
@@ -158,7 +159,12 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
         var videoSettings = _settingsStore.Current.Video;
         if (videoSettings.IsUseSaveVideoRootPath == AllowStatus.Yes)
         {
-            _downloadContent = DownloadContentSelection.From(videoSettings.Content);
+            _downloadContent = new DownloadContentSelection(
+                videoSettings.Content.DownloadAudio,
+                videoSettings.Content.DownloadVideo,
+                videoSettings.Content.DownloadDanmaku,
+                videoSettings.Content.DownloadSubtitle,
+                videoSettings.Content.DownloadCover);
             directory = videoSettings.SaveVideoRootPath;
         }
         else
@@ -171,12 +177,7 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
                 directory = result.Parameters.TryGetValue("directory", out var directoryValue)
                     ? directoryValue as string ?? string.Empty
                     : string.Empty;
-                _downloadContent = new DownloadContentSelection(
-                    GetBoolean(result.Parameters, "downloadAudio"),
-                    GetBoolean(result.Parameters, "downloadVideo"),
-                    GetBoolean(result.Parameters, "downloadDanmaku"),
-                    GetBoolean(result.Parameters, "downloadSubtitle"),
-                    GetBoolean(result.Parameters, "downloadCover"));
+                _downloadContent = ReadDownloadContent(result.Parameters);
             }
         }
 
@@ -293,8 +294,18 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
         return addedCount;
     }
 
-    private static bool GetBoolean(IReadOnlyDictionary<string, object?> parameters, string key)
+    private static DownloadContentSelection ReadDownloadContent(
+        IReadOnlyDictionary<string, object?> parameters)
     {
-        return parameters.TryGetValue(key, out var value) && value is true;
+        var values = new Dictionary<string, bool>(StringComparer.Ordinal);
+        foreach (var (key, value) in parameters)
+        {
+            if (value is bool selected)
+            {
+                values[key] = selected;
+            }
+        }
+
+        return DownloadContentSelection.FromLegacyMap(values);
     }
 }

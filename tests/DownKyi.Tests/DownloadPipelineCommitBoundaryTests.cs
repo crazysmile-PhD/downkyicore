@@ -147,13 +147,11 @@ public sealed class DownloadPipelineCommitBoundaryTests
                 Id = taskId.Value,
                 FilePath = Path.Combine(directory, "output")
             };
-            foreach (var key in downloadBase.NeedDownloadContent.Keys.ToArray())
+            downloadBase.NeedDownloadContent = DownloadContentSelection.None with
             {
-                downloadBase.NeedDownloadContent[key] = false;
-            }
-
-            downloadBase.NeedDownloadContent["downloadAudio"] = true;
-            downloadBase.NeedDownloadContent["downloadVideo"] = true;
+                Audio = true,
+                Video = true
+            };
             var downloading = new DownloadingItem
             {
                 DownloadBase = downloadBase,
