@@ -178,6 +178,49 @@ public sealed class DownloadPipelineStageTests
     }
 
     [Fact]
+    public async Task MediaStageDownloadsVideoWhenAudioCollectionIsNull()
+    {
+        var playUrl = CreateVideoOnlyPlayUrl();
+        playUrl.Dash.Audio = null!;
+        using var fixture = await MediaStageFixture.CreateAsync(
+            playUrl,
+            downloadAudio: true,
+            downloadVideo: true).ConfigureAwait(true);
+
+        var result = await fixture.Stage.ExecuteAsync(
+            fixture.Context,
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsSuccess);
+        Assert.Null(fixture.Context.AudioFile);
+        Assert.NotNull(fixture.Context.VideoFile);
+        var request = Assert.Single(fixture.Backend.Requests);
+        Assert.Equal("https://example.invalid/video", Assert.Single(request.Urls));
+    }
+
+    [Fact]
+    public async Task MediaStageReusesCompletedAudioWhenPlaybackNoLongerProvidesAudio()
+    {
+        using var fixture = await MediaStageFixture.CreateAsync(
+            CreateVideoOnlyPlayUrl(),
+            downloadAudio: true,
+            downloadVideo: true).ConfigureAwait(true);
+        var completedAudio = await fixture.AddCompletedAudioTransferAsync()
+            .ConfigureAwait(true);
+
+        var result = await fixture.Stage.ExecuteAsync(
+            fixture.Context,
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(completedAudio.FilePath, fixture.Context.AudioFile);
+        Assert.Equal(completedAudio.Key, fixture.Context.AudioTransferKey);
+        Assert.NotNull(fixture.Context.VideoFile);
+        var request = Assert.Single(fixture.Backend.Requests);
+        Assert.Equal("https://example.invalid/video", Assert.Single(request.Urls));
+    }
+
+    [Fact]
     public async Task MediaStageRejectsAudioOnlyRequestWhenSourceHasNoAudio()
     {
         using var fixture = await MediaStageFixture.CreateAsync(
@@ -266,6 +309,29 @@ public sealed class DownloadPipelineStageTests
             });
 
         Assert.Same(flac, DownloadMediaStage.SelectAudio(context));
+    }
+
+    [Theory]
+    [InlineData(30250)]
+    [InlineData(30251)]
+    public void MediaStageFallsBackToOrdinaryAudioWhenSpecialDescriptorIsUnavailable(
+        int audioCodecId)
+    {
+        using var settings = new TestSettingsStore();
+        var ordinary = new PlayUrlDashVideo
+        {
+            Id = audioCodecId,
+            BaseAddress = "https://example.invalid/ordinary-audio"
+        };
+        var context = CreateContext(
+            settings.Store.Current,
+            audioCodecId: audioCodecId,
+            playUrl: new PlayUrl
+            {
+                Dash = new PlayUrlDash { Audio = [ordinary] }
+            });
+
+        Assert.Same(ordinary, DownloadMediaStage.SelectAudio(context));
     }
 
     [Fact]
@@ -411,6 +477,29 @@ public sealed class DownloadPipelineStageTests
         public DownloadMediaStage Stage { get; }
 
         public DownloadExecutionContext Context { get; }
+
+        public async Task<(string Key, string FilePath)> AddCompletedAudioTransferAsync()
+        {
+            const string fileName = "completed-audio.m4s";
+            var filePath = Path.Combine(_directory, fileName);
+            await File.WriteAllBytesAsync(
+                filePath,
+                [1, 2, 3],
+                TestContext.Current.CancellationToken).ConfigureAwait(true);
+            var key = DownloadTransferKey.Create(30280, "mp4a.40.2");
+            var recorded = await _tasks.RecordTransferFileAsync(
+                Context.TaskId,
+                key,
+                fileName,
+                TestContext.Current.CancellationToken).ConfigureAwait(true);
+            Assert.True(recorded.IsSuccess, recorded.Error?.Message);
+            var completed = await _tasks.CompleteTransferFileAsync(
+                Context.TaskId,
+                key,
+                TestContext.Current.CancellationToken).ConfigureAwait(true);
+            Assert.True(completed.IsSuccess, completed.Error?.Message);
+            return (key, filePath);
+        }
 
         public static async Task<MediaStageFixture> CreateAsync(
             PlayUrl playUrl,

@@ -107,11 +107,22 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
         {
             var audio = SelectAudio(context);
             if (audio == null &&
-                !HasAnyAudio(context.PlayUrl?.Dash) &&
+                !DownloadAudioSelection.HasAnyAudio(context.PlayUrl?.Dash) &&
                 context.NeedsVideo)
             {
-                _logger.LogWarningMessage(
-                    "Playback does not provide an audio stream; continuing with the requested video.");
+                var completedAudio = TryGetCompletedAudioTransfer(context);
+                if (completedAudio != null)
+                {
+                    context.AudioFile = completedAudio.FilePath;
+                    context.AudioTransferKey = completedAudio.Key;
+                    _logger.LogInformationMessage(
+                        "Playback does not provide an audio stream; reusing the completed audio transfer.");
+                }
+                else
+                {
+                    _logger.LogWarningMessage(
+                        "Playback does not provide an audio stream; continuing with the requested video.");
+                }
             }
             else
             {
@@ -349,40 +360,38 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
         DownloadExecutionContext context,
         PlayUrl? playUrl)
     {
-        var audioCodec = context.Input.Metadata.AudioCodec;
-        var dash = playUrl?.Dash;
-        if (dash == null)
+        return DownloadAudioSelection.Select(context.Input.Metadata.AudioCodec.Id, playUrl);
+    }
+
+    private DownloadedMediaTransfer? TryGetCompletedAudioTransfer(
+        DownloadExecutionContext context)
+    {
+        var path = context.DownloadDirectory;
+        if (string.IsNullOrWhiteSpace(path))
         {
             return null;
         }
 
-        if (audioCodec.Id == 30250)
+        var keyPrefix = DownloadTransferKey.Create(
+            context.Input.Metadata.AudioCodec.Id,
+            string.Empty);
+        var snapshot = _projectionStore.GetRequiredSnapshot(context.TaskId);
+        foreach (var key in snapshot.Transfer.CompletedFileKeys.Where(
+                     key => key.StartsWith(keyPrefix, StringComparison.Ordinal)))
         {
-            var dolbyAudio = dash.Dolby?.Audio;
-            return dolbyAudio is { Count: > 0 } ? dolbyAudio[0] : null;
+            if (!snapshot.Plan.TransferFiles.TryGetValue(key, out var fileName))
+            {
+                continue;
+            }
+
+            var completedFile = Path.Combine(path, fileName);
+            if (IsDownloadedMediaFileUsable(completedFile))
+            {
+                return new DownloadedMediaTransfer(key, completedFile);
+            }
         }
 
-        if (audioCodec.Id == 30251)
-        {
-            var flacAudio = dash.Flac?.Audio;
-            return HasMediaAddress(flacAudio) ? flacAudio : null;
-        }
-
-        return dash.Audio.FirstOrDefault(item => item.Id == audioCodec.Id);
-    }
-
-    private static bool HasAnyAudio(PlayUrlDash? dash)
-    {
-        return dash?.Audio.Count > 0 ||
-               dash?.Dolby?.Audio.Count > 0 ||
-               HasMediaAddress(dash?.Flac?.Audio);
-    }
-
-    private static bool HasMediaAddress(PlayUrlDashVideo? media)
-    {
-        return media != null &&
-               (!string.IsNullOrWhiteSpace(media.BaseAddress) ||
-                media.BackupUrl.Any(url => !string.IsNullOrWhiteSpace(url)));
+        return null;
     }
 
     internal static PlayUrlDashVideo? SelectVideo(DownloadExecutionContext context)
