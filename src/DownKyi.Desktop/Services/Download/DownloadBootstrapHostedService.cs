@@ -59,18 +59,19 @@ internal sealed class DownloadBootstrapHostedService : IHostedService, IDisposab
             }).ConfigureAwait(false);
 
             _historyLoadTask = LoadRemainingHistoryAsync(cancellationToken);
-            _downloadRuntime = _downloadRuntimeFactory.Create();
-            if (_downloadRuntime != null)
-            {
-                await _downloadRuntime.StartAsync(cancellationToken).ConfigureAwait(false);
-                await _queueGateway
-                    .AttachAsync(_downloadRuntime, cancellationToken)
-                    .ConfigureAwait(false);
-                await QueueStartupTasksAsync(
-                    state.UnfinishedTasks,
-                    _downloadRuntime,
-                    cancellationToken).ConfigureAwait(false);
-            }
+            _downloadRuntime = _downloadRuntimeFactory.Create()
+                ?? throw new InvalidOperationException("The download runtime factory returned no runtime.");
+            await _downloadRuntime.StartAsync(cancellationToken).ConfigureAwait(false);
+            await _queueGateway
+                .AttachAsync(_downloadRuntime, cancellationToken)
+                .ConfigureAwait(false);
+            await QueueStartupTasksAsync(
+                state.UnfinishedTasks,
+                _downloadRuntime,
+                cancellationToken).ConfigureAwait(false);
+            await _queueGateway
+                .MarkReadyAsync(_downloadRuntime, cancellationToken)
+                .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -80,8 +81,34 @@ internal sealed class DownloadBootstrapHostedService : IHostedService, IDisposab
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
             or InvalidOperationException or SqliteException)
         {
+            var pendingTasks = _queueGateway.MarkFaulted(exception);
             await CleanupFailedRuntimeAsync().ConfigureAwait(false);
+            await MarkPendingTasksFailedAsync(pendingTasks).ConfigureAwait(false);
             _logger.LogErrorMessage("Download bootstrap failed.", exception);
+        }
+    }
+
+    private async Task MarkPendingTasksFailedAsync(IReadOnlyList<DownloadTaskId> pendingTasks)
+    {
+        foreach (var taskId in pendingTasks)
+        {
+            try
+            {
+                await _stateWriter.FailAsync(
+                    taskId,
+                    new DownloadFailure(
+                        "download.runtime.unavailable",
+                        "Download runtime is unavailable.",
+                        true),
+                    CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+                or InvalidOperationException or SqliteException)
+            {
+                _logger.LogErrorMessage(
+                    "Pending download task could not be failed after bootstrap failure.",
+                    exception);
+            }
         }
     }
 

@@ -30,3 +30,10 @@ internal sealed class RecordingDownloadTaskQueue : IDownloadTaskQueue
         return Task.FromResult(true);
     }
 }
+
+internal sealed class ReadyDownloadRuntimeAvailability : IDownloadRuntimeAvailability
+{
+    public void EnsureReady()
+    {
+    }
+}

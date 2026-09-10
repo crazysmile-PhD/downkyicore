@@ -12,6 +12,28 @@ internal interface IDownloadTaskQueue
     Task<bool> CancelAsync(DownloadTaskId taskId);
 }
 
+internal interface IDownloadRuntimeAvailability
+{
+    void EnsureReady();
+}
+
+internal sealed class DownloadRuntimeUnavailableException : InvalidOperationException
+{
+    public DownloadRuntimeUnavailableException()
+    {
+    }
+
+    public DownloadRuntimeUnavailableException(string message)
+        : base(message)
+    {
+    }
+
+    public DownloadRuntimeUnavailableException(string message, Exception? innerException = null)
+        : base(message, innerException)
+    {
+    }
+}
+
 internal interface IDownloadRuntime : IDownloadTaskQueue, IDisposable
 {
     Task StartAsync(CancellationToken cancellationToken = default);

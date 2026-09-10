@@ -276,6 +276,63 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task RuntimeUnavailableRejectsAdmissionBeforePersistence()
+    {
+        Directory.CreateDirectory(_directory);
+        using var store = CreateStore();
+        var clock = new SystemClock();
+        using var tasks = new DownloadTaskApplicationService(store, clock);
+        using var projections = new DownloadTaskProjectionStore(tasks, clock);
+        var listState = new DownloadListState();
+        var gateway = new DownloadTaskQueueGateway();
+        gateway.MarkFaulted(new InvalidOperationException("Synthetic bootstrap failure."));
+        using var admission = CreateAdmission(
+            listState,
+            tasks,
+            projections,
+            gateway,
+            runtimeAvailability: gateway);
+        var item = CreateItem("runtime-unavailable", Path.Combine(_directory, "output"));
+
+        await Assert.ThrowsAsync<DownloadRuntimeUnavailableException>(() => admission.AdmitAsync(
+            item,
+            true,
+            TestContext.Current.CancellationToken));
+
+        Assert.Empty(await tasks.GetUnfinishedAsync(TestContext.Current.CancellationToken));
+        Assert.Empty(listState.Downloading);
+    }
+
+    [Fact]
+    public async Task RuntimeFailureAfterPersistenceMarksCommittedTaskFailed()
+    {
+        Directory.CreateDirectory(_directory);
+        using var store = CreateStore();
+        var clock = new SystemClock();
+        using var tasks = new DownloadTaskApplicationService(store, clock);
+        using var projections = new DownloadTaskProjectionStore(tasks, clock);
+        var listState = new DownloadListState();
+        using var admission = CreateAdmission(
+            listState,
+            tasks,
+            projections,
+            new RuntimeUnavailableQueue());
+        var item = CreateItem("runtime-failed-after-commit", Path.Combine(_directory, "output"));
+
+        await Assert.ThrowsAsync<DownloadRuntimeUnavailableException>(() => admission.AdmitAsync(
+            item,
+            true,
+            TestContext.Current.CancellationToken));
+
+        var persisted = Assert.IsType<DownloadTask>(await tasks.FindAsync(
+            new DownloadTaskId(item.DownloadBase.Id),
+            TestContext.Current.CancellationToken));
+        Assert.Equal(DownloadPhase.Failed, persisted.Phase);
+        Assert.Equal("download.runtime.unavailable", persisted.Failure?.Code);
+        Assert.Equal(DownloadStatus.DownloadFailed, Assert.Single(listState.Downloading).Downloading.DownloadStatus);
+    }
+
+    [Fact]
     public async Task AliasesSharePhysicalCollisionSequenceAndRemainFrozenAfterRetarget()
     {
         Directory.CreateDirectory(_directory);
@@ -374,13 +431,15 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         IDownloadTaskApplicationService tasks,
         DownloadTaskProjectionStore projections,
         IDownloadTaskQueue queue,
-        IPhysicalOutputPathResolver? resolver = null)
+        IPhysicalOutputPathResolver? resolver = null,
+        IDownloadRuntimeAvailability? runtimeAvailability = null)
     {
         return new DownloadTaskAdmissionService(
             listState,
             tasks,
             projections,
             queue,
+            runtimeAvailability ?? new ReadyDownloadRuntimeAvailability(),
             resolver ?? new RecordingPhysicalOutputPathResolver(static path => path));
     }
 
@@ -513,6 +572,18 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         }
 
         public Task<bool> CancelAsync(DownloadTaskId taskId) => Task.FromResult(true);
+    }
+
+    private sealed class RuntimeUnavailableQueue : IDownloadTaskQueue
+    {
+        public Task EnqueueAsync(
+            DownloadTaskId taskId,
+            CancellationToken cancellationToken = default)
+        {
+            throw new DownloadRuntimeUnavailableException("Synthetic runtime failure.");
+        }
+
+        public Task<bool> CancelAsync(DownloadTaskId taskId) => Task.FromResult(false);
     }
 
     public void Dispose()

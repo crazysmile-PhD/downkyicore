@@ -370,6 +370,7 @@ public sealed class VideoTagLoadingTests : IDisposable
                 _taskService,
                 _projectionStore,
                 Queue,
+                new ReadyDownloadRuntimeAvailability(),
                 resolver ?? new FileSystemPhysicalOutputPathResolver());
             var duplicatePolicy = new DownloadDuplicatePolicy(
                 ListState,

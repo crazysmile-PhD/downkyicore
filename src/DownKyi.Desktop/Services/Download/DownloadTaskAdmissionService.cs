@@ -13,6 +13,7 @@ internal sealed class DownloadTaskAdmissionService : IDisposable
     private readonly IDownloadTaskApplicationService _tasks;
     private readonly DownloadTaskProjectionStore _projections;
     private readonly IDownloadTaskQueue _taskQueue;
+    private readonly IDownloadRuntimeAvailability _runtimeAvailability;
     private readonly IPhysicalOutputPathResolver _physicalOutputPathResolver;
     private readonly SemaphoreSlim _admissionGate = new(1, 1);
     private bool _disposed;
@@ -22,12 +23,15 @@ internal sealed class DownloadTaskAdmissionService : IDisposable
         IDownloadTaskApplicationService tasks,
         DownloadTaskProjectionStore projections,
         IDownloadTaskQueue taskQueue,
+        IDownloadRuntimeAvailability runtimeAvailability,
         IPhysicalOutputPathResolver physicalOutputPathResolver)
     {
         _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
         _tasks = tasks ?? throw new ArgumentNullException(nameof(tasks));
         _projections = projections ?? throw new ArgumentNullException(nameof(projections));
         _taskQueue = taskQueue ?? throw new ArgumentNullException(nameof(taskQueue));
+        _runtimeAvailability = runtimeAvailability
+            ?? throw new ArgumentNullException(nameof(runtimeAvailability));
         _physicalOutputPathResolver = physicalOutputPathResolver
             ?? throw new ArgumentNullException(nameof(physicalOutputPathResolver));
     }
@@ -42,6 +46,7 @@ internal sealed class DownloadTaskAdmissionService : IDisposable
         await _admissionGate.WaitAsync(cancellationToken).ConfigureAwait(true);
         try
         {
+            _runtimeAvailability.EnsureReady();
             var physicalBasePath = _physicalOutputPathResolver.ResolvePhysicalBasePath(
                 item.DownloadBase.FilePath);
             var admittedBasePath = await DownloadOutputPathResolver.ResolveAdmissionCollisionAsync(
@@ -58,9 +63,29 @@ internal sealed class DownloadTaskAdmissionService : IDisposable
 
             // Once persisted, admission must finish even if the originating UI operation is canceled.
             _downloadLists.AddDownloading(item);
-            await _taskQueue.EnqueueAsync(
-                new DownloadTaskId(item.DownloadBase.Id),
-                CancellationToken.None).ConfigureAwait(true);
+            var taskId = new DownloadTaskId(item.DownloadBase.Id);
+            try
+            {
+                await _taskQueue.EnqueueAsync(taskId, CancellationToken.None).ConfigureAwait(true);
+            }
+            catch (DownloadRuntimeUnavailableException)
+            {
+                var failure = await _tasks.FailAsync(
+                    taskId,
+                    new DownloadFailure(
+                        "download.runtime.unavailable",
+                        "Download runtime is unavailable.",
+                        true),
+                    CancellationToken.None).ConfigureAwait(true);
+                if (!failure.IsSuccess)
+                {
+                    throw new InvalidOperationException(
+                        failure.Error?.Message
+                            ?? "The unavailable download runtime state could not be persisted.");
+                }
+
+                throw;
+            }
         }
         finally
         {

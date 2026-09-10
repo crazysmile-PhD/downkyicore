@@ -156,6 +156,34 @@ public sealed class DownloadBootstrapHostedServiceTests
         Assert.True(runtime.Disposed);
     }
 
+    [Fact]
+    public async Task TerminalBootstrapFailureDoesNotAcceptNewPendingTasks()
+    {
+        using var runtime = new RecordingDownloadRuntime(failOnEnqueue: true);
+        var clock = new FixedClock();
+        using var tasks = new DownloadTaskApplicationService(
+            new EmptyDownloadTaskStore([CreateTask("startup-task")]),
+            clock);
+        using var storage = new DownloadTaskProjectionStore(tasks, clock);
+        var queueGateway = new DownloadTaskQueueGateway();
+        using var service = new DownloadBootstrapHostedService(
+            new DownloadListState(),
+            storage,
+            new DownloadTaskStateWriter(tasks),
+            new RecordingRuntimeFactory(runtime),
+            queueGateway,
+            new ImmediateUiDispatcher(),
+            NullLogger<DownloadBootstrapHostedService>.Instance);
+
+        await service.StartAsync(TestContext.Current.CancellationToken);
+
+        var exception = await Record.ExceptionAsync(() => queueGateway.EnqueueAsync(
+            new DownloadTaskId("admitted-after-terminal-failure"),
+            TestContext.Current.CancellationToken));
+
+        Assert.IsType<DownloadRuntimeUnavailableException>(exception);
+    }
+
     private static DownloadTask CreateTask(string id)
     {
         return DownloadTask.Create(

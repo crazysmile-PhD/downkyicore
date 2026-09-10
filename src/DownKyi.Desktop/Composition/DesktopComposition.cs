@@ -99,6 +99,8 @@ internal static class DesktopComposition
         services.AddSingleton<DownloadTaskQueueGateway>();
         services.AddSingleton<IDownloadTaskQueue>(provider =>
             provider.GetRequiredService<DownloadTaskQueueGateway>());
+        services.AddSingleton<IDownloadRuntimeAvailability>(provider =>
+            provider.GetRequiredService<DownloadTaskQueueGateway>());
         services.AddSingleton<DownloadTaskAdmissionService>();
         services.AddSingleton<LegacyDownloadAdmissionPresenter>();
         services.AddSingleton<DownloadListState>();
