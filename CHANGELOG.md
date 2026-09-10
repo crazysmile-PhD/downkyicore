@@ -1,5 +1,23 @@
 # 更新日志
 
+## [1.1.4] - 2026-09-10
+
+### Bug Fixes
+
+- 修复无 Apple Developer ID 凭证时，macOS ad-hoc 签名仍启用 Hardened Runtime，导致 macOS 26 因 Library Validation 拒绝加载 `.NET` 的 `libhostfxr.dylib`、应用在显示 UI 前以状态 130 退出的问题。
+- 支持没有音频轨的 DASH 视频下载，并补齐音频选择边界。
+- 下载恢复会等待既有 worker 完全停止后再重新排队，并持久保存 NFO 下载选择。
+
+### Architecture And Reliability
+
+- 下载请求内容与执行输入改为不可变的 typed snapshot，避免执行期间读取变化中的 UI 或任务状态。
+- 加强 PowerShell runner exit-code、CI timeout 分类与 settings roundtrip 回归。
+
+### Release
+
+- 无 Apple credentials 的 macOS 套件继续使用 ad-hoc signing，并在 macOS 26 arm64 验证签章不含 Hardened Runtime、严格 bundle 完整性、DMG 挂载及 `ditto` 复制后启动。
+- Developer ID 模式继续保留 Hardened Runtime、entitlements、notarization、stapling 与 Gatekeeper 验证；ad-hoc CI 成功不表示 Apple trusted distribution。
+
 ## [1.1.3] - 2026-08-29
 
 ### Security
