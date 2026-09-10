@@ -51,6 +51,15 @@ internal sealed class DownloadTaskStateWriter
         CancellationToken cancellationToken = default) =>
         RequireAsync(_tasks.RecoverInterruptedAsync(taskId, cancellationToken));
 
+    public Task<DownloadTask> ReconcileInterruptedAsync(
+        DownloadTaskId taskId,
+        long snapshotVersion,
+        CancellationToken cancellationToken = default) =>
+        RequireAsync(_tasks.ReconcileInterruptedAsync(
+            taskId,
+            snapshotVersion,
+            cancellationToken));
+
     public Task<DownloadTask> FailAsync(
         DownloadTaskId taskId,
         DownloadFailure failure,

@@ -216,7 +216,10 @@ internal sealed class DownloadBootstrapHostedService : IHostedService, IDisposab
             if (task.Phase is DownloadPhase.Downloading or DownloadPhase.Pausing)
             {
                 task = await _stateWriter
-                    .RecoverInterruptedAsync(taskId, cancellationToken)
+                    .ReconcileInterruptedAsync(
+                        taskId,
+                        restoredTask.Version,
+                        cancellationToken)
                     .ConfigureAwait(false);
             }
 

@@ -136,6 +136,18 @@ public sealed class DownloadTaskApplicationService : IDownloadTaskApplicationSer
         CancellationToken cancellationToken) =>
         MutateAsync(taskId, static (task, now) => task.RecoverInterrupted(now), cancellationToken);
 
+    public Task<OperationResult<DownloadTask>> ReconcileInterruptedAsync(
+        DownloadTaskId taskId,
+        long snapshotVersion,
+        CancellationToken cancellationToken) =>
+        MutateAsync(
+            taskId,
+            static task => task.Phase is DownloadPhase.Downloading or DownloadPhase.Pausing,
+            (task, now) => task.Phase == DownloadPhase.Pausing && task.Version != snapshotVersion
+                ? task.ConfirmPaused(now)
+                : task.RecoverInterrupted(now),
+            cancellationToken);
+
     public Task<OperationResult<DownloadTask>> FailAsync(
         DownloadTaskId taskId,
         DownloadFailure failure,

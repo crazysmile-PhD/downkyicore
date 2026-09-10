@@ -324,6 +324,86 @@ public sealed class DownloadBootstrapHostedServiceTests
             Assert.Single(listState.Downloading).Downloading.DownloadStatus);
     }
 
+    [Fact]
+    public async Task StartupRecoveryPreservesPauseMadeAfterSnapshot()
+    {
+        var task = CreateTask("paused-during-recovery")
+            .Start(DateTimeOffset.UnixEpoch.AddSeconds(1))
+            .RequireValue();
+        using var runtime = new BlockingSuccessfulStartRuntime();
+        var clock = new FixedClock();
+        using var tasks = new DownloadTaskApplicationService(
+            new EmptyDownloadTaskStore([task]),
+            clock);
+        using var storage = new DownloadTaskProjectionStore(tasks, clock);
+        var stateWriter = new DownloadTaskStateWriter(tasks);
+        var queueGateway = new DownloadTaskQueueGateway();
+        using var service = new DownloadBootstrapHostedService(
+            new DownloadListState(),
+            storage,
+            stateWriter,
+            new RecordingRuntimeFactory(runtime),
+            queueGateway,
+            new ImmediateUiDispatcher(),
+            NullLogger<DownloadBootstrapHostedService>.Instance);
+
+        var startup = service.StartAsync(TestContext.Current.CancellationToken);
+        await runtime.StartEntered.Task.WaitAsync(TestContext.Current.CancellationToken);
+        await stateWriter.PauseAsync(task.Id, TestContext.Current.CancellationToken);
+        runtime.AllowStart.TrySetResult();
+        await startup.ConfigureAwait(true);
+
+        var persisted = Assert.IsType<DownloadTask>(await tasks.FindAsync(
+            task.Id,
+            TestContext.Current.CancellationToken));
+        Assert.Equal(DownloadPhase.Paused, persisted.Phase);
+        Assert.Empty(runtime.Enqueued);
+        Assert.Equal(
+            DownloadRuntimeStartupState.Ready,
+            (await queueGateway.WaitForStartupOutcomeAsync(
+                TestContext.Current.CancellationToken)).State);
+    }
+
+    [Fact]
+    public async Task StartupRecoveryPreservesDeletionMadeAfterSnapshot()
+    {
+        var task = CreateTask("deleted-during-recovery")
+            .Start(DateTimeOffset.UnixEpoch.AddSeconds(1))
+            .RequireValue();
+        using var runtime = new BlockingSuccessfulStartRuntime();
+        var clock = new FixedClock();
+        using var tasks = new DownloadTaskApplicationService(
+            new EmptyDownloadTaskStore([task]),
+            clock);
+        using var storage = new DownloadTaskProjectionStore(tasks, clock);
+        var stateWriter = new DownloadTaskStateWriter(tasks);
+        var queueGateway = new DownloadTaskQueueGateway();
+        using var service = new DownloadBootstrapHostedService(
+            new DownloadListState(),
+            storage,
+            stateWriter,
+            new RecordingRuntimeFactory(runtime),
+            queueGateway,
+            new ImmediateUiDispatcher(),
+            NullLogger<DownloadBootstrapHostedService>.Instance);
+
+        var startup = service.StartAsync(TestContext.Current.CancellationToken);
+        await runtime.StartEntered.Task.WaitAsync(TestContext.Current.CancellationToken);
+        await stateWriter.DeleteAsync(task.Id, TestContext.Current.CancellationToken);
+        runtime.AllowStart.TrySetResult();
+        await startup.ConfigureAwait(true);
+
+        var persisted = Assert.IsType<DownloadTask>(await tasks.FindAsync(
+            task.Id,
+            TestContext.Current.CancellationToken));
+        Assert.Equal(DownloadPhase.Deleted, persisted.Phase);
+        Assert.Empty(runtime.Enqueued);
+        Assert.Equal(
+            DownloadRuntimeStartupState.Ready,
+            (await queueGateway.WaitForStartupOutcomeAsync(
+                TestContext.Current.CancellationToken)).State);
+    }
+
     private static DownloadTask CreateTask(string id)
     {
         return DownloadTask.Create(
@@ -487,6 +567,44 @@ public sealed class DownloadBootstrapHostedServiceTests
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
+
+        public Task<bool> CancelAsync(DownloadTaskId taskId) => Task.FromResult(false);
+
+        public void Dispose()
+        {
+        }
+    }
+
+    private sealed class BlockingSuccessfulStartRuntime : IDownloadRuntime
+    {
+        public TaskCompletionSource StartEntered { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource AllowStart { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public List<DownloadTaskId> Enqueued { get; } = [];
+
+        public async Task StartAsync(CancellationToken cancellationToken = default)
+        {
+            StartEntered.TrySetResult();
+            await AllowStart.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        public Task StopAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
+
+        public Task EnqueueAsync(
+            DownloadTaskId taskId,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Enqueued.Add(taskId);
             return Task.CompletedTask;
         }
 
