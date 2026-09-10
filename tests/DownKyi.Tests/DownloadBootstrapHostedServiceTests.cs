@@ -4,6 +4,7 @@ using DownKyi.Domain.Downloads;
 using DownKyi.Domain.Results;
 using DownKyi.Infrastructure.Downloads;
 using DownKyi.Infrastructure.Time;
+using DownKyi.Models;
 using DownKyi.Platform;
 using DownKyi.Services.Download;
 using Microsoft.Data.Sqlite;
@@ -165,9 +166,10 @@ public sealed class DownloadBootstrapHostedServiceTests
             new EmptyDownloadTaskStore([CreateTask("startup-task")]),
             clock);
         using var storage = new DownloadTaskProjectionStore(tasks, clock);
+        var listState = new DownloadListState();
         var queueGateway = new DownloadTaskQueueGateway();
         using var service = new DownloadBootstrapHostedService(
-            new DownloadListState(),
+            listState,
             storage,
             new DownloadTaskStateWriter(tasks),
             new RecordingRuntimeFactory(runtime),
@@ -180,20 +182,32 @@ public sealed class DownloadBootstrapHostedServiceTests
         var exception = await Record.ExceptionAsync(() => queueGateway.EnqueueAsync(
             new DownloadTaskId("admitted-after-terminal-failure"),
             TestContext.Current.CancellationToken));
+        var startupTask = Assert.IsType<DownloadTask>(await tasks.FindAsync(
+            new DownloadTaskId("startup-task"),
+            TestContext.Current.CancellationToken));
 
         Assert.IsType<DownloadRuntimeUnavailableException>(exception);
+        Assert.Equal(DownloadPhase.Failed, startupTask.Phase);
+        Assert.Equal("download.runtime.unavailable", startupTask.Failure?.Code);
+        Assert.Equal(
+            DownloadStatus.DownloadFailed,
+            Assert.Single(listState.Downloading).Downloading.DownloadStatus);
     }
 
     [Theory]
     [InlineData("timeout")]
     [InlineData("http")]
     [InlineData("json")]
+    [InlineData("win32")]
     public async Task RuntimeStartupFailureFaultsGateway(string failureKind)
     {
         using var runtime = new RecordingDownloadRuntime(
             startFailure: CreateRuntimeStartupFailure(failureKind));
         var clock = new FixedClock();
-        using var tasks = new DownloadTaskApplicationService(new EmptyDownloadTaskStore(), clock);
+        var startupTask = CreateTask($"startup-{failureKind}");
+        using var tasks = new DownloadTaskApplicationService(
+            new EmptyDownloadTaskStore([startupTask]),
+            clock);
         using var storage = new DownloadTaskProjectionStore(tasks, clock);
         var queueGateway = new DownloadTaskQueueGateway();
         using var service = new DownloadBootstrapHostedService(
@@ -211,8 +225,50 @@ public sealed class DownloadBootstrapHostedServiceTests
             queueGateway.EnqueueAsync(
                 new DownloadTaskId($"after-{failureKind}-failure"),
                 TestContext.Current.CancellationToken));
+        var persisted = Assert.IsType<DownloadTask>(await tasks.FindAsync(
+            startupTask.Id,
+            TestContext.Current.CancellationToken));
+        Assert.Equal(DownloadPhase.Failed, persisted.Phase);
+        Assert.Equal("download.runtime.unavailable", persisted.Failure?.Code);
         Assert.True(runtime.Ended);
         Assert.True(runtime.Disposed);
+    }
+
+    [Fact]
+    public async Task TerminalBootstrapFailurePreservesNonRunnableStartupTasks()
+    {
+        var transitionTime = DateTimeOffset.UnixEpoch.AddSeconds(1);
+        var paused = CreateTask("paused").Pause(transitionTime).RequireValue();
+        var failed = CreateTask("failed").Fail(
+            new DownloadFailure("download.existing", "Existing failure.", true),
+            transitionTime).RequireValue();
+        using var runtime = new RecordingDownloadRuntime(
+            startFailure: new TimeoutException("Synthetic runtime readiness timeout."));
+        var clock = new FixedClock();
+        using var tasks = new DownloadTaskApplicationService(
+            new EmptyDownloadTaskStore([paused, failed]),
+            clock);
+        using var storage = new DownloadTaskProjectionStore(tasks, clock);
+        using var service = new DownloadBootstrapHostedService(
+            new DownloadListState(),
+            storage,
+            new DownloadTaskStateWriter(tasks),
+            new RecordingRuntimeFactory(runtime),
+            new DownloadTaskQueueGateway(),
+            new ImmediateUiDispatcher(),
+            NullLogger<DownloadBootstrapHostedService>.Instance);
+
+        await service.StartAsync(TestContext.Current.CancellationToken);
+
+        var persistedPaused = Assert.IsType<DownloadTask>(await tasks.FindAsync(
+            paused.Id,
+            TestContext.Current.CancellationToken));
+        var persistedFailed = Assert.IsType<DownloadTask>(await tasks.FindAsync(
+            failed.Id,
+            TestContext.Current.CancellationToken));
+        Assert.Equal(DownloadPhase.Paused, persistedPaused.Phase);
+        Assert.Equal(DownloadPhase.Failed, persistedFailed.Phase);
+        Assert.Equal("download.existing", persistedFailed.Failure?.Code);
     }
 
     private static Exception CreateRuntimeStartupFailure(string failureKind) => failureKind switch
@@ -221,6 +277,8 @@ public sealed class DownloadBootstrapHostedServiceTests
         "http" => new HttpRequestException("Synthetic runtime RPC failure."),
         "json" => new Newtonsoft.Json.JsonSerializationException(
             "Synthetic runtime RPC response failure."),
+        "win32" => new System.ComponentModel.Win32Exception(
+            "Synthetic operating system process startup failure."),
         _ => throw new ArgumentOutOfRangeException(nameof(failureKind), failureKind, null)
     };
 
@@ -387,6 +445,9 @@ public sealed class DownloadBootstrapHostedServiceTests
     private sealed class EmptyDownloadTaskStore(
         IReadOnlyList<DownloadTask>? unfinished = null) : IDownloadTaskStore
     {
+        private readonly Dictionary<DownloadTaskId, DownloadTask> _tasks =
+            (unfinished ?? []).ToDictionary(task => task.Id);
+
         public Task InitializeAsync(CancellationToken cancellationToken)
         {
             return Task.CompletedTask;
@@ -394,6 +455,7 @@ public sealed class DownloadBootstrapHostedServiceTests
 
         public Task<OperationResult> AddAsync(DownloadTask task, CancellationToken cancellationToken)
         {
+            _tasks[task.Id] = task;
             return Task.FromResult(OperationResult.Success());
         }
 
@@ -402,6 +464,7 @@ public sealed class DownloadBootstrapHostedServiceTests
             long expectedVersion,
             CancellationToken cancellationToken)
         {
+            _tasks[task.Id] = task;
             return Task.FromResult(OperationResult.Success());
         }
 
@@ -414,12 +477,13 @@ public sealed class DownloadBootstrapHostedServiceTests
 
         public Task<DownloadTask?> FindAsync(DownloadTaskId taskId, CancellationToken cancellationToken)
         {
-            return Task.FromResult<DownloadTask?>(null);
+            _tasks.TryGetValue(taskId, out var task);
+            return Task.FromResult(task);
         }
 
         public Task<IReadOnlyList<DownloadTask>> GetUnfinishedAsync(CancellationToken cancellationToken)
         {
-            return Task.FromResult(unfinished ?? (IReadOnlyList<DownloadTask>)Array.Empty<DownloadTask>());
+            return Task.FromResult<IReadOnlyList<DownloadTask>>([.. _tasks.Values]);
         }
 
         public Task<bool> IsOutputPathReservedAsync(
@@ -437,6 +501,7 @@ public sealed class DownloadBootstrapHostedServiceTests
 
         public Task<OperationResult> DeleteAsync(DownloadTaskId taskId, CancellationToken cancellationToken)
         {
+            _tasks.Remove(taskId);
             return Task.FromResult(OperationResult.Success());
         }
 

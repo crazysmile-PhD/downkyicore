@@ -49,9 +49,11 @@ internal sealed class DownloadBootstrapHostedService : IHostedService, IDisposab
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
+        IReadOnlyList<DownloadTask> startupTasks = [];
         try
         {
             var state = await LoadStartupStateAsync(cancellationToken).ConfigureAwait(false);
+            startupTasks = state.UnfinishedTasks;
             await _uiDispatcher.InvokeAsync(() =>
             {
                 _downloadLists.AddDownloadingRange(state.DownloadingItems);
@@ -82,14 +84,20 @@ internal sealed class DownloadBootstrapHostedService : IHostedService, IDisposab
         {
             var pendingTasks = _queueGateway.MarkFaulted(exception);
             await CleanupFailedRuntimeAsync().ConfigureAwait(false);
-            await MarkPendingTasksFailedAsync(pendingTasks).ConfigureAwait(false);
+            var ownedTaskIds = startupTasks
+                .Where(IsRunnableStartupTask)
+                .Select(task => task.Id)
+                .Concat(pendingTasks)
+                .Distinct()
+                .ToArray();
+            await MarkOwnedTasksFailedAsync(ownedTaskIds).ConfigureAwait(false);
             _logger.LogErrorMessage("Download bootstrap failed.", exception);
         }
     }
 
-    private async Task MarkPendingTasksFailedAsync(IReadOnlyList<DownloadTaskId> pendingTasks)
+    private async Task MarkOwnedTasksFailedAsync(IReadOnlyList<DownloadTaskId> taskIds)
     {
-        foreach (var taskId in pendingTasks)
+        foreach (var taskId in taskIds)
         {
             try
             {
@@ -101,11 +109,14 @@ internal sealed class DownloadBootstrapHostedService : IHostedService, IDisposab
                 or InvalidOperationException or SqliteException)
             {
                 _logger.LogErrorMessage(
-                    "Pending download task could not be failed after bootstrap failure.",
+                    "Owned download task could not be failed after bootstrap failure.",
                     exception);
             }
         }
     }
+
+    private static bool IsRunnableStartupTask(DownloadTask task) =>
+        task.Phase is DownloadPhase.Queued or DownloadPhase.Downloading or DownloadPhase.Pausing;
 
     public async Task StopAsync(CancellationToken cancellationToken)
     {
@@ -171,6 +182,7 @@ internal sealed class DownloadBootstrapHostedService : IHostedService, IDisposab
             or SqliteException
             or TimeoutException
             or System.Net.Http.HttpRequestException
+            or System.ComponentModel.Win32Exception
             or Newtonsoft.Json.JsonException;
 
     private async Task LoadRemainingHistoryAsync(CancellationToken cancellationToken)
