@@ -104,31 +104,28 @@ public sealed class DurlDownloadIdentityTests
             using var store = new SqliteDownloadTaskStore(
                 new SqliteDownloadTaskStoreOptions(databasePath),
                 new SystemClock());
-            using var tasks = new DownloadTaskApplicationService(store, new SystemClock());
+            var clock = new SystemClock();
+            using var tasks = new DownloadTaskApplicationService(store, clock);
+            using var projectionStore = new DownloadTaskProjectionStore(tasks, clock);
             using var settings = new TestSettingsStore();
             var taskId = new DownloadTaskId(downloadBase.Id);
             var stateWriter = new DownloadTaskStateWriter(tasks);
-            var task = DownloadTaskProjectionMapper.CreateNewTask(
+            await projectionStore.AddDownloadingAsync(
                 downloading,
-                DateTimeOffset.UnixEpoch);
-            Assert.True((await tasks.AddAsync(
-                task,
-                TestContext.Current.CancellationToken).ConfigureAwait(true)).IsSuccess);
+                TestContext.Current.CancellationToken).ConfigureAwait(true);
             await stateWriter.StartAsync(taskId, TestContext.Current.CancellationToken)
                 .ConfigureAwait(true);
             var stage = new ResolvePlaybackStage(
                 new TestDesktopInteractionContext().Notifications,
-                new DownloadActivityPresenter(stateWriter),
+                new DownloadActivityPresenter(projectionStore, stateWriter),
                 new DownloadPlaybackResolver(
                     new TestWbiKeyProvider(),
                     TimeProvider.System,
                     new TestBilibiliApiClient()),
                 NullLogger<ResolvePlaybackStage>.Instance);
-            var context = new DownloadExecutionContext(
-                taskId,
-                downloading,
-                settings.Store.Current,
-                static (_, token) => token.ThrowIfCancellationRequested());
+            var context = new DownloadExecutionContextFactory(
+                projectionStore,
+                settings.Store).Create(taskId);
 
             var result = await stage.ExecuteAsync(
                 context,

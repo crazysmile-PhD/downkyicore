@@ -19,6 +19,7 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
     private readonly DownloadTaskStateWriter _stateWriter;
     private readonly DownloadTransferCoordinator _transferCoordinator;
     private readonly DownloadPlaybackResolver _playbackResolver;
+    private readonly DownloadActivityPresenter _presenter;
     private readonly ILogger _logger;
 
     public DownloadMediaStage(
@@ -26,6 +27,7 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
         DownloadTaskStateWriter stateWriter,
         DownloadTransferCoordinator transferCoordinator,
         DownloadPlaybackResolver playbackResolver,
+        DownloadActivityPresenter presenter,
         ILogger logger)
     {
         _projectionStore = projectionStore
@@ -35,6 +37,7 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
             ?? throw new ArgumentNullException(nameof(transferCoordinator));
         _playbackResolver = playbackResolver
             ?? throw new ArgumentNullException(nameof(playbackResolver));
+        _presenter = presenter ?? throw new ArgumentNullException(nameof(presenter));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -46,7 +49,7 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
     {
         ArgumentNullException.ThrowIfNull(context);
         context.EnsureActive(cancellationToken);
-        var playUrl = context.Downloading.PlayUrl;
+        var playUrl = context.PlayUrl;
         context.MediaKind = DetectMediaKind(playUrl);
         if (context.MediaKind == DownloadMediaKind.Dash)
         {
@@ -57,7 +60,7 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
         {
             return await DownloadDurlsAsync(
                 context,
-                playUrl.Durl,
+                playUrl!.Durl,
                 cancellationToken).ConfigureAwait(true);
         }
 
@@ -102,7 +105,7 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
     {
         if (context.NeedsAudio)
         {
-            DownloadActivityPresenter.ShowDownloadingAudio(context.Downloading);
+            _presenter.ShowDownloadingAudio(context);
             var result = await DownloadMediaFileAsync(
                 context,
                 SelectAudio(context),
@@ -122,7 +125,7 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
         context.EnsureActive(cancellationToken);
         if (context.NeedsVideo)
         {
-            DownloadActivityPresenter.ShowDownloadingVideo(context.Downloading);
+            _presenter.ShowDownloadingVideo(context);
             var result = await DownloadMediaFileAsync(
                 context,
                 SelectVideo(context),
@@ -154,7 +157,7 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
             return DownloadStageResult.Success(Name);
         }
 
-        DownloadActivityPresenter.ShowDownloadingVideo(context.Downloading);
+        _presenter.ShowDownloadingVideo(context);
         var downloads = source
             .OrderBy(durl => durl.Order)
             .Select(durl => new PendingDurlDownload(durl))
@@ -328,28 +331,28 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
 
     private static PlayUrlDashVideo? SelectAudio(DownloadExecutionContext context)
     {
-        return SelectAudio(context, context.Downloading.PlayUrl);
+        return SelectAudio(context, context.PlayUrl);
     }
 
     private static PlayUrlDashVideo? SelectAudio(
         DownloadExecutionContext context,
         PlayUrl? playUrl)
     {
-        var downloading = context.Downloading;
+        var audioCodec = context.Input.Metadata.AudioCodec;
         var dash = playUrl?.Dash;
         if (dash?.Audio is not { Count: > 0 } audio)
         {
             return null;
         }
 
-        var selected = audio.FirstOrDefault(item => item.Id == downloading.AudioCodec.Id);
-        if (downloading.AudioCodec.Id == 30250 &&
+        var selected = audio.FirstOrDefault(item => item.Id == audioCodec.Id);
+        if (audioCodec.Id == 30250 &&
             dash.Dolby?.Audio is { Count: > 0 } dolbyAudio)
         {
             selected = dolbyAudio[0];
         }
 
-        if (downloading.AudioCodec.Id == 30251 && dash.Flac?.Audio is { } flacAudio)
+        if (audioCodec.Id == 30251 && dash.Flac?.Audio is { } flacAudio)
         {
             selected = flacAudio;
         }
@@ -359,20 +362,20 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
 
     internal static PlayUrlDashVideo? SelectVideo(DownloadExecutionContext context)
     {
-        return SelectVideo(context, context.Downloading.PlayUrl);
+        return SelectVideo(context, context.PlayUrl);
     }
 
     private static PlayUrlDashVideo? SelectVideo(
         DownloadExecutionContext context,
         PlayUrl? playUrl)
     {
-        var downloading = context.Downloading;
+        var metadata = context.Input.Metadata;
         var video = playUrl?.Dash?.Video?.FirstOrDefault(item =>
         {
             var codec = PlaybackQualityCatalog.GetCodecIds().FirstOrDefault(candidate =>
                 candidate.Id == item.CodecId);
-            return item.Id == downloading.Resolution.Id &&
-                   codec?.Name == downloading.VideoCodecName;
+            return item.Id == metadata.Resolution.Id &&
+                   codec?.Name == metadata.VideoCodecName;
         });
         if (video == null)
         {
@@ -395,7 +398,7 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
             return [];
         }
 
-        context.Downloading.PlayUrl = playUrl;
+        context.PlayUrl = playUrl;
         var media = selectRefreshedMedia(playUrl);
         if (media == null)
         {

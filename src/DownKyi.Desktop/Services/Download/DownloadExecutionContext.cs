@@ -2,10 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
+using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.BiliApi.VideoStream.Models;
 using DownKyi.Core.Settings;
 using DownKyi.Domain.Downloads;
-using DownKyi.ViewModels.DownloadManager;
 
 namespace DownKyi.Services.Download;
 
@@ -15,21 +15,21 @@ internal sealed class DownloadExecutionContext
 
     public DownloadExecutionContext(
         DownloadTaskId taskId,
-        DownloadingItem downloading,
-        ApplicationSettings settings,
+        DownloadExecutionInput input,
+        PlayUrl? playUrl,
         Action<DownloadTaskId, CancellationToken> ensureActive)
     {
         TaskId = taskId ?? throw new ArgumentNullException(nameof(taskId));
-        Downloading = downloading ?? throw new ArgumentNullException(nameof(downloading));
-        Settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        Input = input ?? throw new ArgumentNullException(nameof(input));
+        PlayUrl = playUrl;
         _ensureActive = ensureActive ?? throw new ArgumentNullException(nameof(ensureActive));
     }
 
     public DownloadTaskId TaskId { get; }
 
-    public DownloadingItem Downloading { get; }
+    public DownloadExecutionInput Input { get; }
 
-    public ApplicationSettings Settings { get; }
+    public PlayUrl? PlayUrl { get; set; }
 
     public string? DownloadDirectory { get; set; }
 
@@ -57,17 +57,17 @@ internal sealed class DownloadExecutionContext
 
     public string? PageCoverFile { get; set; }
 
-    public bool NeedsAudio => Downloading.DownloadBase.NeedDownloadContent.Audio;
+    public bool NeedsAudio => Input.RequestedContent.Audio;
 
-    public bool NeedsVideo => Downloading.DownloadBase.NeedDownloadContent.Video;
+    public bool NeedsVideo => Input.RequestedContent.Video;
 
     public bool NeedsMedia => NeedsAudio || NeedsVideo;
 
-    public bool NeedsDanmaku => Downloading.DownloadBase.NeedDownloadContent.Danmaku;
+    public bool NeedsDanmaku => Input.RequestedContent.Danmaku;
 
-    public bool NeedsSubtitle => Downloading.DownloadBase.NeedDownloadContent.Subtitle;
+    public bool NeedsSubtitle => Input.RequestedContent.Subtitle;
 
-    public bool NeedsCover => Downloading.DownloadBase.NeedDownloadContent.Cover;
+    public bool NeedsCover => Input.RequestedContent.Cover;
 
     public IReadOnlyList<string> GetMediaInputFiles()
     {
@@ -84,6 +84,16 @@ internal sealed class DownloadExecutionContext
         _ensureActive(TaskId, cancellationToken);
     }
 }
+
+internal sealed record DownloadExecutionInput(
+    DownloadTaskMetadata Metadata,
+    DownloadContentSelection RequestedContent,
+    string OutputBasePath,
+    PlayStreamType StreamType,
+    DownloadNfoRequest? NfoRequest,
+    VideoApplicationSettings VideoSettings,
+    DanmakuApplicationSettings DanmakuSettings,
+    DownloadFinishedSort FinishedSort);
 
 internal enum DownloadMediaKind
 {

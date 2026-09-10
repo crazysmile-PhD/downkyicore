@@ -39,7 +39,7 @@ flowchart TD
 - `DownKyi.exe` 只含 `Program.cs`，只引用 `DownKyi.Desktop`，不持有 UI、套件、資源或生命週期實作。
 - `DownKyi.Desktop` 是 Avalonia App、Views、ViewModels、`Presentation` projections、desktop adapters、Host composition 與 desktop runtime owner。Service contracts 不再引用 `DownKyi.ViewModels`。
 - `DownKyi.Core` 不含 `.axaml`、Avalonia 或 QRCoder；登入 API 留在 Core，QR bitmap renderer 與 Bilibili image dictionaries 位於 Desktop。
-- `DownKyi.Domain.DownloadTask` 已是持久化狀態轉換的權威；orchestrator channels、workers 與 pipeline 入口都使用 `DownloadTaskId`，但 `DownloadExecutionContext` 與部分 media stages 仍暫時持有 `DownloadingItem` UI projection。
+- `DownKyi.Domain.DownloadTask` 已是持久化狀態轉換的權威；orchestrator channels、workers 與 pipeline 入口都使用 `DownloadTaskId`。`DownloadExecutionContextFactory` 從 committed Domain snapshot 與目前 settings 建立單次 immutable `DownloadExecutionInput`，只另外擷取建立當下的 `PlayUrl` reference；media stages 不再持有 `DownloadingItem` UI projection。
 - `DownKyi.Application` 已擁有 Bilibili HTTP/buvid/cookie、logging 與 physical output path contracts；`DownKyi.Infrastructure` 已擁有 async `IHttpClientFactory` transport、single-flight buvid provider、SQLite、write-behind、filesystem physical output path resolver，以及私有 NLog logging sink、retention 與 diagnostic exporter。aria2 與 FFmpeg 實作目前仍主要位於 `DownKyi.Core`，其 runtime adapters 與其餘 file-system workflow 仍位於 Desktop/Core；將這些實作收斂至 Infrastructure 是目標 ownership，不是目前已實作的狀態。
 - Prism、DryIoc、EventAggregator、RegionManager 和 ContainerLocator 已從 production source 移除，不得重新引入。
 
@@ -118,7 +118,7 @@ flowchart LR
 
 目前所有 durable command 都先載入 Domain aggregate、執行合法 transition、以 optimistic version 寫入 SQLite，再發布 committed snapshot。一般 runtime 不再從 mutable UI model 反向重建 Domain；`DownloadTask.Restore` 只允許出現在 SQLite materializer 與 legacy migration adapter。使用者要求的 audio、video、danmaku、subtitle 與 cover 由 Domain `DownloadContentSelection` 表達；舊字串 map 只存在於 dialog、SQLite 與 NRBF 相容邊界。
 
-佇列已不再掃描 UI collection；新增、續傳與一次性啟動恢復都直接傳遞 `DownloadTaskId`。啟動查詢在同一份結果中提供 Domain snapshots 與 UI projections，runtime 只使用前者。`DownloadPipeline` 只建立單次 execution context 並依序執行 typed stages；階段失敗會立即停止並經 typed state writer 標記失敗。Presenter、projector 與 projection models 已由 Desktop 擁有，`DownloadListState` 只公開穩定的 `ReadOnlyObservableCollection<T>`。剩餘過渡債是 media execution context 仍讀取 `DownloadingItem` 作為播放流與畫面上下文，後續需改為明確 execution input，而不是讓 UI projection 進入 runtime。
+佇列已不再掃描 UI collection；新增、續傳與一次性啟動恢復都直接傳遞 `DownloadTaskId`。啟動查詢在同一份結果中提供 Domain snapshots 與 UI projections，runtime decision inputs 取自前者。`DownloadPipeline` 只建立單次 execution context 並依序執行 typed stages；階段失敗會立即停止並經 typed state writer 標記失敗。`DownloadExecutionContextFactory` 是 immutable `DownloadExecutionInput` 的唯一建構 owner；初始 `PlayUrl` 只在建立 context 時從 UI projection 擷取一次，之後的 refresh 留在 execution context。Presenter、completion projector 與 projection models 由 Desktop 擁有，只透過 `DownloadTaskId` 更新 UI；`DownloadListState` 只公開穩定的 `ReadOnlyObservableCollection<T>`。
 
 ## 目標拓樸
 

@@ -37,8 +37,7 @@ internal sealed class ResolvePlaybackStage : IDownloadPipelineStage
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
-        var downloading = context.Downloading;
-        var playbackBasePath = downloading.DownloadBase.FilePath
+        var playbackBasePath = context.Input.OutputBasePath
             .Replace("\\", "/", StringComparison.Ordinal);
 
         string path;
@@ -54,17 +53,17 @@ internal sealed class ResolvePlaybackStage : IDownloadPipelineStage
         {
             _logger.LogWarningMessage("Download directory could not be prepared.", exception);
             _notificationService.Show(DownloadActivityPresenter.CreateDirectoryError(
-                Path.GetDirectoryName(downloading.DownloadBase.FilePath) ?? string.Empty));
+                Path.GetDirectoryName(context.Input.OutputBasePath) ?? string.Empty));
             return DownloadStageResult.Failure(
                 "download.resolve.directory",
                 "Download directory could not be prepared.");
         }
 
         context.DownloadDirectory = path;
-        DownloadActivityPresenter.Reset(downloading);
+        _presenter.Reset(context);
         await _presenter.ShowParsingAsync(context, cancellationToken).ConfigureAwait(true);
 
-        if (downloading.PlayUrl != null)
+        if (context.PlayUrl != null)
         {
             return DownloadStageResult.Success(Name);
         }
@@ -79,7 +78,7 @@ internal sealed class ResolvePlaybackStage : IDownloadPipelineStage
                 "Playback data could not be resolved.");
         }
 
-        downloading.PlayUrl = playUrl;
+        context.PlayUrl = playUrl;
         return DownloadStageResult.Success(Name);
     }
 

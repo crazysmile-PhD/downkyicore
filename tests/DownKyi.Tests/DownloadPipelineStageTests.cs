@@ -82,9 +82,9 @@ public sealed class DownloadPipelineStageTests
     public async Task ValidateStageAllowsOptionalSubtitleResponseWithoutFiles()
     {
         using var settings = new TestSettingsStore();
-        var context = CreateContext(settings.Store.Current);
-        context.Downloading.DownloadBase.NeedDownloadContent =
-            DownloadContentSelection.None with { Subtitle = true };
+        var context = CreateContext(
+            settings.Store.Current,
+            requestedContent: DownloadContentSelection.None with { Subtitle = true });
         context.SubtitleFiles = null;
 
         var result = await new ValidateStage().ExecuteAsync(
@@ -116,9 +116,6 @@ public sealed class DownloadPipelineStageTests
     public void MediaStagePrefersPopulatedDashAndPreservesExpectedSize()
     {
         using var settings = new TestSettingsStore();
-        var context = CreateContext(settings.Store.Current);
-        context.Downloading.DownloadBase.Resolution.Id = 80;
-        context.Downloading.DownloadBase.VideoCodecName = "H.264/AVC";
         var video = new PlayUrlDashVideo
         {
             Id = 80,
@@ -126,7 +123,7 @@ public sealed class DownloadPipelineStageTests
             Codecs = "avc1",
             ExpectedSize = 123_456
         };
-        context.Downloading.PlayUrl = new PlayUrl
+        var playUrl = new PlayUrl
         {
             Dash = new PlayUrlDash
             {
@@ -141,10 +138,15 @@ public sealed class DownloadPipelineStageTests
                 }
             ]
         };
+        var context = CreateContext(
+            settings.Store.Current,
+            resolutionId: 80,
+            videoCodecName: "H.264/AVC",
+            playUrl: playUrl);
 
         Assert.Equal(
             DownloadMediaKind.Dash,
-            DownloadMediaStage.DetectMediaKind(context.Downloading.PlayUrl));
+            DownloadMediaStage.DetectMediaKind(context.PlayUrl));
         var selected = Assert.IsType<PlayUrlDashVideo>(
             DownloadMediaStage.SelectVideo(context));
         Assert.Same(video, selected);
@@ -162,22 +164,23 @@ public sealed class DownloadPipelineStageTests
             MuxStage.GetDashOutputPath(videoContext),
             StringComparison.Ordinal);
 
-        var audioContext = CreateContext(settings.Store.Current);
-        audioContext.Downloading.DownloadBase.NeedDownloadContent =
-            audioContext.Downloading.DownloadBase.NeedDownloadContent with { Video = false };
+        var audioContext = CreateContext(
+            settings.Store.Current,
+            requestedContent: DownloadContentSelection.None with { Audio = true });
         Assert.EndsWith(
             ".mp3",
             MuxStage.GetDashOutputPath(audioContext),
             StringComparison.Ordinal);
 
-        var losslessContext = CreateContext(settings.Store.Current with
-        {
-            Video = settings.Store.Current.Video with
+        var losslessContext = CreateContext(
+            settings.Store.Current with
             {
-                IsTranscodingAacToMp3 = AllowStatus.No
-            }
-        });
-        losslessContext.Downloading.DownloadBase.AudioCodec.Id = 30251;
+                Video = settings.Store.Current.Video with
+                {
+                    IsTranscodingAacToMp3 = AllowStatus.No
+                }
+            },
+            audioCodecId: 30251);
         Assert.EndsWith(
             ".flac",
             MuxStage.GetDashOutputPath(losslessContext),
@@ -205,17 +208,28 @@ public sealed class DownloadPipelineStageTests
         Assert.False(string.IsNullOrEmpty(downloaded.MaxSpeedDisplay));
     }
 
-    private static DownloadExecutionContext CreateContext(ApplicationSettings settings)
+    private static DownloadExecutionContext CreateContext(
+        ApplicationSettings settings,
+        DownloadContentSelection? requestedContent = null,
+        int resolutionId = 0,
+        string videoCodecName = "",
+        int audioCodecId = 0,
+        PlayUrl? playUrl = null)
     {
         var taskId = new DownloadTaskId("stage-test");
         var downloadBase = new DownloadBase
         {
             Id = taskId.Value,
-            FilePath = Path.Combine(Path.GetTempPath(), "downkyi-stage-test")
+            FilePath = Path.Combine(Path.GetTempPath(), "downkyi-stage-test"),
+            NeedDownloadContent = requestedContent ?? DownloadContentSelection.All,
+            VideoCodecName = videoCodecName
         };
+        downloadBase.Resolution.Id = resolutionId;
+        downloadBase.AudioCodec.Id = audioCodecId;
         var downloading = new DownloadingItem
         {
             DownloadBase = downloadBase,
+            PlayUrl = playUrl!,
             Downloading = new Downloading
             {
                 Id = taskId.Value,
@@ -223,12 +237,7 @@ public sealed class DownloadPipelineStageTests
                 DownloadStatus = DownloadStatus.Downloading
             }
         };
-        return new DownloadExecutionContext(
-            taskId,
-            downloading,
-            settings,
-            static (_, cancellationToken) =>
-                cancellationToken.ThrowIfCancellationRequested());
+        return DownloadExecutionContextTestFactory.Create(downloading, settings);
     }
 
     private sealed class RecordingStage(

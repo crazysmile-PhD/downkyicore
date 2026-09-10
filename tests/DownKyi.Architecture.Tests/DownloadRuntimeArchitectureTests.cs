@@ -181,7 +181,10 @@ public sealed class DownloadRuntimeArchitectureTests
         Assert.Contains("IDownloadTaskApplicationService _tasks", stateSource, StringComparison.Ordinal);
         Assert.DoesNotContain("DownloadingItem", stateSource, StringComparison.Ordinal);
         Assert.Contains("new DownloadArtifactWriter(", factorySource, StringComparison.Ordinal);
-        Assert.Contains("new DownloadArtifactsStage(artifactWriter)", factorySource, StringComparison.Ordinal);
+        Assert.Contains(
+            "new DownloadArtifactsStage(artifactWriter, presenter)",
+            factorySource,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -430,6 +433,54 @@ public sealed class DownloadRuntimeArchitectureTests
         Assert.DoesNotContain("DownloadingItem Download", transferSource, StringComparison.Ordinal);
         Assert.Contains("DownloadTaskId TaskId", transferSource, StringComparison.Ordinal);
         Assert.Contains("Func<DownloadProgress, CancellationToken, Task> PersistProgressAsync", transferSource, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ExecutionContextAndStagesUseImmutableInputInsteadOfUiOrFullSettingsGraphs()
+    {
+        var directory = Path.Combine(RepositoryRoot, "src", "DownKyi.Desktop", "Services", "Download");
+        string[] executionFiles =
+        [
+            "DownloadExecutionContext.cs",
+            "ResolvePlaybackStage.cs",
+            "DownloadPlaybackResolver.cs",
+            "DownloadMediaStage.cs",
+            "DownloadArtifactsStage.cs",
+            "DownloadArtifactWriter.cs",
+            "MuxStage.cs",
+            "ValidateStage.cs",
+            "FinalizeStage.cs"
+        ];
+        var violations = executionFiles
+            .Select(file => new
+            {
+                File = file,
+                Source = File.ReadAllText(Path.Combine(directory, file))
+            })
+            .Where(item =>
+                item.Source.Contains("DownloadingItem", StringComparison.Ordinal) ||
+                System.Text.RegularExpressions.Regex.IsMatch(
+                    item.Source,
+                    @"\bApplicationSettings\b",
+                    System.Text.RegularExpressions.RegexOptions.CultureInvariant))
+            .Select(item => item.File)
+            .ToArray();
+        var contextSource = File.ReadAllText(Path.Combine(directory, "DownloadExecutionContext.cs"));
+        var factorySource = File.ReadAllText(Path.Combine(directory, "DownloadExecutionContextFactory.cs"));
+
+        Assert.Empty(violations);
+        Assert.All(executionFiles, file =>
+        {
+            var source = File.ReadAllText(Path.Combine(directory, file));
+            Assert.DoesNotContain("context.Downloading", source, StringComparison.Ordinal);
+            Assert.DoesNotContain("context.Settings", source, StringComparison.Ordinal);
+        });
+        Assert.Contains("DownloadExecutionInput Input", contextSource, StringComparison.Ordinal);
+        Assert.Contains("GetRequiredSnapshot(taskId)", factorySource, StringComparison.Ordinal);
+        Assert.Contains("projection.PlayUrl", factorySource, StringComparison.Ordinal);
+        Assert.DoesNotContain("projection.DownloadBase", factorySource, StringComparison.Ordinal);
+        Assert.DoesNotContain("projection.Downloading", factorySource, StringComparison.Ordinal);
+        Assert.DoesNotContain("projection.Metadata", factorySource, StringComparison.Ordinal);
     }
 
     [Fact]

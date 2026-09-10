@@ -30,27 +30,28 @@ internal sealed class DownloadPlaybackResolver
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
-        var downloading = context.Downloading;
-        return downloading.Downloading.PlayStreamType switch
+        var input = context.Input;
+        var media = input.Metadata.Media;
+        return input.StreamType switch
         {
             PlayStreamType.Video => WbiRequestExecutor.ExecuteAsync(
                 _wbiKeyProvider,
-                (keys, unixTimeSeconds) => context.Settings.Video.VideoParseType switch
+                (keys, unixTimeSeconds) => input.VideoSettings.VideoParseType switch
                 {
                     0 => _client.GetVideoPlayUrlAsync(
                         keys,
                         unixTimeSeconds,
-                        downloading.DownloadBase.Avid,
-                        downloading.DownloadBase.Bvid,
-                        downloading.DownloadBase.Cid,
+                        media.Avid,
+                        media.Bvid,
+                        media.Cid,
                         cancellationToken: cancellationToken),
                     1 => _client.GetVideoPlayUrlWebPageAsync(
                         keys,
                         unixTimeSeconds,
-                        downloading.DownloadBase.Avid,
-                        downloading.DownloadBase.Bvid,
-                        downloading.DownloadBase.Cid,
-                        downloading.DownloadBase.Page,
+                        media.Avid,
+                        media.Bvid,
+                        media.Cid,
+                        media.Page,
                         cancellationToken),
                     _ => throw new ArgumentException(
                         "Invalid video parse type. Valid values are: 0 (WebAPI) or 1 (WebPage).")
@@ -58,16 +59,16 @@ internal sealed class DownloadPlaybackResolver
                 _timeProvider,
                 cancellationToken),
             PlayStreamType.Bangumi => _client.GetBangumiPlayUrlAsync(
-                downloading.DownloadBase.Avid,
-                downloading.DownloadBase.Bvid,
-                downloading.DownloadBase.Cid,
-                downloading.DownloadBase.EpisodeId,
+                media.Avid,
+                media.Bvid,
+                media.Cid,
+                media.EpisodeId,
                 cancellationToken: cancellationToken),
             PlayStreamType.Cheese => _client.GetCheesePlayUrlAsync(
-                downloading.DownloadBase.Avid,
-                downloading.DownloadBase.Bvid,
-                downloading.DownloadBase.Cid,
-                downloading.DownloadBase.EpisodeId,
+                media.Avid,
+                media.Bvid,
+                media.Cid,
+                media.EpisodeId,
                 cancellationToken: cancellationToken),
             _ => Task.FromResult<PlayUrl?>(null)
         };
