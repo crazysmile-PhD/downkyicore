@@ -129,11 +129,11 @@ internal sealed class DownloadTaskQueueGateway : IDownloadTaskQueue, IDownloadRu
         }
     }
 
-    public void EnsureReady()
+    public void EnsureAcceptingTasks()
     {
         lock (_sync)
         {
-            if (_state != DownloadRuntimeState.Ready || _runtime == null)
+            if (_state == DownloadRuntimeState.Faulted)
             {
                 throw CreateUnavailableException();
             }

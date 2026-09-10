@@ -288,15 +288,40 @@ public sealed class VideoTagLoadingTests : IDisposable
         Assert.Empty(context.Dialogs.Requests);
     }
 
+    [Fact]
+    public async Task RuntimeFailureStopsAdmissionAcrossRemainingSections()
+    {
+        using var context = CreateContext(
+            generateMetadata: false,
+            runtimeAvailability: new UnavailableDownloadRuntimeAvailability());
+        context.PrepareSections(
+            [CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]))],
+            [CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]))]);
+
+        var added = await context.Service.AddToDownload(
+            _directory,
+            isAll: true,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, added);
+        Assert.Equal(0, context.Store.AddCount);
+        Assert.Empty(context.ListState.Downloading);
+        Assert.Single(context.Dialogs.Requests);
+    }
+
     private DownloadTestContext CreateContext(
         bool generateMetadata,
-        IPhysicalOutputPathResolver? resolver = null)
+        IPhysicalOutputPathResolver? resolver = null,
+        IDownloadTaskQueue? taskQueue = null,
+        IDownloadRuntimeAvailability? runtimeAvailability = null)
     {
         Directory.CreateDirectory(_directory);
         return new DownloadTestContext(
             Path.Combine(_directory, $"settings-{Guid.NewGuid():N}.json"),
             generateMetadata,
-            resolver);
+            resolver,
+            taskQueue,
+            runtimeAvailability);
     }
 
     private static VideoPage CreatePage(
@@ -342,7 +367,9 @@ public sealed class VideoTagLoadingTests : IDisposable
         public DownloadTestContext(
             string settingsPath,
             bool generateMetadata,
-            IPhysicalOutputPathResolver? resolver)
+            IPhysicalOutputPathResolver? resolver,
+            IDownloadTaskQueue? taskQueue,
+            IDownloadRuntimeAvailability? runtimeAvailability)
         {
             _settings = new DownKyi.Core.Settings.SettingsStore(settingsPath);
             _settings.Update(settings => settings with
@@ -369,8 +396,9 @@ public sealed class VideoTagLoadingTests : IDisposable
                 ListState,
                 _taskService,
                 _projectionStore,
-                Queue,
-                new ReadyDownloadRuntimeAvailability(),
+                new DownloadTaskStateWriter(_taskService),
+                taskQueue ?? Queue,
+                runtimeAvailability ?? new ReadyDownloadRuntimeAvailability(),
                 resolver ?? new FileSystemPhysicalOutputPathResolver());
             var duplicatePolicy = new DownloadDuplicatePolicy(
                 ListState,
@@ -423,6 +451,24 @@ public sealed class VideoTagLoadingTests : IDisposable
                 ]);
         }
 
+        public void PrepareSections(params VideoPage[][] sections)
+        {
+            Service.GetVideo(
+                new VideoInfoView
+                {
+                    Title = "video",
+                    Description = "description",
+                    VideoZone = "Technology"
+                },
+                sections.Select((pages, index) => new VideoSection
+                {
+                    Id = index + 1,
+                    IsSelected = true,
+                    Title = $"section-{index + 1}",
+                    VideoPages = pages
+                }).ToArray());
+        }
+
         public void Dispose()
         {
             _admission.Dispose();
@@ -469,6 +515,15 @@ public sealed class VideoTagLoadingTests : IDisposable
         public string ResolvePhysicalBasePath(string logicalBasePath)
         {
             throw new InvalidOperationException("Unexpected resolver failure.");
+        }
+    }
+
+    private sealed class UnavailableDownloadRuntimeAvailability : IDownloadRuntimeAvailability
+    {
+        public void EnsureAcceptingTasks()
+        {
+            throw new DownloadRuntimeUnavailableException(
+                "Synthetic unavailable download runtime.");
         }
     }
 

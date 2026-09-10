@@ -33,7 +33,7 @@ internal sealed class RecordingDownloadTaskQueue : IDownloadTaskQueue
 
 internal sealed class ReadyDownloadRuntimeAvailability : IDownloadRuntimeAvailability
 {
-    public void EnsureReady()
+    public void EnsureAcceptingTasks()
     {
     }
 }

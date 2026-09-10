@@ -12,6 +12,7 @@ internal sealed class DownloadTaskAdmissionService : IDisposable
     private readonly DownloadListState _downloadLists;
     private readonly IDownloadTaskApplicationService _tasks;
     private readonly DownloadTaskProjectionStore _projections;
+    private readonly DownloadTaskStateWriter _stateWriter;
     private readonly IDownloadTaskQueue _taskQueue;
     private readonly IDownloadRuntimeAvailability _runtimeAvailability;
     private readonly IPhysicalOutputPathResolver _physicalOutputPathResolver;
@@ -22,6 +23,7 @@ internal sealed class DownloadTaskAdmissionService : IDisposable
         DownloadListState downloadLists,
         IDownloadTaskApplicationService tasks,
         DownloadTaskProjectionStore projections,
+        DownloadTaskStateWriter stateWriter,
         IDownloadTaskQueue taskQueue,
         IDownloadRuntimeAvailability runtimeAvailability,
         IPhysicalOutputPathResolver physicalOutputPathResolver)
@@ -29,6 +31,7 @@ internal sealed class DownloadTaskAdmissionService : IDisposable
         _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
         _tasks = tasks ?? throw new ArgumentNullException(nameof(tasks));
         _projections = projections ?? throw new ArgumentNullException(nameof(projections));
+        _stateWriter = stateWriter ?? throw new ArgumentNullException(nameof(stateWriter));
         _taskQueue = taskQueue ?? throw new ArgumentNullException(nameof(taskQueue));
         _runtimeAvailability = runtimeAvailability
             ?? throw new ArgumentNullException(nameof(runtimeAvailability));
@@ -46,7 +49,7 @@ internal sealed class DownloadTaskAdmissionService : IDisposable
         await _admissionGate.WaitAsync(cancellationToken).ConfigureAwait(true);
         try
         {
-            _runtimeAvailability.EnsureReady();
+            _runtimeAvailability.EnsureAcceptingTasks();
             var physicalBasePath = _physicalOutputPathResolver.ResolvePhysicalBasePath(
                 item.DownloadBase.FilePath);
             var admittedBasePath = await DownloadOutputPathResolver.ResolveAdmissionCollisionAsync(
@@ -70,20 +73,9 @@ internal sealed class DownloadTaskAdmissionService : IDisposable
             }
             catch (DownloadRuntimeUnavailableException)
             {
-                var failure = await _tasks.FailAsync(
+                await _stateWriter.FailRuntimeUnavailableAsync(
                     taskId,
-                    new DownloadFailure(
-                        "download.runtime.unavailable",
-                        "Download runtime is unavailable.",
-                        true),
                     CancellationToken.None).ConfigureAwait(true);
-                if (!failure.IsSuccess)
-                {
-                    throw new InvalidOperationException(
-                        failure.Error?.Message
-                            ?? "The unavailable download runtime state could not be persisted.");
-                }
-
                 throw;
             }
         }

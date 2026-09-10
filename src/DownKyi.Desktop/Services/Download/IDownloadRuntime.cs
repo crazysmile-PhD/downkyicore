@@ -14,7 +14,7 @@ internal interface IDownloadTaskQueue
 
 internal interface IDownloadRuntimeAvailability
 {
-    void EnsureReady();
+    void EnsureAcceptingTasks();
 }
 
 internal sealed class DownloadRuntimeUnavailableException : InvalidOperationException

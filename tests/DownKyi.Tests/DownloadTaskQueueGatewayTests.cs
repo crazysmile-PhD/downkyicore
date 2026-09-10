@@ -49,7 +49,7 @@ public sealed class DownloadTaskQueueGatewayTests
             new InvalidOperationException("Synthetic bootstrap failure."));
 
         Assert.Equal(pendingTask, Assert.Single(returned));
-        Assert.Throws<DownloadRuntimeUnavailableException>(() => gateway.EnsureReady());
+        Assert.Throws<DownloadRuntimeUnavailableException>(() => gateway.EnsureAcceptingTasks());
         await Assert.ThrowsAsync<DownloadRuntimeUnavailableException>(() => gateway.EnqueueAsync(
             new DownloadTaskId("after-failure"),
             TestContext.Current.CancellationToken));

@@ -304,6 +304,37 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task InitializingRuntimeOwnsAdmissionUntilBootstrapCompletes()
+    {
+        Directory.CreateDirectory(_directory);
+        using var store = CreateStore();
+        var clock = new SystemClock();
+        using var tasks = new DownloadTaskApplicationService(store, clock);
+        using var projections = new DownloadTaskProjectionStore(tasks, clock);
+        var listState = new DownloadListState();
+        var gateway = new DownloadTaskQueueGateway();
+        using var admission = CreateAdmission(
+            listState,
+            tasks,
+            projections,
+            gateway,
+            runtimeAvailability: gateway);
+        var item = CreateItem("runtime-initializing", Path.Combine(_directory, "output"));
+
+        await admission.AdmitAsync(item, true, TestContext.Current.CancellationToken);
+
+        var persisted = Assert.IsType<DownloadTask>(await tasks.FindAsync(
+            new DownloadTaskId(item.DownloadBase.Id),
+            TestContext.Current.CancellationToken));
+        Assert.Equal(DownloadPhase.Queued, persisted.Phase);
+        Assert.Same(item, Assert.Single(listState.Downloading));
+        Assert.Equal(
+            persisted.Id,
+            Assert.Single(gateway.MarkFaulted(
+                new InvalidOperationException("Synthetic terminal bootstrap failure."))));
+    }
+
+    [Fact]
     public async Task RuntimeFailureAfterPersistenceMarksCommittedTaskFailed()
     {
         Directory.CreateDirectory(_directory);
@@ -438,6 +469,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
             listState,
             tasks,
             projections,
+            new DownloadTaskStateWriter(tasks),
             queue,
             runtimeAvailability ?? new ReadyDownloadRuntimeAvailability(),
             resolver ?? new RecordingPhysicalOutputPathResolver(static path => path));

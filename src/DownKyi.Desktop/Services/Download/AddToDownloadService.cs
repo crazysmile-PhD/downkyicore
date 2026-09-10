@@ -287,7 +287,7 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
                             DictionaryResource.GetString("DownloadRuntimeUnavailable"),
                             cancellationToken)
                         .ConfigureAwait(true);
-                    break;
+                    return addedCount;
                 }
                 catch (IOException exception)
                 {

@@ -57,6 +57,17 @@ internal sealed class DownloadTaskStateWriter
         CancellationToken cancellationToken = default) =>
         RequireAsync(_tasks.FailAsync(taskId, failure, cancellationToken));
 
+    public Task<DownloadTask> FailRuntimeUnavailableAsync(
+        DownloadTaskId taskId,
+        CancellationToken cancellationToken = default) =>
+        FailAsync(
+            taskId,
+            new DownloadFailure(
+                "download.runtime.unavailable",
+                "Download runtime is unavailable.",
+                true),
+            cancellationToken);
+
     public Task<DownloadTask> CompleteAsync(
         DownloadTaskId taskId,
         DownloadCompletion completion,

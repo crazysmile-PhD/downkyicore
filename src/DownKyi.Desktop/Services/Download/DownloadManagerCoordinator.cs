@@ -62,6 +62,7 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator
     private readonly DownloadTaskProjectionStore _storage;
     private readonly DownloadTaskStateWriter _stateWriter;
     private readonly IDownloadTaskQueue _taskQueue;
+    private readonly IDownloadRuntimeAvailability _runtimeAvailability;
     private readonly DownloadTaskFileService _fileService;
     private readonly DownloadListState _downloadLists;
     private readonly IPlatformLauncher _platformLauncher;
@@ -70,6 +71,7 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator
         DownloadTaskProjectionStore storage,
         DownloadTaskStateWriter stateWriter,
         IDownloadTaskQueue taskQueue,
+        IDownloadRuntimeAvailability runtimeAvailability,
         DownloadTaskFileService fileService,
         DownloadListState downloadLists,
         IPlatformLauncher platformLauncher)
@@ -77,6 +79,8 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator
         _storage = storage ?? throw new ArgumentNullException(nameof(storage));
         _stateWriter = stateWriter ?? throw new ArgumentNullException(nameof(stateWriter));
         _taskQueue = taskQueue ?? throw new ArgumentNullException(nameof(taskQueue));
+        _runtimeAvailability = runtimeAvailability
+            ?? throw new ArgumentNullException(nameof(runtimeAvailability));
         _fileService = fileService ?? throw new ArgumentNullException(nameof(fileService));
         _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
         _platformLauncher = platformLauncher ?? throw new ArgumentNullException(nameof(platformLauncher));
@@ -115,10 +119,7 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator
                 or DownloadStatus.Pause
                 or DownloadStatus.DownloadFailed)
             {
-                var resumed = await _stateWriter.ResumeAsync(
-                    GetTaskId(item),
-                    cancellationToken).ConfigureAwait(true);
-                await _taskQueue.EnqueueAsync(resumed.Id, CancellationToken.None).ConfigureAwait(true);
+                await ResumeAndEnqueueAsync(GetTaskId(item), cancellationToken).ConfigureAwait(true);
             }
         }
     }
@@ -133,8 +134,7 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator
             or DownloadStatus.Pause
             or DownloadStatus.DownloadFailed)
         {
-            var resumed = await _stateWriter.ResumeAsync(taskId, cancellationToken).ConfigureAwait(true);
-            await _taskQueue.EnqueueAsync(resumed.Id, CancellationToken.None).ConfigureAwait(true);
+            await ResumeAndEnqueueAsync(taskId, cancellationToken).ConfigureAwait(true);
             return;
         }
 
@@ -271,6 +271,25 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator
         }
 
         return DownloadArtifactOpenResult.NotFound;
+    }
+
+    private async Task ResumeAndEnqueueAsync(
+        DownloadTaskId taskId,
+        CancellationToken cancellationToken)
+    {
+        _runtimeAvailability.EnsureAcceptingTasks();
+        var resumed = await _stateWriter.ResumeAsync(taskId, cancellationToken).ConfigureAwait(true);
+        try
+        {
+            await _taskQueue.EnqueueAsync(resumed.Id, CancellationToken.None).ConfigureAwait(true);
+        }
+        catch (DownloadRuntimeUnavailableException)
+        {
+            await _stateWriter.FailRuntimeUnavailableAsync(
+                resumed.Id,
+                CancellationToken.None).ConfigureAwait(true);
+            throw;
+        }
     }
 
     private static ImmutableArray<string> GetSelectedSuffixes(DownloadBase downloadBase)

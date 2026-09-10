@@ -78,8 +78,7 @@ internal sealed class DownloadBootstrapHostedService : IHostedService, IDisposab
             await CleanupFailedRuntimeAsync().ConfigureAwait(false);
             return;
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
-            or InvalidOperationException or SqliteException)
+        catch (Exception exception) when (IsBootstrapFailure(exception))
         {
             var pendingTasks = _queueGateway.MarkFaulted(exception);
             await CleanupFailedRuntimeAsync().ConfigureAwait(false);
@@ -94,12 +93,8 @@ internal sealed class DownloadBootstrapHostedService : IHostedService, IDisposab
         {
             try
             {
-                await _stateWriter.FailAsync(
+                await _stateWriter.FailRuntimeUnavailableAsync(
                     taskId,
-                    new DownloadFailure(
-                        "download.runtime.unavailable",
-                        "Download runtime is unavailable.",
-                        true),
                     CancellationToken.None).ConfigureAwait(false);
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
@@ -145,8 +140,7 @@ internal sealed class DownloadBootstrapHostedService : IHostedService, IDisposab
         {
             await runtime.StopAsync(CancellationToken.None).ConfigureAwait(false);
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
-            or InvalidOperationException or SqliteException)
+        catch (Exception exception) when (IsBootstrapFailure(exception))
         {
             _logger.LogErrorMessage("Failed download runtime cleanup also failed.", exception);
         }
@@ -169,6 +163,15 @@ internal sealed class DownloadBootstrapHostedService : IHostedService, IDisposab
             downloadingState.Projections,
             await downloadedItemsTask.ConfigureAwait(false));
     }
+
+    private static bool IsBootstrapFailure(Exception exception) =>
+        exception is IOException
+            or UnauthorizedAccessException
+            or InvalidOperationException
+            or SqliteException
+            or TimeoutException
+            or System.Net.Http.HttpRequestException
+            or Newtonsoft.Json.JsonException;
 
     private async Task LoadRemainingHistoryAsync(CancellationToken cancellationToken)
     {

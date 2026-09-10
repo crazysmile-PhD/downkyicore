@@ -184,6 +184,46 @@ public sealed class DownloadBootstrapHostedServiceTests
         Assert.IsType<DownloadRuntimeUnavailableException>(exception);
     }
 
+    [Theory]
+    [InlineData("timeout")]
+    [InlineData("http")]
+    [InlineData("json")]
+    public async Task RuntimeStartupFailureFaultsGateway(string failureKind)
+    {
+        using var runtime = new RecordingDownloadRuntime(
+            startFailure: CreateRuntimeStartupFailure(failureKind));
+        var clock = new FixedClock();
+        using var tasks = new DownloadTaskApplicationService(new EmptyDownloadTaskStore(), clock);
+        using var storage = new DownloadTaskProjectionStore(tasks, clock);
+        var queueGateway = new DownloadTaskQueueGateway();
+        using var service = new DownloadBootstrapHostedService(
+            new DownloadListState(),
+            storage,
+            new DownloadTaskStateWriter(tasks),
+            new RecordingRuntimeFactory(runtime),
+            queueGateway,
+            new ImmediateUiDispatcher(),
+            NullLogger<DownloadBootstrapHostedService>.Instance);
+
+        await service.StartAsync(TestContext.Current.CancellationToken);
+
+        await Assert.ThrowsAsync<DownloadRuntimeUnavailableException>(() =>
+            queueGateway.EnqueueAsync(
+                new DownloadTaskId($"after-{failureKind}-failure"),
+                TestContext.Current.CancellationToken));
+        Assert.True(runtime.Ended);
+        Assert.True(runtime.Disposed);
+    }
+
+    private static Exception CreateRuntimeStartupFailure(string failureKind) => failureKind switch
+    {
+        "timeout" => new TimeoutException("Synthetic runtime readiness timeout."),
+        "http" => new HttpRequestException("Synthetic runtime RPC failure."),
+        "json" => new Newtonsoft.Json.JsonSerializationException(
+            "Synthetic runtime RPC response failure."),
+        _ => throw new ArgumentOutOfRangeException(nameof(failureKind), failureKind, null)
+    };
+
     private static DownloadTask CreateTask(string id)
     {
         return DownloadTask.Create(
@@ -224,7 +264,9 @@ public sealed class DownloadBootstrapHostedServiceTests
         }
     }
 
-    private sealed class RecordingDownloadRuntime(bool failOnEnqueue = false) : IDownloadRuntime
+    private sealed class RecordingDownloadRuntime(
+        bool failOnEnqueue = false,
+        Exception? startFailure = null) : IDownloadRuntime
     {
         public List<DownloadTaskId> Enqueued { get; } = [];
 
@@ -237,6 +279,11 @@ public sealed class DownloadBootstrapHostedServiceTests
         public Task StartAsync(CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (startFailure != null)
+            {
+                throw startFailure;
+            }
+
             Started = true;
             return Task.CompletedTask;
         }
