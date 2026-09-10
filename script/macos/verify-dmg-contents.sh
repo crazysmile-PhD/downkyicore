@@ -6,6 +6,7 @@ DMG_PATH="${1:?DMG path is required.}"
 EXPECTED_VERSION="${2:?Expected release version is required.}"
 EXPECTED_RUNTIME_IDENTIFIER="${3:?Expected runtime identifier is required.}"
 MOUNT_POINT="$(mktemp -d "${TMPDIR:-/tmp}/downkyi-dmg.XXXXXX")"
+COPY_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/downkyi-installed-app.XXXXXX")"
 ATTACHED=false
 
 cleanup() {
@@ -13,6 +14,7 @@ cleanup() {
     hdiutil detach "$MOUNT_POINT" -quiet || hdiutil detach "$MOUNT_POINT" -force -quiet || true
   fi
   rmdir "$MOUNT_POINT" 2>/dev/null || true
+  rm -rf -- "$COPY_ROOT"
 }
 trap cleanup EXIT
 
@@ -37,3 +39,10 @@ fi
 
 "$SCRIPT_DIR/verify-app.sh" "$APP_PATH"
 "$SCRIPT_DIR/verify-app-launch.sh" "$APP_PATH"
+
+COPIED_APP_PATH="$COPY_ROOT/$(basename "$APP_PATH")"
+/usr/bin/ditto "$APP_PATH" "$COPIED_APP_PATH"
+
+"$SCRIPT_DIR/verify-runtime-architecture.sh" "$COPIED_APP_PATH" "$EXPECTED_RUNTIME_IDENTIFIER"
+"$SCRIPT_DIR/verify-app.sh" "$COPIED_APP_PATH"
+"$SCRIPT_DIR/verify-app-launch.sh" "$COPIED_APP_PATH"

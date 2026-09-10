@@ -411,6 +411,8 @@ public sealed class ReleaseWorkflowArchitectureTests
             Path.Combine(RepositoryRoot, "script", "macos", "verify-app-launch.sh"));
         var verifyDmgScript = File.ReadAllText(
             Path.Combine(RepositoryRoot, "script", "macos", "verify-dmg.sh"));
+        var verifyDmgContentsScript = File.ReadAllText(
+            Path.Combine(RepositoryRoot, "script", "macos", "verify-dmg-contents.sh"));
 
         Assert.DoesNotContain(
             "MACOS_SIGNING_REQUIRED",
@@ -472,6 +474,47 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.Contains("codesign --verify --verbose=2", verifyDmgScript, StringComparison.Ordinal);
         Assert.Contains("xcrun stapler validate", verifyDmgScript, StringComparison.Ordinal);
         Assert.Contains("spctl --assess --type open --context context:primary-signature", verifyDmgScript, StringComparison.Ordinal);
+        Assert.Contains("/usr/bin/ditto \"$APP_PATH\" \"$COPIED_APP_PATH\"", verifyDmgContentsScript, StringComparison.Ordinal);
+        Assert.Contains("verify-app.sh\" \"$COPIED_APP_PATH\"", verifyDmgContentsScript, StringComparison.Ordinal);
+        Assert.Contains("verify-app-launch.sh\" \"$COPIED_APP_PATH\"", verifyDmgContentsScript, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void MacBuildKeepsCredentialFreePackagingAndLaunchValidation()
+    {
+        var workflow = File.ReadAllText(
+            Path.Combine(RepositoryRoot, ".github", "workflows", "build.yml"));
+        var macSteps = GetWorkflowSteps(workflow, "  build-macos:");
+
+        Assert.Contains("MACOS_ADHOC_SIGNING: ${{ env.HAS_MACOS_SIGNING != 'true' }}", workflow, StringComparison.Ordinal);
+        foreach (var stepName in new[]
+                 {
+                     "Run macOS packaging regressions",
+                     "Build ${{ matrix.cpu }}",
+                     "Package app",
+                     "Sign app",
+                     "Verify app signature",
+                     "Create DMG",
+                     "Verify packaged DMG contents and launch app"
+                 })
+        {
+            AssertStepHasNoCondition(macSteps, stepName);
+        }
+
+        foreach (var stepName in new[]
+                 {
+                     "Import certificate",
+                     "Resolve signing identity",
+                     "Notarize app",
+                     "Verify notarized app",
+                     "Sign DMG",
+                     "Verify signed DMG",
+                     "Notarize DMG",
+                     "Verify notarized DMG"
+                 })
+        {
+            AssertStepCondition(macSteps, stepName, "${{ env.HAS_MACOS_SIGNING == 'true' }}");
+        }
     }
 
     [Fact]
