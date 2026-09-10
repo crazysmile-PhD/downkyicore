@@ -251,6 +251,8 @@ public sealed class AvaloniaApplicationLifecycleTests
             return new ApplicationLogMetrics(0, 0, 0, 0, 0, 0, 0, 0, null);
         }
 
+        public string RedactDiagnosticText(string? text) => text ?? string.Empty;
+
         public Task FlushAsync(CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();

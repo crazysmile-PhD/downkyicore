@@ -36,4 +36,11 @@ internal sealed class ReadyDownloadRuntimeAvailability : IDownloadRuntimeAvailab
     public void EnsureAcceptingTasks()
     {
     }
+
+    public Task<DownloadRuntimeStartupOutcome> WaitForStartupOutcomeAsync(
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(DownloadRuntimeStartupOutcome.Ready());
+    }
 }

@@ -144,6 +144,9 @@ internal sealed class AvaloniaDialogService : IAppDialogService
                 typeof(NewVersionAvailableDialog),
                 typeof(NewVersionAvailableDialogViewModel)),
             AppDialog.LegacyUpgrade => (typeof(ViewUpgradingDialog), typeof(ViewUpgradingDialogViewModel)),
+            AppDialog.DownloadRuntimeFailure => (
+                typeof(DownloadRuntimeFailureDialog),
+                typeof(DownloadRuntimeFailureDialogViewModel)),
             _ => throw new ArgumentOutOfRangeException(nameof(dialog), dialog, null)
         };
     }

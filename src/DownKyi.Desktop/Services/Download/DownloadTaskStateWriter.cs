@@ -62,11 +62,16 @@ internal sealed class DownloadTaskStateWriter
         CancellationToken cancellationToken = default) =>
         FailAsync(
             taskId,
-            new DownloadFailure(
-                "download.runtime.unavailable",
-                "Download runtime is unavailable.",
-                true),
+            CreateRuntimeUnavailableFailure(),
             cancellationToken);
+
+    public Task<DownloadTask> FailRuntimeUnavailableIfDispatchableAsync(
+        DownloadTaskId taskId,
+        CancellationToken cancellationToken = default) =>
+        RequireAsync(_tasks.FailIfDispatchableAsync(
+            taskId,
+            CreateRuntimeUnavailableFailure(),
+            cancellationToken));
 
     public Task<DownloadTask> CompleteAsync(
         DownloadTaskId taskId,
@@ -152,6 +157,12 @@ internal sealed class DownloadTaskStateWriter
         return await _tasks.FindAsync(taskId, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"Download task '{taskId.Value}' was not found.");
     }
+
+    private static DownloadFailure CreateRuntimeUnavailableFailure() =>
+        new(
+            "download.runtime.unavailable",
+            "Download runtime is unavailable.",
+            true);
 
     private static async Task<DownloadTask> RequireAsync(
         Task<OperationResult<DownloadTask>> operation)

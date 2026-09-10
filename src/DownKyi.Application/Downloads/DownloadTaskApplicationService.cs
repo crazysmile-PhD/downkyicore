@@ -145,6 +145,21 @@ public sealed class DownloadTaskApplicationService : IDownloadTaskApplicationSer
         return MutateAsync(taskId, (task, now) => task.Fail(failure, now), cancellationToken);
     }
 
+    public Task<OperationResult<DownloadTask>> FailIfDispatchableAsync(
+        DownloadTaskId taskId,
+        DownloadFailure failure,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(failure);
+        return MutateAsync(
+            taskId,
+            static task => task.Phase is DownloadPhase.Queued
+                or DownloadPhase.Downloading
+                or DownloadPhase.Pausing,
+            (task, now) => task.Fail(failure, now),
+            cancellationToken);
+    }
+
     public Task<OperationResult<DownloadTask>> CompleteAsync(
         DownloadTaskId taskId,
         DownloadCompletion completion,
@@ -360,12 +375,24 @@ public sealed class DownloadTaskApplicationService : IDownloadTaskApplicationSer
         _disposed = true;
     }
 
+    private Task<OperationResult<DownloadTask>> MutateAsync(
+        DownloadTaskId taskId,
+        Func<DownloadTask, DateTimeOffset, OperationResult<DownloadTask>> transition,
+        CancellationToken cancellationToken) =>
+        MutateAsync(
+            taskId,
+            static _ => true,
+            transition,
+            cancellationToken);
+
     private async Task<OperationResult<DownloadTask>> MutateAsync(
         DownloadTaskId taskId,
+        Func<DownloadTask, bool> shouldTransition,
         Func<DownloadTask, DateTimeOffset, OperationResult<DownloadTask>> transition,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(taskId);
+        ArgumentNullException.ThrowIfNull(shouldTransition);
         ArgumentNullException.ThrowIfNull(transition);
         ObjectDisposedException.ThrowIf(_disposed, this);
         var gate = _taskGates.GetOrAdd(taskId, static _ => new SemaphoreSlim(1, 1));
@@ -381,6 +408,11 @@ public sealed class DownloadTaskApplicationService : IDownloadTaskApplicationSer
                         "download.store.not_found",
                         $"Download task '{taskId.Value}' was not found.",
                         OperationErrorKind.NotFound));
+                }
+
+                if (!shouldTransition(current))
+                {
+                    return OperationResult.Success(current);
                 }
 
                 var now = LaterOf(_clock.UtcNow, current.UpdatedAtUtc);

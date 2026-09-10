@@ -15,6 +15,41 @@ internal interface IDownloadTaskQueue
 internal interface IDownloadRuntimeAvailability
 {
     void EnsureAcceptingTasks();
+
+    Task<DownloadRuntimeStartupOutcome> WaitForStartupOutcomeAsync(
+        CancellationToken cancellationToken = default);
+}
+
+internal enum DownloadRuntimeStartupState
+{
+    Ready,
+    Faulted
+}
+
+internal sealed record DownloadRuntimeStartupOutcome
+{
+    private DownloadRuntimeStartupOutcome(
+        DownloadRuntimeStartupState state,
+        Exception? failure)
+    {
+        State = state;
+        Failure = failure;
+    }
+
+    public DownloadRuntimeStartupState State { get; }
+
+    public Exception? Failure { get; }
+
+    public static DownloadRuntimeStartupOutcome Ready() =>
+        new(DownloadRuntimeStartupState.Ready, null);
+
+    public static DownloadRuntimeStartupOutcome Faulted(Exception failure)
+    {
+        ArgumentNullException.ThrowIfNull(failure);
+        return new DownloadRuntimeStartupOutcome(
+            DownloadRuntimeStartupState.Faulted,
+            failure);
+    }
 }
 
 internal sealed class DownloadRuntimeUnavailableException : InvalidOperationException

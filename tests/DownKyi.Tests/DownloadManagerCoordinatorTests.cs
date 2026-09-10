@@ -368,5 +368,14 @@ public sealed class DownloadManagerCoordinatorTests
             throw new DownloadRuntimeUnavailableException(
                 "Synthetic unavailable download runtime.");
         }
+
+        public Task<DownloadRuntimeStartupOutcome> WaitForStartupOutcomeAsync(
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(DownloadRuntimeStartupOutcome.Faulted(
+                new DownloadRuntimeUnavailableException(
+                    "Synthetic unavailable download runtime.")));
+        }
     }
 }

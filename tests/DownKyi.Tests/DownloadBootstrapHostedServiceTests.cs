@@ -199,6 +199,8 @@ public sealed class DownloadBootstrapHostedServiceTests
     [InlineData("http")]
     [InlineData("json")]
     [InlineData("win32")]
+    [InlineData("task-canceled")]
+    [InlineData("unexpected")]
     public async Task RuntimeStartupFailureFaultsGateway(string failureKind)
     {
         using var runtime = new RecordingDownloadRuntime(
@@ -279,8 +281,48 @@ public sealed class DownloadBootstrapHostedServiceTests
             "Synthetic runtime RPC response failure."),
         "win32" => new System.ComponentModel.Win32Exception(
             "Synthetic operating system process startup failure."),
+        "task-canceled" => new TaskCanceledException(
+            "Synthetic HttpClient timeout."),
+        "unexpected" => new FormatException(
+            "Synthetic failure outside the former exception allowlist."),
         _ => throw new ArgumentOutOfRangeException(nameof(failureKind), failureKind, null)
     };
+
+    [Fact]
+    public async Task TerminalBootstrapFailurePreservesTaskPausedAfterStartupSnapshot()
+    {
+        var task = CreateTask("paused-during-startup");
+        using var runtime = new BlockingFailingStartRuntime();
+        var clock = new FixedClock();
+        using var tasks = new DownloadTaskApplicationService(
+            new EmptyDownloadTaskStore([task]),
+            clock);
+        using var storage = new DownloadTaskProjectionStore(tasks, clock);
+        var stateWriter = new DownloadTaskStateWriter(tasks);
+        var listState = new DownloadListState();
+        using var service = new DownloadBootstrapHostedService(
+            listState,
+            storage,
+            stateWriter,
+            new RecordingRuntimeFactory(runtime),
+            new DownloadTaskQueueGateway(),
+            new ImmediateUiDispatcher(),
+            NullLogger<DownloadBootstrapHostedService>.Instance);
+
+        var startup = service.StartAsync(TestContext.Current.CancellationToken);
+        await runtime.StartEntered.Task.WaitAsync(TestContext.Current.CancellationToken);
+        await stateWriter.PauseAsync(task.Id, TestContext.Current.CancellationToken);
+        runtime.FailStartup.TrySetResult();
+        await startup.ConfigureAwait(true);
+
+        var persisted = Assert.IsType<DownloadTask>(await tasks.FindAsync(
+            task.Id,
+            TestContext.Current.CancellationToken));
+        Assert.Equal(DownloadPhase.Paused, persisted.Phase);
+        Assert.Equal(
+            DownloadStatus.Pause,
+            Assert.Single(listState.Downloading).Downloading.DownloadStatus);
+    }
 
     private static DownloadTask CreateTask(string id)
     {
@@ -413,6 +455,42 @@ public sealed class DownloadBootstrapHostedServiceTests
         {
             return Task.FromResult(false);
         }
+
+        public void Dispose()
+        {
+        }
+    }
+
+    private sealed class BlockingFailingStartRuntime : IDownloadRuntime
+    {
+        public TaskCompletionSource StartEntered { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource FailStartup { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task StartAsync(CancellationToken cancellationToken = default)
+        {
+            StartEntered.TrySetResult();
+            await FailStartup.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            throw new TimeoutException("Synthetic delayed runtime startup failure.");
+        }
+
+        public Task StopAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
+
+        public Task EnqueueAsync(
+            DownloadTaskId taskId,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
+
+        public Task<bool> CancelAsync(DownloadTaskId taskId) => Task.FromResult(false);
 
         public void Dispose()
         {

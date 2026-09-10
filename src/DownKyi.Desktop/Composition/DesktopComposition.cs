@@ -204,11 +204,13 @@ internal static class DesktopComposition
         services.AddTransient<ViewAlreadyDownloadedDialogViewModel>();
         services.AddTransient<NewVersionAvailableDialogViewModel>();
         services.AddTransient<ViewUpgradingDialogViewModel>();
+        services.AddTransient<DownloadRuntimeFailureDialogViewModel>();
         services.AddTransient<ViewAlertDialog>();
         services.AddTransient<ViewDownloadSetter>();
         services.AddTransient<ViewParsingSelector>();
         services.AddTransient<ViewAlreadyDownloadedDialog>();
         services.AddTransient<NewVersionAvailableDialog>();
         services.AddTransient<ViewUpgradingDialog>();
+        services.AddTransient<DownloadRuntimeFailureDialog>();
     }
 }

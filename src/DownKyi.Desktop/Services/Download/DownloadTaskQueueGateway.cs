@@ -11,6 +11,8 @@ internal sealed class DownloadTaskQueueGateway : IDownloadTaskQueue, IDownloadRu
 {
     private readonly Lock _sync = new();
     private readonly HashSet<DownloadTaskId> _pending = [];
+    private readonly TaskCompletionSource<DownloadRuntimeStartupOutcome> _startupOutcome =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
     private IDownloadRuntime? _runtime;
     private DownloadRuntimeState _state = DownloadRuntimeState.Initializing;
     private Exception? _terminalFailure;
@@ -72,6 +74,7 @@ internal sealed class DownloadTaskQueueGateway : IDownloadTaskQueue, IDownloadRu
                     if (_pending.Count == 0)
                     {
                         _state = DownloadRuntimeState.Ready;
+                        _startupOutcome.TrySetResult(DownloadRuntimeStartupOutcome.Ready());
                         return;
                     }
 
@@ -123,6 +126,8 @@ internal sealed class DownloadTaskQueueGateway : IDownloadTaskQueue, IDownloadRu
             _runtime = null;
             _state = DownloadRuntimeState.Faulted;
             _terminalFailure ??= exception;
+            _startupOutcome.TrySetResult(
+                DownloadRuntimeStartupOutcome.Faulted(_terminalFailure));
             var pending = _pending.ToArray();
             _pending.Clear();
             return pending;
@@ -138,6 +143,12 @@ internal sealed class DownloadTaskQueueGateway : IDownloadTaskQueue, IDownloadRu
                 throw CreateUnavailableException();
             }
         }
+    }
+
+    public Task<DownloadRuntimeStartupOutcome> WaitForStartupOutcomeAsync(
+        CancellationToken cancellationToken = default)
+    {
+        return _startupOutcome.Task.WaitAsync(cancellationToken);
     }
 
     public async Task EnqueueAsync(
@@ -175,6 +186,8 @@ internal sealed class DownloadTaskQueueGateway : IDownloadTaskQueue, IDownloadRu
                     _runtime = null;
                     _state = DownloadRuntimeState.Faulted;
                     _terminalFailure ??= exception;
+                    _startupOutcome.TrySetResult(
+                        DownloadRuntimeStartupOutcome.Faulted(_terminalFailure));
                 }
             }
 

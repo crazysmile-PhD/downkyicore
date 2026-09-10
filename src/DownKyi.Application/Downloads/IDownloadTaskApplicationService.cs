@@ -64,6 +64,11 @@ public interface IDownloadTaskApplicationService
         DownloadFailure failure,
         CancellationToken cancellationToken);
 
+    Task<OperationResult<DownloadTask>> FailIfDispatchableAsync(
+        DownloadTaskId taskId,
+        DownloadFailure failure,
+        CancellationToken cancellationToken);
+
     Task<OperationResult<DownloadTask>> CompleteAsync(
         DownloadTaskId taskId,
         DownloadCompletion completion,

@@ -525,6 +525,15 @@ public sealed class VideoTagLoadingTests : IDisposable
             throw new DownloadRuntimeUnavailableException(
                 "Synthetic unavailable download runtime.");
         }
+
+        public Task<DownloadRuntimeStartupOutcome> WaitForStartupOutcomeAsync(
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(DownloadRuntimeStartupOutcome.Faulted(
+                new DownloadRuntimeUnavailableException(
+                    "Synthetic unavailable download runtime.")));
+        }
     }
 
     private sealed class RecordingTagProvider(

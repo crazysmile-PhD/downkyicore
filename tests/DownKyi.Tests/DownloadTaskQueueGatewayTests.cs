@@ -21,6 +21,10 @@ public sealed class DownloadTaskQueueGatewayTests
         await gateway.MarkReadyAsync(runtime, TestContext.Current.CancellationToken);
 
         Assert.Equal(taskId, Assert.Single(runtime.Enqueued));
+        var outcome = await gateway.WaitForStartupOutcomeAsync(
+            TestContext.Current.CancellationToken);
+        Assert.Equal(DownloadRuntimeStartupState.Ready, outcome.State);
+        Assert.Null(outcome.Failure);
     }
 
     [Fact]
@@ -45,14 +49,18 @@ public sealed class DownloadTaskQueueGatewayTests
         var pendingTask = new DownloadTaskId("pending-before-failure");
         await gateway.EnqueueAsync(pendingTask, TestContext.Current.CancellationToken);
 
-        var returned = gateway.MarkFaulted(
-            new InvalidOperationException("Synthetic bootstrap failure."));
+        var failure = new InvalidOperationException("Synthetic bootstrap failure.");
+        var returned = gateway.MarkFaulted(failure);
 
         Assert.Equal(pendingTask, Assert.Single(returned));
         Assert.Throws<DownloadRuntimeUnavailableException>(() => gateway.EnsureAcceptingTasks());
         await Assert.ThrowsAsync<DownloadRuntimeUnavailableException>(() => gateway.EnqueueAsync(
             new DownloadTaskId("after-failure"),
             TestContext.Current.CancellationToken));
+        var outcome = await gateway.WaitForStartupOutcomeAsync(
+            TestContext.Current.CancellationToken);
+        Assert.Equal(DownloadRuntimeStartupState.Faulted, outcome.State);
+        Assert.Same(failure, outcome.Failure);
     }
 
     private sealed class RecordingRuntime : IDownloadRuntime
