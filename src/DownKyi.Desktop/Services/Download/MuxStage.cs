@@ -62,10 +62,9 @@ internal sealed class MuxStage : IDownloadPipelineStage
         CancellationToken cancellationToken)
     {
         await _presenter.ShowMuxingAsync(context, cancellationToken).ConfigureAwait(true);
-        var downloading = context.Downloading;
         var finalFile = GetDashOutputPath(context);
         var result = await _ffmpegProcessor.MergeMediaAsync(
-            context.Settings.Video,
+            context.Input.VideoSettings,
             context.AudioFile,
             context.VideoFile,
             finalFile,
@@ -77,7 +76,7 @@ internal sealed class MuxStage : IDownloadPipelineStage
                 context,
                 result,
                 cancellationToken).ConfigureAwait(true);
-        downloading.FileSize = await DownloadOutputRecorder.RecordFileSizeAsync(
+        await DownloadOutputRecorder.RecordFileSizeAsync(
             context.TaskId,
             result.Succeeded ? finalFile : null,
             _stateWriter,
@@ -105,9 +104,9 @@ internal sealed class MuxStage : IDownloadPipelineStage
         if (context.DurlDownloads.Count == 1)
         {
             await _presenter.ShowMuxingAsync(context, cancellationToken).ConfigureAwait(true);
-            var finalFile = $"{context.Downloading.DownloadBase.FilePath}.mp4";
+            var finalFile = $"{context.Input.OutputBasePath}.mp4";
             var mergeResult = await _ffmpegProcessor.MergeMediaAsync(
-                context.Settings.Video,
+                context.Input.VideoSettings,
                 audio: null,
                 video: context.DurlDownloads[0].FilePath,
                 destination: finalFile,
@@ -119,7 +118,7 @@ internal sealed class MuxStage : IDownloadPipelineStage
                     context,
                     mergeResult,
                     cancellationToken).ConfigureAwait(true);
-            context.Downloading.FileSize = await DownloadOutputRecorder.RecordFileSizeAsync(
+            await DownloadOutputRecorder.RecordFileSizeAsync(
                 context.TaskId,
                 mergeResult.Succeeded ? finalFile : null,
                 _stateWriter,
@@ -134,7 +133,7 @@ internal sealed class MuxStage : IDownloadPipelineStage
         }
 
         await _presenter.ShowConcatenatingAsync(context, cancellationToken).ConfigureAwait(true);
-        var outputPath = $"{context.Downloading.DownloadBase.FilePath}.mp4";
+        var outputPath = $"{context.Input.OutputBasePath}.mp4";
         var segments = context.DurlDownloads
             .OrderBy(download => download.Durl.Order)
             .Select(download => new FfmpegConcatSegment(
@@ -143,7 +142,7 @@ internal sealed class MuxStage : IDownloadPipelineStage
                 TimeSpan.FromMilliseconds(download.Durl.Length)))
             .ToArray();
         var result = await _ffmpegProcessor.ConcatDurlVideosAsync(
-            context.Settings.Video,
+            context.Input.VideoSettings,
             segments,
             outputPath,
             overwriteDestination: false,
@@ -154,7 +153,7 @@ internal sealed class MuxStage : IDownloadPipelineStage
                 context,
                 result,
                 cancellationToken).ConfigureAwait(true);
-        context.Downloading.FileSize = await DownloadOutputRecorder.RecordFileSizeAsync(
+        await DownloadOutputRecorder.RecordFileSizeAsync(
             context.TaskId,
             result.Succeeded ? result.OutputPath : null,
             _stateWriter,
@@ -250,17 +249,17 @@ internal sealed class MuxStage : IDownloadPipelineStage
     {
         if (context.VideoFile != null)
         {
-            return $"{context.Downloading.DownloadBase.FilePath}.mp4";
+            return $"{context.Input.OutputBasePath}.mp4";
         }
 
-        if (context.Settings.Video.IsTranscodingAacToMp3 == AllowStatus.Yes)
+        if (context.Input.VideoSettings.IsTranscodingAacToMp3 == AllowStatus.Yes)
         {
-            return $"{context.Downloading.DownloadBase.FilePath}.mp3";
+            return $"{context.Input.OutputBasePath}.mp3";
         }
 
-        return context.Downloading.AudioCodec.Id == 30251
-            ? $"{context.Downloading.DownloadBase.FilePath}.flac"
-            : $"{context.Downloading.DownloadBase.FilePath}.aac";
+        return context.Input.Metadata.AudioCodec.Id == 30251
+            ? $"{context.Input.OutputBasePath}.flac"
+            : $"{context.Input.OutputBasePath}.aac";
     }
 
     private sealed record DownloadTransferReference(string Key, string FilePath);

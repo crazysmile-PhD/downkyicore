@@ -15,9 +15,6 @@ using DownKyi.Core.Danmaku2Ass;
 using DownKyi.Core.Settings;
 using DownKyi.Domain.Downloads;
 using DownKyi.Domain.Results;
-using DownKyi.Models;
-using DownKyi.Utils;
-using DownKyi.ViewModels.DownloadManager;
 using Google.Protobuf;
 using Microsoft.Extensions.Logging;
 
@@ -43,24 +40,14 @@ internal sealed partial class DownloadArtifactWriter
     }
 
     public async Task<OperationResult<DownloadArtifactWriteResult>> DownloadCoverAsync(
-        DownloadingItem downloading,
+        DownloadTaskId taskId,
         string? coverUrl,
         string fileName,
         string transferKey,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(downloading);
+        ArgumentNullException.ThrowIfNull(taskId);
         ArgumentException.ThrowIfNullOrWhiteSpace(transferKey);
-        downloading.DownloadStatusTitle = DictionaryResource.GetString("WhileDownloading");
-        downloading.DownloadContent = DictionaryResource.GetString("DownloadingCover");
-        downloading.DownloadingFileSize = string.Empty;
-        downloading.SpeedDisplay = string.Empty;
-        var taskId = new DownloadTaskId(downloading.DownloadBase.Id);
-        await _stateWriter.UpdateActivityAsync(
-            taskId,
-            downloading.DownloadContent,
-            downloading.DownloadStatusTitle,
-            cancellationToken).ConfigureAwait(false);
 
         try
         {
@@ -116,27 +103,21 @@ internal sealed partial class DownloadArtifactWriter
     }
 
     public async Task<OperationResult<DownloadArtifactWriteResult>> DownloadDanmakuAsync(
-        DownloadingItem downloading,
+        DownloadTaskId taskId,
+        DownloadTaskMetadata metadata,
+        string outputBasePath,
         DanmakuApplicationSettings settings,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(downloading);
+        ArgumentNullException.ThrowIfNull(taskId);
+        ArgumentNullException.ThrowIfNull(metadata);
+        ArgumentException.ThrowIfNullOrWhiteSpace(outputBasePath);
         ArgumentNullException.ThrowIfNull(settings);
-        downloading.DownloadStatusTitle = DictionaryResource.GetString("WhileDownloading");
-        downloading.DownloadContent = DictionaryResource.GetString("DownloadingDanmaku");
-        downloading.DownloadingFileSize = string.Empty;
-        downloading.SpeedDisplay = string.Empty;
-        var taskId = new DownloadTaskId(downloading.DownloadBase.Id);
-        await _stateWriter.UpdateActivityAsync(
-            taskId,
-            downloading.DownloadContent,
-            downloading.DownloadStatusTitle,
-            cancellationToken).ConfigureAwait(false);
 
-        var assFile = $"{downloading.DownloadBase?.FilePath}.ass";
+        var assFile = $"{outputBasePath}.ass";
         var subtitleConfig = new Config
         {
-            Title = downloading.Name,
+            Title = metadata.Name,
             ScreenWidth = settings.ScreenWidth,
             ScreenHeight = settings.ScreenHeight,
             FontName = settings.FontName,
@@ -153,8 +134,6 @@ internal sealed partial class DownloadArtifactWriter
             .SetTopFilter(settings.TopFilter == AllowStatus.Yes)
             .SetBottomFilter(settings.BottomFilter == AllowStatus.Yes)
             .SetScrollFilter(settings.ScrollFilter == AllowStatus.Yes);
-        var downloadBase = downloading.DownloadBase
-                           ?? throw new InvalidOperationException("DownloadBase is required to download danmaku.");
         try
         {
             await _stateWriter.ClaimTransferFileAsync(
@@ -164,8 +143,8 @@ internal sealed partial class DownloadArtifactWriter
                 cancellationToken).ConfigureAwait(false);
             await converter.CreateAsync(
                 _client,
-                downloadBase.Avid,
-                downloadBase.Cid,
+                metadata.Media.Avid,
+                metadata.Media.Cid,
                 subtitleConfig,
                 assFile,
                 cancellationToken).ConfigureAwait(false);
@@ -221,20 +200,14 @@ internal sealed partial class DownloadArtifactWriter
     }
 
     public async Task<OperationResult<DownloadArtifactWriteResult>> DownloadSubtitleAsync(
-        DownloadingItem downloading,
+        DownloadTaskId taskId,
+        DownloadTaskMetadata metadata,
+        string outputBasePath,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(downloading);
-        downloading.DownloadStatusTitle = DictionaryResource.GetString("WhileDownloading");
-        downloading.DownloadContent = DictionaryResource.GetString("DownloadingSubtitle");
-        downloading.DownloadingFileSize = string.Empty;
-        downloading.SpeedDisplay = string.Empty;
-        var taskId = new DownloadTaskId(downloading.DownloadBase.Id);
-        await _stateWriter.UpdateActivityAsync(
-            taskId,
-            downloading.DownloadContent,
-            downloading.DownloadStatusTitle,
-            cancellationToken).ConfigureAwait(false);
+        ArgumentNullException.ThrowIfNull(taskId);
+        ArgumentNullException.ThrowIfNull(metadata);
+        ArgumentException.ThrowIfNullOrWhiteSpace(outputBasePath);
 
         var srtFiles = new List<string>();
         Exception? parseFailure = null;
@@ -246,9 +219,9 @@ internal sealed partial class DownloadArtifactWriter
                 (keys, unixTimeSeconds) => _client.GetSubtitleAsync(
                     keys,
                     unixTimeSeconds,
-                    downloading.DownloadBase.Avid,
-                    downloading.DownloadBase.Bvid,
-                    downloading.DownloadBase.Cid,
+                    metadata.Media.Avid,
+                    metadata.Media.Bvid,
+                    metadata.Media.Cid,
                     e => parseFailure ??= e,
                     cancellationToken),
                 TimeProvider.System,
@@ -290,7 +263,7 @@ internal sealed partial class DownloadArtifactWriter
         for (var index = 0; index < subRipTexts.Count; index++)
         {
             var subRip = subRipTexts[index];
-            var srtFile = $"{downloading.DownloadBase.FilePath}_{subRip.LanDoc}.srt";
+            var srtFile = $"{outputBasePath}_{subRip.LanDoc}.srt";
             try
             {
                 await _stateWriter.ClaimTransferFileAsync(
@@ -325,7 +298,7 @@ internal sealed partial class DownloadArtifactWriter
             }
         }
 
-        var defaultSubtitleFile = $"{downloading.DownloadBase.FilePath}.srt";
+        var defaultSubtitleFile = $"{outputBasePath}.srt";
         try
         {
             await _stateWriter.ClaimTransferFileAsync(
@@ -362,20 +335,20 @@ internal sealed partial class DownloadArtifactWriter
     }
 
     public async Task<OperationResult<DownloadArtifactWriteResult>> GenerateNfoFileAsync(
-        DownloadingItem downloading,
+        DownloadTaskId taskId,
+        string outputBasePath,
+        DownloadNfoRequest metadata,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(downloading);
-        if (downloading.Metadata == null)
-        {
-            return OperationResult.Success(DownloadArtifactWriteResult.NotAvailable());
-        }
+        ArgumentNullException.ThrowIfNull(taskId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(outputBasePath);
+        ArgumentNullException.ThrowIfNull(metadata);
 
-        var nfoFile = $"{downloading.DownloadBase.FilePath}.nfo";
+        var nfoFile = $"{outputBasePath}.nfo";
         try
         {
             await _stateWriter.ClaimTransferFileAsync(
-                new DownloadTaskId(downloading.DownloadBase.Id),
+                taskId,
                 "nfo",
                 nfoFile,
                 cancellationToken).ConfigureAwait(false);
@@ -384,7 +357,7 @@ internal sealed partial class DownloadArtifactWriter
                 new XmlWriterSettings { Async = true, Indent = true });
             try
             {
-                WriteMovieMetadata(writer, downloading.Metadata);
+                WriteMovieMetadata(writer, metadata);
                 await writer.FlushAsync().ConfigureAwait(false);
             }
             finally
@@ -432,7 +405,7 @@ internal sealed partial class DownloadArtifactWriter
             OperationError.Unexpected(code, message));
     }
 
-    private static void WriteMovieMetadata(XmlWriter writer, MovieMetadata metadata)
+    private static void WriteMovieMetadata(XmlWriter writer, DownloadNfoRequest metadata)
     {
         writer.WriteStartDocument();
         writer.WriteStartElement("movie");

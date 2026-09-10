@@ -10,10 +10,14 @@ namespace DownKyi.Services.Download;
 internal sealed class DownloadArtifactsStage : IDownloadPipelineStage
 {
     private readonly DownloadArtifactWriter _artifactWriter;
+    private readonly DownloadActivityPresenter _presenter;
 
-    public DownloadArtifactsStage(DownloadArtifactWriter artifactWriter)
+    public DownloadArtifactsStage(
+        DownloadArtifactWriter artifactWriter,
+        DownloadActivityPresenter presenter)
     {
         _artifactWriter = artifactWriter ?? throw new ArgumentNullException(nameof(artifactWriter));
+        _presenter = presenter ?? throw new ArgumentNullException(nameof(presenter));
     }
 
     public string Name => nameof(DownloadArtifactsStage);
@@ -23,11 +27,13 @@ internal sealed class DownloadArtifactsStage : IDownloadPipelineStage
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
-        var downloading = context.Downloading;
-        if (downloading.Metadata != null)
+        var input = context.Input;
+        if (input.NfoRequest != null)
         {
             var nfoResult = await _artifactWriter.GenerateNfoFileAsync(
-                downloading,
+                context.TaskId,
+                input.OutputBasePath,
+                input.NfoRequest,
                 cancellationToken).ConfigureAwait(true);
             if (!nfoResult.IsSuccess)
             {
@@ -37,9 +43,15 @@ internal sealed class DownloadArtifactsStage : IDownloadPipelineStage
 
         if (context.NeedsDanmaku)
         {
+            await _presenter.ShowDownloadingArtifactAsync(
+                context,
+                "DownloadingDanmaku",
+                cancellationToken).ConfigureAwait(true);
             var danmakuResult = await _artifactWriter.DownloadDanmakuAsync(
-                downloading,
-                context.Settings.Danmaku,
+                context.TaskId,
+                input.Metadata,
+                input.OutputBasePath,
+                input.DanmakuSettings,
                 cancellationToken).ConfigureAwait(true);
             if (!danmakuResult.TryGetValue(out var danmaku))
             {
@@ -52,8 +64,14 @@ internal sealed class DownloadArtifactsStage : IDownloadPipelineStage
         context.EnsureActive(cancellationToken);
         if (context.NeedsSubtitle)
         {
+            await _presenter.ShowDownloadingArtifactAsync(
+                context,
+                "DownloadingSubtitle",
+                cancellationToken).ConfigureAwait(true);
             var subtitleResult = await _artifactWriter.DownloadSubtitleAsync(
-                downloading,
+                context.TaskId,
+                input.Metadata,
+                input.OutputBasePath,
                 cancellationToken).ConfigureAwait(true);
             if (!subtitleResult.TryGetValue(out var subtitles))
             {
@@ -66,11 +84,15 @@ internal sealed class DownloadArtifactsStage : IDownloadPipelineStage
         context.EnsureActive(cancellationToken);
         if (context.NeedsCover)
         {
+            await _presenter.ShowDownloadingArtifactAsync(
+                context,
+                "DownloadingCover",
+                cancellationToken).ConfigureAwait(true);
             var pageCoverFileName =
-                $"{downloading.DownloadBase.FilePath}.{GetImageExtension(downloading.DownloadBase.PageCoverUrl)}";
+                $"{input.OutputBasePath}.{GetImageExtension(input.Metadata.PageCoverAddress)}";
             var pageCoverResult = await _artifactWriter.DownloadCoverAsync(
-                downloading,
-                downloading.DownloadBase.PageCoverUrl,
+                context.TaskId,
+                input.Metadata.PageCoverAddress,
                 pageCoverFileName,
                 DownloadArtifactWriter.PageCoverTransferKey,
                 cancellationToken).ConfigureAwait(true);
@@ -81,11 +103,15 @@ internal sealed class DownloadArtifactsStage : IDownloadPipelineStage
 
             context.PageCoverFile = pageCover.Files.SingleOrDefault();
 
+            await _presenter.ShowDownloadingArtifactAsync(
+                context,
+                "DownloadingCover",
+                cancellationToken).ConfigureAwait(true);
             var coverFileName =
-                $"{downloading.DownloadBase.FilePath}.Cover.{GetImageExtension(downloading.DownloadBase.CoverUrl)}";
+                $"{input.OutputBasePath}.Cover.{GetImageExtension(input.Metadata.CoverAddress)}";
             var coverResult = await _artifactWriter.DownloadCoverAsync(
-                downloading,
-                downloading.DownloadBase.CoverUrl,
+                context.TaskId,
+                input.Metadata.CoverAddress,
                 coverFileName,
                 DownloadArtifactWriter.MainCoverTransferKey,
                 cancellationToken).ConfigureAwait(true);

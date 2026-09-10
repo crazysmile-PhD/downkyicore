@@ -170,11 +170,9 @@ public sealed class DownloadPipelineCommitBoundaryTests
                 TestContext.Current.CancellationToken).ConfigureAwait(true);
             var lists = new DownloadListState();
             lists.AddDownloading(downloading);
-            var context = new DownloadExecutionContext(
-                taskId,
+            var context = DownloadExecutionContextTestFactory.Create(
                 downloading,
-                settings.Current,
-                static (_, token) => token.ThrowIfCancellationRequested());
+                settings.Current);
             var audio = CreateTransferFile(directory, "audio.m4s");
             var video = CreateTransferFile(directory, "video.m4s");
             var output = Path.Combine(directory, "output.mp4");
@@ -189,7 +187,10 @@ public sealed class DownloadPipelineCommitBoundaryTests
             var finalizeStage = new FinalizeStage(
                 projectionStore,
                 stateWriter,
-                new DownloadCompletionProjector(lists, new ImmediateUiDispatcher()),
+                new DownloadCompletionProjector(
+                    lists,
+                    projectionStore,
+                    new ImmediateUiDispatcher()),
                 fileService,
                 TimeProvider.System,
                 NullLogger<FinalizeStage>.Instance);

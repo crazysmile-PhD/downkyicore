@@ -22,11 +22,31 @@ internal sealed class DownloadExecutionContextFactory
     public DownloadExecutionContext Create(DownloadTaskId taskId)
     {
         ArgumentNullException.ThrowIfNull(taskId);
+        var task = _projectionStore.GetRequiredSnapshot(taskId);
+        var settings = _settingsStore.Current;
+        var projection = _projectionStore.GetRequiredDownloadingProjection(taskId);
         return new DownloadExecutionContext(
             taskId,
-            _projectionStore.GetRequiredDownloadingProjection(taskId),
-            _settingsStore.Current,
+            CreateInput(task, settings),
+            projection.PlayUrl,
             EnsureActive);
+    }
+
+    internal static DownloadExecutionInput CreateInput(
+        DownloadTask task,
+        ApplicationSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(task);
+        ArgumentNullException.ThrowIfNull(settings);
+        return new DownloadExecutionInput(
+            task.Metadata,
+            task.Plan.RequestedContent,
+            task.Output.BasePath,
+            (Core.BiliApi.VideoStream.PlayStreamType)task.Plan.StreamType,
+            task.Plan.NfoRequest,
+            settings.Video,
+            settings.Danmaku,
+            settings.Basic.DownloadFinishedSort);
     }
 
     private void EnsureActive(

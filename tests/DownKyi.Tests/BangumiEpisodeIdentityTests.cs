@@ -93,11 +93,7 @@ public sealed class BangumiEpisodeIdentityTests
             }
         };
 
-        return new DownloadExecutionContext(
-            taskId,
-            downloading,
-            settings,
-            static (_, cancellationToken) => cancellationToken.ThrowIfCancellationRequested());
+        return DownloadExecutionContextTestFactory.Create(downloading, settings);
     }
 
     private static void AssertEpisodeId(BilibiliHttpRequest? capturedRequest)
