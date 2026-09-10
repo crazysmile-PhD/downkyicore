@@ -55,7 +55,7 @@ internal static class DownloadTaskRecordMapper
             GetString(reader, "page_cover_url"),
             reader.GetInt32(reader.GetOrdinal("zone_id")));
         var plan = new DownloadPlan(
-            requestedAssets,
+            DownloadContentSelection.FromLegacyMap(requestedAssets),
             transferFiles,
             reader.IsDBNull(reader.GetOrdinal("play_stream_type"))
                 ? 0

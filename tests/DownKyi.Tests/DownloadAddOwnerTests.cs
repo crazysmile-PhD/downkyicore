@@ -171,11 +171,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
             DownKyi.Core.BiliApi.VideoStream.PlayStreamType.Cheese,
             item.Downloading.PlayStreamType);
         Assert.Equal(DownKyi.Models.DownloadStatus.NotStarted, item.Downloading.DownloadStatus);
-        Assert.True(item.DownloadBase.NeedDownloadContent["downloadAudio"]);
-        Assert.False(item.DownloadBase.NeedDownloadContent["downloadVideo"]);
-        Assert.True(item.DownloadBase.NeedDownloadContent["downloadDanmaku"]);
-        Assert.False(item.DownloadBase.NeedDownloadContent["downloadSubtitle"]);
-        Assert.True(item.DownloadBase.NeedDownloadContent["downloadCover"]);
+        Assert.Equal(content, item.DownloadBase.NeedDownloadContent);
         Assert.StartsWith(_directory, item.DownloadBase.FilePath, StringComparison.Ordinal);
         Assert.Contains("section", item.DownloadBase.FilePath, StringComparison.Ordinal);
     }

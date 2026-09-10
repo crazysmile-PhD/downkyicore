@@ -57,22 +57,17 @@ internal sealed class DownloadExecutionContext
 
     public string? PageCoverFile { get; set; }
 
-    public bool NeedsAudio =>
-        Downloading.DownloadBase.NeedDownloadContent["downloadAudio"];
+    public bool NeedsAudio => Downloading.DownloadBase.NeedDownloadContent.Audio;
 
-    public bool NeedsVideo =>
-        Downloading.DownloadBase.NeedDownloadContent["downloadVideo"];
+    public bool NeedsVideo => Downloading.DownloadBase.NeedDownloadContent.Video;
 
     public bool NeedsMedia => NeedsAudio || NeedsVideo;
 
-    public bool NeedsDanmaku =>
-        Downloading.DownloadBase.NeedDownloadContent["downloadDanmaku"];
+    public bool NeedsDanmaku => Downloading.DownloadBase.NeedDownloadContent.Danmaku;
 
-    public bool NeedsSubtitle =>
-        Downloading.DownloadBase.NeedDownloadContent["downloadSubtitle"];
+    public bool NeedsSubtitle => Downloading.DownloadBase.NeedDownloadContent.Subtitle;
 
-    public bool NeedsCover =>
-        Downloading.DownloadBase.NeedDownloadContent["downloadCover"];
+    public bool NeedsCover => Downloading.DownloadBase.NeedDownloadContent.Cover;
 
     public IReadOnlyList<string> GetMediaInputFiles()
     {

@@ -79,6 +79,7 @@ public sealed class DownloadManagerCoordinatorTests
     {
         using var context = new CoordinatorContext();
         var item = context.CreateDownloadingItem("delete-complete", DownloadStatus.WaitForDownload);
+        item.DownloadBase.NeedDownloadContent = DownloadContentSelection.None;
         item.Downloading.DownloadFiles["video"] = "delete-complete.mp4";
         context.State.AddDownloading(item);
         await context.Storage.AddDownloadingAsync(item, TestContext.Current.CancellationToken);
@@ -130,6 +131,28 @@ public sealed class DownloadManagerCoordinatorTests
 
         Assert.Equal(DownloadArtifactOpenResult.Opened, result);
         Assert.Equal(Path.GetFullPath(flv), context.Launcher.OpenedFile);
+    }
+
+    [Fact]
+    public async Task OpenFolderUsesTypedRequestedContentWithoutGuessingFromOtherFiles()
+    {
+        using var context = new CoordinatorContext();
+        var item = context.CreateDownloadedItem("open-subtitle");
+        item.DownloadBase.NeedDownloadContent =
+            DownloadContentSelection.None with { Subtitle = true };
+        context.CreateFile("open-subtitle.mp4", "unrequested media");
+
+        var withoutSubtitle = await context.Coordinator.OpenFolderAsync(
+            item,
+            TestContext.Current.CancellationToken);
+        var subtitle = context.CreateFile("open-subtitle.srt", "requested subtitle");
+        var withSubtitle = await context.Coordinator.OpenFolderAsync(
+            item,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(DownloadArtifactOpenResult.NotFound, withoutSubtitle);
+        Assert.Equal(DownloadArtifactOpenResult.Opened, withSubtitle);
+        Assert.Equal(Path.GetDirectoryName(Path.GetFullPath(subtitle)), context.Launcher.OpenedFolder);
     }
 
     private sealed class CoordinatorContext : IDisposable
@@ -246,6 +269,8 @@ public sealed class DownloadManagerCoordinatorTests
     {
         public string? OpenedFile { get; private set; }
 
+        public string? OpenedFolder { get; private set; }
+
         public Task<bool> OpenFileAsync(string path, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -256,6 +281,7 @@ public sealed class DownloadManagerCoordinatorTests
         public Task<bool> OpenFolderAsync(string path, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            OpenedFolder = path;
             return Task.FromResult(true);
         }
 

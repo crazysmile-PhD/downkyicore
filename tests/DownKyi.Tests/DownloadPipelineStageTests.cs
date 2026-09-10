@@ -83,10 +83,8 @@ public sealed class DownloadPipelineStageTests
     {
         using var settings = new TestSettingsStore();
         var context = CreateContext(settings.Store.Current);
-        context.Downloading.DownloadBase.NeedDownloadContent["downloadAudio"] = false;
-        context.Downloading.DownloadBase.NeedDownloadContent["downloadVideo"] = false;
-        context.Downloading.DownloadBase.NeedDownloadContent["downloadDanmaku"] = false;
-        context.Downloading.DownloadBase.NeedDownloadContent["downloadCover"] = false;
+        context.Downloading.DownloadBase.NeedDownloadContent =
+            DownloadContentSelection.None with { Subtitle = true };
         context.SubtitleFiles = null;
 
         var result = await new ValidateStage().ExecuteAsync(
@@ -165,7 +163,8 @@ public sealed class DownloadPipelineStageTests
             StringComparison.Ordinal);
 
         var audioContext = CreateContext(settings.Store.Current);
-        audioContext.Downloading.DownloadBase.NeedDownloadContent["downloadVideo"] = false;
+        audioContext.Downloading.DownloadBase.NeedDownloadContent =
+            audioContext.Downloading.DownloadBase.NeedDownloadContent with { Video = false };
         Assert.EndsWith(
             ".mp3",
             MuxStage.GetDashOutputPath(audioContext),

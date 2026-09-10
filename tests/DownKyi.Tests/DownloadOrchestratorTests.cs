@@ -259,7 +259,7 @@ public sealed class DownloadOrchestratorTests
                         string.Empty,
                         string.Empty,
                         0),
-                    new DownloadPlan([], [], 0, nfoRequest: null),
+                    new DownloadPlan(DownloadContentSelection.None, [], 0, nfoRequest: null),
                     new DownloadOutput($"task-{index}", null),
                     DateTimeOffset.UnixEpoch);
                 Assert.True((await Tasks.AddAsync(

@@ -166,7 +166,7 @@ public sealed class DownloadTaskApplicationService : IDownloadTaskApplicationSer
         {
             var files = task.Plan.TransferFiles.SetItem(key, filePath);
             var plan = new DownloadPlan(
-                task.Plan.RequestedAssets,
+                task.Plan.RequestedContent,
                 files,
                 task.Plan.StreamType,
                 task.Plan.NfoRequest);
@@ -207,7 +207,7 @@ public sealed class DownloadTaskApplicationService : IDownloadTaskApplicationSer
 
             var claimedFiles = files.Add(claimKey, filePath);
             var plan = new DownloadPlan(
-                task.Plan.RequestedAssets,
+                task.Plan.RequestedContent,
                 claimedFiles,
                 task.Plan.StreamType,
                 task.Plan.NfoRequest);

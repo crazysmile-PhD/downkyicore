@@ -293,7 +293,7 @@ public sealed class DownloadTaskApplicationServiceTests
                 string.Empty,
                 1),
             new DownloadPlan(
-                new Dictionary<string, bool> { ["downloadVideo"] = true },
+                new DownloadContentSelection(false, true, false, false, false),
                 [],
                 1,
                 new DownloadNfoRequest(

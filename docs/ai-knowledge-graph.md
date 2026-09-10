@@ -505,6 +505,7 @@ contracts:
   - Success values are non-null; failed results cannot expose a value without an explicit exception.
   - Download task IDs are stable strings; task versions increase monotonically and timestamps never move backward.
   - Pause, cancel, delete, failure, completion, retry, progress, and transfer updates remain distinct transitions.
+  - Requested audio, video, danmaku, subtitle, and cover content is one immutable `DownloadContentSelection`; `DownloadPlan` does not expose a string-keyed requested-content map.
 hazards:
   - Error messages must not contain cookies, full sensitive URLs, or personal filesystem paths.
 tests:
@@ -1780,7 +1781,6 @@ type: service
 paths:
   - src/DownKyi.Desktop/Services/Download/AddToDownloadService.cs
   - src/DownKyi.Desktop/Services/Download/AddToDownloadServiceFactory.cs
-  - src/DownKyi.Desktop/Services/Download/DownloadContentSelection.cs
   - src/DownKyi.Desktop/Services/Download/DownloadDuplicatePolicy.cs
   - src/DownKyi.Desktop/Services/Download/DownloadTaskDraftFactory.cs
   - src/DownKyi.Desktop/Services/Download/DownloadMovieMetadataBuilder.cs

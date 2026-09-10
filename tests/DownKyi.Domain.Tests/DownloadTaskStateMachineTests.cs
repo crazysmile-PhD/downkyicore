@@ -71,21 +71,44 @@ public sealed class DownloadTaskStateMachineTests
     }
 
     [Fact]
-    public void PlanAndTransferStateDefensivelyCopyCallerCollections()
+    public void PlanAndTransferStatePreserveImmutableContentAndCopyCallerCollections()
     {
-        var assets = new Dictionary<string, bool> { ["video"] = true };
+        var content = new DownloadContentSelection(
+            Audio: false,
+            Video: true,
+            Danmaku: false,
+            Subtitle: true,
+            Cover: false);
         var files = new Dictionary<string, string> { ["video"] = "video.m4s" };
         var completed = new List<string> { "cover" };
-        var plan = new DownloadPlan(assets, files, streamType: 2, nfoRequest: null);
+        var plan = new DownloadPlan(content, files, streamType: 2, nfoRequest: null);
         var transfer = new DownloadTransferState("aria-gid", completed);
 
-        assets["audio"] = true;
         files["audio"] = "audio.m4s";
         completed.Add("subtitle");
 
-        Assert.Single(plan.RequestedAssets);
+        Assert.Equal(content, plan.RequestedContent);
         Assert.Single(plan.TransferFiles);
         Assert.Equal("cover", Assert.Single(transfer.CompletedFileKeys));
+    }
+
+    [Theory]
+    [InlineData(true, false, true, false, true)]
+    [InlineData(false, true, false, true, false)]
+    public void ContentSelectionLegacyMapRoundTripsEveryTypedField(
+        bool audio,
+        bool video,
+        bool danmaku,
+        bool subtitle,
+        bool cover)
+    {
+        var expected = new DownloadContentSelection(audio, video, danmaku, subtitle, cover);
+
+        var legacyMap = expected.ToLegacyMap();
+        var restored = DownloadContentSelection.FromLegacyMap(legacyMap);
+
+        Assert.Equal(expected, restored);
+        Assert.Equal(5, legacyMap.Count);
     }
 
     [Fact]
@@ -204,7 +227,7 @@ public sealed class DownloadTaskStateMachineTests
             "https://example.invalid/page.jpg",
             1);
         var plan = new DownloadPlan(
-            new Dictionary<string, bool> { ["video"] = true },
+            new DownloadContentSelection(false, true, false, false, false),
             new Dictionary<string, string> { ["video"] = "video.m4s" },
             streamType: 1,
             nfoRequest: null);
