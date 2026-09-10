@@ -518,6 +518,26 @@ public sealed class ReleaseWorkflowArchitectureTests
     }
 
     [Fact]
+    public void MacAdHocPackageWorkflowUsesMacOs26Arm64WithoutAppleCredentials()
+    {
+        var workflow = File.ReadAllText(
+            Path.Combine(RepositoryRoot, ".github", "workflows", "macos-adhoc-package.yml"));
+
+        Assert.Contains("runs-on: macos-26", workflow, StringComparison.Ordinal);
+        Assert.Contains("MACOS_ADHOC_SIGNING: 'true'", workflow, StringComparison.Ordinal);
+        Assert.Contains("dotnet publish", workflow, StringComparison.Ordinal);
+        Assert.Contains("./sign.sh", workflow, StringComparison.Ordinal);
+        Assert.Contains("./verify-app.sh", workflow, StringComparison.Ordinal);
+        Assert.Contains("flags=.*runtime", workflow, StringComparison.Ordinal);
+        Assert.Contains("create-dmg", workflow, StringComparison.Ordinal);
+        Assert.Contains("./verify-dmg-contents.sh", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("secrets.", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("notarytool", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("stapler", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("spctl", workflow, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void V112RecoverySeparatesControlPlaneFromImmutableReleaseSubject()
     {
         var workflow = File.ReadAllText(
