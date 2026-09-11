@@ -1,5 +1,21 @@
 # 更新日志
 
+## [1.1.6] - 2026-09-11
+
+### Bug Fixes
+
+- 修复 macOS `codesign` 修改内置 aria2c 后，运行时 checksum sidecar 仍保留签名前摘要，导致下载服务完整性检查失败并拒绝启动的问题。
+- macOS x64 与 arm64 现在都会在 nested signing 后刷新最终 aria2c 摘要，并对最终 App、挂载的 DMG 及 `ditto` 复制后的 App 重新验证签章、架构、checksum 与 RPC readiness。
+
+### Security
+
+- 保留原始 aria2 artifact 的 supply-chain SHA-256 验证，并将其与签名后最终交付字节的 runtime integrity domain 明确分离；缺失、格式错误、symlink 被替换或内容遭篡改时继续 fail closed。
+- Custom Aria 继续要求 `downkyi-secure-redirect-v2`；标准 aria2 与 Motrix 不再被含糊地表示为兼容端点，并会返回明确的安全能力诊断。
+
+### Release
+
+- 没有 Apple Developer ID 凭证时，macOS 套件继续使用经过完整原生 package、DMG、复制及 aria2 bootstrap 验证的 ad-hoc signing；本版本不宣称经过 Apple notarization 或具备 Gatekeeper trusted distribution。
+
 ## [1.1.5] - 2026-09-11
 
 ### Bug Fixes

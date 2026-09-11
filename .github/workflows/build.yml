@@ -163,16 +163,16 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - name: Validate exact v1.1.5 release subject
+      - name: Validate exact v1.1.6 release subject
         if: startsWith(github.ref, 'refs/tags/')
         shell: pwsh
-        run: ./script/validate-v115-release-subject.ps1 -SubjectDirectory . -ReleaseVersion '${{ github.ref_name }}' -SubjectSha '${{ github.sha }}'
+        run: ./script/validate-v116-release-subject.ps1 -SubjectDirectory . -ReleaseVersion '${{ github.ref_name }}' -SubjectSha '${{ github.sha }}'
       - name: Generate a changelog
         uses: orhun/git-cliff-action@v4
         id: git-cliff
         with:
           config: cliff.toml
-          args: -vv v1.1.3..HEAD --strip header
+          args: -vv v1.1.5..HEAD --strip header
         env:
           OUTPUT: CHANGELOG.md
       - name: Print the changelog
@@ -239,7 +239,7 @@ jobs:
         shell: pwsh
         run: |
           $package = "script/pupnet/output/DownKyi-${{ steps.version.outputs.content }}-1.win-${{ matrix.cpu }}.${{ matrix.kind }}"
-          ./script/validate-v115-release-package.ps1 `
+          ./script/validate-v116-release-package.ps1 `
             -PackagePath $package `
             -PackageKind "${{ matrix.kind }}" `
             -RuntimeIdentifier "win-${{ matrix.cpu }}" `
@@ -408,7 +408,7 @@ jobs:
           $package = Get-ChildItem "script/pupnet/output" -File -Filter "*${{ matrix.package-tail }}.${{ matrix.kind }}" |
             Select-Object -First 1
           if ($null -eq $package) { throw "Expected Linux package was not produced." }
-          ./script/validate-v115-release-package.ps1 `
+          ./script/validate-v116-release-package.ps1 `
             -PackagePath $package.FullName `
             -PackageKind "${{ matrix.kind }}" `
             -RuntimeIdentifier "linux-${{ matrix.cpu }}" `
@@ -490,7 +490,7 @@ jobs:
           if ($packages.Count -ne 1) { throw "Expected exactly one ARM64 ${{ matrix.kind }} package, found $($packages.Count)." }
           $expectedManifest = "candidate/expected-publish-manifest-linux-arm64.json"
           $approvedManifest = "candidate/publish-manifest-linux-arm64-${{ matrix.kind }}.json"
-          ./script/validate-v115-release-package.ps1 `
+          ./script/validate-v116-release-package.ps1 `
             -PackagePath $packages[0].FullName `
             -PackageKind "${{ matrix.kind }}" `
             -RuntimeIdentifier linux-arm64 `
