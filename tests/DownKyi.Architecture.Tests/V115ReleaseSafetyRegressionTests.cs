@@ -16,6 +16,8 @@ public sealed class V115ReleaseSafetyRegressionTests
             Path.Combine(RepositoryRoot, "script", "validate-v115-release-package.ps1"));
 
         Assert.Contains("validate-v115-release-subject.ps1", workflow, StringComparison.Ordinal);
+        Assert.Contains("args: -vv v1.1.3..HEAD --strip header", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("args: -vv --latest --strip header", workflow, StringComparison.Ordinal);
         Assert.Contains("resolve-v112-macos-trust.ps1", workflow, StringComparison.Ordinal);
         Assert.DoesNotContain("HAS_MACOS_SIGNING: ${{ secrets.", workflow, StringComparison.Ordinal);
         Assert.Equal(3, CountOccurrences(workflow, "validate-v115-release-package.ps1"));
