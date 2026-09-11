@@ -18,11 +18,9 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$expectedVersion = '1.1.6'
-$repositoryVersion = (Get-Content -LiteralPath (Join-Path $PSScriptRoot '../version.txt') -Raw).Trim()
-if ($repositoryVersion -cne $expectedVersion) {
-    throw "v1.1.6 package validation requires version.txt to remain exactly $expectedVersion."
-}
+$repositoryRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
+& (Join-Path $PSScriptRoot 'validate-release-version.ps1') -RepositoryRoot $repositoryRoot | Out-Null
+$expectedVersion = (Get-Content -LiteralPath (Join-Path $repositoryRoot 'version.txt') -Raw).Trim()
 $package = (Resolve-Path -LiteralPath $PackagePath).Path
 $expectedManifestPath = (Resolve-Path -LiteralPath $ExpectedManifestPath).Path
 $approvedManifestPath = [IO.Path]::GetFullPath($OutputPath)
@@ -167,7 +165,7 @@ function Assert-WindowsBinaryArchitecture {
         0x8664
     }
     else {
-        throw "Unsupported v1.1.6 Windows runtime identifier: $ExpectedRuntimeIdentifier"
+        throw "Unsupported Windows release runtime identifier: $ExpectedRuntimeIdentifier"
     }
 
     $stream = [IO.File]::OpenRead($Path)
@@ -332,7 +330,7 @@ try {
     }
     else {
         if ($RuntimeIdentifier -notin @('linux-x64', 'linux-arm64')) {
-            throw "Unsupported v1.1.6 Linux runtime identifier: $RuntimeIdentifier"
+            throw "Unsupported Linux release runtime identifier: $RuntimeIdentifier"
         }
 
         $expectedPackageArchitecture = if ($RuntimeIdentifier -ceq 'linux-x64') {

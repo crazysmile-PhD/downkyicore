@@ -4,23 +4,31 @@ using System.IO.Compression;
 
 namespace DownKyi.Architecture.Tests;
 
-public sealed class V116ReleaseSafetyRegressionTests
+public sealed class ReleaseSafetyRegressionTests
 {
     private static readonly string RepositoryRoot = FindRepositoryRoot();
+    private static readonly string RepositoryVersion =
+        File.ReadAllText(Path.Combine(RepositoryRoot, "version.txt")).Trim();
 
     [Fact]
     public void GenericReleaseWorkflowInvokesFailClosedReleaseGates()
     {
         var workflow = File.ReadAllText(Path.Combine(RepositoryRoot, ".github", "workflows", "build.yml"));
         var packageValidator = File.ReadAllText(
-            Path.Combine(RepositoryRoot, "script", "validate-v116-release-package.ps1"));
+            Path.Combine(RepositoryRoot, "script", "validate-release-package.ps1"));
 
-        Assert.Contains("validate-v116-release-subject.ps1", workflow, StringComparison.Ordinal);
-        Assert.Contains("args: -vv v1.1.5..HEAD --strip header", workflow, StringComparison.Ordinal);
+        Assert.Contains("validate-release-subject.ps1", workflow, StringComparison.Ordinal);
+        Assert.Contains("resolve-previous-release-tag.ps1", workflow, StringComparison.Ordinal);
+        Assert.Contains(
+            "args: -vv ${{ steps.previous-release.outputs.tag }}..HEAD --strip header",
+            workflow,
+            StringComparison.Ordinal);
         Assert.DoesNotContain("args: -vv --latest --strip header", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain($"v{RepositoryVersion}", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain($"'{RepositoryVersion}'", packageValidator, StringComparison.Ordinal);
         Assert.Contains("resolve-v112-macos-trust.ps1", workflow, StringComparison.Ordinal);
         Assert.DoesNotContain("HAS_MACOS_SIGNING: ${{ secrets.", workflow, StringComparison.Ordinal);
-        Assert.Equal(3, CountOccurrences(workflow, "validate-v116-release-package.ps1"));
+        Assert.Equal(3, CountOccurrences(workflow, "validate-release-package.ps1"));
         Assert.Equal(3, CountOccurrences(workflow, "-ExpectedManifestPath"));
         Assert.Contains("verify-dmg-contents.sh DownKyi-", workflow, StringComparison.Ordinal);
         Assert.Contains("ubuntu-24.04-arm", workflow, StringComparison.Ordinal);
@@ -37,6 +45,54 @@ public sealed class V116ReleaseSafetyRegressionTests
             packageValidator,
             StringComparison.Ordinal);
         Assert.DoesNotContain("& 7z", packageValidator, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PreviousReleaseTagResolutionUsesAnnotatedFirstParentSemVerHistory()
+    {
+        var root = CreateTemporaryDirectory();
+        var repository = Path.Combine(root, "repository");
+        var resolver = Path.Combine(RepositoryRoot, "script", "resolve-previous-release-tag.ps1");
+
+        try
+        {
+            RunRequired("git", ["init", "-b", "main", repository], root);
+            RunRequired("git", ["config", "user.name", "Release Fixture"], repository);
+            RunRequired("git", ["config", "user.email", "release-fixture@example.invalid"], repository);
+            File.WriteAllText(Path.Combine(repository, "version.txt"), "2.0.0");
+            File.WriteAllText(Path.Combine(repository, "fixture.txt"), "previous release");
+            RunRequired("git", ["add", "version.txt", "fixture.txt"], repository);
+            RunRequired("git", ["commit", "-m", "previous release fixture"], repository);
+            RunRequired("git", ["tag", "-a", "v1.8.0", "-m", "v1.8.0"], repository);
+
+            RunRequired("git", ["checkout", "-b", "tagged-side-branch"], repository);
+            File.WriteAllText(Path.Combine(repository, "side.txt"), "merged branch tag");
+            RunRequired("git", ["add", "side.txt"], repository);
+            RunRequired("git", ["commit", "-m", "tagged side branch fixture"], repository);
+            RunRequired("git", ["tag", "-a", "v1.9.5", "-m", "v1.9.5"], repository);
+            RunRequired("git", ["checkout", "main"], repository);
+
+            File.AppendAllText(Path.Combine(repository, "fixture.txt"), "\nintermediate");
+            RunRequired("git", ["add", "fixture.txt"], repository);
+            RunRequired("git", ["commit", "-m", "intermediate fixture"], repository);
+            RunRequired("git", ["tag", "v1.9.0"], repository);
+            RunRequired("git", ["tag", "-a", "release-candidate", "-m", "release-candidate"], repository);
+            RunRequired("git", ["merge", "--no-ff", "tagged-side-branch", "-m", "merge tagged side branch fixture"], repository);
+
+            File.AppendAllText(Path.Combine(repository, "fixture.txt"), "\ncurrent release");
+            RunRequired("git", ["add", "fixture.txt"], repository);
+            RunRequired("git", ["commit", "-m", "current release fixture"], repository);
+            RunRequired("git", ["tag", "-a", "v2.0.0", "-m", "v2.0.0"], repository);
+
+            var result = RunPowerShell(resolver, ["-RepositoryRoot", repository], repository);
+
+            Assert.Equal(0, result.ExitCode);
+            Assert.Equal("v1.8.0", result.StandardOutput.Trim());
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(root);
+        }
     }
 
     [Fact]
@@ -163,7 +219,8 @@ public sealed class V116ReleaseSafetyRegressionTests
         var root = CreateTemporaryDirectory();
         var remote = Path.Combine(root, "remote.git");
         var repository = Path.Combine(root, "repository");
-        var validator = Path.Combine(RepositoryRoot, "script", "validate-v116-release-subject.ps1");
+        var validator = Path.Combine(RepositoryRoot, "script", "validate-release-subject.ps1");
+        var releaseTag = $"v{RepositoryVersion}";
 
         try
         {
@@ -172,44 +229,44 @@ public sealed class V116ReleaseSafetyRegressionTests
             RunRequired("git", ["config", "user.name", "Release Fixture"], repository);
             RunRequired("git", ["config", "user.email", "release-fixture@example.invalid"], repository);
             File.WriteAllText(Path.Combine(repository, "fixture.txt"), "main");
-            File.WriteAllText(Path.Combine(repository, "version.txt"), "1.1.6");
+            File.WriteAllText(Path.Combine(repository, "version.txt"), RepositoryVersion);
             RunRequired("git", ["add", "fixture.txt", "version.txt"], repository);
             RunRequired("git", ["commit", "-m", "main fixture"], repository);
             RunRequired("git", ["remote", "add", "origin", remote], repository);
             RunRequired("git", ["push", "-u", "origin", "main"], repository);
             var mainCommit = RunRequired("git", ["rev-parse", "HEAD"], repository).StandardOutput.Trim();
 
-            RunRequired("git", ["tag", "-a", "v1.1.6", "-m", "v1.1.6"], repository);
+            RunRequired("git", ["tag", "-a", releaseTag, "-m", releaseTag], repository);
             var valid = RunPowerShell(
                 validator,
-                ["-SubjectDirectory", repository, "-ReleaseVersion", "v1.1.6", "-SubjectSha", mainCommit],
+                ["-SubjectDirectory", repository, "-ReleaseVersion", releaseTag, "-SubjectSha", mainCommit],
                 repository);
             Assert.Equal(0, valid.ExitCode);
 
-            RunRequired("git", ["tag", "-d", "v1.1.6"], repository);
-            RunRequired("git", ["tag", "v1.1.6"], repository);
+            RunRequired("git", ["tag", "-d", releaseTag], repository);
+            RunRequired("git", ["tag", releaseTag], repository);
             var lightweight = RunPowerShell(
                 validator,
-                ["-SubjectDirectory", repository, "-ReleaseVersion", "v1.1.6", "-SubjectSha", mainCommit],
+                ["-SubjectDirectory", repository, "-ReleaseVersion", releaseTag, "-SubjectSha", mainCommit],
                 repository);
             Assert.NotEqual(0, lightweight.ExitCode);
             Assert.Contains("annotated tag", NormalizeDiagnostic(lightweight), StringComparison.OrdinalIgnoreCase);
 
-            RunRequired("git", ["tag", "-d", "v1.1.6"], repository);
-            File.WriteAllText(Path.Combine(repository, "version.txt"), "1.1.3");
+            RunRequired("git", ["tag", "-d", releaseTag], repository);
+            File.WriteAllText(Path.Combine(repository, "version.txt"), "0.0.0");
             RunRequired("git", ["add", "version.txt"], repository);
             RunRequired("git", ["commit", "-m", "mismatched version fixture"], repository);
             RunRequired("git", ["push", "origin", "main"], repository);
             var mismatchedMainCommit = RunRequired("git", ["rev-parse", "HEAD"], repository).StandardOutput.Trim();
-            RunRequired("git", ["tag", "-a", "v1.1.6", "-m", "v1.1.6"], repository);
+            RunRequired("git", ["tag", "-a", releaseTag, "-m", releaseTag], repository);
             var mismatchedVersion = RunPowerShell(
                 validator,
-                ["-SubjectDirectory", repository, "-ReleaseVersion", "v1.1.6", "-SubjectSha", mismatchedMainCommit],
+                ["-SubjectDirectory", repository, "-ReleaseVersion", releaseTag, "-SubjectSha", mismatchedMainCommit],
                 repository);
             Assert.NotEqual(0, mismatchedVersion.ExitCode);
-            Assert.Contains("version.txt is 1.1.3", NormalizeDiagnostic(mismatchedVersion), StringComparison.Ordinal);
+            Assert.Contains("does not match version.txt", NormalizeDiagnostic(mismatchedVersion), StringComparison.Ordinal);
 
-            File.WriteAllText(Path.Combine(repository, "version.txt"), "1.1.6");
+            File.WriteAllText(Path.Combine(repository, "version.txt"), RepositoryVersion);
             RunRequired("git", ["add", "version.txt"], repository);
             RunRequired("git", ["commit", "-m", "restore release version fixture"], repository);
             RunRequired("git", ["push", "origin", "main"], repository);
@@ -219,15 +276,15 @@ public sealed class V116ReleaseSafetyRegressionTests
             RunRequired("git", ["add", "fixture.txt"], repository);
             RunRequired("git", ["commit", "-m", "release-only fixture"], repository);
             var releaseOnlyCommit = RunRequired("git", ["rev-parse", "HEAD"], repository).StandardOutput.Trim();
-            RunRequired("git", ["tag", "-f", "-a", "v1.1.6", "-m", "v1.1.6"], repository);
+            RunRequired("git", ["tag", "-f", "-a", releaseTag, "-m", releaseTag], repository);
             var remoteMain = RunRequired("git", ["rev-parse", "refs/remotes/origin/main"], repository).StandardOutput.Trim();
             Assert.NotEqual(remoteMain, releaseOnlyCommit);
-            Assert.Equal("tag", RunRequired("git", ["cat-file", "-t", "v1.1.6"], repository).StandardOutput.Trim());
-            Assert.Equal(releaseOnlyCommit, RunRequired("git", ["rev-list", "-n", "1", "v1.1.6"], repository).StandardOutput.Trim());
-            Assert.Equal("1.1.6", File.ReadAllText(Path.Combine(repository, "version.txt")));
+            Assert.Equal("tag", RunRequired("git", ["cat-file", "-t", releaseTag], repository).StandardOutput.Trim());
+            Assert.Equal(releaseOnlyCommit, RunRequired("git", ["rev-list", "-n", "1", releaseTag], repository).StandardOutput.Trim());
+            Assert.Equal(RepositoryVersion, File.ReadAllText(Path.Combine(repository, "version.txt")));
             var nonMain = RunPowerShell(
                 validator,
-                ["-SubjectDirectory", repository, "-ReleaseVersion", "v1.1.6", "-SubjectSha", releaseOnlyCommit],
+                ["-SubjectDirectory", repository, "-ReleaseVersion", releaseTag, "-SubjectSha", releaseOnlyCommit],
                 repository);
             Assert.NotEqual(0, nonMain.ExitCode);
         }
@@ -271,11 +328,11 @@ public sealed class V116ReleaseSafetyRegressionTests
         var runtime = Path.Combine(root, "runtime");
         Directory.CreateDirectory(Path.Combine(runtime, "aria2"));
         Directory.CreateDirectory(Path.Combine(runtime, "ffmpeg"));
-        var validator = Path.Combine(RepositoryRoot, "script", "validate-v116-release-package.ps1");
+        var validator = Path.Combine(RepositoryRoot, "script", "validate-release-package.ps1");
 
         try
         {
-            File.Copy(typeof(V116ReleaseSafetyRegressionTests).Assembly.Location, Path.Combine(runtime, "DownKyi.dll"));
+            File.Copy(typeof(ReleaseSafetyRegressionTests).Assembly.Location, Path.Combine(runtime, "DownKyi.dll"));
             WritePeFile(Path.Combine(runtime, "DownKyi.exe"), 0x8664);
             var aria = Path.Combine(runtime, "aria2", "aria2c.exe");
             WritePeFile(aria, 0x8664);
@@ -294,7 +351,7 @@ public sealed class V116ReleaseSafetyRegressionTests
                 [
                     "-PublishDirectory", runtime,
                     "-RuntimeIdentifier", "win-x64",
-                    "-ExpectedVersion", "1.1.6",
+                    "-ExpectedVersion", RepositoryVersion,
                     "-OutputPath", expectedManifest
                 ],
                 root);
@@ -434,7 +491,7 @@ public sealed class V116ReleaseSafetyRegressionTests
         {
             var package = CreateLinuxDebPackage(root, "amd64", includeExecuteBits: false);
             var result = RunPowerShell(
-                Path.Combine(RepositoryRoot, "script", "validate-v116-release-package.ps1"),
+                Path.Combine(RepositoryRoot, "script", "validate-release-package.ps1"),
                 [
                     "-PackagePath", package,
                     "-PackageKind", "deb",
@@ -464,7 +521,7 @@ public sealed class V116ReleaseSafetyRegressionTests
         {
             var package = CreateLinuxDebPackage(root, "amd64", includeExecuteBits: true);
             var result = RunPowerShell(
-                Path.Combine(RepositoryRoot, "script", "validate-v116-release-package.ps1"),
+                Path.Combine(RepositoryRoot, "script", "validate-release-package.ps1"),
                 [
                     "-PackagePath", package,
                     "-PackageKind", "deb",
@@ -498,7 +555,7 @@ public sealed class V116ReleaseSafetyRegressionTests
                 includeExecuteBits: true,
                 ownerOnlyExecute: true);
             var result = RunPowerShell(
-                Path.Combine(RepositoryRoot, "script", "validate-v116-release-package.ps1"),
+                Path.Combine(RepositoryRoot, "script", "validate-release-package.ps1"),
                 [
                     "-PackagePath", package,
                     "-PackageKind", "deb",
@@ -532,7 +589,7 @@ public sealed class V116ReleaseSafetyRegressionTests
                 includeExecuteBits: true,
                 crossFormatExecutable: true);
             var result = RunPowerShell(
-                Path.Combine(RepositoryRoot, "script", "validate-v116-release-package.ps1"),
+                Path.Combine(RepositoryRoot, "script", "validate-release-package.ps1"),
                 [
                     "-PackagePath", package,
                     "-PackageKind", "deb",
@@ -566,7 +623,7 @@ public sealed class V116ReleaseSafetyRegressionTests
                 includeExecuteBits: true,
                 mixedArchitectureLibrary: true);
             var result = RunPowerShell(
-                Path.Combine(RepositoryRoot, "script", "validate-v116-release-package.ps1"),
+                Path.Combine(RepositoryRoot, "script", "validate-release-package.ps1"),
                 [
                     "-PackagePath", package,
                     "-PackageKind", "deb",
@@ -595,7 +652,7 @@ public sealed class V116ReleaseSafetyRegressionTests
         var root = CreateTemporaryDirectory();
         try
         {
-            var validator = Path.Combine(RepositoryRoot, "script", "validate-v116-release-package.ps1");
+            var validator = Path.Combine(RepositoryRoot, "script", "validate-release-package.ps1");
             var brokenAppRunFixture = CreateLinuxAppImageFixture(
                 Path.Combine(root, "broken-app-run"),
                 AppRunFixtureKind.RegularExitsImmediately);
@@ -723,7 +780,7 @@ public sealed class V116ReleaseSafetyRegressionTests
         var root = CreateTemporaryDirectory();
         try
         {
-            var validator = Path.Combine(RepositoryRoot, "script", "validate-v116-release-package.ps1");
+            var validator = Path.Combine(RepositoryRoot, "script", "validate-release-package.ps1");
             var debPackage = CreateLinuxDebPackage(
                 root,
                 "amd64",
@@ -740,7 +797,7 @@ public sealed class V116ReleaseSafetyRegressionTests
                 ],
                 root);
             Assert.NotEqual(0, debResult.ExitCode);
-            Assert.Contains("package version 1.1.2-1 does not match 1.1.6-1", NormalizeDiagnostic(debResult), StringComparison.Ordinal);
+            Assert.Contains($"package version 1.1.2-1 does not match {RepositoryVersion}-1", NormalizeDiagnostic(debResult), StringComparison.Ordinal);
 
             var rpmPackage = CreateLinuxRpmPackage(root, "x86_64", "1.1.2");
             var rpmResult = RunPowerShell(
@@ -754,7 +811,7 @@ public sealed class V116ReleaseSafetyRegressionTests
                 ],
                 root);
             Assert.NotEqual(0, rpmResult.ExitCode);
-            Assert.Contains("package EVR 0:1.1.2-1 does not match 0:1.1.6-1", NormalizeDiagnostic(rpmResult), StringComparison.Ordinal);
+            Assert.Contains($"package EVR 0:1.1.2-1 does not match 0:{RepositoryVersion}-1", NormalizeDiagnostic(rpmResult), StringComparison.Ordinal);
         }
         finally
         {
@@ -771,8 +828,8 @@ public sealed class V116ReleaseSafetyRegressionTests
         var root = CreateTemporaryDirectory();
         try
         {
-            var validator = Path.Combine(RepositoryRoot, "script", "validate-v116-release-package.ps1");
-            var releasePackage = CreateLinuxRpmPackage(root, "x86_64", "1.1.6", release: "2");
+            var validator = Path.Combine(RepositoryRoot, "script", "validate-release-package.ps1");
+            var releasePackage = CreateLinuxRpmPackage(root, "x86_64", RepositoryVersion, release: "2");
             var releaseResult = RunPowerShell(
                 validator,
                 [
@@ -784,9 +841,9 @@ public sealed class V116ReleaseSafetyRegressionTests
                 ],
                 root);
             Assert.NotEqual(0, releaseResult.ExitCode);
-            Assert.Contains("package EVR 0:1.1.6-2 does not match 0:1.1.6-1", NormalizeDiagnostic(releaseResult), StringComparison.Ordinal);
+            Assert.Contains($"package EVR 0:{RepositoryVersion}-2 does not match 0:{RepositoryVersion}-1", NormalizeDiagnostic(releaseResult), StringComparison.Ordinal);
 
-            var epochPackage = CreateLinuxRpmPackage(root, "x86_64", "1.1.6", epoch: 1);
+            var epochPackage = CreateLinuxRpmPackage(root, "x86_64", RepositoryVersion, epoch: 1);
             var epochResult = RunPowerShell(
                 validator,
                 [
@@ -798,7 +855,7 @@ public sealed class V116ReleaseSafetyRegressionTests
                 ],
                 root);
             Assert.NotEqual(0, epochResult.ExitCode);
-            Assert.Contains("package EVR 1:1.1.6-1 does not match 0:1.1.6-1", NormalizeDiagnostic(epochResult), StringComparison.Ordinal);
+            Assert.Contains($"package EVR 1:{RepositoryVersion}-1 does not match 0:{RepositoryVersion}-1", NormalizeDiagnostic(epochResult), StringComparison.Ordinal);
         }
         finally
         {
@@ -815,7 +872,7 @@ public sealed class V116ReleaseSafetyRegressionTests
         var root = CreateTemporaryDirectory();
         try
         {
-            var validator = Path.Combine(RepositoryRoot, "script", "validate-v116-release-package.ps1");
+            var validator = Path.Combine(RepositoryRoot, "script", "validate-release-package.ps1");
             var debPackage = CreateLinuxDebPackage(
                 root,
                 "amd64",
@@ -834,7 +891,7 @@ public sealed class V116ReleaseSafetyRegressionTests
             Assert.NotEqual(0, debResult.ExitCode);
             Assert.Contains("package identity downkyi-fixture does not match downkyi", NormalizeDiagnostic(debResult), StringComparison.Ordinal);
 
-            var rpmPackage = CreateLinuxRpmPackage(root, "x86_64", "1.1.6", "downkyi-fixture");
+            var rpmPackage = CreateLinuxRpmPackage(root, "x86_64", RepositoryVersion, "downkyi-fixture");
             var rpmResult = RunPowerShell(
                 validator,
                 [
@@ -895,11 +952,12 @@ public sealed class V116ReleaseSafetyRegressionTests
         string architecture,
         bool includeExecuteBits,
         bool ownerOnlyExecute = false,
-        string version = "1.1.6",
+        string? version = null,
         string packageName = "downkyi",
         bool crossFormatExecutable = false,
         bool mixedArchitectureLibrary = false)
     {
+        version ??= RepositoryVersion;
         var packageRoot = Path.Combine(root, $"deb-{architecture}-{includeExecuteBits}-{ownerOnlyExecute}-{version}-{packageName}");
         var controlDirectory = Path.Combine(packageRoot, "DEBIAN");
         var runtime = Path.Combine(packageRoot, "usr", "lib", "downkyi");
@@ -907,7 +965,7 @@ public sealed class V116ReleaseSafetyRegressionTests
         Directory.CreateDirectory(Path.Combine(runtime, "aria2"));
         Directory.CreateDirectory(Path.Combine(runtime, "ffmpeg"));
 
-        File.Copy(typeof(V116ReleaseSafetyRegressionTests).Assembly.Location, Path.Combine(runtime, "DownKyi.dll"));
+        File.Copy(typeof(ReleaseSafetyRegressionTests).Assembly.Location, Path.Combine(runtime, "DownKyi.dll"));
         var executables = new[]
         {
             Path.Combine(runtime, "DownKyi"),
@@ -980,7 +1038,7 @@ public sealed class V116ReleaseSafetyRegressionTests
         Directory.CreateDirectory(Path.Combine(runtime, "aria2"));
         Directory.CreateDirectory(Path.Combine(runtime, "ffmpeg"));
 
-        File.Copy(typeof(V116ReleaseSafetyRegressionTests).Assembly.Location, Path.Combine(runtime, "DownKyi.dll"));
+        File.Copy(typeof(ReleaseSafetyRegressionTests).Assembly.Location, Path.Combine(runtime, "DownKyi.dll"));
         var executables = new[]
         {
             Path.Combine(runtime, "DownKyi"),
@@ -1055,7 +1113,7 @@ public sealed class V116ReleaseSafetyRegressionTests
         Directory.CreateDirectory(Path.Combine(runtime, "aria2"));
         Directory.CreateDirectory(Path.Combine(runtime, "ffmpeg"));
 
-        File.Copy(typeof(V116ReleaseSafetyRegressionTests).Assembly.Location, Path.Combine(runtime, "DownKyi.dll"));
+        File.Copy(typeof(ReleaseSafetyRegressionTests).Assembly.Location, Path.Combine(runtime, "DownKyi.dll"));
         var downKyiSource = Path.Combine(root, "downkyi-fixture.c");
         File.WriteAllText(
             downKyiSource,
@@ -1160,7 +1218,7 @@ public sealed class V116ReleaseSafetyRegressionTests
             [
                 "-PublishDirectory", runtime,
                 "-RuntimeIdentifier", runtimeIdentifier,
-                "-ExpectedVersion", "1.1.6",
+                "-ExpectedVersion", RepositoryVersion,
                 "-OutputPath", outputPath
             ],
             workingDirectory);

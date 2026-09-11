@@ -9,14 +9,11 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$expectedReleaseVersion = 'v1.1.6'
-$expectedApplicationVersion = '1.1.6'
-
-if ($ReleaseVersion -cne $expectedReleaseVersion) {
-    throw "v1.1.6 release validation requires exactly $expectedReleaseVersion."
-}
-
 $subject = (Resolve-Path -LiteralPath $SubjectDirectory).Path
+$versionValidator = Join-Path $PSScriptRoot 'validate-release-version.ps1'
+& $versionValidator -RepositoryRoot $subject -GitRef "refs/tags/$ReleaseVersion" | Out-Null
+$expectedApplicationVersion = (Get-Content -LiteralPath (Join-Path $subject 'version.txt') -Raw).Trim()
+$expectedReleaseVersion = "v$expectedApplicationVersion"
 
 function Invoke-SubjectGit {
     param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments)
@@ -29,7 +26,7 @@ function Invoke-SubjectGit {
 
 $head = Invoke-SubjectGit rev-parse HEAD
 if (-not [string]::Equals($head, $SubjectSha, [StringComparison]::OrdinalIgnoreCase)) {
-    throw "v1.1.6 release subject HEAD is $head; expected $SubjectSha."
+    throw "Release subject HEAD is $head; expected $SubjectSha."
 }
 
 $tagType = Invoke-SubjectGit cat-file -t $expectedReleaseVersion
@@ -42,20 +39,15 @@ if (-not [string]::Equals($tagCommit, $SubjectSha, [StringComparison]::OrdinalIg
     throw "$expectedReleaseVersion resolves to $tagCommit; expected $SubjectSha."
 }
 
-$applicationVersion = (Get-Content -LiteralPath (Join-Path $subject 'version.txt') -Raw).Trim()
-if ($applicationVersion -cne $expectedApplicationVersion) {
-    throw "v1.1.6 release subject version.txt is $applicationVersion; expected $expectedApplicationVersion."
-}
-
 $trackedChanges = Invoke-SubjectGit status --porcelain --untracked-files=no
 if ($trackedChanges) {
-    throw "v1.1.6 release subject contains tracked changes:`n$trackedChanges"
+    throw "Release subject contains tracked changes:`n$trackedChanges"
 }
 
 Invoke-SubjectGit fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main' | Out-Null
 $mainCommit = Invoke-SubjectGit rev-parse 'refs/remotes/origin/main^{commit}'
 if (-not [string]::Equals($SubjectSha, $mainCommit, [StringComparison]::OrdinalIgnoreCase)) {
-    throw "v1.1.6 release subject $SubjectSha does not equal current main $mainCommit."
+    throw "Release subject $SubjectSha does not equal current main $mainCommit."
 }
 
-Write-Output "Validated exact v1.1.6 release subject at $SubjectSha."
+Write-Output "Validated exact $expectedReleaseVersion release subject at $SubjectSha."
