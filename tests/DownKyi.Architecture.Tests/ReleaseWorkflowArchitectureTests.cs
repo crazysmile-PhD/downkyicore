@@ -413,6 +413,10 @@ public sealed class ReleaseWorkflowArchitectureTests
             Path.Combine(RepositoryRoot, "script", "macos", "verify-dmg.sh"));
         var verifyDmgContentsScript = File.ReadAllText(
             Path.Combine(RepositoryRoot, "script", "macos", "verify-dmg-contents.sh"));
+        var ariaIntegrityScript = File.ReadAllText(
+            Path.Combine(RepositoryRoot, "script", "macos", "aria2-runtime-integrity.sh"));
+        var ariaReadinessScript = File.ReadAllText(
+            Path.Combine(RepositoryRoot, "script", "macos", "verify-aria2-runtime-readiness.sh"));
 
         Assert.DoesNotContain(
             "MACOS_SIGNING_REQUIRED",
@@ -437,6 +441,7 @@ public sealed class ReleaseWorkflowArchitectureTests
             workflow,
             "Package app",
             "Validate packaged runtime",
+            "Verify pre-sign aria2 supply-chain boundary",
             "Sign app",
             "Verify app signature",
             "Notarize app",
@@ -455,6 +460,13 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.Contains("find \"$APP_NAME/Contents\" -type f", signScript, StringComparison.Ordinal);
         Assert.Contains("is_signable_app_file \"$file\"", signScript, StringComparison.Ordinal);
         Assert.Contains("codesign_app_path \"$file\"", signScript, StringComparison.Ordinal);
+        AssertInOrder(
+            signScript,
+            "aria2-runtime-integrity.sh\" verify \"$APP_NAME\"",
+            "codesign_app_path \"$file\"",
+            "aria2-runtime-integrity.sh\" refresh \"$APP_NAME\"",
+            "codesign_app_path \"$MAIN_EXECUTABLE\"",
+            "codesign_app_path \"$APP_NAME\"");
         Assert.Contains("Print :CFBundleExecutable", signScript, StringComparison.Ordinal);
         Assert.Contains("codesign_app_path \"$MAIN_EXECUTABLE\"", signScript, StringComparison.Ordinal);
         Assert.Contains("codesign_app_path \"$APP_NAME\"", signScript, StringComparison.Ordinal);
@@ -476,7 +488,21 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.Contains("spctl --assess --type open --context context:primary-signature", verifyDmgScript, StringComparison.Ordinal);
         Assert.Contains("/usr/bin/ditto \"$APP_PATH\" \"$COPIED_APP_PATH\"", verifyDmgContentsScript, StringComparison.Ordinal);
         Assert.Contains("verify-app.sh\" \"$COPIED_APP_PATH\"", verifyDmgContentsScript, StringComparison.Ordinal);
+        Assert.Equal(2, CountOccurrences(verifyDmgContentsScript, "aria2-runtime-integrity.sh\" verify"));
+        Assert.Equal(2, CountOccurrences(verifyDmgContentsScript, "verify-aria2-runtime-readiness.sh"));
         Assert.Contains("verify-app-launch.sh\" \"$COPIED_APP_PATH\"", verifyDmgContentsScript, StringComparison.Ordinal);
+
+        Assert.Contains("runtime checksum path must remain a symlink", ariaIntegrityScript, StringComparison.Ordinal);
+        Assert.Contains("Contents/_CodeSignature/CodeResources", ariaIntegrityScript, StringComparison.Ordinal);
+        Assert.Contains("refusing to modify the runtime checksum after the outer app signature is sealed", ariaIntegrityScript, StringComparison.Ordinal);
+        Assert.Contains("lipo -archs", ariaIntegrityScript, StringComparison.Ordinal);
+        Assert.Contains("aria2.getVersion", ariaReadinessScript, StringComparison.Ordinal);
+        Assert.Contains("downkyi-secure-redirect-v2", ariaReadinessScript, StringComparison.Ordinal);
+        Assert.Contains("isinstance(features, list)", ariaReadinessScript, StringComparison.Ordinal);
+        Assert.Contains("--help=#all", ariaReadinessScript, StringComparison.Ordinal);
+        Assert.Contains("\"$PROBE_ROOT/dht.dat\"", ariaReadinessScript, StringComparison.Ordinal);
+        Assert.Contains("\"$PROBE_ROOT/dht6.dat\"", ariaReadinessScript, StringComparison.Ordinal);
+        Assert.Contains("aria2.shutdown", ariaReadinessScript, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -492,6 +518,7 @@ public sealed class ReleaseWorkflowArchitectureTests
                      "Run macOS packaging regressions",
                      "Build ${{ matrix.cpu }}",
                      "Package app",
+                     "Verify pre-sign aria2 supply-chain boundary",
                      "Sign app",
                      "Verify app signature",
                      "Create DMG",
@@ -518,7 +545,7 @@ public sealed class ReleaseWorkflowArchitectureTests
     }
 
     [Fact]
-    public void MacAdHocPackageWorkflowUsesMacOs26Arm64WithoutAppleCredentials()
+    public void MacAdHocPackageWorkflowCoversBothRidsWithoutAppleCredentials()
     {
         var workflow = File.ReadAllText(
             Path.Combine(RepositoryRoot, ".github", "workflows", "macos-adhoc-package.yml"));
@@ -530,7 +557,11 @@ public sealed class ReleaseWorkflowArchitectureTests
             .Select(line => line.Trim()[2..].Trim('\'', '"'))
             .ToHashSet(StringComparer.Ordinal);
 
-        Assert.Contains("runs-on: macos-26", workflow, StringComparison.Ordinal);
+        Assert.Contains("runs-on: ${{ matrix.os }}", workflow, StringComparison.Ordinal);
+        Assert.Contains("os: macos-26", workflow, StringComparison.Ordinal);
+        Assert.Contains("os: macos-15-intel", workflow, StringComparison.Ordinal);
+        Assert.Contains("runtime: osx-x64", workflow, StringComparison.Ordinal);
+        Assert.Contains("runtime: osx-arm64", workflow, StringComparison.Ordinal);
         Assert.Contains("MACOS_ADHOC_SIGNING: 'true'", workflow, StringComparison.Ordinal);
         foreach (var packageInput in new[]
                  {
@@ -551,6 +582,7 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.Contains("dotnet publish", workflow, StringComparison.Ordinal);
         Assert.Contains("./sign.sh", workflow, StringComparison.Ordinal);
         Assert.Contains("./verify-app.sh", workflow, StringComparison.Ordinal);
+        Assert.Contains("./aria2-runtime-integrity.sh verify", workflow, StringComparison.Ordinal);
         Assert.Contains("flags=.*runtime", workflow, StringComparison.Ordinal);
         Assert.Contains("create-dmg", workflow, StringComparison.Ordinal);
         Assert.Contains("./verify-dmg-contents.sh", workflow, StringComparison.Ordinal);

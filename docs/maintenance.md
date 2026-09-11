@@ -238,7 +238,10 @@ Release packaging downloads aria2 and FFmpeg from the scripts in `script/`.
   `--stop-with-process` on every OS and also joins a kill-on-close Windows Job
   Object, so an abrupt App termination cannot leave a local child running.
   Custom remote aria2 endpoints are not started or terminated by this owner;
-  non-loopback RPC requires HTTPS and does not follow redirects.
+  non-loopback RPC requires HTTPS and does not follow redirects. Custom Aria is
+  compatible only with endpoints whose `aria2.getVersion().enabledFeatures`
+  includes `downkyi-secure-redirect-v2`; generic aria2 and Motrix remain
+  unsupported because they cannot prove the required redirect protection.
 - aria2 task headers are per-transfer. Cookie can be attached only to an exact
   HTTPS `bilibili.com` host or subdomain. The actual patched transfer engine
   rejects scheme downgrade and credential-bearing cross-origin redirects before

@@ -289,6 +289,85 @@ public sealed class AriaSecurityTests
     }
 
     [Fact]
+    public async Task GenericCustomAriaIsRejectedWithActionableCompatibilityDiagnostic()
+    {
+        var directory = Path.Combine(
+            Path.GetTempPath(),
+            $"downkyi-custom-aria-incompatible-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            using var settings = new SettingsStore(Path.Combine(directory, "settings.json"));
+            var client = new AriaClient(
+                "https://aria.example",
+                6800,
+                string.Empty,
+                (_, _, _) => Task.FromResult<string?>(
+                    "{\"id\":\"test\",\"jsonrpc\":\"2.0\",\"result\":{\"version\":\"1.37.0\",\"enabledFeatures\":[]}}"));
+            using var lifecycle = new Aria2RuntimeLifecycle(
+                settings.Current.Network,
+                client,
+                new DownloadDiagnosticLogger(
+                    NullLogger<DownloadDiagnosticLogger>.Instance),
+                new AriaServer(NullLoggerFactory.Instance),
+                NullLogger<Aria2RuntimeLifecycle>.Instance,
+                ownsAriaServer: false,
+                localEndpoint: null);
+
+            var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => lifecycle.StartAsync(TestContext.Current.CancellationToken));
+
+            Assert.Contains("aria2.getVersion().enabledFeatures", exception.Message, StringComparison.Ordinal);
+            Assert.Contains("downkyi-secure-redirect-v2", exception.Message, StringComparison.Ordinal);
+            Assert.Contains("Motrix", exception.Message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task DownKyiCompatibleCustomAriaPassesCapabilityProbe()
+    {
+        var directory = Path.Combine(
+            Path.GetTempPath(),
+            $"downkyi-custom-aria-compatible-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            using var settings = new SettingsStore(Path.Combine(directory, "settings.json"));
+            var client = new AriaClient(
+                "https://aria.example",
+                6800,
+                string.Empty,
+                (_, _, _) => Task.FromResult<string?>(
+                    "{\"id\":\"test\",\"jsonrpc\":\"2.0\",\"result\":{\"version\":\"1.37.0\",\"enabledFeatures\":[\"downkyi-secure-redirect-v2\"]}}"));
+            using var lifecycle = new Aria2RuntimeLifecycle(
+                settings.Current.Network,
+                client,
+                new DownloadDiagnosticLogger(
+                    NullLogger<DownloadDiagnosticLogger>.Instance),
+                new AriaServer(NullLoggerFactory.Instance),
+                NullLogger<Aria2RuntimeLifecycle>.Instance,
+                ownsAriaServer: false,
+                localEndpoint: null);
+
+            await lifecycle.StartAsync(TestContext.Current.CancellationToken);
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public async Task PausedGidRefreshesCurrentCredentialsBeforeUnpause()
     {
         var requests = new List<JObject>();

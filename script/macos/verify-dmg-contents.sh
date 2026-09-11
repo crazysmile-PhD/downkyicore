@@ -38,6 +38,8 @@ fi
 "$SCRIPT_DIR/verify-runtime-architecture.sh" "$APP_PATH" "$EXPECTED_RUNTIME_IDENTIFIER"
 
 "$SCRIPT_DIR/verify-app.sh" "$APP_PATH"
+/bin/bash "$SCRIPT_DIR/aria2-runtime-integrity.sh" verify "$APP_PATH" "$EXPECTED_RUNTIME_IDENTIFIER"
+/bin/bash "$SCRIPT_DIR/verify-aria2-runtime-readiness.sh" "$APP_PATH" "$EXPECTED_RUNTIME_IDENTIFIER"
 "$SCRIPT_DIR/verify-app-launch.sh" "$APP_PATH"
 
 COPIED_APP_PATH="$COPY_ROOT/$(basename "$APP_PATH")"
@@ -45,4 +47,6 @@ COPIED_APP_PATH="$COPY_ROOT/$(basename "$APP_PATH")"
 
 "$SCRIPT_DIR/verify-runtime-architecture.sh" "$COPIED_APP_PATH" "$EXPECTED_RUNTIME_IDENTIFIER"
 "$SCRIPT_DIR/verify-app.sh" "$COPIED_APP_PATH"
+/bin/bash "$SCRIPT_DIR/aria2-runtime-integrity.sh" verify "$COPIED_APP_PATH" "$EXPECTED_RUNTIME_IDENTIFIER"
+/bin/bash "$SCRIPT_DIR/verify-aria2-runtime-readiness.sh" "$COPIED_APP_PATH" "$EXPECTED_RUNTIME_IDENTIFIER"
 "$SCRIPT_DIR/verify-app-launch.sh" "$COPIED_APP_PATH"

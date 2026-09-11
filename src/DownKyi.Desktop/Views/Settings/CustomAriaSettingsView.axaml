@@ -4,6 +4,12 @@
              x:Class="DownKyi.Views.Settings.CustomAriaSettingsView"
              x:DataType="vms:ViewNetworkViewModel">
     <StackPanel x:Name="NameCustomAria" IsVisible="{Binding CustomAria2C}">
+        <TextBlock
+            MaxWidth="520"
+            HorizontalAlignment="Left"
+            Foreground="{DynamicResource BrushTextDark}"
+            Text="{DynamicResource CustomAriaCompatibilityRequirement}"
+            TextWrapping="Wrap" />
         <StackPanel
             Margin="0,20,0,0"
             Orientation="Horizontal"

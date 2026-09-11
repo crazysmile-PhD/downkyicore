@@ -28,10 +28,20 @@ env:
   DOTNET_NOLOGO: '1'
 
 jobs:
-  package-launch-arm64:
-    name: Package and launch (macOS 26 arm64, ad-hoc)
-    runs-on: macos-26
-    timeout-minutes: 20
+  package-launch:
+    name: Package and launch (${{ matrix.runtime }}, ad-hoc)
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cpu: x64
+            runtime: osx-x64
+            os: macos-15-intel
+          - cpu: arm64
+            runtime: osx-arm64
+            os: macos-26
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -52,38 +62,48 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: '3.12'
+      - name: Run macOS packaging regressions
+        shell: pwsh
+        run: >
+          ./script/test-project.ps1
+          -ProjectPath ./tests/DownKyi.MacOS.Tests/DownKyi.MacOS.Tests.csproj
+          -Configuration Release
+          -ResultsDirectory ./artifacts/test-results/macos-packaging-${{ matrix.cpu }}
       - name: Read version
         id: version
         run: echo "content=$(tr -d '\r\n' < version.txt)" >> "$GITHUB_OUTPUT"
-      - name: Download runtime dependencies
+      - name: Download and verify upstream runtime dependencies
         working-directory: ./script
         run: |
           chmod +x aria2.sh ffmpeg.sh
-          ./aria2.sh osx-arm64
-          ./ffmpeg.sh mac arm64
-      - name: Publish arm64 app
+          ./aria2.sh osx-${{ matrix.cpu }}
+          ./ffmpeg.sh mac ${{ matrix.cpu }}
+      - name: Publish ${{ matrix.cpu }} app
         run: |
-          dotnet restore DownKyi/DownKyi.csproj -r osx-arm64
-          dotnet publish DownKyi/DownKyi.csproj --no-restore --self-contained -r osx-arm64 -c Release -p:DebugType=None -p:DebugSymbols=false
+          dotnet restore DownKyi/DownKyi.csproj -r osx-${{ matrix.cpu }}
+          dotnet publish DownKyi/DownKyi.csproj --no-restore --self-contained -r osx-${{ matrix.cpu }} -c Release -p:DebugType=None -p:DebugSymbols=false
       - name: Package app bundle
         working-directory: ./script/macos
         run: |
           chmod +x package.sh set-bundle-version.sh
-          ./package.sh arm64 ${{ steps.version.outputs.content }}
+          ./package.sh ${{ matrix.cpu }} ${{ steps.version.outputs.content }}
       - name: Validate packaged runtime
         shell: pwsh
         run: |
           ./script/validate-publish-output.ps1 `
-            -PublishDirectory "DownKyi/bin/Release/net10.0/osx-arm64/publish" `
-            -RuntimeIdentifier "osx-arm64" `
+            -PublishDirectory "DownKyi/bin/Release/net10.0/osx-${{ matrix.cpu }}/publish" `
+            -RuntimeIdentifier "osx-${{ matrix.cpu }}" `
             -ExpectedVersion "${{ steps.version.outputs.content }}" `
-            -OutputPath "script/macos/publish-manifest-osx-arm64.json"
+            -OutputPath "script/macos/publish-manifest-osx-${{ matrix.cpu }}.json"
+      - name: Verify pre-sign aria2 supply-chain boundary
+        working-directory: ./script/macos
+        run: /bin/bash ./aria2-runtime-integrity.sh verify 哔哩下载姬.app osx-${{ matrix.cpu }}
       - name: Ad-hoc sign app
         working-directory: ./script/macos
         env:
           MACOS_ADHOC_SIGNING: 'true'
         run: |
-          chmod +x codesign-common.sh prepare-app-layout.sh sign.sh verify-app.sh verify-app-launch.sh verify-dmg-contents.sh verify-runtime-architecture.sh
+          chmod +x codesign-common.sh prepare-app-layout.sh sign.sh verify-app.sh verify-app-launch.sh verify-dmg-contents.sh verify-runtime-architecture.sh aria2-runtime-integrity.sh verify-aria2-runtime-readiness.sh
           ./sign.sh
       - name: Verify ad-hoc policy and bundle integrity
         working-directory: ./script/macos
@@ -95,6 +115,7 @@ jobs:
             exit 1
           fi
           ./verify-app.sh
+          ./aria2-runtime-integrity.sh verify 哔哩下载姬.app osx-${{ matrix.cpu }}
       - name: Create DMG
         working-directory: ./script/macos
         run: |
@@ -104,23 +125,23 @@ jobs:
             --icon-size 120 \
             --app-drop-link 495 175 \
             --window-size 660 400 \
-            DownKyi-${{ steps.version.outputs.content }}-osx-arm64.dmg 哔哩下载姬.app
+            DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg 哔哩下载姬.app
       - name: Verify mounted and copied app launch
         working-directory: ./script/macos
         env:
           MACOS_VERIFY_GATEKEEPER: 'false'
-        run: ./verify-dmg-contents.sh DownKyi-${{ steps.version.outputs.content }}-osx-arm64.dmg ${{ steps.version.outputs.content }} osx-arm64
+        run: ./verify-dmg-contents.sh DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg ${{ steps.version.outputs.content }} osx-${{ matrix.cpu }}
       - name: Hash DMG
         shell: pwsh
         run: |
-          $package = "script/macos/DownKyi-${{ steps.version.outputs.content }}-osx-arm64.dmg"
+          $package = "script/macos/DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg"
           $hash = (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $([IO.Path]::GetFileName($package))" | Set-Content -LiteralPath "$package.sha256" -Encoding ascii
       - name: Upload verified DMG
         uses: actions/upload-artifact@v7
         with:
-          name: DownKyi-${{ steps.version.outputs.content }}-osx-arm64-adhoc-macos26
+          name: DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}-adhoc-${{ matrix.os }}
           path: |
-            script/macos/DownKyi-${{ steps.version.outputs.content }}-osx-arm64.dmg
-            script/macos/DownKyi-${{ steps.version.outputs.content }}-osx-arm64.dmg.sha256
-            script/macos/publish-manifest-osx-arm64.json
+            script/macos/DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg
+            script/macos/DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg.sha256
+            script/macos/publish-manifest-osx-${{ matrix.cpu }}.json

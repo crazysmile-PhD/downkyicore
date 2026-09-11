@@ -15,6 +15,10 @@ if [ ! -f "$MAIN_EXECUTABLE" ]; then
   exit 1
 fi
 
+# Keep the upstream/runtime sidecar valid until this transaction is ready to
+# mutate nested Mach-O bytes. Direct callers receive the same pre-sign gate as CI.
+/bin/bash "$SCRIPT_DIR/aria2-runtime-integrity.sh" verify "$APP_NAME"
+
 codesign_app_path() {
   local path="$1"
   if [ "$SIGNING_IDENTITY" = "-" ]; then
@@ -34,6 +38,10 @@ find "$APP_NAME/Contents" -type f -print0 | while IFS= read -r -d '' file; do
     codesign_app_path "$file"
   fi
 done
+
+# codesign mutates Mach-O bytes. Finalize the runtime digest only after every
+# nested binary is signed and before the main executable and outer app seal it.
+/bin/bash "$SCRIPT_DIR/aria2-runtime-integrity.sh" refresh "$APP_NAME"
 
 echo "[INFO] Signing main executable $MAIN_EXECUTABLE"
 codesign_app_path "$MAIN_EXECUTABLE"
