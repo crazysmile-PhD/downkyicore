@@ -8,6 +8,7 @@ ARIA_EXECUTABLE="$APP_PATH/Contents/MacOS/aria2/aria2c"
 CHECKSUM_LINK="$ARIA_EXECUTABLE.sha256"
 CHECKSUM_TARGET="$APP_PATH/Contents/Resources/dotnet/aria2/aria2c.sha256"
 EXPECTED_LINK_TARGET="../../Resources/dotnet/aria2/aria2c.sha256"
+OUTER_RESOURCE_SEAL="$APP_PATH/Contents/_CodeSignature/CodeResources"
 
 fail() {
   echo "::error::aria2 runtime integrity invariant failed: $*" >&2
@@ -52,7 +53,7 @@ if [ ! "$CHECKSUM_LINK" -ef "$CHECKSUM_TARGET" ]; then
 fi
 
 if [ "$MODE" = "refresh" ]; then
-  if codesign -d "$APP_PATH" >/dev/null 2>&1; then
+  if [ -e "$OUTER_RESOURCE_SEAL" ] || [ -L "$OUTER_RESOURCE_SEAL" ]; then
     fail "refusing to modify the runtime checksum after the outer app signature is sealed."
   fi
 

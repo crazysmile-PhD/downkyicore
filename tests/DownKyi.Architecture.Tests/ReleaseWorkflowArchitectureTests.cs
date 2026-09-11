@@ -492,6 +492,7 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.Contains("verify-app-launch.sh\" \"$COPIED_APP_PATH\"", verifyDmgContentsScript, StringComparison.Ordinal);
 
         Assert.Contains("runtime checksum path must remain a symlink", ariaIntegrityScript, StringComparison.Ordinal);
+        Assert.Contains("Contents/_CodeSignature/CodeResources", ariaIntegrityScript, StringComparison.Ordinal);
         Assert.Contains("refusing to modify the runtime checksum after the outer app signature is sealed", ariaIntegrityScript, StringComparison.Ordinal);
         Assert.Contains("lipo -archs", ariaIntegrityScript, StringComparison.Ordinal);
         Assert.Contains("aria2.getVersion", ariaReadinessScript, StringComparison.Ordinal);
