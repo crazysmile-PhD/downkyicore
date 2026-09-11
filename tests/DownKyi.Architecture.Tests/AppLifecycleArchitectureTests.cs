@@ -110,17 +110,17 @@ public sealed class AppLifecycleArchitectureTests
     public void HostOwnsDownloadBootstrapAndRuntimeLifecycle()
     {
         var appSource = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "DownKyi.Desktop", "App.axaml.cs"));
-        var compositionSource = File.ReadAllText(Path.Combine(
+        var downloadCompositionSource = File.ReadAllText(Path.Combine(
             RepositoryRoot,
             "src", "DownKyi.Desktop",
-            "Composition",
-            "DesktopComposition.cs"));
+            "Services", "Download",
+            "DownloadComposition.cs"));
 
         Assert.Contains("DownKyiHost.Create", appSource, StringComparison.Ordinal);
         Assert.Contains("AddDownKyiDesktop", appSource, StringComparison.Ordinal);
         Assert.DoesNotContain("host.StopAsync", appSource, StringComparison.Ordinal);
-        Assert.Contains("DownloadBootstrapHostedService", compositionSource, StringComparison.Ordinal);
-        Assert.Contains("IDownloadRuntimeFactory", compositionSource, StringComparison.Ordinal);
+        Assert.Contains("DownloadBootstrapHostedService", downloadCompositionSource, StringComparison.Ordinal);
+        Assert.Contains("IDownloadRuntimeFactory", downloadCompositionSource, StringComparison.Ordinal);
         Assert.DoesNotContain("LoadDownloadStateAsync", appSource, StringComparison.Ordinal);
         Assert.DoesNotContain("LoadRemainingHistoryAsync", appSource, StringComparison.Ordinal);
         Assert.DoesNotContain("LoadRemainingDownloadHistoryAsync", appSource, StringComparison.Ordinal);
@@ -137,8 +137,8 @@ public sealed class AppLifecycleArchitectureTests
         var compositionSource = File.ReadAllText(Path.Combine(
             RepositoryRoot,
             "src", "DownKyi.Desktop",
-            "Composition",
-            "DesktopComposition.cs"));
+            "Platform",
+            "DesktopInteractionComposition.cs"));
 
         Assert.Contains("services.AddDownKyiDesktop", appSource, StringComparison.Ordinal);
         Assert.DoesNotContain("RegisterForNavigation", appSource, StringComparison.Ordinal);

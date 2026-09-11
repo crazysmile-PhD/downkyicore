@@ -27,7 +27,7 @@ public sealed class AvaloniaApplicationLifecycleTests
         var settingsStore = new SettingsStore(Path.Combine(directory, "settings.json"));
         using var host = DownKyiHost.Create();
         var logService = new RecordingLogService();
-        var lifecycle = CreateLifecycle(settingsStore, logService, new StubRestartLauncher(false));
+        var lifecycle = CreateLifecycle(host, settingsStore, logService, new StubRestartLauncher(false));
         lifecycle.AttachHost(host);
 
         try
@@ -61,6 +61,7 @@ public sealed class AvaloniaApplicationLifecycleTests
         using var host = DownKyiHost.Create(services =>
             services.AddSingleton<IHostedService>(hostedService));
         var lifecycle = CreateLifecycle(
+            host,
             settingsStore,
             new RecordingLogService(),
             new StubRestartLauncher(false));
@@ -102,6 +103,7 @@ public sealed class AvaloniaApplicationLifecycleTests
             services.AddSingleton<IHostedService>(hostedService));
         var logService = new RecordingLogService();
         var lifecycle = CreateLifecycle(
+            host,
             settingsStore,
             logService,
             new StubRestartLauncher(false),
@@ -135,7 +137,7 @@ public sealed class AvaloniaApplicationLifecycleTests
         using var host = DownKyiHost.Create();
         var logService = new RecordingLogService();
         var restartLauncher = new StubRestartLauncher(false);
-        var lifecycle = CreateLifecycle(settingsStore, logService, restartLauncher);
+        var lifecycle = CreateLifecycle(host, settingsStore, logService, restartLauncher);
         lifecycle.AttachHost(host);
 
         try
@@ -170,7 +172,7 @@ public sealed class AvaloniaApplicationLifecycleTests
         using var host = DownKyiHost.Create(services =>
             services.AddSingleton<IHostedService>(new FailingStopHostedService()));
         var logService = new RecordingLogService();
-        var lifecycle = CreateLifecycle(settingsStore, logService, new StubRestartLauncher(false));
+        var lifecycle = CreateLifecycle(host, settingsStore, logService, new StubRestartLauncher(false));
         lifecycle.AttachHost(host);
 
         try
@@ -195,6 +197,7 @@ public sealed class AvaloniaApplicationLifecycleTests
     }
 
     private static AvaloniaApplicationLifecycle CreateLifecycle(
+        IHost host,
         ISettingsStore settingsStore,
         IApplicationLogService logService,
         IProcessRestartLauncher restartLauncher,
@@ -206,6 +209,8 @@ public sealed class AvaloniaApplicationLifecycleTests
                 restartLauncher,
                 settingsStore,
                 logService,
+                host.Services.GetRequiredService<ApplicationCancellation>(),
+                new NoOpDownloadEmergencyCleanup(),
                 NullLogger<AvaloniaApplicationLifecycle>.Instance,
                 timeout)
             : new AvaloniaApplicationLifecycle(
@@ -213,6 +218,8 @@ public sealed class AvaloniaApplicationLifecycleTests
                 restartLauncher,
                 settingsStore,
                 logService,
+                host.Services.GetRequiredService<ApplicationCancellation>(),
+                new NoOpDownloadEmergencyCleanup(),
                 NullLogger<AvaloniaApplicationLifecycle>.Instance);
     }
 
@@ -232,6 +239,13 @@ public sealed class AvaloniaApplicationLifecycleTests
             Assert.True(parentProcessId > 0);
             StartCount++;
             return result;
+        }
+    }
+
+    private sealed class NoOpDownloadEmergencyCleanup : IDownloadEmergencyCleanup
+    {
+        public void KillTrackedRuntime(string reason)
+        {
         }
     }
 

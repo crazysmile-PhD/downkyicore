@@ -227,8 +227,8 @@ public sealed class DownloadRuntimeArchitectureTests
         var compositionSource = File.ReadAllText(Path.Combine(
             RepositoryRoot,
             "src", "DownKyi.Desktop",
-            "Composition",
-            "DesktopComposition.cs"));
+            "Services", "Download",
+            "DownloadComposition.cs"));
 
         Assert.False(File.Exists(Path.Combine(directory, "DownloadStorageService.cs")));
         Assert.Contains("IDownloadTaskApplicationService _tasks", projectionSource, StringComparison.Ordinal);
@@ -266,8 +266,8 @@ public sealed class DownloadRuntimeArchitectureTests
         var compositionSource = File.ReadAllText(Path.Combine(
             RepositoryRoot,
             "src", "DownKyi.Desktop",
-            "Composition",
-            "DesktopComposition.cs"));
+            "Services", "Download",
+            "DownloadComposition.cs"));
 
         Assert.True(violations.Length == 0, string.Join(Environment.NewLine, violations));
         Assert.Contains("sealed class DownloadDiagnosticLogger", diagnosticSource, StringComparison.Ordinal);
@@ -319,8 +319,8 @@ public sealed class DownloadRuntimeArchitectureTests
         var compositionSource = File.ReadAllText(Path.Combine(
             RepositoryRoot,
             "src", "DownKyi.Desktop",
-            "Composition",
-            "DesktopComposition.cs"));
+            "Services", "Download",
+            "DownloadComposition.cs"));
 
         Assert.True(violations.Length == 0, string.Join(Environment.NewLine, violations));
         Assert.Contains("sealed class DownloadTaskFileService", taskFileSource, StringComparison.Ordinal);
@@ -359,8 +359,8 @@ public sealed class DownloadRuntimeArchitectureTests
         var compositionSource = File.ReadAllText(Path.Combine(
             RepositoryRoot,
             "src", "DownKyi.Desktop",
-            "Composition",
-            "DesktopComposition.cs"));
+            "Services", "Download",
+            "DownloadComposition.cs"));
         var lifecycleSource = File.ReadAllText(Path.Combine(
             RepositoryRoot,
             "src", "DownKyi.Desktop",
@@ -372,7 +372,10 @@ public sealed class DownloadRuntimeArchitectureTests
         Assert.DoesNotContain("static class AriaServer", serverSource, StringComparison.Ordinal);
         Assert.Contains("ILoggerFactory loggerFactory", serverSource, StringComparison.Ordinal);
         Assert.Contains("AddSingleton<AriaServer>()", compositionSource, StringComparison.Ordinal);
-        Assert.Contains("GetService<AriaServer>()", lifecycleSource, StringComparison.Ordinal);
+        Assert.Contains("IDownloadEmergencyCleanup", lifecycleSource, StringComparison.Ordinal);
+        Assert.Contains("_downloadEmergencyCleanup.KillTrackedRuntime", lifecycleSource,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("GetService<AriaServer>()", lifecycleSource, StringComparison.Ordinal);
         Assert.DoesNotContain("AriaServer.KillTrackedServer", lifecycleSource, StringComparison.Ordinal);
     }
 
