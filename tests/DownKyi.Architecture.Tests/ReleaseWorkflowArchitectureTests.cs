@@ -499,8 +499,9 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.Contains("aria2.getVersion", ariaReadinessScript, StringComparison.Ordinal);
         Assert.Contains("downkyi-secure-redirect-v2", ariaReadinessScript, StringComparison.Ordinal);
         Assert.Contains("isinstance(features, list)", ariaReadinessScript, StringComparison.Ordinal);
-        Assert.Contains("--enable-dht=false", ariaReadinessScript, StringComparison.Ordinal);
-        Assert.Contains("--enable-dht6=false", ariaReadinessScript, StringComparison.Ordinal);
+        Assert.Contains("--help=#all", ariaReadinessScript, StringComparison.Ordinal);
+        Assert.Contains("\"$PROBE_ROOT/dht.dat\"", ariaReadinessScript, StringComparison.Ordinal);
+        Assert.Contains("\"$PROBE_ROOT/dht6.dat\"", ariaReadinessScript, StringComparison.Ordinal);
         Assert.Contains("aria2.shutdown", ariaReadinessScript, StringComparison.Ordinal);
     }
 

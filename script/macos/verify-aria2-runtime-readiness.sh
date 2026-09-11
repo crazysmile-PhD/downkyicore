@@ -58,6 +58,17 @@ SHUTDOWN_RESPONSE="$PROBE_ROOT/shutdown-response.json"
 
 umask 077
 printf 'rpc-secret=%s\n' "$RPC_SECRET" >"$RPC_CONFIG"
+
+# DHT is not compiled into every trusted aria2 build. When those options are
+# available, keep their persistent state inside the disposable probe boundary.
+ARIA_OPTION_HELP="$("$ARIA_EXECUTABLE" --help=#all 2>/dev/null || true)"
+if grep -Fq -- '--dht-file-path=' <<<"$ARIA_OPTION_HELP"; then
+  printf 'dht-file-path=%s\n' "$PROBE_ROOT/dht.dat" >>"$RPC_CONFIG"
+fi
+if grep -Fq -- '--dht-file-path6=' <<<"$ARIA_OPTION_HELP"; then
+  printf 'dht-file-path6=%s\n' "$PROBE_ROOT/dht6.dat" >>"$RPC_CONFIG"
+fi
+
 : >"$SESSION_FILE"
 mkdir "$PROBE_ROOT/downloads"
 printf '{"jsonrpc":"2.0","id":"runtime-readiness","method":"aria2.getVersion","params":["token:%s"]}' \
@@ -71,8 +82,6 @@ printf '{"jsonrpc":"2.0","id":"runtime-shutdown","method":"aria2.shutdown","para
   --rpc-listen-all=false \
   --rpc-allow-origin-all=false \
   "--rpc-listen-port=$RPC_PORT" \
-  --enable-dht=false \
-  --enable-dht6=false \
   "--stop-with-process=$$" \
   "--input-file=$SESSION_FILE" \
   "--save-session=$SESSION_FILE" \
