@@ -2680,6 +2680,9 @@ paths:
   - DownKyi.Core/DownKyi.Core.csproj
   - version.txt
   - script/validate-release-version.ps1
+  - script/validate-release-subject.ps1
+  - script/resolve-previous-release-tag.ps1
+  - script/validate-release-package.ps1
   - script/validate-publish-output.ps1
   - script/assets/external-assets.json
   - script/aria2.ps1
@@ -2704,6 +2707,8 @@ contracts:
   - Windows, Linux, and macOS run strict Release build and all tests before changelog or package jobs can start.
   - Manual dispatch builds and uploads the same packages without publishing a GitHub Release; tag execution alone may create the Release.
   - `script/validate-release-version.ps1` requires stable `major.minor.patch` text and blocks a tag whose `refs/tags/v<version>` value differs from `version.txt`.
+  - Release-subject and package validators derive their expected release identity from `version.txt`; validator and regression-test names remain version-neutral.
+  - Changelog generation resolves the nearest annotated stable SemVer release tag before HEAD on first-parent history, then passes that explicit tag range to git-cliff; lightweight, non-SemVer and merged-branch tags are not release-range owners.
   - Each Windows and Linux RID performs one dotnet publish into a fixed canonical directory containing non-empty DownKyi, aria2, FFmpeg, ffprobe, dependency-manifest, and LICENSE files; every Linux package kind restores the same immutable RID transport, and PupNet standalone packaging copies that validated payload into its package staging directory.
   - Publish validation checks the expected assembly version, requires Fluent, rejects Simple, and emits path, byte-count, and SHA-256 evidence for every canonical runtime file; extracted final runtime payload must match it exactly.
   - Package wrapper metadata is classified separately rather than treated as canonical runtime: release-critical AppImage entrypoint and deb/rpm control semantics are validated through package-kind identity, architecture, symlink, permission, and launch contracts outside the runtime-payload manifest.
