@@ -620,9 +620,12 @@ jobs:
             -RuntimeIdentifier "osx-${{ matrix.cpu }}" `
             -ExpectedVersion "${{ steps.version.outputs.content }}" `
             -OutputPath "script/macos/publish-manifest-osx-${{ matrix.cpu }}.json"
+      - name: Verify pre-sign aria2 supply-chain boundary
+        run: /bin/bash ./aria2-runtime-integrity.sh verify 哔哩下载姬.app osx-${{ matrix.cpu }}
+        working-directory: ./script/macos
       - name: Sign app
         run: |
-          chmod +x codesign-common.sh prepare-app-layout.sh sign.sh verify-app.sh verify-app-launch.sh sign-dmg.sh verify-dmg.sh verify-dmg-contents.sh verify-runtime-architecture.sh
+          chmod +x codesign-common.sh prepare-app-layout.sh sign.sh verify-app.sh verify-app-launch.sh sign-dmg.sh verify-dmg.sh verify-dmg-contents.sh verify-runtime-architecture.sh aria2-runtime-integrity.sh verify-aria2-runtime-readiness.sh
           ./sign.sh
         working-directory: ./script/macos
         env:
@@ -630,6 +633,7 @@ jobs:
       - name: Verify app signature
         run: |
           ./verify-app.sh
+          ./aria2-runtime-integrity.sh verify 哔哩下载姬.app osx-${{ matrix.cpu }}
         working-directory: ./script/macos
       - name: Notarize app
         if: ${{ env.HAS_MACOS_SIGNING == 'true' }}
@@ -643,6 +647,7 @@ jobs:
         if: ${{ env.HAS_MACOS_SIGNING == 'true' }}
         run: |
           ./verify-app.sh
+          ./aria2-runtime-integrity.sh verify 哔哩下载姬.app osx-${{ matrix.cpu }}
         working-directory: ./script/macos
         env:
           MACOS_VERIFY_GATEKEEPER: true

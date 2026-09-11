@@ -35,6 +35,10 @@ find "$APP_NAME/Contents" -type f -print0 | while IFS= read -r -d '' file; do
   fi
 done
 
+# codesign mutates Mach-O bytes. Finalize the runtime digest only after every
+# nested binary is signed and before the main executable and outer app seal it.
+/bin/bash "$SCRIPT_DIR/aria2-runtime-integrity.sh" refresh "$APP_NAME"
+
 echo "[INFO] Signing main executable $MAIN_EXECUTABLE"
 codesign_app_path "$MAIN_EXECUTABLE"
 
