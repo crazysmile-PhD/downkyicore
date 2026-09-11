@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.Versioning;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace DownKyi.MacOS.Tests;
@@ -116,8 +117,11 @@ public sealed class MacSigningScriptTests
                 "aria2");
             Directory.CreateDirectory(ariaDirectory);
             Directory.CreateDirectory(ariaResourceDirectory);
-            File.WriteAllText(Path.Combine(ariaDirectory, "aria2c"), "fixture");
-            File.WriteAllText(Path.Combine(ariaResourceDirectory, "aria2c.sha256"), new string('0', 64));
+            var ariaExecutable = Path.Combine(ariaDirectory, "aria2c");
+            File.WriteAllText(ariaExecutable, "fixture");
+            File.WriteAllText(
+                Path.Combine(ariaResourceDirectory, "aria2c.sha256"),
+                Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(ariaExecutable))));
             File.CreateSymbolicLink(
                 Path.Combine(ariaDirectory, "aria2c.sha256"),
                 "../../Resources/dotnet/aria2/aria2c.sha256");

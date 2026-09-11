@@ -71,6 +71,8 @@ printf '{"jsonrpc":"2.0","id":"runtime-shutdown","method":"aria2.shutdown","para
   --rpc-listen-all=false \
   --rpc-allow-origin-all=false \
   "--rpc-listen-port=$RPC_PORT" \
+  --enable-dht=false \
+  --enable-dht6=false \
   "--stop-with-process=$$" \
   "--input-file=$SESSION_FILE" \
   "--save-session=$SESSION_FILE" \
@@ -103,7 +105,10 @@ with open(sys.argv[1], "r", encoding="utf-8") as response_file:
 result = response.get("result")
 if not isinstance(result, dict) or not isinstance(result.get("version"), str):
     raise SystemExit(1)
-if "downkyi-secure-redirect-v2" not in result.get("enabledFeatures", []):
+features = result.get("enabledFeatures")
+if not isinstance(features, list) or not all(isinstance(feature, str) for feature in features):
+    raise SystemExit(1)
+if "downkyi-secure-redirect-v2" not in features:
     raise SystemExit(1)
 PY
   then

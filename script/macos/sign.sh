@@ -15,6 +15,10 @@ if [ ! -f "$MAIN_EXECUTABLE" ]; then
   exit 1
 fi
 
+# Keep the upstream/runtime sidecar valid until this transaction is ready to
+# mutate nested Mach-O bytes. Direct callers receive the same pre-sign gate as CI.
+/bin/bash "$SCRIPT_DIR/aria2-runtime-integrity.sh" verify "$APP_NAME"
+
 codesign_app_path() {
   local path="$1"
   if [ "$SIGNING_IDENTITY" = "-" ]; then

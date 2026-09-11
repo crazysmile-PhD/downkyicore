@@ -462,6 +462,7 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.Contains("codesign_app_path \"$file\"", signScript, StringComparison.Ordinal);
         AssertInOrder(
             signScript,
+            "aria2-runtime-integrity.sh\" verify \"$APP_NAME\"",
             "codesign_app_path \"$file\"",
             "aria2-runtime-integrity.sh\" refresh \"$APP_NAME\"",
             "codesign_app_path \"$MAIN_EXECUTABLE\"",
@@ -497,6 +498,9 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.Contains("lipo -archs", ariaIntegrityScript, StringComparison.Ordinal);
         Assert.Contains("aria2.getVersion", ariaReadinessScript, StringComparison.Ordinal);
         Assert.Contains("downkyi-secure-redirect-v2", ariaReadinessScript, StringComparison.Ordinal);
+        Assert.Contains("isinstance(features, list)", ariaReadinessScript, StringComparison.Ordinal);
+        Assert.Contains("--enable-dht=false", ariaReadinessScript, StringComparison.Ordinal);
+        Assert.Contains("--enable-dht6=false", ariaReadinessScript, StringComparison.Ordinal);
         Assert.Contains("aria2.shutdown", ariaReadinessScript, StringComparison.Ordinal);
     }
 
