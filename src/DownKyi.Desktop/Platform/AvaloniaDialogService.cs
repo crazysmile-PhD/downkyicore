@@ -6,21 +6,19 @@ using Avalonia.Controls;
 using Avalonia.Threading;
 using DownKyi.Application.Desktop;
 using DownKyi.ViewModels.Dialogs;
-using DownKyi.Views.Dialogs;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace DownKyi.Platform;
 
 internal sealed class AvaloniaDialogService : IAppDialogService
 {
-    private readonly IServiceProvider _services;
+    private readonly DialogContentFactory _contentFactory;
     private readonly AvaloniaDesktopContext _desktopContext;
 
     public AvaloniaDialogService(
-        IServiceProvider services,
+        DialogContentFactory contentFactory,
         AvaloniaDesktopContext desktopContext)
     {
-        _services = services ?? throw new ArgumentNullException(nameof(services));
+        _contentFactory = contentFactory ?? throw new ArgumentNullException(nameof(contentFactory));
         _desktopContext = desktopContext ?? throw new ArgumentNullException(nameof(desktopContext));
     }
 
@@ -45,12 +43,7 @@ internal sealed class AvaloniaDialogService : IAppDialogService
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var (viewType, viewModelType) = GetDialogTypes(request.Dialog);
-        var content = _services.GetRequiredService(viewType) as Control
-            ?? throw new InvalidOperationException($"Dialog view '{viewType.Name}' is not a Control.");
-        var viewModel = _services.GetRequiredService(viewModelType) as BaseDialogViewModel
-            ?? throw new InvalidOperationException(
-                $"Dialog ViewModel '{viewModelType.Name}' does not derive from BaseDialogViewModel.");
+        var (content, viewModel) = _contentFactory.Create(request.Dialog);
         var window = new DialogWindow
         {
             Content = content,
@@ -130,24 +123,4 @@ internal sealed class AvaloniaDialogService : IAppDialogService
         return !closeRequested && !forcedCloseRequested && !viewModel.CanCloseDialog();
     }
 
-    internal static (Type View, Type ViewModel) GetDialogTypes(AppDialog dialog)
-    {
-        return dialog switch
-        {
-            AppDialog.Alert => (typeof(ViewAlertDialog), typeof(ViewAlertDialogViewModel)),
-            AppDialog.DownloadSettings => (typeof(ViewDownloadSetter), typeof(ViewDownloadSetterViewModel)),
-            AppDialog.ParsingSelector => (typeof(ViewParsingSelector), typeof(ViewParsingSelectorViewModel)),
-            AppDialog.AlreadyDownloaded => (
-                typeof(ViewAlreadyDownloadedDialog),
-                typeof(ViewAlreadyDownloadedDialogViewModel)),
-            AppDialog.NewVersionAvailable => (
-                typeof(NewVersionAvailableDialog),
-                typeof(NewVersionAvailableDialogViewModel)),
-            AppDialog.LegacyUpgrade => (typeof(ViewUpgradingDialog), typeof(ViewUpgradingDialogViewModel)),
-            AppDialog.DownloadRuntimeFailure => (
-                typeof(DownloadRuntimeFailureDialog),
-                typeof(DownloadRuntimeFailureDialogViewModel)),
-            _ => throw new ArgumentOutOfRangeException(nameof(dialog), dialog, null)
-        };
-    }
 }

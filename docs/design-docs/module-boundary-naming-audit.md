@@ -5,7 +5,7 @@ Snapshot verified: 2026-07-29
 Snapshot base: integration merge `fb8c9220cea18a79e42b521005f0bcb983c1241e`
 Snapshot branch: `release/v1.1.0-integration`
 
-Reading rule: 本文保留當時 audit 的 finding、數據與 release context。下文的「目前」、「現在」與 status 都只相對於上述 snapshot，不是當前 `main` 的 implemented state。現行 owner 與 dependency direction 請以根層 `ARCHITECTURE.md`、`docs/ai-knowledge-graph.md` 與可重現 audit output 為準。
+Reading rule: 本文保留當時 audit 的 finding、數據與 release context。下文的「目前」、「現在」與 status 都只相對於上述 snapshot，不是當前 `main` 的 implemented state。現行 owner 與 dependency direction 請以根層 `ARCHITECTURE.md`、實際 composition/contract 程式與可重現 audit output 為準。
 
 ## 歷史結論
 

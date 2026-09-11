@@ -28,7 +28,9 @@ change.
 ## Progressive Disclosure Map
 
 - Current architecture and dependency direction: `ARCHITECTURE.md`.
-- Detailed node ownership and test anchors: `docs/ai-knowledge-graph.md`.
+- Desktop wiring starts at `src/DownKyi.Desktop/Composition/DesktopComposition.cs`;
+  follow its local composition call into the affected module, then inspect that
+  module's contracts, constructors and focused tests.
 - Release and formal local verification policy: `docs/refactoring-live-plan.md`
   and `docs/operations/verification-and-rollback.md`.
 - Bilibili endpoints, WBI and JSON contracts:
@@ -94,8 +96,9 @@ must not be reported as already implemented.
   identity, mapping, policy or state.
 - When several places manually describe the same fact, identify one owner and
   derive the rest. Do not add another registry or synchronization checklist.
-- Update `docs/ai-knowledge-graph.md` only when current ownership or dependency
-  direction changes. Keep temporary status and branch history out of it.
+- Keep mechanically derivable wiring in composition code and tests, not in a
+  manually synchronized module or call graph. Keep temporary status and branch
+  history out of current architecture documentation.
 
 ## Verification
 

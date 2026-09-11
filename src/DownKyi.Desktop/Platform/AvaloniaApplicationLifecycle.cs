@@ -4,9 +4,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Diagnostics;
 using DownKyi.Application.Lifetime;
-using DownKyi.Core.Aria2cNet.Server;
 using DownKyi.Core.Settings;
-using Microsoft.Extensions.DependencyInjection;
+using DownKyi.Services.Download;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -21,6 +20,8 @@ internal sealed class AvaloniaApplicationLifecycle : IApplicationLifecycle
     private readonly IProcessRestartLauncher _restartLauncher;
     private readonly ISettingsStore _settingsStore;
     private readonly IApplicationLogService _logService;
+    private readonly ApplicationCancellation _applicationCancellation;
+    private readonly IDownloadEmergencyCleanup _downloadEmergencyCleanup;
     private readonly ILogger<AvaloniaApplicationLifecycle> _logger;
     private readonly TimeSpan _cleanupTimeout;
     private IHost? _host;
@@ -32,12 +33,16 @@ internal sealed class AvaloniaApplicationLifecycle : IApplicationLifecycle
         IProcessRestartLauncher restartLauncher,
         ISettingsStore settingsStore,
         IApplicationLogService logService,
+        ApplicationCancellation applicationCancellation,
+        IDownloadEmergencyCleanup downloadEmergencyCleanup,
         ILogger<AvaloniaApplicationLifecycle> logger)
         : this(
             desktopContext,
             restartLauncher,
             settingsStore,
             logService,
+            applicationCancellation,
+            downloadEmergencyCleanup,
             logger,
             DefaultCleanupTimeout)
     {
@@ -48,6 +53,8 @@ internal sealed class AvaloniaApplicationLifecycle : IApplicationLifecycle
         IProcessRestartLauncher restartLauncher,
         ISettingsStore settingsStore,
         IApplicationLogService logService,
+        ApplicationCancellation applicationCancellation,
+        IDownloadEmergencyCleanup downloadEmergencyCleanup,
         ILogger<AvaloniaApplicationLifecycle> logger,
         TimeSpan cleanupTimeout)
     {
@@ -55,15 +62,16 @@ internal sealed class AvaloniaApplicationLifecycle : IApplicationLifecycle
         _restartLauncher = restartLauncher ?? throw new ArgumentNullException(nameof(restartLauncher));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         _logService = logService ?? throw new ArgumentNullException(nameof(logService));
+        _applicationCancellation = applicationCancellation
+            ?? throw new ArgumentNullException(nameof(applicationCancellation));
+        _downloadEmergencyCleanup = downloadEmergencyCleanup
+            ?? throw new ArgumentNullException(nameof(downloadEmergencyCleanup));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         ArgumentOutOfRangeException.ThrowIfLessThan(cleanupTimeout, TimeSpan.Zero);
         _cleanupTimeout = cleanupTimeout;
     }
 
-    public CancellationToken ShutdownToken => GetHost()
-        .Services
-        .GetRequiredService<ApplicationCancellation>()
-        .ShutdownToken;
+    public CancellationToken ShutdownToken => _applicationCancellation.ShutdownToken;
 
     public void AttachHost(IHost host)
     {
@@ -133,8 +141,7 @@ internal sealed class AvaloniaApplicationLifecycle : IApplicationLifecycle
 
     private async Task ShutdownCoreAsync(IHost host)
     {
-        await host.Services
-            .GetRequiredService<ApplicationCancellation>()
+        await _applicationCancellation
             .RequestShutdownAsync()
             .ConfigureAwait(false);
 
@@ -176,9 +183,8 @@ internal sealed class AvaloniaApplicationLifecycle : IApplicationLifecycle
         else
         {
             _logger.LogWarningMessage("Application cleanup timed out; killing the tracked aria2 process.");
-            host.Services
-                .GetService<AriaServer>()?
-                .KillTrackedServer("application exit cleanup timed out.");
+            _downloadEmergencyCleanup.KillTrackedRuntime(
+                "application exit cleanup timed out.");
             _ = cleanup.ContinueWith(
                 task => _logger.LogErrorMessage(
                     "Application cleanup failed after the shutdown timeout.",

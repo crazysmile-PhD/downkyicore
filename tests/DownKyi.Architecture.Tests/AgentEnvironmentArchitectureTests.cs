@@ -157,7 +157,6 @@ public sealed class AgentEnvironmentArchitectureTests
             "README.md",
             "AGENTS.md",
             "ARCHITECTURE.md",
-            "docs/ai-knowledge-graph.md",
             "docs/design-docs",
             "docs/exec-plans",
             "docs/product-specs",
@@ -165,8 +164,8 @@ public sealed class AgentEnvironmentArchitectureTests
             "docs/operations");
 
         var agentGuide = Read("AGENTS.md");
-        Assert.Contains("docs/ai-knowledge-graph.md", agentGuide, StringComparison.Ordinal);
         Assert.Contains("ARCHITECTURE.md", agentGuide, StringComparison.Ordinal);
+        Assert.Contains("DesktopComposition.cs", agentGuide, StringComparison.Ordinal);
         Assert.Contains("docs/refactoring-live-plan.md", agentGuide, StringComparison.Ordinal);
         Assert.Contains("docs/operations/verification-and-rollback.md", agentGuide, StringComparison.Ordinal);
     }
@@ -203,69 +202,6 @@ public sealed class AgentEnvironmentArchitectureTests
                 System.Text.RegularExpressions.RegexOptions.CultureInvariant),
             livePlan);
         Assert.Contains("issues/137", livePlan, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void KnowledgeGraphLiteralPathReferencesResolve()
-    {
-        var lines = File.ReadAllLines(Path.Combine(RepositoryRoot, "docs", "ai-knowledge-graph.md"));
-        var inspectGraph = false;
-        var inPaths = false;
-        var pathsIndent = 0;
-        var missing = new List<string>();
-
-        foreach (var line in lines)
-        {
-            if (line.StartsWith("## System Graph", StringComparison.Ordinal))
-            {
-                inspectGraph = true;
-            }
-
-            if (!inspectGraph)
-            {
-                continue;
-            }
-
-            var trimmed = line.TrimStart();
-            var indent = line.Length - trimmed.Length;
-            if (string.Equals(trimmed, "paths:", StringComparison.Ordinal))
-            {
-                inPaths = true;
-                pathsIndent = indent;
-                continue;
-            }
-
-            if (!inPaths || string.IsNullOrWhiteSpace(trimmed))
-            {
-                continue;
-            }
-
-            if (indent <= pathsIndent)
-            {
-                inPaths = false;
-                continue;
-            }
-
-            if (!trimmed.StartsWith("- ", StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            var value = trimmed[2..].Trim().Trim('`');
-            if (!IsLiteralRepositoryPath(value))
-            {
-                continue;
-            }
-
-            if (!Path.Exists(Path.Combine(RepositoryRoot, PathFromRepository(value))))
-            {
-                missing.Add(value);
-            }
-        }
-
-        Assert.True(
-            missing.Count == 0,
-            $"Knowledge graph contains stale paths: {string.Join(", ", missing.Distinct(StringComparer.Ordinal))}");
     }
 
     [Fact]
@@ -341,15 +277,6 @@ public sealed class AgentEnvironmentArchitectureTests
     private static string PathFromRepository(string path)
     {
         return path.Replace('/', Path.DirectorySeparatorChar);
-    }
-
-    private static bool IsLiteralRepositoryPath(string value)
-    {
-        return value.Contains('/', StringComparison.Ordinal) &&
-               !value.Contains('*', StringComparison.Ordinal) &&
-               !value.Contains(" + ", StringComparison.Ordinal) &&
-               !value.Contains(" and ", StringComparison.OrdinalIgnoreCase) &&
-               !value.Contains("://", StringComparison.Ordinal);
     }
 
     private static string FindRepositoryRoot()

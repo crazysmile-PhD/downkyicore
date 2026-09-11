@@ -6,7 +6,7 @@ Status: deferred until after v1.1.1; research and report only
 
 Evaluate a searchable repository knowledge representation and a report-only
 authority/ownership scanner so an Agent can search, locate, expand and fetch a
-task-relevant subgraph instead of reading the complete knowledge graph. The
+task-relevant source slice instead of reading a complete project graph. The
 spike must distinguish structural truth from authority truth and cluster many
 symptoms into likely root causes.
 
@@ -177,7 +177,7 @@ dispositions.
 
 ## Knowledge Representation Migration Research
 
-Do not split `docs/ai-knowledge-graph.md` into another manually synchronized
+Do not recreate the retired AI knowledge graph as another manually synchronized
 format during this spike. A selected representation must support:
 
 ```text
@@ -188,7 +188,7 @@ A visualization may be a view, never a second source of truth. A future
 migration may not permanently maintain the old graph, a new graph and an
 ownership registry describing the same facts.
 
-Before removing the old knowledge graph, an explicit removal gate must prove:
+The historical removal gate required proof that:
 
 - complete inventory and destination mapping for every stable node,
   responsibility, contract, hazard, owner and test relation;
@@ -223,7 +223,7 @@ No winner is a valid outcome.
 - root-cause clustering evidence;
 - generalized external/provider authority model;
 - evidence-based recommendation;
-- migration plan only after selection, without replacing the knowledge graph
+- migration plan only after selection, without creating a replacement graph
   in this spike.
 
 ## Observed Seeds, Not Confirmed Defects

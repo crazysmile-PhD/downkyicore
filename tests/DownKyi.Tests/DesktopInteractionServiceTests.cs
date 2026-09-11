@@ -24,7 +24,7 @@ public sealed class DesktopInteractionServiceTests
     public void EveryTypedRouteMapsToOneViewModelType()
     {
         var viewModelTypes = Enum.GetValues<AppRoute>()
-            .Select(AvaloniaNavigationService.GetViewModelType)
+            .Select(NavigationViewModelFactory.GetViewModelType)
             .ToArray();
 
         Assert.DoesNotContain(viewModelTypes, type => !type.Name.EndsWith("ViewModel", StringComparison.Ordinal));
@@ -45,7 +45,7 @@ public sealed class DesktopInteractionServiceTests
     public void EveryTypedDialogMapsToOneViewAndViewModelPair()
     {
         var dialogTypes = Enum.GetValues<AppDialog>()
-            .Select(AvaloniaDialogService.GetDialogTypes)
+            .Select(DialogContentFactory.GetDialogTypes)
             .ToArray();
 
         Assert.Equal(dialogTypes.Length, dialogTypes.Select(pair => pair.View).Distinct().Count());
