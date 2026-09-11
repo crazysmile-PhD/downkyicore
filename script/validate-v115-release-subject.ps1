@@ -9,11 +9,11 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$expectedReleaseVersion = 'v1.1.4'
-$expectedApplicationVersion = '1.1.4'
+$expectedReleaseVersion = 'v1.1.5'
+$expectedApplicationVersion = '1.1.5'
 
 if ($ReleaseVersion -cne $expectedReleaseVersion) {
-    throw "v1.1.4 release validation requires exactly $expectedReleaseVersion."
+    throw "v1.1.5 release validation requires exactly $expectedReleaseVersion."
 }
 
 $subject = (Resolve-Path -LiteralPath $SubjectDirectory).Path
@@ -29,7 +29,7 @@ function Invoke-SubjectGit {
 
 $head = Invoke-SubjectGit rev-parse HEAD
 if (-not [string]::Equals($head, $SubjectSha, [StringComparison]::OrdinalIgnoreCase)) {
-    throw "v1.1.4 release subject HEAD is $head; expected $SubjectSha."
+    throw "v1.1.5 release subject HEAD is $head; expected $SubjectSha."
 }
 
 $tagType = Invoke-SubjectGit cat-file -t $expectedReleaseVersion
@@ -44,18 +44,18 @@ if (-not [string]::Equals($tagCommit, $SubjectSha, [StringComparison]::OrdinalIg
 
 $applicationVersion = (Get-Content -LiteralPath (Join-Path $subject 'version.txt') -Raw).Trim()
 if ($applicationVersion -cne $expectedApplicationVersion) {
-    throw "v1.1.4 release subject version.txt is $applicationVersion; expected $expectedApplicationVersion."
+    throw "v1.1.5 release subject version.txt is $applicationVersion; expected $expectedApplicationVersion."
 }
 
 $trackedChanges = Invoke-SubjectGit status --porcelain --untracked-files=no
 if ($trackedChanges) {
-    throw "v1.1.4 release subject contains tracked changes:`n$trackedChanges"
+    throw "v1.1.5 release subject contains tracked changes:`n$trackedChanges"
 }
 
 Invoke-SubjectGit fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main' | Out-Null
 $mainCommit = Invoke-SubjectGit rev-parse 'refs/remotes/origin/main^{commit}'
 if (-not [string]::Equals($SubjectSha, $mainCommit, [StringComparison]::OrdinalIgnoreCase)) {
-    throw "v1.1.4 release subject $SubjectSha does not equal current main $mainCommit."
+    throw "v1.1.5 release subject $SubjectSha does not equal current main $mainCommit."
 }
 
-Write-Output "Validated exact v1.1.4 release subject at $SubjectSha."
+Write-Output "Validated exact v1.1.5 release subject at $SubjectSha."
