@@ -735,6 +735,11 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
             outputPath,
             DownloadOutputPathKey.UsesCaseInsensitiveComparison,
             TestContext.Current.CancellationToken));
+        Assert.Contains(
+            DownloadOutputPathKey.Create(outputPath, DownloadOutputPathKey.UsesCaseInsensitiveComparison),
+            await store.GetActiveOutputReservationKeysAsync(
+                DownloadOutputPathKey.UsesCaseInsensitiveComparison,
+                TestContext.Current.CancellationToken));
 
         var deleted = canceled.Delete(_clock.UtcNow.AddSeconds(2)).RequireValue();
         Assert.True((await store
@@ -743,6 +748,71 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
             outputPath,
             DownloadOutputPathKey.UsesCaseInsensitiveComparison,
             TestContext.Current.CancellationToken));
+        Assert.DoesNotContain(
+            DownloadOutputPathKey.Create(outputPath, DownloadOutputPathKey.UsesCaseInsensitiveComparison),
+            await store.GetActiveOutputReservationKeysAsync(
+                DownloadOutputPathKey.UsesCaseInsensitiveComparison,
+                TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task ReservationSnapshotIncludesFailedAndPausedButExcludesCompletedAndQuarantined()
+    {
+        using var store = CreateStore();
+        var failed = CreateQueuedTask("failed-snapshot", Path.Combine(_directory, "failed-output"));
+        failed = failed.Start(_clock.UtcNow.AddSeconds(1)).RequireValue();
+        failed = failed.Fail(
+            new DownloadFailure("download.failed", "Transfer failed.", true),
+            _clock.UtcNow.AddSeconds(2)).RequireValue();
+        var paused = CreatePausedTask("paused-snapshot");
+        var completed = CreateCompletedTask("completed-snapshot", 10);
+        var quarantined = CreateQueuedTask("quarantined-snapshot", Path.Combine(_directory, "quarantined"));
+        foreach (var task in new[] { failed, paused, completed, quarantined })
+        {
+            Assert.True((await store.AddAsync(task, TestContext.Current.CancellationToken)).IsSuccess);
+        }
+
+        await InsertPreexistingQuarantineAsync(quarantined.Id.Value);
+        var keys = await store.GetActiveOutputReservationKeysAsync(
+            DownloadOutputPathKey.UsesCaseInsensitiveComparison,
+            TestContext.Current.CancellationToken);
+
+        Assert.Contains(DownloadOutputPathKey.Create(
+            failed.Output.BasePath, DownloadOutputPathKey.UsesCaseInsensitiveComparison), keys);
+        Assert.Contains(DownloadOutputPathKey.Create(
+            paused.Output.BasePath, DownloadOutputPathKey.UsesCaseInsensitiveComparison), keys);
+        Assert.DoesNotContain(DownloadOutputPathKey.Create(
+            completed.Output.BasePath, DownloadOutputPathKey.UsesCaseInsensitiveComparison), keys);
+        Assert.DoesNotContain(DownloadOutputPathKey.Create(
+            quarantined.Output.BasePath, DownloadOutputPathKey.UsesCaseInsensitiveComparison), keys);
+    }
+
+    [Fact]
+    public async Task ReservationSnapshotNormalizesLegacyNullKeyAndCaseVariants()
+    {
+        var basePath = Path.Combine(_directory, "cafe\u0301-output");
+        using var store = CreateStore();
+        Assert.True((await store.AddAsync(
+            CreateQueuedTask("legacy-null-key", basePath),
+            TestContext.Current.CancellationToken)).IsSuccess);
+        using (var connection = await OpenConnectionAsync(readOnly: false))
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                UPDATE download_base SET output_reservation_key = NULL WHERE id = 'legacy-null-key'
+                """;
+            await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        }
+
+        var caseSensitive = await store.GetActiveOutputReservationKeysAsync(
+            ignoreCase: false, TestContext.Current.CancellationToken);
+        var caseInsensitive = await store.GetActiveOutputReservationKeysAsync(
+            ignoreCase: true, TestContext.Current.CancellationToken);
+
+        Assert.Contains(DownloadOutputPathKey.Create(basePath, false), caseSensitive);
+        Assert.Contains(DownloadOutputPathKey.Create(basePath, true), caseInsensitive);
+        Assert.DoesNotContain(DownloadOutputPathKey.Create(
+            basePath.ToUpperInvariant(), false), caseSensitive);
     }
 
     [Fact]

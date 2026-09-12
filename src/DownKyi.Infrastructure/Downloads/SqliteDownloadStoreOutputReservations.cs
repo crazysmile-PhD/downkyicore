@@ -70,6 +70,36 @@ internal sealed class SqliteDownloadStoreOutputReservations(SqliteDownloadStoreD
             cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<IReadOnlyList<string>> GetActiveOutputReservationKeysAsync(
+        bool ignoreCase,
+        CancellationToken cancellationToken)
+    {
+        using var connection = await _database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT db.output_reservation_key, db.file_path
+            FROM download_base db
+            INNER JOIN downloading dl ON dl.id = db.id
+            WHERE NOT EXISTS (
+                SELECT 1 FROM download_quarantine q
+                WHERE q.source_table = 'downloading' AND q.record_id = db.id)
+            """;
+        using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var keys = new HashSet<string>(StringComparer.Ordinal);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            if (!await reader.IsDBNullAsync(0, cancellationToken).ConfigureAwait(false))
+            {
+                keys.Add(reader.GetString(0));
+            }
+
+            // The file path also covers legacy rows with a null reservation key.
+            keys.Add(DownloadOutputPathKey.Create(reader.GetString(1), ignoreCase));
+        }
+
+        return [.. keys];
+    }
+
     private static async Task<bool> IsOutputPathReservedCoreAsync(
         SqliteConnection connection,
         SqliteTransaction? transaction,

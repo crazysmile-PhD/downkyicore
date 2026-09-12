@@ -177,7 +177,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         var resolved = await DownloadOutputPathResolver.ResolveAdmissionCollisionAsync(
             basePath,
             autoAddNumberSuffix: true,
-            static (_, _) => Task.FromResult(false),
+            static _ => Task.FromResult<IReadOnlyList<string>>([]),
             TestContext.Current.CancellationToken);
 
         Assert.Equal(Path.GetFullPath(basePath), resolved, ignoreCase: false);
@@ -207,7 +207,8 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
             TestContext.Current.CancellationToken));
         var taskId = new DownloadTaskId(item.DownloadBase.Id);
         Assert.Equal([logicalBasePath], resolver.Inputs);
-        Assert.Equal([frozenBasePath], store.ReservationPaths);
+        Assert.Equal(1, store.ReservationSnapshotCount);
+        Assert.Equal(0, store.ReservationProbeCount);
         Assert.Equal(frozenBasePath, item.DownloadBase.FilePath, ignoreCase: false);
         Assert.Equal(frozenBasePath, persisted.Output.BasePath, ignoreCase: false);
         Assert.Equal(
@@ -425,7 +426,74 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task RepeatedAdmissionsProbeCandidatesWithoutReloadingAllUnfinishedTasks()
+    public async Task ActiveReservationHoleUsesFirstFreeSuffix()
+    {
+        Directory.CreateDirectory(_directory);
+        using var store = CreateStore();
+        var clock = new SystemClock();
+        using var tasks = new DownloadTaskApplicationService(store, clock);
+        using var projections = new DownloadTaskProjectionStore(tasks, clock);
+        using var admission = CreateAdmission(
+            new DownloadListState(), tasks, projections, new RecordingDownloadTaskQueue());
+        var basePath = Path.Combine(_directory, "video");
+        await AdmitThreeWithHoleAsync(admission, basePath);
+
+        var next = CreateItem("hole", basePath);
+        await admission.AdmitAsync(next, true, TestContext.Current.CancellationToken);
+
+        Assert.Equal($"{basePath}(2)", next.DownloadBase.FilePath);
+    }
+
+    [Fact]
+    public async Task DiskOccupantBlocksReservationHole()
+    {
+        Directory.CreateDirectory(_directory);
+        using var store = CreateStore();
+        var clock = new SystemClock();
+        using var tasks = new DownloadTaskApplicationService(store, clock);
+        using var projections = new DownloadTaskProjectionStore(tasks, clock);
+        using var admission = CreateAdmission(
+            new DownloadListState(), tasks, projections, new RecordingDownloadTaskQueue());
+        var basePath = Path.Combine(_directory, "video");
+        await AdmitThreeWithHoleAsync(admission, basePath);
+        await File.WriteAllTextAsync(
+            $"{basePath}(2).mp4", "foreign output", TestContext.Current.CancellationToken);
+
+        var next = CreateItem("disk-hole", basePath);
+        await admission.AdmitAsync(next, true, TestContext.Current.CancellationToken);
+
+        Assert.Equal($"{basePath}(4)", next.DownloadBase.FilePath);
+    }
+
+    [Fact]
+    public async Task ReopenedStoreStillUsesFirstFreeReservationHole()
+    {
+        Directory.CreateDirectory(_directory);
+        var basePath = Path.Combine(_directory, "video");
+        using (var firstStore = CreateStore())
+        {
+            var clock = new SystemClock();
+            using var firstTasks = new DownloadTaskApplicationService(firstStore, clock);
+            using var firstProjections = new DownloadTaskProjectionStore(firstTasks, clock);
+            using var firstAdmission = CreateAdmission(
+                new DownloadListState(), firstTasks, firstProjections, new RecordingDownloadTaskQueue());
+            await AdmitThreeWithHoleAsync(firstAdmission, basePath);
+        }
+
+        using var reopenedStore = CreateStore();
+        var reopenedClock = new SystemClock();
+        using var reopenedTasks = new DownloadTaskApplicationService(reopenedStore, reopenedClock);
+        using var reopenedProjections = new DownloadTaskProjectionStore(reopenedTasks, reopenedClock);
+        using var reopenedAdmission = CreateAdmission(
+            new DownloadListState(), reopenedTasks, reopenedProjections, new RecordingDownloadTaskQueue());
+        var next = CreateItem("after-reopen", basePath);
+        await reopenedAdmission.AdmitAsync(next, true, TestContext.Current.CancellationToken);
+
+        Assert.Equal($"{basePath}(2)", next.DownloadBase.FilePath);
+    }
+
+    [Fact]
+    public async Task RepeatedAdmissionsSnapshotReservationsWithoutCandidateProbesOrAggregateReloads()
     {
         Directory.CreateDirectory(_directory);
         using var innerStore = CreateStore();
@@ -439,15 +507,37 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
             projections,
             new RecordingDownloadTaskQueue());
 
-        for (var index = 0; index < 20; index++)
+        const int admissionCount = 64;
+        var basePath = Path.Combine(_directory, "same-output");
+        for (var index = 0; index < admissionCount; index++)
         {
-            var item = CreateItem($"task-{index}", Path.Combine(_directory, $"output-{index}"));
+            var item = CreateItem($"task-{index}", basePath);
             await admission.AdmitAsync(item, true, TestContext.Current.CancellationToken)
                 .ConfigureAwait(true);
+            Assert.Equal(index == 0 ? basePath : $"{basePath}({index})", item.DownloadBase.FilePath);
         }
 
         Assert.Equal(0, store.GetUnfinishedCallCount);
-        Assert.Equal(20, store.ReservationProbeCount);
+        Assert.Equal(admissionCount, store.ReservationSnapshotCount);
+        Assert.Equal(0, store.ReservationProbeCount);
+    }
+
+    private static async Task AdmitThreeWithHoleAsync(
+        DownloadTaskAdmissionService admission,
+        string basePath)
+    {
+        foreach (var (id, path) in new[]
+        {
+            ("zero", basePath),
+            ("one", $"{basePath}(1)"),
+            ("three", $"{basePath}(3)")
+        })
+        {
+            var item = CreateItem(id, path);
+            await admission.AdmitAsync(item, true, TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+            Assert.Equal(path, item.DownloadBase.FilePath);
+        }
     }
 
     private SqliteDownloadTaskStore CreateStore()
@@ -504,7 +594,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
 
         public int ReservationProbeCount { get; private set; }
 
-        public List<string> ReservationPaths { get; } = [];
+        public int ReservationSnapshotCount { get; private set; }
 
         public Task InitializeAsync(CancellationToken cancellationToken) =>
             inner.InitializeAsync(cancellationToken);
@@ -545,8 +635,15 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
             CancellationToken cancellationToken)
         {
             ReservationProbeCount++;
-            ReservationPaths.Add(basePath);
             return inner.IsOutputPathReservedAsync(basePath, ignoreCase, cancellationToken);
+        }
+
+        public Task<IReadOnlyList<string>> GetActiveOutputReservationKeysAsync(
+            bool ignoreCase,
+            CancellationToken cancellationToken)
+        {
+            ReservationSnapshotCount++;
+            return inner.GetActiveOutputReservationKeysAsync(ignoreCase, cancellationToken);
         }
 
         public Task<DownloadHistoryPage> GetHistoryPageAsync(

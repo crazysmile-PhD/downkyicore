@@ -13,23 +13,23 @@ internal static class DownloadOutputPathResolver
     public static async Task<string> ResolveAdmissionCollisionAsync(
         string basePath,
         bool autoAddNumberSuffix,
-        Func<string, CancellationToken, Task<bool>> isReservedAsync,
+        Func<CancellationToken, Task<IReadOnlyList<string>>> getReservationKeysAsync,
         CancellationToken cancellationToken,
         StringComparer? comparer = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(basePath);
-        ArgumentNullException.ThrowIfNull(isReservedAsync);
+        ArgumentNullException.ThrowIfNull(getReservationKeysAsync);
         comparer ??= PlatformComparer;
         var occupiedPaths = GetExistingBasePaths(basePath)
             .Select(CreateComparisonKey)
             .ToHashSet(comparer);
+        occupiedPaths.UnionWith(await getReservationKeysAsync(cancellationToken).ConfigureAwait(false));
         for (var suffix = 0; ; suffix++)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var candidate = suffix == 0 ? basePath : $"{basePath}({suffix})";
             var comparisonKey = CreateComparisonKey(candidate);
-            if (!occupiedPaths.Contains(comparisonKey) &&
-                !await isReservedAsync(candidate, cancellationToken).ConfigureAwait(false))
+            if (!occupiedPaths.Contains(comparisonKey))
             {
                 return candidate;
             }
