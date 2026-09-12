@@ -1,3 +1,5 @@
+using System.Reflection;
+using System.Runtime.Loader;
 using DownKyi.Platform;
 
 namespace DownKyi.Tests;
@@ -5,36 +7,92 @@ namespace DownKyi.Tests;
 public sealed class SingleInstanceGuardTests
 {
     [Fact]
-    public void MutexNameIsStablePerInstallWithoutLeakingThePath()
+    public void MutexNameUsesStableApplicationIdentityWithoutAnInstallPath()
     {
-        var firstPath = Path.Combine(Path.GetTempPath(), "DownKyi", "first-install");
-        var secondPath = Path.Combine(Path.GetTempPath(), "DownKyi", "second-install");
+        var first = SingleInstanceGuard.BuildMutexName("owner", "repo");
+        var repeated = SingleInstanceGuard.BuildMutexName("owner", "repo");
 
-        var first = SingleInstanceGuard.BuildMutexName("owner", "repo", firstPath);
-        var repeated = SingleInstanceGuard.BuildMutexName("owner", "repo", firstPath);
-        var second = SingleInstanceGuard.BuildMutexName("owner", "repo", secondPath);
-
+        Assert.Equal("DownKyi-owner-repo", first);
         Assert.Equal(first, repeated);
-        Assert.NotEqual(first, second);
-        Assert.DoesNotContain("first-install", first, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("DownKyi-owner-repo-", first, StringComparison.Ordinal);
+        Assert.DoesNotContain(Path.GetTempPath(), first, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public void OnlyOneGuardCanOwnTheSameInstallIdentity()
+    public void OnlyOneGuardCanOwnTheSameApplicationIdentity()
     {
-        var installPath = Path.Combine(Path.GetTempPath(), $"downkyi-guard-{Guid.NewGuid():N}");
+        var owner = $"owner-{Guid.NewGuid():N}";
 
-        Assert.True(SingleInstanceGuard.TryAcquire("owner", "repo", installPath, out var first));
+        Assert.True(SingleInstanceGuard.TryAcquire(owner, "repo", out var first));
         using (first)
         {
-            var secondAcquired = SingleInstanceGuard.TryAcquire("owner", "repo", installPath, out var second);
+            var secondAcquired = SingleInstanceGuard.TryAcquire(owner, "repo", out var second);
             second?.Dispose();
             Assert.False(secondAcquired);
             Assert.Null(second);
         }
+    }
 
-        Assert.True(SingleInstanceGuard.TryAcquire("owner", "repo", installPath, out var reacquired));
-        reacquired?.Dispose();
+    [Fact]
+    public void DifferentInstallCopiesCannotOwnTheApplicationIdentityTogether()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"downkyi-guard-{Guid.NewGuid():N}");
+        var firstDirectory = Path.Combine(root, "first-install");
+        var secondDirectory = Path.Combine(root, "second-install");
+        Directory.CreateDirectory(firstDirectory);
+        Directory.CreateDirectory(secondDirectory);
+
+        var assemblyName = Path.GetFileName(typeof(SingleInstanceGuard).Assembly.Location);
+        var firstCopy = Path.Combine(firstDirectory, assemblyName);
+        var secondCopy = Path.Combine(secondDirectory, assemblyName);
+        File.Copy(typeof(SingleInstanceGuard).Assembly.Location, firstCopy);
+        File.Copy(typeof(SingleInstanceGuard).Assembly.Location, secondCopy);
+
+        var firstContext = new AssemblyLoadContext($"first-{Guid.NewGuid():N}", isCollectible: true);
+        var secondContext = new AssemblyLoadContext($"second-{Guid.NewGuid():N}", isCollectible: true);
+        try
+        {
+            var owner = $"owner-{Guid.NewGuid():N}";
+            var first = TryAcquireFromCopy(firstContext, firstCopy, owner);
+            Assert.True(first.Acquired);
+            using (first.Guard)
+            {
+                var second = TryAcquireFromCopy(secondContext, secondCopy, owner);
+                second.Guard?.Dispose();
+                Assert.False(second.Acquired);
+                Assert.Null(second.Guard);
+            }
+        }
+        finally
+        {
+            firstContext.Unload();
+            secondContext.Unload();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ReleasedApplicationIdentityCanBeAcquiredAgain()
+    {
+        var owner = $"owner-{Guid.NewGuid():N}";
+
+        Assert.True(SingleInstanceGuard.TryAcquire(owner, "repo", out var first));
+        first?.Dispose();
+
+        Assert.True(SingleInstanceGuard.TryAcquire(owner, "repo", out var second));
+        second?.Dispose();
+    }
+
+    private static (bool Acquired, IDisposable? Guard) TryAcquireFromCopy(
+        AssemblyLoadContext context,
+        string assemblyPath,
+        string owner)
+    {
+        using var assemblyStream = File.OpenRead(assemblyPath);
+        var assembly = context.LoadFromStream(assemblyStream);
+        var guardType = assembly.GetType("DownKyi.Platform.SingleInstanceGuard", throwOnError: true)!;
+        var tryAcquire = guardType.GetMethod("TryAcquire", BindingFlags.Public | BindingFlags.Static)!;
+        object?[] arguments = [owner, "repo", null];
+        var acquired = (bool)tryAcquire.Invoke(null, arguments)!;
+        return (acquired, (IDisposable?)arguments[2]);
     }
 }

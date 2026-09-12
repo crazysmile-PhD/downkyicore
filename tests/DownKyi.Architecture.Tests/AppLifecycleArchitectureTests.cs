@@ -96,6 +96,27 @@ public sealed class AppLifecycleArchitectureTests
     }
 
     [Fact]
+    public void ProductionSingleInstanceGuardPrecedesHostAndStorageInitialization()
+    {
+        var appSource = ReadSource("src", "DownKyi.Desktop", "App.axaml.cs");
+        var initializeStart = appSource.IndexOf("public override void Initialize()", StringComparison.Ordinal);
+        var initializeEnd = appSource.IndexOf(
+            "public override void OnFrameworkInitializationCompleted()", StringComparison.Ordinal);
+        Assert.True(initializeStart >= 0 && initializeEnd > initializeStart);
+
+        var initialize = appSource[initializeStart..initializeEnd];
+        var productionGuard = initialize.IndexOf("#if !DEBUG", StringComparison.Ordinal);
+        var acquire = initialize.IndexOf("SingleInstanceGuard.TryAcquire", StringComparison.Ordinal);
+        var exit = initialize.IndexOf("Environment.Exit(0)", StringComparison.Ordinal);
+        var loadXaml = initialize.IndexOf("AvaloniaXamlLoader.Load", StringComparison.Ordinal);
+        var createHost = initialize.IndexOf("CreateHost()", StringComparison.Ordinal);
+
+        Assert.True(productionGuard >= 0 && productionGuard < acquire);
+        Assert.True(acquire < exit && exit < loadXaml && loadXaml < createHost);
+        Assert.DoesNotContain("AppContext.BaseDirectory", initialize, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void AppDoesNotOwnGlobalDownloadCollections()
     {
         var source = ReadSource("src", "DownKyi.Desktop", "App.axaml.cs");

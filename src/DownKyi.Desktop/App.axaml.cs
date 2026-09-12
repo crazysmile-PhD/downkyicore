@@ -47,7 +47,6 @@ internal partial class App : Avalonia.Application, IAsyncDisposable
         if (!SingleInstanceGuard.TryAcquire(
                 AppConstant.RepoOwner,
                 AppConstant.RepoName,
-                AppContext.BaseDirectory,
                 out _singleInstanceGuard))
         {
             Environment.Exit(0);
