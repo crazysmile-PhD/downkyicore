@@ -12,14 +12,6 @@ on:
     branches:
       - main
       - release/v1.1.1-integration
-    paths:
-      - 'script/assets/external-assets.json'
-      - 'script/ffmpeg-assets.py'
-      - 'script/ffmpeg.ps1'
-      - 'script/ffmpeg.sh'
-      - 'script/tests/test_ffmpeg_assets.py'
-      - '.github/workflows/build.yml'
-      - '.github/workflows/update-ffmpeg-assets.yml'
   workflow_dispatch:
     inputs:
       update_ffmpeg_assets:
@@ -36,6 +28,8 @@ on:
 jobs:
   ffmpeg-tooling:
     name: FFmpeg tooling / implementation gate
+    needs: detect-production-manifest-change
+    if: ${{ github.event_name != 'pull_request' || needs.detect-production-manifest-change.outputs.ffmpeg_related == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -69,8 +63,9 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       external_assets: ${{ steps.filter.outputs.external_assets }}
+      ffmpeg_related: ${{ steps.filter.outputs.ffmpeg_related }}
     steps:
-      - name: Detect external asset manifest changes in the PR diff
+      - name: Detect FFmpeg changes in the PR diff
         id: filter
         if: github.event_name == 'pull_request'
         uses: dorny/paths-filter@v3
@@ -78,6 +73,14 @@ jobs:
           filters: |
             external_assets:
               - 'script/assets/external-assets.json'
+            ffmpeg_related:
+              - 'script/assets/external-assets.json'
+              - 'script/ffmpeg-assets.py'
+              - 'script/ffmpeg.ps1'
+              - 'script/ffmpeg.sh'
+              - 'script/tests/test_ffmpeg_assets.py'
+              - '.github/workflows/build.yml'
+              - '.github/workflows/update-ffmpeg-assets.yml'
 
   external-assets-preflight:
     name: Production manifest preflight
@@ -97,6 +100,36 @@ jobs:
         run: python script/ffmpeg-assets.py validate-manifest --manifest script/assets/external-assets.json
       - name: Check external asset availability
         run: python script/ffmpeg-assets.py preflight --manifest script/assets/external-assets.json --timeout 30
+
+  ffmpeg-required-gate:
+    name: FFmpeg manifest gate
+    needs:
+      - detect-production-manifest-change
+      - ffmpeg-tooling
+      - external-assets-preflight
+    if: ${{ always() && github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report the FFmpeg validation result
+        env:
+          DETECTION_RESULT: ${{ needs.detect-production-manifest-change.result }}
+          TOOLING_RESULT: ${{ needs.ffmpeg-tooling.result }}
+          PREFLIGHT_RESULT: ${{ needs.external-assets-preflight.result }}
+          FFMPEG_RELATED: ${{ needs.detect-production-manifest-change.outputs.ffmpeg_related }}
+          EXTERNAL_ASSETS: ${{ needs.detect-production-manifest-change.outputs.external_assets }}
+        run: |
+          set -e
+          test "$DETECTION_RESULT" = success
+          if [ "$FFMPEG_RELATED" = true ]; then
+            test "$TOOLING_RESULT" = success
+          else
+            test "$TOOLING_RESULT" = skipped
+          fi
+          if [ "$EXTERNAL_ASSETS" = true ]; then
+            test "$PREFLIGHT_RESULT" = success
+          else
+            test "$PREFLIGHT_RESULT" = skipped
+          fi
 
   release-gate:
     name: Release gate (${{ matrix.os }})
