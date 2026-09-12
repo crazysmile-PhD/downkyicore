@@ -31,7 +31,8 @@ internal sealed class OwnedProcessScope : IDisposable
 
     internal static async Task<OwnedProcessScope> StartAsync(ProcessStartInfo testStartInfo, TimeSpan startupWindow)
     {
-        var pipeName = $"downkyi-test-scope-{Guid.NewGuid():N}";
+        // Unix named pipes include the temporary directory in a short socket path.
+        var pipeName = Guid.NewGuid().ToString("N");
         using var control = new NamedPipeServerStream(
             pipeName, PipeDirection.In, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
         var jobName = OperatingSystem.IsWindows() ? $"Local\\downkyi-test-{Guid.NewGuid():N}" : null;
