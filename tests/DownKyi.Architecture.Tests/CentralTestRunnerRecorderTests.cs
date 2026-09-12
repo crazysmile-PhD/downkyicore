@@ -147,6 +147,137 @@ public sealed class CentralTestRunnerRecorderTests
     }
 
     [Fact]
+    public async Task SnapshotNeverReturnsDoesNotBlockTerminationAndCleanupBudget()
+    {
+        var evidenceDirectory = CreateEvidenceDirectory();
+        var cleanupClock = new Stopwatch();
+        try
+        {
+            var result = await FlightRecorderExecution.RunAsync(
+                new ProcessExecutionRequest(
+                    "fixture.snapshot-never-returns.slice",
+                    "fixture.snapshot-never-returns.test",
+                    CreateFixtureStartInfo("fixture-hold"),
+                    TimeSpan.FromMilliseconds(200),
+                    TimeSpan.FromSeconds(2),
+                    evidenceDirectory,
+                    (_, _) =>
+                    {
+                        cleanupClock.Start();
+                        return new TaskCompletionSource<FinalProcessSnapshot>().Task;
+                    }),
+                CancellationToken.None);
+
+            cleanupClock.Stop();
+            Assert.Equal(124, result.ExitCode);
+            Assert.True(cleanupClock.Elapsed < TimeSpan.FromMilliseconds(2500));
+            Assert.False(IsProcessAlive(result.RootPid));
+            using var document = JsonDocument.Parse(await File.ReadAllTextAsync(
+                result.EvidencePath,
+                TestContext.Current.CancellationToken));
+            var events = document.RootElement.GetProperty("Events")
+                .EnumerateArray()
+                .Select(item => item.GetProperty("Event").GetString())
+                .ToArray();
+            Assert.Contains("final_snapshot_failed", events);
+            Assert.Contains("bounded_stop_requested", events);
+            Assert.Contains("cleanup_completed", events);
+        }
+        finally
+        {
+            Directory.Delete(evidenceDirectory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task BlockedStderrForwardingCannotDelayMandatoryTermination()
+    {
+        var evidenceDirectory = CreateEvidenceDirectory();
+        using var blockedError = new BlockingTextWriter();
+        try
+        {
+            using var cancellation = new CancellationTokenSource();
+            var run = FlightRecorderExecution.RunAsync(
+                new ProcessExecutionRequest(
+                    "fixture.stderr-backpressure.slice",
+                    "fixture.stderr-backpressure.test",
+                    CreateFixtureStartInfo("fixture-stderr-hold"),
+                    TimeSpan.FromSeconds(10),
+                    TimeSpan.FromSeconds(1),
+                    evidenceDirectory,
+                    ErrorDestination: blockedError),
+                cancellation.Token);
+            await blockedError.Entered.WaitAsync(TimeSpan.FromSeconds(5),
+                TestContext.Current.CancellationToken);
+
+            var cleanupClock = Stopwatch.StartNew();
+            await cancellation.CancelAsync();
+            var result = await run.WaitAsync(TimeSpan.FromSeconds(4),
+                TestContext.Current.CancellationToken);
+            cleanupClock.Stop();
+
+            Assert.Equal(2, result.ExitCode);
+            Assert.True(cleanupClock.Elapsed < TimeSpan.FromSeconds(3));
+            Assert.False(IsProcessAlive(result.RootPid));
+            using var document = JsonDocument.Parse(await File.ReadAllTextAsync(
+                result.EvidencePath, TestContext.Current.CancellationToken));
+            var events = document.RootElement.GetProperty("Events").EnumerateArray()
+                .Select(item => item.GetProperty("Event").GetString()).ToArray();
+            Assert.Contains("bounded_stop_requested", events);
+            Assert.Contains("cleanup_completed", events);
+            Assert.Contains("cleanup_failed", events);
+        }
+        finally
+        {
+            blockedError.Release();
+            Directory.Delete(evidenceDirectory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task OutputPipeHeldByDescendantDoesNotHangRunner()
+    {
+        var evidenceDirectory = CreateEvidenceDirectory();
+        var markerPath = Path.Combine(evidenceDirectory, "pipe-holder.pid");
+        int? childPid = null;
+        try
+        {
+            var runtimeConfig = Path.Combine(
+                AppContext.BaseDirectory,
+                "DownKyi.Architecture.Tests.runtimeconfig.json");
+            var clock = Stopwatch.StartNew();
+            var result = await FlightRecorderExecution.RunAsync(
+                new ProcessExecutionRequest(
+                    "fixture.pipe-holder.slice",
+                    "fixture.pipe-holder.test",
+                    CreateFixtureStartInfo("fixture-exit-with-pipe-holder", runtimeConfig, markerPath),
+                    TimeSpan.FromSeconds(5),
+                    TimeSpan.FromMilliseconds(500),
+                    evidenceDirectory),
+                CancellationToken.None);
+            clock.Stop();
+
+            childPid = int.Parse(await File.ReadAllTextAsync(markerPath, TestContext.Current.CancellationToken),
+                CultureInfo.InvariantCulture);
+            Assert.Equal(2, result.ExitCode);
+            Assert.True(clock.Elapsed < TimeSpan.FromSeconds(4));
+            using var document = JsonDocument.Parse(await File.ReadAllTextAsync(
+                result.EvidencePath,
+                TestContext.Current.CancellationToken));
+            Assert.Equal("stream_drain_failed", document.RootElement.GetProperty("Outcome").GetString());
+        }
+        finally
+        {
+            if (childPid is { } pid)
+            {
+                StopFixtureProcessIfAlive(pid);
+            }
+
+            Directory.Delete(evidenceDirectory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task SensitiveEvidenceIsRedactedAtEveryRecorderTextBoundary()
     {
         var evidenceDirectory = CreateEvidenceDirectory();
@@ -518,5 +649,35 @@ public sealed class CentralTestRunnerRecorderTests
             $"downkyi-flight-recorder-{Guid.NewGuid():N}");
         Directory.CreateDirectory(path);
         return path;
+    }
+
+    private sealed class BlockingTextWriter : TextWriter
+    {
+        private readonly TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly ManualResetEventSlim release = new(false);
+
+        public Task Entered => entered.Task;
+
+        public override System.Text.Encoding Encoding => System.Text.Encoding.UTF8;
+
+        public override Task WriteLineAsync(string? value)
+        {
+            entered.TrySetResult();
+            release.Wait();
+            return Task.CompletedTask;
+        }
+
+        public void Release() => release.Set();
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                release.Set();
+                release.Dispose();
+            }
+
+            base.Dispose(disposing);
+        }
     }
 }
