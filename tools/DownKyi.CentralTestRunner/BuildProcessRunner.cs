@@ -162,15 +162,13 @@ internal static class BuildProcessRunner
     internal static async Task WaitForOwnedProcessesToExitAsync(
         IReadOnlyList<ObservedProcess> ownedProcesses,
         TimeSpan cleanupTimeout,
-        Func<Process, DateTimeOffset>? readStartTimeUtc = null,
-        Func<Process, CancellationToken, Task>? waitForExitAsync = null)
+        Func<Process, DateTimeOffset>? readStartTimeUtc = null)
     {
         using var timeout = new CancellationTokenSource(cleanupTimeout);
         var waits = ownedProcesses.Select(
             observedProcess => WaitForObservedProcessExitAsync(
                 observedProcess,
                 readStartTimeUtc ?? ReadStartTimeUtc,
-                waitForExitAsync: waitForExitAsync,
                 cancellationToken: timeout.Token));
         try
         {
@@ -189,113 +187,13 @@ internal static class BuildProcessRunner
         Func<Process, DateTimeOffset>? readStartTimeUtc = null,
         Func<Process, bool>? readHasExited = null,
         Func<int, bool>? isProcessPresent = null,
-        Func<Process, CancellationToken, Task>? waitForExitAsync = null,
         CancellationToken cancellationToken = default)
     {
-        Process process;
-        try
-        {
-            process = Process.GetProcessById(observedProcess.Pid);
-        }
-        catch (ArgumentException)
-        {
-            // The observed process exited before its identity could be opened.
-            return;
-        }
-
-        using (process)
-        {
-            try
-            {
-                if (observedProcess.StartTimeUtc is { } expectedStartTime &&
-                    (readStartTimeUtc ?? ReadStartTimeUtc)(process) != expectedStartTime)
-                {
-                    return;
-                }
-
-                await (waitForExitAsync ?? WaitForExitAsync)(process, cancellationToken)
-                    .ConfigureAwait(false);
-            }
-            catch (Exception exception) when (IsProcessObservationFailure(exception))
-            {
-                var terminalState = ObserveTerminalStateAfterIdentityFailure(
-                        process,
-                        observedProcess.Pid,
-                        readHasExited ?? ReadHasExited,
-                        isProcessPresent ?? IsProcessPresent);
-                if (terminalState is true)
-                {
-                    return;
-                }
-
-                if (terminalState is null)
-                {
-                    throw;
-                }
-
-                // A dying Unix process can retain its PID after identity reads become unavailable.
-                // The caller's cleanup window bounds this wait and remains fail-closed if it expires.
-                await (waitForExitAsync ?? WaitForExitAsync)(process, cancellationToken)
-                    .ConfigureAwait(false);
-            }
-        }
-    }
-
-    private static Task WaitForExitAsync(Process process, CancellationToken cancellationToken)
-    {
-        return process.WaitForExitAsync(cancellationToken);
-    }
-
-    private static bool? ObserveTerminalStateAfterIdentityFailure(
-        Process process,
-        int processId,
-        Func<Process, bool> readHasExited,
-        Func<int, bool> isProcessPresent)
-    {
-        try
-        {
-            if (readHasExited(process))
-            {
-                return true;
-            }
-        }
-        catch (Exception exception) when (IsProcessObservationFailure(exception))
-        {
-            // A vanished process can make both StartTime and HasExited unavailable.
-        }
-
-        try
-        {
-            return !isProcessPresent(processId);
-        }
-        catch (Exception exception) when (IsProcessObservationFailure(exception))
-        {
-            // An inconclusive secondary observation must not replace the first identity failure.
-            return null;
-        }
-    }
-
-    private static bool IsProcessObservationFailure(Exception exception)
-    {
-        return exception is InvalidOperationException or System.ComponentModel.Win32Exception;
-    }
-
-    private static bool ReadHasExited(Process process)
-    {
-        return process.HasExited;
-    }
-
-    private static bool IsProcessPresent(int processId)
-    {
-        try
-        {
-            using var process = Process.GetProcessById(processId);
-            return true;
-        }
-        catch (ArgumentException)
-        {
-            return false;
-        }
+        await ObservedProcessIdentity.WaitUntilGoneAsync(
+            observedProcess,
+            cancellationToken,
+            process => ObservedProcessIdentity.Observe(
+                process, readStartTimeUtc, readHasExited, isProcessPresent)).ConfigureAwait(false);
     }
 
     private static DateTimeOffset ReadStartTimeUtc(Process process)

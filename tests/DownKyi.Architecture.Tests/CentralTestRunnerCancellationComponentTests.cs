@@ -142,7 +142,7 @@ public sealed class CentralTestRunnerCancellationComponentTests
     }
 
     [Fact]
-    public async Task IdentityObservationPreservesFirstFailureWhenSecondaryObservationsAreInconclusive()
+    public async Task IdentityObservationKeepsUnknownUntilCancellation()
     {
         Process? fixture = null;
         await FailurePreservingTestCleanup.RunAsync(
@@ -150,25 +150,22 @@ public sealed class CentralTestRunnerCancellationComponentTests
             {
                 fixture = await StartHoldingFixtureAsync().ConfigureAwait(true);
                 var expectedStartTime = fixture.StartTime.ToUniversalTime();
-                var identityFailure = new Win32Exception("identity unavailable");
-
-                var exception = await Record.ExceptionAsync(
+                using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(
                     () => BuildProcessRunner.WaitForObservedProcessExitAsync(
                         CreateObservedProcess(fixture, expectedStartTime),
-                        _ => throw identityFailure,
+                        _ => throw new Win32Exception("identity unavailable"),
                         _ => throw new Win32Exception("exit state unavailable"),
                         _ => throw new InvalidOperationException("presence unavailable"),
-                        cancellationToken: TestContext.Current.CancellationToken))
+                        cancellationToken: cancellation.Token))
                     .ConfigureAwait(true);
-
-                Assert.Same(identityFailure, exception);
                 Assert.False(fixture.HasExited);
             },
             () => StopFixtureAsync(fixture)).ConfigureAwait(true);
     }
 
     [Fact]
-    public async Task IdentityObservationTimeoutCancelsAndJoinsInnerWait()
+    public async Task IdentityObservationUnknownExpiresWithinOwnedWaitDeadline()
     {
         Process? fixture = null;
         await FailurePreservingTestCleanup.RunAsync(
@@ -176,36 +173,14 @@ public sealed class CentralTestRunnerCancellationComponentTests
             {
                 fixture = await StartHoldingFixtureAsync().ConfigureAwait(true);
                 var expectedStartTime = fixture.StartTime.ToUniversalTime();
-                var innerWaitStarted = new TaskCompletionSource(
-                    TaskCreationOptions.RunContinuationsAsynchronously);
-                var innerWaitStopped = new TaskCompletionSource(
-                    TaskCreationOptions.RunContinuationsAsynchronously);
-                var pendingExit = new TaskCompletionSource(
-                    TaskCreationOptions.RunContinuationsAsynchronously);
-
                 var exception = await Record.ExceptionAsync(
                     () => BuildProcessRunner.WaitForOwnedProcessesToExitAsync(
                         [CreateObservedProcess(fixture, expectedStartTime)],
                         TimeSpan.Zero,
-                        _ => throw new Win32Exception("identity unavailable"),
-                        async (_, cancellationToken) =>
-                        {
-                            innerWaitStarted.TrySetResult();
-                            try
-                            {
-                                await pendingExit.Task.WaitAsync(cancellationToken)
-                                    .ConfigureAwait(false);
-                            }
-                            finally
-                            {
-                                innerWaitStopped.TrySetResult();
-                            }
-                        }))
+                        _ => throw new Win32Exception("identity unavailable")))
                     .ConfigureAwait(true);
 
                 Assert.IsType<TimeoutException>(exception);
-                Assert.True(innerWaitStarted.Task.IsCompletedSuccessfully);
-                Assert.True(innerWaitStopped.Task.IsCompletedSuccessfully);
                 Assert.False(fixture.HasExited);
             },
             () => StopFixtureAsync(fixture)).ConfigureAwait(true);

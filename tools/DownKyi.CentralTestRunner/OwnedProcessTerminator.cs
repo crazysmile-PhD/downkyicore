@@ -12,7 +12,9 @@ internal static class OwnedProcessTerminator
     internal static async Task<IReadOnlyList<string>> TerminateAsync(
         Process root,
         IReadOnlyList<ObservedProcess>? capturedProcesses,
-        CleanupDeadline deadline)
+        CleanupDeadline deadline,
+        Func<ObservedProcess, ProcessIdentityState>? observeIdentity = null,
+        Action<int>? signalProcess = null)
     {
         if (OperatingSystem.IsWindows())
         {
@@ -29,6 +31,10 @@ internal static class OwnedProcessTerminator
         var failures = new List<string>();
         var captured = capturedProcesses ?? [];
         var parentByPid = captured.ToDictionary(process => process.Pid, process => process.ParentPid);
+        var unresolved = new List<ObservedProcess>();
+        var observe = observeIdentity ?? (process => ObservedProcessIdentity.Observe(
+            process, onSame: current => current.Kill()));
+        var signal = signalProcess ?? Signal;
         foreach (var descendant in captured
                      .Where(process => process.Pid != root.Id)
                      .OrderByDescending(process => Depth(process.Pid, parentByPid)))
@@ -39,37 +45,36 @@ internal static class OwnedProcessTerminator
                 break;
             }
 
-            Process? process = null;
+            ProcessIdentityState identity;
             try
             {
-                process = Process.GetProcessById(descendant.Pid);
-                if (descendant.StartTimeUtc is null)
-                {
-                    failures.Add($"pid {descendant.Pid} has no verified start time; signal omitted");
-                    continue;
-                }
-
-                if (process.StartTime.ToUniversalTime() != descendant.StartTimeUtc.Value.UtcDateTime)
-                {
-                    continue;
-                }
-
-                Signal(descendant.Pid);
-            }
-            catch (ArgumentException)
-            {
-                // The captured PID disappeared before the signal.
+                identity = observe(descendant);
             }
             catch (Exception exception) when (exception is InvalidOperationException or Win32Exception)
             {
-                if (!HasExited(process))
+                if (ObservedProcessIdentity.Observe(descendant) != ProcessIdentityState.Gone)
                 {
                     failures.Add($"pid {descendant.Pid}: {exception.Message}");
                 }
+
+                continue;
             }
-            finally
+            if (identity == ProcessIdentityState.Unknown)
             {
-                process?.Dispose();
+                unresolved.Add(descendant);
+                continue;
+            }
+
+            if (identity == ProcessIdentityState.Same && observeIdentity is not null)
+            {
+                try
+                {
+                    signal(descendant.Pid);
+                }
+                catch (Win32Exception exception)
+                {
+                    failures.Add($"pid {descendant.Pid}: {exception.Message}");
+                }
             }
         }
 
@@ -77,11 +82,45 @@ internal static class OwnedProcessTerminator
         {
             try
             {
-                Signal(root.Id);
+                signal(root.Id);
             }
             catch (Win32Exception exception)
             {
                 failures.Add($"root pid {root.Id}: {exception.Message}");
+            }
+        }
+
+        foreach (var descendant in unresolved)
+        {
+            ProcessIdentityState identity;
+            try
+            {
+                identity = await ObservedProcessIdentity.ResolveUnknownAsync(
+                    descendant, deadline, observe).ConfigureAwait(false);
+            }
+            catch (Exception exception) when (exception is InvalidOperationException or Win32Exception)
+            {
+                if (ObservedProcessIdentity.Observe(descendant) != ProcessIdentityState.Gone)
+                {
+                    failures.Add($"pid {descendant.Pid}: {exception.Message}");
+                }
+
+                continue;
+            }
+            if (identity == ProcessIdentityState.Unknown)
+            {
+                failures.Add($"pid {descendant.Pid}: identity remained unknown until the cleanup deadline");
+            }
+            else if (identity == ProcessIdentityState.Same && observeIdentity is not null)
+            {
+                try
+                {
+                    signal(descendant.Pid);
+                }
+                catch (Win32Exception exception)
+                {
+                    failures.Add($"pid {descendant.Pid}: {exception.Message}");
+                }
             }
         }
 
@@ -99,24 +138,6 @@ internal static class OwnedProcessTerminator
         }
 
         return depth;
-    }
-
-    private static bool HasExited(Process? process)
-    {
-        if (process is null)
-        {
-            return false;
-        }
-
-        try
-        {
-            return process.HasExited;
-        }
-        catch (Exception exception) when (exception is InvalidOperationException or Win32Exception)
-        {
-            // Retain the original identity failure when exit cannot be confirmed.
-            return false;
-        }
     }
 
     private static void Signal(int pid)

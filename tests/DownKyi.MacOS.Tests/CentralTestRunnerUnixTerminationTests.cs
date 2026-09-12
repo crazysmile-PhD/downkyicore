@@ -74,6 +74,8 @@ public sealed class CentralTestRunnerUnixTerminationTests
             await root.WaitForExitAsync(TestContext.Current.CancellationToken)
                 .WaitAsync(deadline.Remaining, TestContext.Current.CancellationToken);
             await BuildProcessRunner.WaitForOwnedProcessesToExitAsync(snapshot.Processes, deadline.Remaining);
+            Assert.All(snapshot.Processes, observed =>
+                Assert.Equal(ProcessIdentityState.Gone, ObservedProcessIdentity.Observe(observed)));
         }
         finally
         {
@@ -108,6 +110,186 @@ public sealed class CentralTestRunnerUnixTerminationTests
                 .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
             Directory.Delete(directory, recursive: true);
         }
+    }
+
+    [Fact]
+    public async Task TerminationSignalsSameIdentityButNeverSignalsReusedPid()
+    {
+        using var root = StartSleep();
+        using var reusedPid = StartSleep();
+        var signals = new List<int>();
+        try
+        {
+            var snapshot = new[]
+            {
+                new ObservedProcess
+                {
+                    Pid = reusedPid.Id,
+                    ParentPid = root.Id,
+                    StartTimeUtc = reusedPid.StartTime.ToUniversalTime().AddSeconds(-1)
+                },
+                new ObservedProcess
+                {
+                    Pid = root.Id,
+                    ParentPid = Environment.ProcessId,
+                    StartTimeUtc = root.StartTime.ToUniversalTime()
+                }
+            };
+            Assert.Equal(ProcessIdentityState.Same, ObservedProcessIdentity.Observe(snapshot[1]));
+            Assert.Equal(ProcessIdentityState.Gone, ObservedProcessIdentity.Observe(snapshot[0]));
+
+            var failures = await OwnedProcessTerminator.TerminateAsync(
+                root, snapshot, new CleanupDeadline(TimeSpan.FromSeconds(1)),
+                signalProcess: pid =>
+                {
+                    signals.Add(pid);
+                    if (pid == root.Id)
+                    {
+                        root.Kill();
+                    }
+                });
+
+            Assert.Empty(failures);
+            Assert.Contains(root.Id, signals);
+            Assert.DoesNotContain(reusedPid.Id, signals);
+            Assert.False(reusedPid.HasExited);
+        }
+        finally
+        {
+            await StopAsync(root);
+            await StopAsync(reusedPid);
+        }
+    }
+
+    [Fact]
+    public async Task TerminationTreatsExitedOriginalAsGone()
+    {
+        using var root = StartSleep();
+        using var exited = StartSleep();
+        var observed = new ObservedProcess
+        {
+            Pid = exited.Id,
+            ParentPid = root.Id,
+            StartTimeUtc = exited.StartTime.ToUniversalTime()
+        };
+        var signals = new List<int>();
+        try
+        {
+            exited.Kill();
+            await exited.WaitForExitAsync(TestContext.Current.CancellationToken).ConfigureAwait(true);
+            Assert.Equal(ProcessIdentityState.Gone, ObservedProcessIdentity.Observe(observed));
+
+            var failures = await OwnedProcessTerminator.TerminateAsync(
+                root, [observed], new CleanupDeadline(TimeSpan.FromSeconds(1)),
+                signalProcess: pid =>
+                {
+                    signals.Add(pid);
+                    if (pid == root.Id)
+                    {
+                        root.Kill();
+                    }
+                });
+
+            Assert.Empty(failures);
+            Assert.DoesNotContain(exited.Id, signals);
+        }
+        finally
+        {
+            await StopAsync(root);
+            await StopAsync(exited);
+        }
+    }
+
+    [Fact]
+    public async Task TerminationRechecksUnknownAndSignalsOnlyAfterIdentityBecomesSame()
+    {
+        using var root = StartSleep();
+        var descendant = new ObservedProcess
+        {
+            Pid = root.Id + 1000000,
+            ParentPid = root.Id,
+            StartTimeUtc = DateTimeOffset.UtcNow
+        };
+        var observations = 0;
+        var signals = new List<int>();
+        try
+        {
+            var failures = await OwnedProcessTerminator.TerminateAsync(
+                root, [descendant], new CleanupDeadline(TimeSpan.FromSeconds(1)),
+                _ => ++observations == 1 ? ProcessIdentityState.Unknown : ProcessIdentityState.Same,
+                pid =>
+                {
+                    signals.Add(pid);
+                    if (pid == root.Id)
+                    {
+                        root.Kill();
+                    }
+                });
+
+            Assert.Empty(failures);
+            Assert.True(observations >= 2);
+            Assert.Contains(descendant.Pid, signals);
+            Assert.True(signals.IndexOf(root.Id) < signals.IndexOf(descendant.Pid));
+        }
+        finally
+        {
+            await StopAsync(root);
+        }
+    }
+
+    [Fact]
+    public async Task UnknownIdentityFailsClosedWithinCleanupDeadline()
+    {
+        using var root = StartSleep();
+        var descendant = new ObservedProcess
+        {
+            Pid = root.Id + 1000000,
+            ParentPid = root.Id,
+            StartTimeUtc = DateTimeOffset.UtcNow
+        };
+        var signals = new List<int>();
+        var clock = Stopwatch.StartNew();
+        try
+        {
+            var failures = await OwnedProcessTerminator.TerminateAsync(
+                root, [descendant], new CleanupDeadline(TimeSpan.FromMilliseconds(100)),
+                _ => ProcessIdentityState.Unknown,
+                pid =>
+                {
+                    signals.Add(pid);
+                    if (pid == root.Id)
+                    {
+                        root.Kill();
+                    }
+                });
+
+            Assert.Single(failures);
+            Assert.Contains("identity remained unknown", failures[0], StringComparison.Ordinal);
+            Assert.DoesNotContain(descendant.Pid, signals);
+            Assert.True(clock.Elapsed < TimeSpan.FromSeconds(1));
+        }
+        finally
+        {
+            await StopAsync(root);
+        }
+    }
+
+    private static Process StartSleep()
+    {
+        var startInfo = new ProcessStartInfo("/bin/sleep") { UseShellExecute = false };
+        startInfo.ArgumentList.Add("60");
+        return Process.Start(startInfo) ?? throw new InvalidOperationException("The sleep fixture did not start.");
+    }
+
+    private static async Task StopAsync(Process process)
+    {
+        if (!process.HasExited)
+        {
+            process.Kill();
+        }
+
+        await process.WaitForExitAsync(TestContext.Current.CancellationToken)
+            .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken).ConfigureAwait(true);
     }
 
     [Theory]
