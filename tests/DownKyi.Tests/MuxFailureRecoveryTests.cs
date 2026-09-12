@@ -275,6 +275,7 @@ public sealed class MuxFailureRecoveryTests
             var execution = new DownloadExecutionContextFactory(
                 projectionStore,
                 settings.Store).Create(taskId);
+            execution.StagingDirectory = directory;
             execution.MediaKind = DownloadMediaKind.Dash;
             execution.AudioFile = audioFile;
             execution.AudioTransferKey = audioKey;

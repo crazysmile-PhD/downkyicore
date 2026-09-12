@@ -30,6 +30,7 @@ internal static class DownloadComposition
         services.AddSingleton<LegacyDownloadAdmissionPresenter>();
         services.AddSingleton<DownloadListState>();
         services.AddSingleton<DownloadTaskFileService>();
+        services.AddSingleton<DownloadTaskStaging>();
         services.AddSingleton<AriaRuntimeClientRegistry>();
         services.AddSingleton<IDownloadManagerCoordinator, DownloadManagerCoordinator>();
         services.AddSingleton<DownloadDuplicatePolicy>();

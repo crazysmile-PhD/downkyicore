@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -16,6 +15,7 @@ namespace DownKyi.Services.Download;
 internal enum DownloadArtifactOpenResult
 {
     Opened,
+    NoPublishedArtifactRecord,
     NotFound,
     OpenFailed
 }
@@ -53,12 +53,6 @@ internal interface IDownloadManagerCoordinator
 
 internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator
 {
-    private static readonly ImmutableArray<string> VideoSuffixes = [".mp4", ".flv"];
-    private static readonly ImmutableArray<string> AudioSuffixes = [".aac", ".mp3"];
-    private static readonly ImmutableArray<string> CoverSuffixes = [".jpg", ".jpeg", ".png", ".webp"];
-    private static readonly ImmutableArray<string> DanmakuSuffixes = [".ass"];
-    private static readonly ImmutableArray<string> SubtitleSuffixes = [".srt"];
-
     private readonly DownloadTaskProjectionStore _storage;
     private readonly DownloadTaskStateWriter _stateWriter;
     private readonly IDownloadTaskQueue _taskQueue;
@@ -164,7 +158,7 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator
 
         // Once physical deletion starts, finish the database/list transaction even if app shutdown is requested.
         var deletion = await _fileService
-            .DeleteGeneratedFilesAsync(item, CancellationToken.None)
+            .DeleteGeneratedFilesAsync(item, _storage.GetRequiredSnapshot(taskId), CancellationToken.None)
             .ConfigureAwait(true);
         if (!deletion.Succeeded)
         {
@@ -202,12 +196,28 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator
         _downloadLists.RemoveDownloaded(item);
     }
 
-    public Task<DownloadArtifactOpenResult> OpenVideoAsync(
+    public async Task<DownloadArtifactOpenResult> OpenVideoAsync(
         DownloadedItem item,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(item);
-        return OpenFirstFileAsync(item.DownloadBase?.FilePath, [".mp4", ".flv"], cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (item.DownloadBase == null)
+        {
+            return DownloadArtifactOpenResult.NotFound;
+        }
+
+        var artifacts = _storage.GetRequiredSnapshot(new DownloadTaskId(item.DownloadBase.Id))
+            .Output.PublishedArtifacts;
+        if (artifacts.Count == 0)
+        {
+            return DownloadArtifactOpenResult.NoPublishedArtifactRecord;
+        }
+
+        return artifacts.TryGetValue("media", out var path) && File.Exists(path)
+            ? await _platformLauncher.OpenFileAsync(path, cancellationToken).ConfigureAwait(true)
+                ? DownloadArtifactOpenResult.Opened : DownloadArtifactOpenResult.OpenFailed
+            : DownloadArtifactOpenResult.NotFound;
     }
 
     public async Task<DownloadArtifactOpenResult> OpenFolderAsync(
@@ -216,15 +226,20 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator
     {
         ArgumentNullException.ThrowIfNull(item);
         cancellationToken.ThrowIfCancellationRequested();
-        var downloadBase = item.DownloadBase;
-        if (downloadBase == null || string.IsNullOrWhiteSpace(downloadBase.FilePath))
+        if (item.DownloadBase == null)
         {
             return DownloadArtifactOpenResult.NotFound;
         }
 
-        foreach (var suffix in GetSelectedSuffixes(downloadBase))
+        var artifacts = _storage.GetRequiredSnapshot(new DownloadTaskId(item.DownloadBase.Id))
+            .Output.PublishedArtifacts;
+        if (artifacts.Count == 0)
         {
-            var candidate = downloadBase.FilePath + suffix;
+            return DownloadArtifactOpenResult.NoPublishedArtifactRecord;
+        }
+
+        foreach (var candidate in artifacts.Values)
+        {
             if (!File.Exists(candidate))
             {
                 continue;
@@ -237,34 +252,6 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator
             }
 
             return await _platformLauncher.OpenFolderAsync(directory, cancellationToken)
-                .ConfigureAwait(true)
-                ? DownloadArtifactOpenResult.Opened
-                : DownloadArtifactOpenResult.OpenFailed;
-        }
-
-        return DownloadArtifactOpenResult.NotFound;
-    }
-
-    private async Task<DownloadArtifactOpenResult> OpenFirstFileAsync(
-        string? basePath,
-        IEnumerable<string> suffixes,
-        CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        if (string.IsNullOrWhiteSpace(basePath))
-        {
-            return DownloadArtifactOpenResult.NotFound;
-        }
-
-        foreach (var suffix in suffixes)
-        {
-            var candidate = basePath + suffix;
-            if (!File.Exists(candidate))
-            {
-                continue;
-            }
-
-            return await _platformLauncher.OpenFileAsync(Path.GetFullPath(candidate), cancellationToken)
                 .ConfigureAwait(true)
                 ? DownloadArtifactOpenResult.Opened
                 : DownloadArtifactOpenResult.OpenFailed;
@@ -290,38 +277,6 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator
                 CancellationToken.None).ConfigureAwait(true);
             throw;
         }
-    }
-
-    private static ImmutableArray<string> GetSelectedSuffixes(DownloadBase downloadBase)
-    {
-        var content = downloadBase.NeedDownloadContent;
-        var suffixes = ImmutableArray.CreateBuilder<string>();
-        if (content.Video)
-        {
-            suffixes.AddRange(VideoSuffixes);
-        }
-
-        if (content.Audio)
-        {
-            suffixes.AddRange(AudioSuffixes);
-        }
-
-        if (content.Cover)
-        {
-            suffixes.AddRange(CoverSuffixes);
-        }
-
-        if (content.Danmaku)
-        {
-            suffixes.AddRange(DanmakuSuffixes);
-        }
-
-        if (content.Subtitle)
-        {
-            suffixes.AddRange(SubtitleSuffixes);
-        }
-
-        return suffixes.ToImmutable();
     }
 
     private static DownloadTaskId GetTaskId(DownloadingItem item)

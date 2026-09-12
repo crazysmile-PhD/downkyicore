@@ -16,6 +16,52 @@ namespace DownKyi.Tests;
 public sealed class DownloadArtifactStageTests
 {
     [Fact]
+    public async Task RecordedDanmakuDoesNotCompleteRetryAfterPublishedFileDisappears()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "downkyi-artifact-retry",
+            Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            using var settings = new DownKyi.Core.Settings.SettingsStore(
+                Path.Combine(directory, "settings.json"));
+            var downloadBase = new DownloadBase
+            {
+                Id = "missing-published-danmaku",
+                FilePath = Path.Combine(directory, "output"),
+                NeedDownloadContent = DownloadContentSelection.None with { Danmaku = true }
+            };
+            var item = new DownloadingItem
+            {
+                DownloadBase = downloadBase,
+                Downloading = new Downloading
+                {
+                    Id = downloadBase.Id,
+                    DownloadBase = downloadBase,
+                    DownloadStatus = DownloadStatus.WaitForDownload
+                }
+            };
+            var context = DownloadExecutionContextTestFactory.Create(item, settings.Current);
+            var published = Path.Combine(directory, "output.xml");
+            context.PublishedArtifacts["danmaku"] = published;
+            await File.WriteAllBytesAsync(published, [1], TestContext.Current.CancellationToken);
+            var stage = new ValidateStage();
+
+            var beforeRemoval = await stage.ExecuteAsync(context, TestContext.Current.CancellationToken);
+            Assert.True(beforeRemoval.IsSuccess);
+
+            File.Delete(published);
+            var afterRemoval = await stage.ExecuteAsync(context, TestContext.Current.CancellationToken);
+            Assert.False(afterRemoval.IsSuccess);
+            Assert.Equal("download.validate.danmaku", afterRemoval.Error?.Code);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task ReopenedTaskGeneratesPersistedNfoAfterCurrentSettingIsDisabled()
     {
         var directory = Path.Combine(

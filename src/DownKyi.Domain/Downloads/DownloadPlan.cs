@@ -26,6 +26,9 @@ public sealed class DownloadPlan
     public int StreamType { get; }
 
     public DownloadNfoRequest? NfoRequest { get; }
+
+    public DownloadPlan WithTransferFiles(IEnumerable<KeyValuePair<string, string>> transferFiles) =>
+        new(RequestedContent, transferFiles, StreamType, NfoRequest);
 }
 
 public sealed class DownloadNfoRequest

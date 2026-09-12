@@ -120,6 +120,24 @@ internal sealed class DownloadTaskStateWriter
         CancellationToken cancellationToken = default) =>
         RequireAsync(_tasks.CompleteTransferFileAsync(taskId, key, cancellationToken));
 
+    public Task<DownloadTask> RecordPublishedArtifactAsync(
+        DownloadTaskId taskId,
+        DownloadPublishingArtifact publishing,
+        string path,
+        CancellationToken cancellationToken = default) =>
+        RequireAsync(_tasks.RecordPublishedArtifactAsync(taskId, publishing, path, cancellationToken));
+
+    public Task<DownloadTask> BeginPublishingArtifactAsync(
+        DownloadTaskId taskId,
+        DownloadPublishingArtifact publishing,
+        CancellationToken cancellationToken = default) =>
+        RequireAsync(_tasks.BeginPublishingArtifactAsync(taskId, publishing, cancellationToken));
+
+    public Task<DownloadTask> ClearPublishingArtifactAsync(
+        DownloadTaskId taskId,
+        CancellationToken cancellationToken = default) =>
+        RequireAsync(_tasks.ClearPublishingArtifactAsync(taskId, cancellationToken));
+
     public Task<DownloadTask> SetBackendIdentityAsync(
         DownloadTaskId taskId,
         string? backendIdentity,
