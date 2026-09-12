@@ -524,7 +524,6 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
             .RequireValue();
         Assert.False(task.Complete(new DownloadCompletion(123, "finished", null),
             _clock.UtcNow.AddSeconds(3)).IsSuccess);
-        Assert.False(task.Delete(_clock.UtcNow.AddSeconds(3)).IsSuccess);
         using (var store = CreateStore())
         {
             Assert.True((await store.AddAsync(task, TestContext.Current.CancellationToken)).IsSuccess);

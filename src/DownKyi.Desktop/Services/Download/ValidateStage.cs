@@ -55,6 +55,13 @@ internal sealed class ValidateStage : IDownloadPipelineStage
                 "The requested cover files were not created."));
         }
 
+        if (context.PublishedArtifacts.Values.Any(path => !File.Exists(path)))
+        {
+            return Task.FromResult(DownloadStageResult.Failure(
+                "download.validate.published-missing",
+                "A recorded published artifact is missing."));
+        }
+
         return Task.FromResult(DownloadStageResult.Success(Name));
     }
 }

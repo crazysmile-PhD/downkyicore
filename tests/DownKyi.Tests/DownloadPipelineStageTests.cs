@@ -114,6 +114,27 @@ public sealed class DownloadPipelineStageTests
         Assert.True(result.IsSuccess);
     }
 
+    [Theory]
+    [InlineData("subtitle:missing.srt")]
+    [InlineData("cover")]
+    [InlineData("nfo")]
+    public async Task ValidateStageRejectsMissingRecordedArtifactEvenWhenNewResponseIsEmpty(string key)
+    {
+        using var settings = new TestSettingsStore();
+        var context = CreateContext(
+            settings.Store.Current,
+            requestedContent: DownloadContentSelection.None with { Subtitle = true });
+        context.PublishedArtifacts[key] = Path.Combine(
+            Path.GetTempPath(), $"missing-published-{Guid.NewGuid():N}.srt");
+        context.SubtitleFiles = null;
+
+        var result = await new ValidateStage().ExecuteAsync(
+            context, TestContext.Current.CancellationToken);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("download.validate.published-missing", result.Error?.Code);
+    }
+
     [Fact]
     public void MediaStageDetectsDurlWhenDashEnvelopeIsOnlyTheDefaultEmptyObject()
     {

@@ -165,11 +165,6 @@ public sealed partial class DownloadTask
 
     public OperationResult<DownloadTask> Delete(DateTimeOffset now)
     {
-        if (Output.PublishingArtifact != null)
-        {
-            return PublishingConflict();
-        }
-
         return TransitionTo(DownloadPhase.Deleted, now);
     }
 

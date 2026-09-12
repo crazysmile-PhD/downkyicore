@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using DownKyi.Application.Desktop;
 using DownKyi.Application.Downloads;
 using DownKyi.Core.BiliApi.VideoStream.Models;
@@ -146,6 +147,39 @@ public sealed class DownloadManagerCoordinatorTests
     }
 
     [Fact]
+    public async Task DeleteAfterPublishCollisionRemovesOnlyStagingAndTask()
+    {
+        using var context = new CoordinatorContext(useStaging: true);
+        var item = context.CreateDownloadingItem("delete-publish-collision", DownloadStatus.WaitForDownload);
+        context.State.AddDownloading(item);
+        await context.Storage.AddDownloadingAsync(item, TestContext.Current.CancellationToken);
+        var taskId = new DownloadTaskId(item.DownloadBase.Id);
+        var task = await context.StateWriter.StartAsync(taskId, TestContext.Current.CancellationToken);
+        var staged = Path.Combine(context.Staging!.GetDirectory(
+            taskId, task.Output.BasePath, task.Output.StagingToken), "delete-publish-collision.mp4");
+        var stagedBytes = new byte[] { 1, 2, 3 };
+        await File.WriteAllBytesAsync(staged, stagedBytes, TestContext.Current.CancellationToken);
+        var destination = context.CreateFile("delete-publish-collision.mp4", "foreign output");
+        var foreignBytes = await File.ReadAllBytesAsync(
+            destination, TestContext.Current.CancellationToken);
+        await context.StateWriter.BeginPublishingArtifactAsync(taskId,
+            new DownloadPublishingArtifact("media", Path.GetFileName(staged), stagedBytes.Length,
+                Convert.ToHexString(SHA256.HashData(stagedBytes))),
+            TestContext.Current.CancellationToken);
+        await context.StateWriter.FailAsync(taskId,
+            new DownloadFailure("download.publish.collision", "Destination exists.", true),
+            TestContext.Current.CancellationToken);
+
+        await context.Coordinator.DeleteAsync(item, TestContext.Current.CancellationToken);
+
+        Assert.Equal(foreignBytes, await File.ReadAllBytesAsync(
+            destination, TestContext.Current.CancellationToken));
+        Assert.False(File.Exists(staged));
+        Assert.Null(await context.Store.FindAsync(taskId, TestContext.Current.CancellationToken));
+        Assert.DoesNotContain(item, context.State.Downloading);
+    }
+
+    [Fact]
     public async Task CancellationBeforeDeletePreservesFilesStoreRowAndProjection()
     {
         using var context = new CoordinatorContext();
@@ -270,7 +304,8 @@ public sealed class DownloadManagerCoordinatorTests
 
         public CoordinatorContext(
             IDownloadTaskQueue? taskQueue = null,
-            IDownloadRuntimeAvailability? runtimeAvailability = null)
+            IDownloadRuntimeAvailability? runtimeAvailability = null,
+            bool useStaging = false)
         {
             Directory.CreateDirectory(_directory);
             _databasePath = Path.Combine(_directory, "download.db");
@@ -284,9 +319,12 @@ public sealed class DownloadManagerCoordinatorTests
             Queue = new RecordingDownloadTaskQueue();
             State = new DownloadListState();
             Launcher = new RecordingPlatformLauncher();
+            Staging = useStaging
+                ? new DownloadTaskStaging(NullLogger<DownloadTaskStaging>.Instance)
+                : null;
             var fileService = new DownloadTaskFileService(
                 new AriaRuntimeClientRegistry(),
-                NullLogger<DownloadTaskFileService>.Instance);
+                NullLogger<DownloadTaskFileService>.Instance, Staging, StateWriter);
             Coordinator = new DownloadManagerCoordinator(
                 Storage,
                 StateWriter,
@@ -304,6 +342,8 @@ public sealed class DownloadManagerCoordinatorTests
         public DownloadTaskApplicationService TaskService { get; private set; }
 
         public DownloadTaskStateWriter StateWriter { get; private set; }
+
+        public DownloadTaskStaging? Staging { get; }
 
         public RecordingDownloadTaskQueue Queue { get; }
 
