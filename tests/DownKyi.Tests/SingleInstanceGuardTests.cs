@@ -64,14 +64,18 @@ public sealed class SingleInstanceGuardTests
     {
         var owner = Environment.GetEnvironmentVariable("DOWNKYI_SINGLE_INSTANCE_PROBE_OWNER");
         var expected = Environment.GetEnvironmentVariable("DOWNKYI_SINGLE_INSTANCE_PROBE_EXPECTED");
+        var marker = Environment.GetEnvironmentVariable("DOWNKYI_SINGLE_INSTANCE_PROBE_MARKER");
         Assert.False(string.IsNullOrWhiteSpace(owner));
         Assert.True(expected is "true" or "false");
+        Assert.False(string.IsNullOrWhiteSpace(marker));
 
         var acquired = SingleInstanceGuard.TryAcquire(owner, "repo", out var guard);
         using (guard)
         {
             Assert.Equal(expected == "true", acquired);
         }
+
+        File.WriteAllText(marker, "executed");
     }
 
     [Fact]
@@ -88,6 +92,7 @@ public sealed class SingleInstanceGuardTests
 
     private static async Task AssertProbeResultAsync(string directory, string owner, bool expectedAcquired)
     {
+        var marker = Path.Combine(directory, $"probe-{Guid.NewGuid():N}.marker");
         var startInfo = new ProcessStartInfo("dotnet")
         {
             WorkingDirectory = directory,
@@ -105,6 +110,7 @@ public sealed class SingleInstanceGuardTests
         startInfo.Environment["DOWNKYI_SINGLE_INSTANCE_PROBE_OWNER"] = owner;
         startInfo.Environment["DOWNKYI_SINGLE_INSTANCE_PROBE_EXPECTED"] =
             expectedAcquired ? "true" : "false";
+        startInfo.Environment["DOWNKYI_SINGLE_INSTANCE_PROBE_MARKER"] = marker;
 
         using var process = Process.Start(startInfo)!;
         var output = process.StandardOutput.ReadToEndAsync();
@@ -129,5 +135,6 @@ public sealed class SingleInstanceGuardTests
         Assert.True(process.ExitCode == 0,
             $"Second installation probe exited {process.ExitCode}. " +
             $"{await output.ConfigureAwait(true)} {await error.ConfigureAwait(true)}");
+        Assert.Equal("executed", await File.ReadAllTextAsync(marker).ConfigureAwait(true));
     }
 }
