@@ -31,7 +31,8 @@ internal partial class App : Avalonia.Application, IAsyncDisposable
     private Task? _disposeTask;
 
 #if !DEBUG
-    private SingleInstanceGuard? _singleInstanceGuard;
+    // Keep the admission identity alive until the process exits. Host shutdown can time out.
+    private static SingleInstanceGuard? _processInstanceGuard;
 #endif
 
     private IHost? _host;
@@ -47,7 +48,7 @@ internal partial class App : Avalonia.Application, IAsyncDisposable
         if (!SingleInstanceGuard.TryAcquire(
                 AppConstant.RepoOwner,
                 AppConstant.RepoName,
-                out _singleInstanceGuard))
+                out _processInstanceGuard))
         {
             Environment.Exit(0);
         }
@@ -147,11 +148,6 @@ internal partial class App : Avalonia.Application, IAsyncDisposable
                     {
                         _logProvider = null;
                         _logger = null;
-
-#if !DEBUG
-                        _singleInstanceGuard?.Dispose();
-                        _singleInstanceGuard = null;
-#endif
                     }
                 }
             }

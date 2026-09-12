@@ -18,20 +18,29 @@ internal sealed class SingleInstanceGuard : IDisposable
         string repository,
         out SingleInstanceGuard? guard)
     {
-        var mutex = new Mutex(
-            initiallyOwned: true,
-            BuildMutexName(owner, repository),
-            new NamedWaitHandleOptions { CurrentUserOnly = false, CurrentSessionOnly = false },
-            out var createdNew);
-        if (!createdNew)
+        try
         {
-            mutex.Dispose();
+            var mutex = new Mutex(
+                initiallyOwned: false,
+                BuildMutexName(owner, repository),
+                new NamedWaitHandleOptions { CurrentUserOnly = false, CurrentSessionOnly = false },
+                out var createdNew);
+            if (!createdNew)
+            {
+                mutex.Dispose();
+                guard = null;
+                return false;
+            }
+
+            guard = new SingleInstanceGuard(mutex);
+            return true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // An existing global mutex may deny access to another Windows user.
             guard = null;
             return false;
         }
-
-        guard = new SingleInstanceGuard(mutex);
-        return true;
     }
 
     internal static string BuildMutexName(string owner, string repository)
@@ -50,19 +59,6 @@ internal sealed class SingleInstanceGuard : IDisposable
         }
 
         _disposed = true;
-        ReleaseMutexBestEffort();
         _mutex.Dispose();
-    }
-
-    private void ReleaseMutexBestEffort()
-    {
-        try
-        {
-            _mutex.ReleaseMutex();
-        }
-        catch (ApplicationException)
-        {
-            return;
-        }
     }
 }
