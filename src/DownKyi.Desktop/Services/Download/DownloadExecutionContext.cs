@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using DownKyi.Core.BiliApi.VideoStream;
@@ -32,6 +33,42 @@ internal sealed class DownloadExecutionContext
     public PlayUrl? PlayUrl { get; set; }
 
     public string? DownloadDirectory { get; set; }
+
+    public string? StagingDirectory { get; set; }
+
+    public string WorkingBasePath => StagingDirectory == null
+        ? Input.OutputBasePath
+        : Path.Combine(StagingDirectory, Path.GetFileName(Input.OutputBasePath));
+
+    public HashSet<string> PublishedKeys { get; } = new(StringComparer.Ordinal);
+
+    public bool HasPublished(string key) => PublishedKeys.Contains(key);
+
+    public bool TryReuseStagedMedia()
+    {
+        if (HasPublished("media"))
+        {
+            return true;
+        }
+
+        if (StagingDirectory == null)
+        {
+            return false;
+        }
+
+        foreach (var extension in new[] { ".mp4", ".mp3", ".aac", ".flac" })
+        {
+            var path = WorkingBasePath + extension;
+            if (DownloadFileIntegrity.Check(path).IsUsable)
+            {
+                OutputMedia = path;
+                MediaSucceeded = true;
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     public DownloadMediaKind MediaKind { get; set; }
 

@@ -106,6 +106,12 @@ public interface IDownloadTaskApplicationService
         string key,
         CancellationToken cancellationToken);
 
+    Task<OperationResult<DownloadTask>> RecordPublishedArtifactAsync(
+        DownloadTaskId taskId,
+        string key,
+        string path,
+        CancellationToken cancellationToken);
+
     Task<OperationResult<DownloadTask>> SetBackendIdentityAsync(
         DownloadTaskId taskId,
         string? backendIdentity,

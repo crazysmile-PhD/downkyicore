@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Diagnostics;
+using DownKyi.Application.Downloads;
 using DownKyi.Domain.Downloads;
 using DownKyi.Platform;
 using DownKyi.ViewModels.DownloadManager;
@@ -23,6 +24,7 @@ internal sealed class DownloadBootstrapHostedService : IHostedService, IDisposab
     private readonly DownloadTaskQueueGateway _queueGateway;
     private readonly IUiDispatcher _uiDispatcher;
     private readonly ILogger<DownloadBootstrapHostedService> _logger;
+    private readonly DownloadTaskStaging? _staging;
     private IDownloadRuntime? _downloadRuntime;
     private Task? _historyLoadTask;
     private bool _disposed;
@@ -34,7 +36,8 @@ internal sealed class DownloadBootstrapHostedService : IHostedService, IDisposab
         IDownloadRuntimeFactory downloadRuntimeFactory,
         DownloadTaskQueueGateway queueGateway,
         IUiDispatcher uiDispatcher,
-        ILogger<DownloadBootstrapHostedService> logger)
+        ILogger<DownloadBootstrapHostedService> logger,
+        DownloadTaskStaging? staging = null)
     {
         _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
         _projectionStore = projectionStore
@@ -45,6 +48,7 @@ internal sealed class DownloadBootstrapHostedService : IHostedService, IDisposab
         _queueGateway = queueGateway ?? throw new ArgumentNullException(nameof(queueGateway));
         _uiDispatcher = uiDispatcher ?? throw new ArgumentNullException(nameof(uiDispatcher));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _staging = staging;
     }
 
     public async Task StartAsync(CancellationToken cancellationToken)
@@ -54,6 +58,21 @@ internal sealed class DownloadBootstrapHostedService : IHostedService, IDisposab
         {
             var state = await LoadStartupStateAsync(cancellationToken).ConfigureAwait(false);
             startupTasks = state.UnfinishedTasks;
+            if (_staging != null)
+            {
+                var knownTasks = new List<DownloadTask>(state.UnfinishedTasks);
+                DownloadHistoryCursor? cursor = null;
+                do
+                {
+                    var page = await _projectionStore.GetDownloadedPageAsync(
+                        cursor, 500, cancellationToken).ConfigureAwait(false);
+                    knownTasks.AddRange(page.Items);
+                    cursor = page.NextCursor;
+                }
+                while (cursor != null);
+
+                _staging.CleanupStale(knownTasks);
+            }
             await _uiDispatcher.InvokeAsync(() =>
             {
                 _downloadLists.AddDownloadingRange(state.DownloadingItems);
@@ -131,6 +150,8 @@ internal sealed class DownloadBootstrapHostedService : IHostedService, IDisposab
         {
             await Task.WhenAll(stopTasks).WaitAsync(cancellationToken).ConfigureAwait(false);
         }
+
+        _staging?.CleanupCurrentSession();
     }
 
     private async Task CleanupFailedRuntimeAsync()

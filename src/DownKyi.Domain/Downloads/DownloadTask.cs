@@ -258,6 +258,32 @@ public sealed class DownloadTask
             now));
     }
 
+    public OperationResult<DownloadTask> RecordPublishedArtifact(
+        string key,
+        string path,
+        DateTimeOffset now)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        if (Phase is DownloadPhase.Completed or DownloadPhase.Canceled or DownloadPhase.Deleted)
+        {
+            return InvalidTransition(Phase);
+        }
+
+        if (Output.PublishedArtifacts.TryGetValue(key, out var existing) && existing != path)
+        {
+            return OperationResult.Failure<DownloadTask>(new OperationError(
+                "download.output.published-conflict",
+                "A published artifact cannot be replaced.",
+                OperationErrorKind.Conflict));
+        }
+
+        return UpdateOutput(new DownloadOutput(
+            Output.BasePath,
+            Output.FileSizeText,
+            Output.PublishedArtifacts.SetItem(key, path)), now);
+    }
+
     public OperationResult<DownloadTask> UpdateProgressAndTransfer(
         DownloadProgress progress,
         DownloadTransferState transfer,

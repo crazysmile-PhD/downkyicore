@@ -40,11 +40,11 @@ internal static class DownloadStoreSchemaLifecycle
         int version,
         CancellationToken cancellationToken)
     {
-        ArgumentOutOfRangeException.ThrowIfNotEqual(version, 5);
+        ArgumentOutOfRangeException.ThrowIfNotEqual(version, 6);
 
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = "PRAGMA user_version = 5";
+        command.CommandText = "PRAGMA user_version = 6";
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 

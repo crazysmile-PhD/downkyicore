@@ -11,6 +11,7 @@ internal static class DownloadTransferRequestFactory
         DownloadTaskId taskId,
         IReadOnlyList<string> urls,
         string path,
+        string? stagingDirectory,
         string localFileName,
         long expectedBytes,
         DownloadTaskProjectionStore projections,
@@ -41,6 +42,7 @@ internal static class DownloadTransferRequestFactory
                 backendIdentity,
                 token),
             service => projection.DownloadService = service,
-            cancellationToken);
+            cancellationToken,
+            stagingDirectory);
     }
 }

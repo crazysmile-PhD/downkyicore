@@ -7,7 +7,7 @@ internal static class DownloadTaskSqlReader
             db.id, db.need_download_content, db.bvid, db.avid, db.cid, db.episode_id,
             db.cover_url, db.page_cover_url, db.zone_id, db.[order], db.main_title,
             db.name, db.duration, db.video_codec_name, db.resolution, db.audio_codec,
-            db.file_path, db.file_size, db.page, db.nfo_request, db.version,
+            db.file_path, db.file_size, db.published_artifacts, db.page, db.nfo_request, db.version,
             db.created_at_utc, db.updated_at_utc,
             dl.gid, dl.download_files, dl.downloaded_files, dl.play_stream_type,
             dl.download_status, dl.download_content, dl.download_status_title, dl.progress,

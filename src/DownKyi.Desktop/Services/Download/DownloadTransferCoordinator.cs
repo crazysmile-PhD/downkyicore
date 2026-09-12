@@ -81,6 +81,7 @@ internal sealed class DownloadTransferCoordinator
             {
                 var cleanup = DownloadTransferFileCleanup.DeleteInvalidArtifacts(
                     Path.Combine(request.Directory, request.FileName),
+                    request.StagingDirectory,
                     _logger);
                 if (!cleanup.Succeeded)
                 {
@@ -190,6 +191,7 @@ internal sealed class DownloadTransferCoordinator
 
         var cleanup = await DownloadTransferFileCleanup.DeleteInvalidArtifactsAsync(
                 Path.Combine(request.Directory, request.FileName),
+                request.StagingDirectory,
                 _logger,
                 _timeProvider,
                 cancellationToken).ConfigureAwait(true);

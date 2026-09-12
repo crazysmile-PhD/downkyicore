@@ -58,10 +58,50 @@ public sealed class DownloadPipelineCommitBoundaryTests
 
         Assert.True(result.IsSuccess);
         harness.AssertSourcesAndSidecarsDeleted();
-        Assert.True(File.Exists(harness.Output));
+        Assert.True(File.Exists(harness.PublishedOutput));
         Assert.Equal(DownloadPhase.Completed, harness.Store.Current?.Phase);
         Assert.Empty(harness.Lists.Downloading);
         Assert.Single(harness.Lists.Downloaded);
+    }
+
+    [Fact]
+    public async Task PublishCollisionPreservesForeignDestinationAndCompletedStaging()
+    {
+        using var harness = await CommitBoundaryHarness.CreateAsync().ConfigureAwait(true);
+        var foreignBytes = new byte[] { 91, 0, 255, 17 };
+        await File.WriteAllBytesAsync(harness.PublishedOutput, foreignBytes, TestContext.Current.CancellationToken);
+
+        var result = await harness.FinalizeStage.ExecuteAsync(
+            harness.Context, TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("download.publish.collision", result.Error?.Code);
+        Assert.Equal(foreignBytes, await File.ReadAllBytesAsync(harness.PublishedOutput, TestContext.Current.CancellationToken));
+        Assert.Equal(new byte[] { 7, 8, 9 }, await File.ReadAllBytesAsync(harness.Output, TestContext.Current.CancellationToken));
+        Assert.Equal(DownloadPhase.Downloading, harness.Store.Current?.Phase);
+        harness.AssertSourcesAndSidecarsExist();
+    }
+
+    [Fact]
+    public async Task CollisionRetryPublishesExistingStagingWithoutRepeatingEarlierStages()
+    {
+        using var harness = await CommitBoundaryHarness.CreateAsync().ConfigureAwait(true);
+        await File.WriteAllBytesAsync(harness.PublishedOutput, [91, 0, 255, 17], TestContext.Current.CancellationToken);
+        var first = await harness.FinalizeStage.ExecuteAsync(
+            harness.Context, TestContext.Current.CancellationToken).ConfigureAwait(true);
+        Assert.False(first.IsSuccess);
+        File.Delete(harness.PublishedOutput); // Simulates the external owner moving its file away.
+
+        var retry = await harness.FinalizeStage.ExecuteAsync(
+            harness.Context, TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.True(retry.IsSuccess);
+        Assert.Equal(new byte[] { 7, 8, 9 }, await File.ReadAllBytesAsync(harness.PublishedOutput, TestContext.Current.CancellationToken));
+        Assert.False(File.Exists(harness.Output));
+        Assert.Equal(DownloadPhase.Completed, harness.Store.Current?.Phase);
+        Assert.Equal(harness.PublishedOutput,
+            harness.Store.Current?.Output.PublishedArtifacts["media"]);
+        harness.AssertSourcesAndSidecarsDeleted();
     }
 
     private sealed class FailureStage(string name) : IDownloadPipelineStage
@@ -98,7 +138,9 @@ public sealed class DownloadPipelineCommitBoundaryTests
             FinalizeStage finalizeStage,
             string audio,
             string video,
-            string output)
+            string output,
+            string publishedOutput,
+            DownloadTaskStaging staging)
         {
             _directory = directory;
             _settings = settings;
@@ -111,6 +153,8 @@ public sealed class DownloadPipelineCommitBoundaryTests
             Audio = audio;
             Video = video;
             Output = output;
+            PublishedOutput = publishedOutput;
+            Staging = staging;
         }
 
         public CommitBoundaryStore Store { get; }
@@ -126,6 +170,10 @@ public sealed class DownloadPipelineCommitBoundaryTests
         public string Video { get; }
 
         public string Output { get; }
+
+        public string PublishedOutput { get; }
+
+        public DownloadTaskStaging Staging { get; }
 
         public static async Task<CommitBoundaryHarness> CreateAsync(
             bool rejectCompletion = false)
@@ -173,9 +221,13 @@ public sealed class DownloadPipelineCommitBoundaryTests
             var context = DownloadExecutionContextTestFactory.Create(
                 downloading,
                 settings.Current);
-            var audio = CreateTransferFile(directory, "audio.m4s");
-            var video = CreateTransferFile(directory, "video.m4s");
-            var output = Path.Combine(directory, "output.mp4");
+            var staging = new DownloadTaskStaging(NullLogger<DownloadTaskStaging>.Instance);
+            context.StagingDirectory = staging.GetDirectory(taskId, downloadBase.FilePath);
+            Directory.CreateDirectory(context.StagingDirectory);
+            var audio = CreateTransferFile(context.StagingDirectory, "audio.m4s");
+            var video = CreateTransferFile(context.StagingDirectory, "video.m4s");
+            var output = context.WorkingBasePath + ".mp4";
+            var publishedOutput = Path.Combine(directory, "output.mp4");
             File.WriteAllBytes(output, [7, 8, 9]);
             context.AudioFile = audio;
             context.VideoFile = video;
@@ -183,7 +235,9 @@ public sealed class DownloadPipelineCommitBoundaryTests
             context.MediaSucceeded = true;
             var fileService = new DownloadTaskFileService(
                 new AriaRuntimeClientRegistry(),
-                NullLogger<DownloadTaskFileService>.Instance);
+                NullLogger<DownloadTaskFileService>.Instance,
+                staging,
+                stateWriter);
             var finalizeStage = new FinalizeStage(
                 projectionStore,
                 stateWriter,
@@ -205,7 +259,9 @@ public sealed class DownloadPipelineCommitBoundaryTests
                 finalizeStage,
                 audio,
                 video,
-                output);
+                output,
+                publishedOutput,
+                staging);
         }
 
         public void AssertSourcesAndSidecarsExist()
@@ -223,6 +279,7 @@ public sealed class DownloadPipelineCommitBoundaryTests
             _projectionStore.Dispose();
             _tasks.Dispose();
             _settings.Dispose();
+            Staging.CleanupCurrentSession();
             Directory.Delete(_directory, recursive: true);
             GC.SuppressFinalize(this);
         }

@@ -43,6 +43,11 @@ internal sealed class MuxStage : IDownloadPipelineStage
             return DownloadStageResult.Success(Name);
         }
 
+        if (context.TryReuseStagedMedia())
+        {
+            return DownloadStageResult.Success(Name);
+        }
+
         return context.MediaKind switch
         {
             DownloadMediaKind.Dash => await MuxDashAsync(
@@ -104,7 +109,7 @@ internal sealed class MuxStage : IDownloadPipelineStage
         if (context.DurlDownloads.Count == 1)
         {
             await _presenter.ShowMuxingAsync(context, cancellationToken).ConfigureAwait(true);
-            var finalFile = $"{context.Input.OutputBasePath}.mp4";
+            var finalFile = $"{context.WorkingBasePath}.mp4";
             var mergeResult = await _ffmpegProcessor.MergeMediaAsync(
                 context.Input.VideoSettings,
                 audio: null,
@@ -133,7 +138,7 @@ internal sealed class MuxStage : IDownloadPipelineStage
         }
 
         await _presenter.ShowConcatenatingAsync(context, cancellationToken).ConfigureAwait(true);
-        var outputPath = $"{context.Input.OutputBasePath}.mp4";
+        var outputPath = $"{context.WorkingBasePath}.mp4";
         var segments = context.DurlDownloads
             .OrderBy(download => download.Durl.Order)
             .Select(download => new FfmpegConcatSegment(
@@ -209,6 +214,7 @@ internal sealed class MuxStage : IDownloadPipelineStage
         {
             var cleanup = DownloadTransferFileCleanup.DeleteInvalidArtifacts(
                 source.FilePath,
+                context.StagingDirectory,
                 _logger);
             if (cleanup.Succeeded)
             {
@@ -249,17 +255,17 @@ internal sealed class MuxStage : IDownloadPipelineStage
     {
         if (context.VideoFile != null)
         {
-            return $"{context.Input.OutputBasePath}.mp4";
+            return $"{context.WorkingBasePath}.mp4";
         }
 
         if (context.Input.VideoSettings.IsTranscodingAacToMp3 == AllowStatus.Yes)
         {
-            return $"{context.Input.OutputBasePath}.mp3";
+            return $"{context.WorkingBasePath}.mp3";
         }
 
         return context.Input.Metadata.AudioCodec.Id == 30251
-            ? $"{context.Input.OutputBasePath}.flac"
-            : $"{context.Input.OutputBasePath}.aac";
+            ? $"{context.WorkingBasePath}.flac"
+            : $"{context.WorkingBasePath}.aac";
     }
 
     private sealed record DownloadTransferReference(string Key, string FilePath);

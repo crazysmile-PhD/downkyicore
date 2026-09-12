@@ -178,6 +178,27 @@ public sealed class DownloadPipelineStageTests
     }
 
     [Fact]
+    public async Task MediaStageReusesCompletedStagingInsteadOfTransferringAgain()
+    {
+        using var fixture = await MediaStageFixture.CreateAsync(
+            CreateVideoOnlyPlayUrl(), downloadAudio: false, downloadVideo: true);
+        var staging = Path.Combine(Path.GetDirectoryName(fixture.Context.Input.OutputBasePath)!,
+            ".downkyi", "staging", "test-session", "test-task");
+        Directory.CreateDirectory(staging);
+        fixture.Context.StagingDirectory = staging;
+        var completedMedia = fixture.Context.WorkingBasePath + ".mp4";
+        await File.WriteAllBytesAsync(completedMedia, [7, 8, 9], TestContext.Current.CancellationToken);
+        fixture.Context.PlayUrl = null;
+
+        var result = await fixture.Stage.ExecuteAsync(
+            fixture.Context, TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(completedMedia, fixture.Context.OutputMedia);
+        Assert.Empty(fixture.Backend.Requests);
+    }
+
+    [Fact]
     public async Task MediaStageDownloadsVideoWhenAudioCollectionIsNull()
     {
         var playUrl = CreateVideoOnlyPlayUrl();

@@ -114,7 +114,10 @@ internal static class DownloadTaskRecordMapper
             id,
             metadata,
             plan,
-            new DownloadOutput(GetString(reader, "file_path"), GetNullableString(reader, "file_size")),
+            new DownloadOutput(
+                GetString(reader, "file_path"),
+                GetNullableString(reader, "file_size"),
+                DownloadStoreJson.ReadStringMap(GetString(reader, "published_artifacts"), "published_artifacts")),
             phase,
             progress,
             transfer,

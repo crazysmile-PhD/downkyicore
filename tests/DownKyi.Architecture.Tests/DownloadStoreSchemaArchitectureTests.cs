@@ -21,7 +21,7 @@ public sealed class DownloadStoreSchemaArchitectureTests
     {
         var source = ReadDownloadSource("DownloadStoreSchema.cs");
 
-        Assert.Contains("public const int CurrentVersion = 5", source, StringComparison.Ordinal);
+        Assert.Contains("public const int CurrentVersion = 6", source, StringComparison.Ordinal);
         Assert.Contains("BeginTransactionAsync", source, StringComparison.Ordinal);
         Assert.Contains("CommitAsync", source, StringComparison.Ordinal);
         Assert.Contains("RollbackAsync", source, StringComparison.Ordinal);

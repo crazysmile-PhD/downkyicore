@@ -49,6 +49,11 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
     {
         ArgumentNullException.ThrowIfNull(context);
         context.EnsureActive(cancellationToken);
+        if (context.NeedsMedia && context.TryReuseStagedMedia())
+        {
+            return DownloadStageResult.Success(Name);
+        }
+
         var playUrl = context.PlayUrl;
         context.MediaKind = DetectMediaKind(playUrl);
         if (context.MediaKind == DownloadMediaKind.Dash)
@@ -254,7 +259,16 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
         var snapshot = _projectionStore.GetRequiredSnapshot(context.TaskId);
         if (snapshot.Plan.TransferFiles.TryGetValue(key, out var existingFileName))
         {
-            fileName = existingFileName;
+            if (existingFileName != Path.GetFileName(existingFileName))
+            {
+                await _stateWriter.RecordTransferFileAsync(
+                    context.TaskId, key, fileName, cancellationToken).ConfigureAwait(true);
+            }
+            else
+            {
+                fileName = existingFileName;
+            }
+
             var cachedFile = Path.Combine(path, fileName);
             if (snapshot.Transfer.CompletedFileKeys.Contains(key, StringComparer.Ordinal) &&
                 IsDownloadedMediaFileUsable(cachedFile, media.ExpectedSize))
@@ -266,6 +280,7 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
             {
                 var cleanup = DownloadTransferFileCleanup.DeleteInvalidArtifacts(
                     cachedFile,
+                    context.StagingDirectory,
                     _logger);
                 if (!cleanup.Succeeded)
                 {
@@ -293,6 +308,7 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
                 context.TaskId,
                 urls,
                 path,
+                context.StagingDirectory,
                 fileName,
                 media.ExpectedSize,
                 _projectionStore,
@@ -312,6 +328,7 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
             {
                 var cleanup = DownloadTransferFileCleanup.DeleteInvalidArtifacts(
                     targetFile,
+                    context.StagingDirectory,
                     _logger);
                 if (!cleanup.Succeeded)
                 {

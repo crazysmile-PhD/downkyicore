@@ -1,82 +1,52 @@
+using DownKyi.Domain.Downloads;
+using DownKyi.Models;
 using DownKyi.Services.Download;
+using DownKyi.ViewModels.DownloadManager;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DownKyi.Tests;
 
 public sealed class DownloadTaskFileServiceTests : IDisposable
 {
-    private static readonly string[] GeneratedFileNames = { "video-stream.mp4", "audio-stream.aac" };
-    private readonly DownloadTaskFileService _service = new(
-        new AriaRuntimeClientRegistry(),
-        NullLogger<DownloadTaskFileService>.Instance);
     private readonly string _directory = Path.Combine(
-        Path.GetTempPath(),
-        "downkyi-file-lifecycle-tests",
-        Guid.NewGuid().ToString("N"));
+        Path.GetTempPath(), "downkyi-file-lifecycle-tests", Guid.NewGuid().ToString("N"));
 
     [Fact]
-    public void GetGeneratedFilesIncludesMediaAssetsAndResumeSidecars()
+    public async Task BackgroundDeletionUsesTaskStagingNotPersistedPublishedOrTransferPaths()
     {
         Directory.CreateDirectory(_directory);
-        var basePath = Path.Combine(_directory, "episode-01");
-
-        var files = _service.GetGeneratedFiles(
-            basePath,
-            GeneratedFileNames);
-
-        Assert.Contains(Path.GetFullPath(Path.Combine(_directory, "video-stream.mp4.aria2")), files);
-        Assert.Contains(Path.GetFullPath(Path.Combine(_directory, "audio-stream.aac.download")), files);
-        Assert.Contains(Path.GetFullPath(basePath + ".mp4"), files);
-        Assert.Contains(Path.GetFullPath(basePath + ".srt"), files);
-        Assert.Contains(Path.GetFullPath(basePath + ".Cover.jpg"), files);
-    }
-
-    [Fact]
-    public async Task DeleteFilesAsyncRemovesPartialFilesAndResumeSidecars()
-    {
-        Directory.CreateDirectory(_directory);
-        var files = new[]
+        var taskId = new DownloadTaskId("delete-owned-staging");
+        var staging = new DownloadTaskStaging(NullLogger<DownloadTaskStaging>.Instance);
+        var stagedDirectory = staging.GetDirectory(taskId, Path.Combine(_directory, "output"));
+        Directory.CreateDirectory(stagedDirectory);
+        var staged = Path.Combine(stagedDirectory, "partial.m4s");
+        var published = Path.Combine(_directory, "output.mp4");
+        var foreignSidecar = published + ".aria2";
+        await File.WriteAllBytesAsync(staged, [1], TestContext.Current.CancellationToken);
+        await File.WriteAllBytesAsync(published, [91, 0, 255, 17], TestContext.Current.CancellationToken);
+        await File.WriteAllBytesAsync(foreignSidecar, [4], TestContext.Current.CancellationToken);
+        var downloadBase = new DownloadBase { Id = taskId.Value, FilePath = Path.Combine(_directory, "output") };
+        var item = new DownloadingItem
         {
-            CreateFile("video.mp4", "partial video"),
-            CreateFile("video.mp4.aria2", "resume metadata"),
-            CreateFile("audio.aac.download", "partial audio")
+            DownloadBase = downloadBase,
+            Downloading = new Downloading
+            {
+                Id = taskId.Value,
+                DownloadBase = downloadBase,
+                DownloadFiles = new Dictionary<string, string> { ["media"] = published }
+            }
         };
+        var service = new DownloadTaskFileService(
+            new AriaRuntimeClientRegistry(), NullLogger<DownloadTaskFileService>.Instance, staging);
 
-        var result = await _service.DeleteFilesAsync(
-            files,
-            TestContext.Current.CancellationToken);
+        var result = await service.DeleteGeneratedFilesAsync(item, TestContext.Current.CancellationToken);
 
         Assert.True(result.Succeeded);
-        Assert.Equal(files.Length, result.AttemptedCount);
-        Assert.Equal(0, result.FailedCount);
-        Assert.All(files, file => Assert.False(File.Exists(file), file));
-    }
-
-    [Fact]
-    public async Task DeleteFilesAsyncDoesNotDeleteWhenAlreadyCanceled()
-    {
-        Directory.CreateDirectory(_directory);
-        var file = CreateFile("video.mp4.aria2", "resume metadata");
-        using var cancellation = new CancellationTokenSource();
-        await cancellation.CancelAsync();
-
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-            _service.DeleteFilesAsync(new[] { file }, cancellation.Token));
-
-        Assert.True(File.Exists(file));
-    }
-
-    [Fact]
-    public void GetGeneratedFilesRejectsNullTask()
-    {
-        Assert.Throws<ArgumentNullException>(() => _service.GetGeneratedFiles(null!));
-    }
-
-    private string CreateFile(string name, string contents)
-    {
-        var file = Path.Combine(_directory, name);
-        File.WriteAllText(file, contents);
-        return file;
+        Assert.False(Directory.Exists(stagedDirectory));
+        Assert.Equal(new byte[] { 91, 0, 255, 17 },
+            await File.ReadAllBytesAsync(published, TestContext.Current.CancellationToken));
+        Assert.True(File.Exists(foreignSidecar));
+        staging.CleanupCurrentSession();
     }
 
     public void Dispose()

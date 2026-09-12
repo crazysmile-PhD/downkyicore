@@ -45,6 +45,11 @@ internal sealed class ResolvePlaybackStage : IDownloadPipelineStage
         {
             path = GetDownloadDirectoryPath(playbackBasePath);
             Directory.CreateDirectory(path);
+            if (context.StagingDirectory != null)
+            {
+                Directory.CreateDirectory(context.StagingDirectory);
+                path = context.StagingDirectory;
+            }
         }
         catch (Exception exception) when (exception is IOException
             or UnauthorizedAccessException
@@ -62,6 +67,11 @@ internal sealed class ResolvePlaybackStage : IDownloadPipelineStage
         context.DownloadDirectory = path;
         _presenter.Reset(context);
         await _presenter.ShowParsingAsync(context, cancellationToken).ConfigureAwait(true);
+
+        if (context.NeedsMedia && context.TryReuseStagedMedia())
+        {
+            return DownloadStageResult.Success(Name);
+        }
 
         if (context.PlayUrl != null)
         {

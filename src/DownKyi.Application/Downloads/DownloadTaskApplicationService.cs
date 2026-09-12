@@ -300,6 +300,13 @@ public sealed class DownloadTaskApplicationService : IDownloadTaskApplicationSer
         }, cancellationToken);
     }
 
+    public Task<OperationResult<DownloadTask>> RecordPublishedArtifactAsync(
+        DownloadTaskId taskId,
+        string key,
+        string path,
+        CancellationToken cancellationToken) =>
+        MutateAsync(taskId, (task, now) => task.RecordPublishedArtifact(key, path, now), cancellationToken);
+
     public Task<OperationResult<DownloadTask>> SetBackendIdentityAsync(
         DownloadTaskId taskId,
         string? backendIdentity,
@@ -343,7 +350,7 @@ public sealed class DownloadTaskApplicationService : IDownloadTaskApplicationSer
         string? fileSizeText,
         CancellationToken cancellationToken) =>
         MutateAsync(taskId, (task, now) => task.UpdateOutput(
-            new DownloadOutput(task.Output.BasePath, fileSizeText),
+            new DownloadOutput(task.Output.BasePath, fileSizeText, task.Output.PublishedArtifacts),
             now), cancellationToken);
 
     public Task<OperationResult<DownloadTask>> CancelAsync(
