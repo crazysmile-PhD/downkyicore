@@ -123,9 +123,9 @@ public sealed class OwnedProcessScopePlatformTests
             var result = await run.WaitAsync(TimeSpan.FromSeconds(8),
                 TestContext.Current.CancellationToken).ConfigureAwait(true);
             Assert.Equal(130, result.ExitCode);
-            Assert.False(IsAlive(result.RootPid), DescribeLinuxState(result.RootPid));
-            Assert.False(IsAlive(childPid.Value), DescribeLinuxState(childPid.Value));
-            Assert.False(IsAlive(grandchildPid.Value), DescribeLinuxState(grandchildPid.Value));
+            AssertStopped(result.RootPid);
+            AssertStopped(childPid.Value);
+            AssertStopped(grandchildPid.Value);
             using var report = JsonDocument.Parse(await File.ReadAllTextAsync(
                 result.EvidencePath, TestContext.Current.CancellationToken).ConfigureAwait(true));
             Assert.Contains(report.RootElement.GetProperty("Events").EnumerateArray(),
@@ -197,14 +197,103 @@ public sealed class OwnedProcessScopePlatformTests
 
     private static int GetProcessGroup(int pid) => NativeMethods.GetProcessGroup(pid);
 
-    private static string DescribeLinuxState(int pid)
+    private static void AssertStopped(int pid)
     {
-        if (!OperatingSystem.IsLinux())
+        if (IsAlive(pid))
         {
-            return $"pid={pid}";
+            Assert.Fail(DescribeProcessState(pid));
+        }
+    }
+
+    private static string DescribeProcessState(int pid)
+    {
+        if (OperatingSystem.IsLinux())
+        {
+            return $"pid={pid}, state={ReadLinuxStateCode(pid) ?? "unavailable"}";
         }
 
-        return $"pid={pid}, state={ReadLinuxStateCode(pid) ?? "unavailable"}";
+        if (OperatingSystem.IsMacOS())
+        {
+            using var ps = new Process
+            {
+                StartInfo = new ProcessStartInfo("ps")
+                {
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true
+                }
+            };
+            ps.StartInfo.ArgumentList.Add("-p");
+            ps.StartInfo.ArgumentList.Add(pid.ToString(CultureInfo.InvariantCulture));
+            ps.StartInfo.ArgumentList.Add("-o");
+            ps.StartInfo.ArgumentList.Add("stat=");
+            ps.Start();
+            if (!ps.WaitForExit(2000))
+            {
+                ps.Kill();
+                return $"pid={pid}, ps timed out";
+            }
+
+            return $"pid={pid}, ps status={ps.StandardOutput.ReadToEnd().Trim()}";
+        }
+
+        return $"pid={pid}";
+    }
+
+    [Fact]
+    public async Task BuildSnapshotFailureStillTerminatesDescendants()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"downkyi-build-tree-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        Process? root = null;
+        int? childPid = null;
+        int? grandchildPid = null;
+        try
+        {
+            var runtimeConfig = Path.Combine(AppContext.BaseDirectory,
+                $"{Path.GetFileNameWithoutExtension(typeof(OwnedProcessScopePlatformTests).Assembly.Location)}.runtimeconfig.json");
+            var startInfo = new ProcessStartInfo("dotnet") { UseShellExecute = false };
+            startInfo.ArgumentList.Add("exec");
+            startInfo.ArgumentList.Add("--runtimeconfig");
+            startInfo.ArgumentList.Add(runtimeConfig);
+            startInfo.ArgumentList.Add(typeof(FlightRecorderExecution).Assembly.Location);
+            startInfo.ArgumentList.Add("fixture-tree-root");
+            startInfo.ArgumentList.Add(runtimeConfig);
+            startInfo.ArgumentList.Add(directory);
+            root = Process.Start(startInfo)
+                ?? throw new InvalidOperationException("The build-tree fixture did not start.");
+            childPid = await ReadMarkerAsync(Path.Combine(directory, "child.pid")).ConfigureAwait(true);
+            grandchildPid = await ReadMarkerAsync(Path.Combine(directory, "grandchild.pid")).ConfigureAwait(true);
+
+            var snapshotFailure = new IOException("snapshot unavailable");
+            var clock = Stopwatch.StartNew();
+            var failure = await Record.ExceptionAsync(() => BuildProcessRunner.CleanupAfterCancellationAsync(
+                root, TimeSpan.FromSeconds(5),
+                (_, _) => Task.FromException<FinalProcessSnapshot>(snapshotFailure))).ConfigureAwait(true);
+            clock.Stop();
+
+            Assert.Same(snapshotFailure, failure);
+            Assert.True(clock.Elapsed < TimeSpan.FromSeconds(5));
+            AssertStopped(root.Id);
+            AssertStopped(childPid.Value);
+            AssertStopped(grandchildPid.Value);
+        }
+        finally
+        {
+            if (root is { HasExited: false })
+            {
+                root.Kill(entireProcessTree: true);
+            }
+
+            root?.Dispose();
+            StopIfAlive(childPid);
+            StopIfAlive(grandchildPid);
+            if (OperatingSystem.IsWindows())
+            {
+                await WindowsDirectoryResourceRundown.WaitForDeleteAccessAsync(
+                    directory, TimeSpan.FromSeconds(3)).ConfigureAwait(true);
+            }
+            Directory.Delete(directory, recursive: true);
+        }
     }
 
     private static string? ReadLinuxStateCode(int pid)

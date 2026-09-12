@@ -95,8 +95,8 @@ internal static class BuildProcessRunner
 
         try
         {
-            var terminationFailures = await OwnedProcessTerminator.TerminateAsync(
-                process, ownedProcesses?.Processes, deadline).ConfigureAwait(false);
+            await Task.Run(() => KillOwnedProcessTree(process))
+                .WaitAsync(deadline.Remaining).ConfigureAwait(false);
             await WaitForRootExitAsync(process, deadline.Remaining).ConfigureAwait(false);
             if (ownedProcesses is not null)
             {
@@ -109,11 +109,6 @@ internal static class BuildProcessRunner
                 await WindowsDirectoryResourceRundown.WaitForDeleteAccessAsync(
                     cleanupResourceDirectory,
                     deadline.Remaining).ConfigureAwait(false);
-            }
-
-            if (terminationFailures.Count > 0)
-            {
-                throw new InvalidOperationException(string.Join("; ", terminationFailures));
             }
         }
         catch (Exception cleanupFailure) when (snapshotFailure is not null)
@@ -134,14 +129,7 @@ internal static class BuildProcessRunner
         {
             if (!process.HasExited)
             {
-                if (OperatingSystem.IsWindows())
-                {
-                    process.Kill(entireProcessTree: true);
-                }
-                else
-                {
-                    process.Kill();
-                }
+                process.Kill(entireProcessTree: true);
             }
         }
         catch (Exception exception) when (
