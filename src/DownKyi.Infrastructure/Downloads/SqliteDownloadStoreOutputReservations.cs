@@ -62,12 +62,63 @@ internal sealed class SqliteDownloadStoreOutputReservations(SqliteDownloadStoreD
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(basePath);
         using var connection = await _database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        return await IsOutputPathReservedCoreAsync(
-            connection,
-            transaction: null,
-            basePath,
-            ignoreCase,
-            cancellationToken).ConfigureAwait(false);
+        using var command = connection.CreateCommand();
+        if (ignoreCase)
+        {
+            command.CommandText = """
+                SELECT 1, NULL
+                FROM download_base db
+                INNER JOIN downloading dl ON dl.id = db.id
+                WHERE (db.output_reservation_key = @key
+                       OR db.file_path = @file_path COLLATE NOCASE)
+                  AND NOT EXISTS (
+                      SELECT 1 FROM download_quarantine q
+                      WHERE q.source_table = 'downloading' AND q.record_id = db.id)
+                UNION ALL
+                SELECT 0, db.file_path
+                FROM download_base db
+                INNER JOIN downloading dl ON dl.id = db.id
+                WHERE db.output_reservation_key IS NULL
+                  AND NOT EXISTS (
+                      SELECT 1 FROM download_quarantine q
+                      WHERE q.source_table = 'downloading' AND q.record_id = db.id)
+                """;
+        }
+        else
+        {
+            command.CommandText = """
+                SELECT 1, NULL
+                FROM download_base db
+                INNER JOIN downloading dl ON dl.id = db.id
+                WHERE (db.output_reservation_key = @key OR db.file_path = @file_path)
+                  AND NOT EXISTS (
+                      SELECT 1 FROM download_quarantine q
+                      WHERE q.source_table = 'downloading' AND q.record_id = db.id)
+                UNION ALL
+                SELECT 0, db.file_path
+                FROM download_base db
+                INNER JOIN downloading dl ON dl.id = db.id
+                WHERE db.output_reservation_key IS NULL
+                  AND NOT EXISTS (
+                      SELECT 1 FROM download_quarantine q
+                      WHERE q.source_table = 'downloading' AND q.record_id = db.id)
+                """;
+        }
+        var key = DownloadOutputPathKey.Create(basePath, ignoreCase);
+        command.Parameters.AddWithValue("@key", key);
+        command.Parameters.AddWithValue("@file_path", basePath);
+        using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            if (reader.GetInt32(0) == 1 ||
+                StringComparer.Ordinal.Equals(
+                    DownloadOutputPathKey.Create(reader.GetString(1), ignoreCase), key))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public async Task<IReadOnlyList<string>> GetActiveOutputReservationKeysAsync(

@@ -815,6 +815,89 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
             basePath.ToUpperInvariant(), false), caseSensitive);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ReservationPointQueryAgreesWithSnapshotForLegacyNormalizedPath(bool ignoreCase)
+    {
+        var decomposed = Path.Combine(_directory, "cafe\u0301-legacy");
+        var composed = Path.Combine(_directory, "caf\u00e9-legacy");
+        using var store = CreateStore();
+        Assert.True((await store.AddAsync(
+            CreateQueuedTask("legacy-point-equivalence", decomposed),
+            TestContext.Current.CancellationToken)).IsSuccess);
+        using (var connection = await OpenConnectionAsync(readOnly: false))
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                UPDATE download_base SET output_reservation_key = NULL
+                WHERE id = 'legacy-point-equivalence'
+                """;
+            await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        }
+
+        var key = DownloadOutputPathKey.Create(composed, ignoreCase);
+        var snapshot = await store.GetActiveOutputReservationKeysAsync(
+            ignoreCase, TestContext.Current.CancellationToken);
+        Assert.Contains(key, snapshot);
+        Assert.True(await store.IsOutputPathReservedAsync(
+            composed, ignoreCase, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task ReservationPointQueryMatchesSnapshotOnUnchangedMixedFixture()
+    {
+        var ignoreCase = DownloadOutputPathKey.UsesCaseInsensitiveComparison;
+        var normal = Path.Combine(_directory, "normal-caf\u00e9");
+        var legacy = Path.Combine(_directory, "legacy-cafe\u0301");
+        var completed = Path.Combine(_directory, "completed-output");
+        var quarantined = Path.Combine(_directory, "quarantined-output");
+        using var store = CreateStore();
+        Assert.True((await store.AddAsync(
+            CreateQueuedTask("normal-equivalence", normal),
+            TestContext.Current.CancellationToken)).IsSuccess);
+        Assert.True((await store.AddAsync(
+            CreateQueuedTask("legacy-equivalence", legacy),
+            TestContext.Current.CancellationToken)).IsSuccess);
+        Assert.True((await store.AddAsync(
+            CreateCompletedTask("completed-equivalence", 10, completed),
+            TestContext.Current.CancellationToken)).IsSuccess);
+        Assert.True((await store.AddAsync(
+            CreateQueuedTask("quarantined-equivalence", quarantined),
+            TestContext.Current.CancellationToken)).IsSuccess);
+        using (var connection = await OpenConnectionAsync(readOnly: false))
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                UPDATE download_base SET output_reservation_key = NULL
+                WHERE id = 'legacy-equivalence'
+                """;
+            await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        }
+        await InsertPreexistingQuarantineAsync("quarantined-equivalence");
+
+        var snapshot = await store.GetActiveOutputReservationKeysAsync(
+            ignoreCase, TestContext.Current.CancellationToken);
+        foreach (var (candidate, expected) in new[]
+        {
+            (normal, true),
+            (normal.ToUpperInvariant(), ignoreCase),
+            (legacy.Normalize(System.Text.NormalizationForm.FormC), true),
+            (legacy.ToUpperInvariant(), ignoreCase),
+            (completed, false),
+            (quarantined, false),
+            (Path.Combine(_directory, "unrelated"), false)
+        })
+        {
+            var key = DownloadOutputPathKey.Create(candidate, ignoreCase);
+            var snapshotReserved = snapshot.Contains(key, StringComparer.Ordinal);
+            var pointReserved = await store.IsOutputPathReservedAsync(
+                candidate, ignoreCase, TestContext.Current.CancellationToken);
+            Assert.Equal(expected, snapshotReserved);
+            Assert.Equal(snapshotReserved, pointReserved);
+        }
+    }
+
     [Fact]
     public async Task CoalescedProgressWriteAdvancesVersionAndPayloadAtomically()
     {
