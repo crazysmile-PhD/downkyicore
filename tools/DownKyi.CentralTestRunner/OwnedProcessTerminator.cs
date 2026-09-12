@@ -39,9 +39,10 @@ internal static class OwnedProcessTerminator
                 break;
             }
 
+            Process? process = null;
             try
             {
-                using var process = Process.GetProcessById(descendant.Pid);
+                process = Process.GetProcessById(descendant.Pid);
                 if (descendant.StartTimeUtc is null)
                 {
                     failures.Add($"pid {descendant.Pid} has no verified start time; signal omitted");
@@ -61,7 +62,14 @@ internal static class OwnedProcessTerminator
             }
             catch (Exception exception) when (exception is InvalidOperationException or Win32Exception)
             {
-                failures.Add($"pid {descendant.Pid}: {exception.Message}");
+                if (!HasExited(process))
+                {
+                    failures.Add($"pid {descendant.Pid}: {exception.Message}");
+                }
+            }
+            finally
+            {
+                process?.Dispose();
             }
         }
 
@@ -91,6 +99,24 @@ internal static class OwnedProcessTerminator
         }
 
         return depth;
+    }
+
+    private static bool HasExited(Process? process)
+    {
+        if (process is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            return process.HasExited;
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or Win32Exception)
+        {
+            // Retain the original identity failure when exit cannot be confirmed.
+            return false;
+        }
     }
 
     private static void Signal(int pid)
