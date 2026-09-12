@@ -234,7 +234,11 @@ public sealed class DownloadTaskStagingSafetyTests : IDisposable
             new DownloadOutput(outputBase, null),
             now);
         task = task.Start(now.AddSeconds(1)).RequireValue();
-        return task.RecordPublishedArtifact("media", published, now.AddSeconds(2)).RequireValue();
+        var publishing = new DownloadPublishingArtifact(
+            "media", Path.GetFileName(published), 0, new string('A', 64));
+        task = task.BeginPublishingArtifact(publishing,
+            now.AddSeconds(2)).RequireValue();
+        return task.RecordPublishedArtifact(publishing, published, now.AddSeconds(3)).RequireValue();
     }
 
     public void Dispose()

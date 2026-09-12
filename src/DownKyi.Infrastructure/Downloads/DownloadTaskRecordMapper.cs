@@ -118,7 +118,8 @@ internal static class DownloadTaskRecordMapper
                 GetString(reader, "file_path"),
                 GetNullableString(reader, "file_size"),
                 DownloadStoreJson.ReadStringMap(GetString(reader, "published_artifacts"), "published_artifacts"),
-                GetString(reader, "staging_token")),
+                GetString(reader, "staging_token"),
+                ReadPublishingArtifact(reader)),
             phase,
             progress,
             transfer,
@@ -165,6 +166,26 @@ internal static class DownloadTaskRecordMapper
     {
         var ordinal = reader.GetOrdinal(column);
         return reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
+    }
+
+    private static DownloadPublishingArtifact? ReadPublishingArtifact(SqliteDataReader reader)
+    {
+        var key = GetNullableString(reader, "publishing_key");
+        var fileName = GetNullableString(reader, "publishing_file_name");
+        var length = GetNullableInt64(reader, "publishing_length");
+        var sha256 = GetNullableString(reader, "publishing_sha256");
+        if (key == null && fileName == null && length == null && sha256 == null)
+        {
+            return null;
+        }
+
+        if (key == null || fileName == null || length == null || sha256 == null)
+        {
+            throw new DownloadRecordCorruptException(
+                "publishing_artifact", "Stored publishing artifact is incomplete.");
+        }
+
+        return new DownloadPublishingArtifact(key, fileName, length.Value, sha256);
     }
 
     private static long? GetNullableInt64(SqliteDataReader reader, string column)

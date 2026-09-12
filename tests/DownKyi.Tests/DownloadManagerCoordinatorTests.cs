@@ -360,8 +360,13 @@ public sealed class DownloadManagerCoordinatorTests
             var taskId = new DownloadTaskId(id);
             await StateWriter.StartAsync(taskId, TestContext.Current.CancellationToken)
                 .ConfigureAwait(true);
+            var publishing = new DownloadPublishingArtifact(key, Path.GetFileName(fileName), 0,
+                new string('A', 64));
+            await StateWriter.BeginPublishingArtifactAsync(taskId, publishing,
+                TestContext.Current.CancellationToken).ConfigureAwait(true);
             await StateWriter.RecordPublishedArtifactAsync(
-                taskId, key, Path.Combine(_directory, fileName), TestContext.Current.CancellationToken)
+                taskId, publishing, Path.Combine(_directory, fileName),
+                TestContext.Current.CancellationToken)
                 .ConfigureAwait(true);
             await StateWriter.CompleteAsync(taskId,
                 new DownloadCompletion(1, "completed", null), TestContext.Current.CancellationToken)

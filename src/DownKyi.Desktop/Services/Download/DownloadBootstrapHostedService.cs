@@ -25,6 +25,7 @@ internal sealed class DownloadBootstrapHostedService : IHostedService, IDisposab
     private readonly IUiDispatcher _uiDispatcher;
     private readonly ILogger<DownloadBootstrapHostedService> _logger;
     private readonly DownloadTaskStaging? _staging;
+    private readonly DownloadTaskFileService? _fileService;
     private IDownloadRuntime? _downloadRuntime;
     private Task? _historyLoadTask;
     private bool _disposed;
@@ -37,7 +38,8 @@ internal sealed class DownloadBootstrapHostedService : IHostedService, IDisposab
         DownloadTaskQueueGateway queueGateway,
         IUiDispatcher uiDispatcher,
         ILogger<DownloadBootstrapHostedService> logger,
-        DownloadTaskStaging? staging = null)
+        DownloadTaskStaging? staging = null,
+        DownloadTaskFileService? fileService = null)
     {
         _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
         _projectionStore = projectionStore
@@ -49,6 +51,7 @@ internal sealed class DownloadBootstrapHostedService : IHostedService, IDisposab
         _uiDispatcher = uiDispatcher ?? throw new ArgumentNullException(nameof(uiDispatcher));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _staging = staging;
+        _fileService = fileService;
     }
 
     public async Task StartAsync(CancellationToken cancellationToken)
@@ -57,7 +60,41 @@ internal sealed class DownloadBootstrapHostedService : IHostedService, IDisposab
         try
         {
             var state = await LoadStartupStateAsync(cancellationToken).ConfigureAwait(false);
-            startupTasks = state.UnfinishedTasks;
+            var blocked = new HashSet<DownloadTaskId>();
+            if (_fileService != null)
+            {
+                foreach (var task in state.UnfinishedTasks.Where(task =>
+                             task.Output.PublishingArtifact != null))
+                {
+                    try
+                    {
+                        var (_, canRun) = await _fileService
+                            .ReconcilePublishingAsync(task, cancellationToken)
+                            .ConfigureAwait(false);
+                        if (!canRun)
+                        {
+                            blocked.Add(task.Id);
+                            if (task.Phase is DownloadPhase.Queued or DownloadPhase.Downloading
+                                or DownloadPhase.Pausing)
+                            {
+                                await _stateWriter.FailAsync(task.Id, new DownloadFailure(
+                                        "download.publish.reconcile",
+                                        "Pending publication could not be safely reconciled.", true),
+                                    cancellationToken).ConfigureAwait(false);
+                            }
+                        }
+                    }
+                    catch (Exception exception) when (IsRecoverableBoundaryFailure(exception))
+                    {
+                        blocked.Add(task.Id);
+                        _logger.LogErrorMessage("Pending publication recovery failed.", exception);
+                    }
+                }
+
+                state = await LoadStartupStateAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            startupTasks = state.UnfinishedTasks.Where(task => !blocked.Contains(task.Id)).ToArray();
             if (_staging != null)
             {
                 var knownTasks = new List<DownloadTask>(state.UnfinishedTasks);
@@ -87,7 +124,7 @@ internal sealed class DownloadBootstrapHostedService : IHostedService, IDisposab
                 .AttachAsync(_downloadRuntime, cancellationToken)
                 .ConfigureAwait(false);
             await QueueStartupTasksAsync(
-                state.UnfinishedTasks,
+                startupTasks,
                 _downloadRuntime,
                 cancellationToken).ConfigureAwait(false);
             await _queueGateway

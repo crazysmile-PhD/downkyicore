@@ -48,6 +48,22 @@ public sealed class DownloadPipelineCommitBoundaryTests
     }
 
     [Fact]
+    public async Task PublishingStateFailureNeverMovesCompletedStaging()
+    {
+        using var harness = await CommitBoundaryHarness.CreateAsync(
+            rejectPublishingStart: true).ConfigureAwait(true);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            harness.FinalizeStage.ExecuteAsync(
+                harness.Context, TestContext.Current.CancellationToken)).ConfigureAwait(true);
+
+        Assert.True(File.Exists(harness.Output));
+        Assert.False(File.Exists(harness.PublishedOutput));
+        Assert.Null(harness.Store.Current?.Output.PublishingArtifact);
+        harness.AssertSourcesAndSidecarsExist();
+    }
+
+    [Fact]
     public async Task CommittedCompletionCleansOnlyTransferInputsAndSidecars()
     {
         using var harness = await CommitBoundaryHarness.CreateAsync().ConfigureAwait(true);
@@ -176,7 +192,8 @@ public sealed class DownloadPipelineCommitBoundaryTests
         public DownloadTaskStaging Staging { get; }
 
         public static async Task<CommitBoundaryHarness> CreateAsync(
-            bool rejectCompletion = false)
+            bool rejectCompletion = false,
+            bool rejectPublishingStart = false)
         {
             var directory = Path.Combine(
                 Path.GetTempPath(),
@@ -184,7 +201,7 @@ public sealed class DownloadPipelineCommitBoundaryTests
                 Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(directory);
             var settings = new SettingsStore(Path.Combine(directory, "settings.json"));
-            var store = new CommitBoundaryStore(rejectCompletion);
+            var store = new CommitBoundaryStore(rejectCompletion, rejectPublishingStart);
             var clock = new SystemClock();
             var tasks = new DownloadTaskApplicationService(store, clock);
             var projectionStore = new DownloadTaskProjectionStore(tasks, clock);
@@ -316,7 +333,9 @@ public sealed class DownloadPipelineCommitBoundaryTests
         }
     }
 
-    private sealed class CommitBoundaryStore(bool rejectCompletion) : IDownloadTaskStore
+    private sealed class CommitBoundaryStore(
+        bool rejectCompletion,
+        bool rejectPublishingStart) : IDownloadTaskStore
     {
         public DownloadTask? Current { get; private set; }
 
@@ -352,6 +371,15 @@ public sealed class DownloadPipelineCommitBoundaryTests
                     OperationError.Unexpected(
                         "download.store.synthetic-completion-failure",
                         "Synthetic completion persistence failure.")));
+            }
+
+            if (rejectPublishingStart && task.Output.PublishingArtifact != null &&
+                Current.Output.PublishingArtifact == null)
+            {
+                return Task.FromResult(OperationResult.Failure(
+                    OperationError.Unexpected(
+                        "download.store.synthetic-publishing-failure",
+                        "Synthetic publishing persistence failure.")));
             }
 
             Current = task;

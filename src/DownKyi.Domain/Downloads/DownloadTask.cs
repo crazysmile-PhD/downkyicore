@@ -2,7 +2,7 @@ using DownKyi.Domain.Results;
 
 namespace DownKyi.Domain.Downloads;
 
-public sealed class DownloadTask
+public sealed partial class DownloadTask
 {
     private DownloadTask(
         DownloadTaskId id,
@@ -107,6 +107,10 @@ public sealed class DownloadTask
         ArgumentOutOfRangeException.ThrowIfLessThan(updatedAtUtc, createdAtUtc);
 
         ValidatePhasePayload(phase, failure, completion);
+        if (phase == DownloadPhase.Completed && output.PublishingArtifact != null)
+        {
+            throw new ArgumentException("A completed task cannot have a pending publication.", nameof(output));
+        }
         return new DownloadTask(
             id,
             metadata,
@@ -161,6 +165,11 @@ public sealed class DownloadTask
 
     public OperationResult<DownloadTask> Delete(DateTimeOffset now)
     {
+        if (Output.PublishingArtifact != null)
+        {
+            return PublishingConflict();
+        }
+
         return TransitionTo(DownloadPhase.Deleted, now);
     }
 
@@ -173,6 +182,11 @@ public sealed class DownloadTask
     public OperationResult<DownloadTask> Complete(DownloadCompletion completion, DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(completion);
+        if (Output.PublishingArtifact != null)
+        {
+            return PublishingConflict();
+        }
+
         return TransitionTo(DownloadPhase.Completed, now, completion: completion);
     }
 
@@ -256,33 +270,6 @@ public sealed class DownloadTask
             checked(Version + 1),
             CreatedAtUtc,
             now));
-    }
-
-    public OperationResult<DownloadTask> RecordPublishedArtifact(
-        string key,
-        string path,
-        DateTimeOffset now)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(key);
-        ArgumentException.ThrowIfNullOrWhiteSpace(path);
-        if (Phase is DownloadPhase.Completed or DownloadPhase.Canceled or DownloadPhase.Deleted)
-        {
-            return InvalidTransition(Phase);
-        }
-
-        if (Output.PublishedArtifacts.TryGetValue(key, out var existing) && existing != path)
-        {
-            return OperationResult.Failure<DownloadTask>(new OperationError(
-                "download.output.published-conflict",
-                "A published artifact cannot be replaced.",
-                OperationErrorKind.Conflict));
-        }
-
-        return UpdateOutput(new DownloadOutput(
-            Output.BasePath,
-            Output.FileSizeText,
-            Output.PublishedArtifacts.SetItem(key, path),
-            Output.StagingToken), now);
     }
 
     public OperationResult<DownloadTask> UpdateProgressAndTransfer(

@@ -5,7 +5,7 @@ using DownKyi.Domain.Results;
 
 namespace DownKyi.Application.Downloads;
 
-public sealed class DownloadTaskApplicationService : IDownloadTaskApplicationService, IDisposable
+public sealed partial class DownloadTaskApplicationService : IDownloadTaskApplicationService, IDisposable
 {
     private const int MaximumUpdateAttempts = 2;
     private readonly IDownloadTaskStore _store;
@@ -294,10 +294,10 @@ public sealed class DownloadTaskApplicationService : IDownloadTaskApplicationSer
 
     public Task<OperationResult<DownloadTask>> RecordPublishedArtifactAsync(
         DownloadTaskId taskId,
-        string key,
+        DownloadPublishingArtifact publishing,
         string path,
         CancellationToken cancellationToken) =>
-        MutateAsync(taskId, (task, now) => task.RecordPublishedArtifact(key, path, now), cancellationToken);
+        MutateAsync(taskId, (task, now) => task.RecordPublishedArtifact(publishing, path, now), cancellationToken);
 
     public Task<OperationResult<DownloadTask>> SetBackendIdentityAsync(
         DownloadTaskId taskId,
@@ -343,7 +343,7 @@ public sealed class DownloadTaskApplicationService : IDownloadTaskApplicationSer
         CancellationToken cancellationToken) =>
         MutateAsync(taskId, (task, now) => task.UpdateOutput(
             new DownloadOutput(task.Output.BasePath, fileSizeText, task.Output.PublishedArtifacts,
-                task.Output.StagingToken),
+                task.Output.StagingToken, task.Output.PublishingArtifact),
             now), cancellationToken);
 
     public Task<OperationResult<DownloadTask>> CancelAsync(

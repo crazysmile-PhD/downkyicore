@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using DownKyi.Application.Downloads;
 using DownKyi.Application.Time;
 using DownKyi.Domain.Downloads;
@@ -14,6 +15,99 @@ namespace DownKyi.Tests;
 
 public sealed class DownloadBootstrapHostedServiceTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task StartupReconcilesMovedPendingPublicationFromReopenedSqlite(
+        bool replaceDestination)
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "downkyi-publish-startup",
+            Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        var databasePath = Path.Combine(directory, "download.db");
+        var outputBase = Path.Combine(directory, "output");
+        var destination = outputBase + ".mp4";
+        var bytes = new byte[] { 7, 8, 9 };
+        var taskId = new DownloadTaskId("startup-publish-recovery");
+        try
+        {
+            using (var firstStore = new SqliteDownloadTaskStore(
+                       new SqliteDownloadTaskStoreOptions(databasePath), new SystemClock()))
+            {
+                await firstStore.InitializeAsync(TestContext.Current.CancellationToken);
+                using var firstTasks = new DownloadTaskApplicationService(firstStore, new SystemClock());
+                Assert.True((await firstTasks.AddAsync(CreateTask(taskId.Value, outputBase),
+                    TestContext.Current.CancellationToken)).IsSuccess);
+                Assert.True((await firstTasks.StartAsync(taskId,
+                    TestContext.Current.CancellationToken)).IsSuccess);
+                var task = Assert.IsType<DownloadTask>(await firstTasks.FindAsync(
+                    taskId, TestContext.Current.CancellationToken));
+                var firstStaging = new DownloadTaskStaging(NullLogger<DownloadTaskStaging>.Instance);
+                var staged = Path.Combine(firstStaging.GetDirectory(taskId, outputBase,
+                    task.Output.StagingToken), "output.mp4");
+                await File.WriteAllBytesAsync(staged, bytes, TestContext.Current.CancellationToken);
+                var publishing = new DownloadPublishingArtifact("media", "output.mp4", bytes.Length,
+                    Convert.ToHexString(SHA256.HashData(bytes)));
+                Assert.True((await firstTasks.BeginPublishingArtifactAsync(
+                    taskId, publishing, TestContext.Current.CancellationToken)).IsSuccess);
+                File.Move(staged, destination, overwrite: false);
+                firstStaging.CleanupCurrentSession();
+            }
+
+            var foreignBytes = new byte[] { 91, 0, 255, 17 };
+            if (replaceDestination)
+            {
+                File.Delete(destination);
+                await File.WriteAllBytesAsync(destination, foreignBytes,
+                    TestContext.Current.CancellationToken);
+            }
+
+            using var reopenedStore = new SqliteDownloadTaskStore(
+                new SqliteDownloadTaskStoreOptions(databasePath), new SystemClock());
+            await reopenedStore.InitializeAsync(TestContext.Current.CancellationToken);
+            using var reopenedTasks = new DownloadTaskApplicationService(
+                reopenedStore, new SystemClock());
+            using var projections = new DownloadTaskProjectionStore(reopenedTasks, new SystemClock());
+            var writer = new DownloadTaskStateWriter(reopenedTasks);
+            var staging = new DownloadTaskStaging(NullLogger<DownloadTaskStaging>.Instance);
+            var fileService = new DownloadTaskFileService(new AriaRuntimeClientRegistry(),
+                NullLogger<DownloadTaskFileService>.Instance, staging, writer);
+            using var runtime = new RecordingDownloadRuntime();
+            using var bootstrap = new DownloadBootstrapHostedService(
+                new DownloadListState(), projections, writer,
+                new RecordingRuntimeFactory(runtime), new DownloadTaskQueueGateway(),
+                new ImmediateUiDispatcher(), NullLogger<DownloadBootstrapHostedService>.Instance,
+                staging, fileService);
+
+            await bootstrap.StartAsync(TestContext.Current.CancellationToken);
+
+            var recovered = Assert.IsType<DownloadTask>(await reopenedTasks.FindAsync(
+                taskId, TestContext.Current.CancellationToken));
+            Assert.Equal(replaceDestination ? foreignBytes : bytes,
+                await File.ReadAllBytesAsync(destination,
+                TestContext.Current.CancellationToken));
+            if (replaceDestination)
+            {
+                Assert.Equal(DownloadPhase.Failed, recovered.Phase);
+                Assert.NotNull(recovered.Output.PublishingArtifact);
+                Assert.Empty(recovered.Output.PublishedArtifacts);
+                Assert.DoesNotContain(taskId, runtime.Enqueued);
+            }
+            else
+            {
+                Assert.Null(recovered.Output.PublishingArtifact);
+                Assert.Equal(destination, recovered.Output.PublishedArtifacts["media"]);
+                Assert.Contains(taskId, runtime.Enqueued);
+            }
+            await bootstrap.StopAsync(TestContext.Current.CancellationToken);
+        }
+        finally
+        {
+            ClearOwnedSqlitePool(databasePath);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     [Fact]
     public async Task HostLifecycleOwnsDownloadRuntimeAndUiProjection()
     {
@@ -404,7 +498,7 @@ public sealed class DownloadBootstrapHostedServiceTests
                 TestContext.Current.CancellationToken)).State);
     }
 
-    private static DownloadTask CreateTask(string id)
+    private static DownloadTask CreateTask(string id, string? outputBase = null)
     {
         return DownloadTask.Create(
             new DownloadTaskId(id),
@@ -420,7 +514,7 @@ public sealed class DownloadBootstrapHostedServiceTests
                 string.Empty,
                 0),
             new DownloadPlan(DownloadContentSelection.None, [], 0, nfoRequest: null),
-            new DownloadOutput(id, null),
+            new DownloadOutput(outputBase ?? id, null),
             DateTimeOffset.UnixEpoch);
     }
 

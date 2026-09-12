@@ -42,7 +42,8 @@ internal sealed class DownloadExecutionContext
 
     public Dictionary<string, string> PublishedArtifacts { get; } = new(StringComparer.Ordinal);
 
-    public bool HasPublished(string key) => PublishedArtifacts.ContainsKey(key);
+    public bool HasPublished(string key) =>
+        PublishedArtifacts.TryGetValue(key, out var path) && File.Exists(path);
 
     public bool HasUsablePublishedMedia() =>
         PublishedArtifacts.TryGetValue("media", out var path) &&
