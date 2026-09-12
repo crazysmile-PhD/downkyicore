@@ -192,11 +192,7 @@ public sealed class DownloadTaskApplicationService : IDownloadTaskApplicationSer
         return MutateAsync(taskId, (task, now) =>
         {
             var files = task.Plan.TransferFiles.SetItem(key, filePath);
-            var plan = new DownloadPlan(
-                task.Plan.RequestedContent,
-                files,
-                task.Plan.StreamType,
-                task.Plan.NfoRequest);
+            var plan = task.Plan.WithTransferFiles(files);
             var transfer = CopyTransfer(task.Transfer, backendIdentity: null, replaceBackendIdentity: true);
             return task.UpdatePlan(plan, transfer, now);
         }, cancellationToken);
@@ -233,11 +229,7 @@ public sealed class DownloadTaskApplicationService : IDownloadTaskApplicationSer
             }
 
             var claimedFiles = files.Add(claimKey, filePath);
-            var plan = new DownloadPlan(
-                task.Plan.RequestedContent,
-                claimedFiles,
-                task.Plan.StreamType,
-                task.Plan.NfoRequest);
+            var plan = task.Plan.WithTransferFiles(claimedFiles);
             return task.UpdatePlan(plan, task.Transfer, now);
         }, cancellationToken);
     }
