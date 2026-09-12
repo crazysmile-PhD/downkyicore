@@ -24,7 +24,7 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
         using var connection = await OpenReadOnlyConnectionAsync().ConfigureAwait(true);
         using var version = connection.CreateCommand();
         version.CommandText = "PRAGMA user_version";
-        Assert.Equal(6L, await version.ExecuteScalarAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(7L, await version.ExecuteScalarAsync(TestContext.Current.CancellationToken));
         Assert.True(await TableExistsAsync("download_upgrade_admission_gate"));
         Assert.Equal(1, await CountSchemaMigrationAsync(4));
         Assert.Equal(1, await CountSchemaMigrationAsync(5));
@@ -402,7 +402,7 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
             await reopened.InitializeAsync(TestContext.Current.CancellationToken);
         }
 
-        Assert.Equal(6, await ReadSchemaVersionAsync());
+        Assert.Equal(7, await ReadSchemaVersionAsync());
         Assert.Equal(0, await CountDownloadingRecordAsync("orphaned-download"));
     }
 
@@ -415,7 +415,7 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
 
         await store.InitializeAsync(TestContext.Current.CancellationToken);
 
-        Assert.Equal(6, await ReadSchemaVersionAsync());
+        Assert.Equal(7, await ReadSchemaVersionAsync());
         Assert.Equal(1, await CountDownloadBaseRecordAsync("legacy-resume"));
         Assert.Equal(1, await CountDownloadingRecordAsync("legacy-resume"));
         Assert.Equal(0, await CountDownloadingRecordAsync("orphaned-download"));
@@ -459,6 +459,7 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
         Assert.Equal(expected.Phase, restored.Phase);
         Assert.Equal(expected.Transfer.BackendIdentity, restored.Transfer.BackendIdentity);
         Assert.Equal(expected.Transfer.CompletedFileKeys, restored.Transfer.CompletedFileKeys);
+        Assert.Equal(expected.Output.StagingToken, restored.Output.StagingToken);
         Assert.Equal(expected.Plan.RequestedContent, restored.Plan.RequestedContent);
         Assert.Equal(expected.Plan.TransferFiles, restored.Plan.TransferFiles);
         Assert.Equal(expected.Progress, restored.Progress);
@@ -494,6 +495,7 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
         Assert.Equal(media, restored.Output.PublishedArtifacts["media"]);
         Assert.Equal(subtitle, restored.Output.PublishedArtifacts["subtitle:zh-Hant"]);
         Assert.Equal(task.Output.BasePath, restored.Output.BasePath);
+        Assert.Equal(task.Output.StagingToken, restored.Output.StagingToken);
     }
 
     [Fact]
@@ -508,7 +510,7 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
 
         Assert.Null(restored.Plan.NfoRequest);
         Assert.Equal(DownloadContentSelection.None, restored.Plan.RequestedContent);
-        Assert.Equal(6, await ReadSchemaVersionAsync());
+        Assert.Equal(7, await ReadSchemaVersionAsync());
         Assert.Equal(1, await CountSchemaMigrationAsync(5));
     }
 
@@ -999,8 +1001,9 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
         command.CommandText = """
             ALTER TABLE download_base DROP COLUMN nfo_request;
             ALTER TABLE download_base DROP COLUMN published_artifacts;
+            ALTER TABLE download_base DROP COLUMN staging_token;
             DROP TABLE download_upgrade_admission_gate;
-            DELETE FROM download_schema_migrations WHERE version IN (4, 5, 6);
+            DELETE FROM download_schema_migrations WHERE version IN (4, 5, 6, 7);
             PRAGMA user_version = 3;
             """;
         await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);

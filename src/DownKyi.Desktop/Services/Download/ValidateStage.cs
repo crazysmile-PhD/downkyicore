@@ -19,7 +19,9 @@ internal sealed class ValidateStage : IDownloadPipelineStage
         context.EnsureActive(cancellationToken);
         if (context.NeedsMedia &&
             (!context.MediaSucceeded ||
-             (!context.HasPublished("media") && !File.Exists(context.OutputMedia))))
+             (context.HasPublished("media")
+                 ? !context.HasUsablePublishedMedia()
+                 : !File.Exists(context.OutputMedia))))
         {
             return Task.FromResult(DownloadStageResult.Failure(
                 "download.validate.media",

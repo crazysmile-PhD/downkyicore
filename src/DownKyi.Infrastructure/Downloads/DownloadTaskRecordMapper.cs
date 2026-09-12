@@ -117,7 +117,8 @@ internal static class DownloadTaskRecordMapper
             new DownloadOutput(
                 GetString(reader, "file_path"),
                 GetNullableString(reader, "file_size"),
-                DownloadStoreJson.ReadStringMap(GetString(reader, "published_artifacts"), "published_artifacts")),
+                DownloadStoreJson.ReadStringMap(GetString(reader, "published_artifacts"), "published_artifacts"),
+                GetString(reader, "staging_token")),
             phase,
             progress,
             transfer,

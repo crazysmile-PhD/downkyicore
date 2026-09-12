@@ -35,10 +35,14 @@ internal sealed class DownloadExecutionContextFactory
             EnsureActive);
         if (_staging != null)
         {
-            context.StagingDirectory = _staging.GetDirectory(taskId, task.Output.BasePath);
+            context.StagingDirectory = _staging.GetDirectory(
+                taskId, task.Output.BasePath, task.Output.StagingToken);
         }
 
-        context.PublishedKeys.UnionWith(task.Output.PublishedArtifacts.Keys);
+        foreach (var artifact in task.Output.PublishedArtifacts)
+        {
+            context.PublishedArtifacts.Add(artifact.Key, artifact.Value);
+        }
 
         return context;
     }
@@ -52,6 +56,7 @@ internal sealed class DownloadExecutionContextFactory
         return new DownloadExecutionInput(
             task.Metadata,
             task.Plan.RequestedContent,
+            task.Plan.TransferFiles,
             task.Output.BasePath,
             (Core.BiliApi.VideoStream.PlayStreamType)task.Plan.StreamType,
             task.Plan.NfoRequest,

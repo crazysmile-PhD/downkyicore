@@ -7,11 +7,17 @@ public sealed record DownloadOutput
     public DownloadOutput(
         string basePath,
         string? fileSizeText,
-        IEnumerable<KeyValuePair<string, string>>? publishedArtifacts = null)
+        IEnumerable<KeyValuePair<string, string>>? publishedArtifacts = null,
+        string? stagingToken = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(basePath);
         BasePath = basePath;
         FileSizeText = fileSizeText;
+        StagingToken = stagingToken ?? Guid.NewGuid().ToString("N");
+        if (!Guid.TryParseExact(StagingToken, "N", out _))
+        {
+            throw new ArgumentException("Staging token must be a GUID.", nameof(stagingToken));
+        }
         PublishedArtifacts = publishedArtifacts?.ToImmutableDictionary(
             static entry => entry.Key,
             static entry => entry.Value,
@@ -21,6 +27,8 @@ public sealed record DownloadOutput
     public string BasePath { get; }
 
     public string? FileSizeText { get; }
+
+    public string StagingToken { get; }
 
     public ImmutableDictionary<string, string> PublishedArtifacts { get; }
 }

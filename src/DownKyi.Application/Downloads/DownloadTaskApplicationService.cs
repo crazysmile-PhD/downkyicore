@@ -342,7 +342,8 @@ public sealed class DownloadTaskApplicationService : IDownloadTaskApplicationSer
         string? fileSizeText,
         CancellationToken cancellationToken) =>
         MutateAsync(taskId, (task, now) => task.UpdateOutput(
-            new DownloadOutput(task.Output.BasePath, fileSizeText, task.Output.PublishedArtifacts),
+            new DownloadOutput(task.Output.BasePath, fileSizeText, task.Output.PublishedArtifacts,
+                task.Output.StagingToken),
             now), cancellationToken);
 
     public Task<OperationResult<DownloadTask>> CancelAsync(

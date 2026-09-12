@@ -281,7 +281,8 @@ public sealed class DownloadTask
         return UpdateOutput(new DownloadOutput(
             Output.BasePath,
             Output.FileSizeText,
-            Output.PublishedArtifacts.SetItem(key, path)), now);
+            Output.PublishedArtifacts.SetItem(key, path),
+            Output.StagingToken), now);
     }
 
     public OperationResult<DownloadTask> UpdateProgressAndTransfer(

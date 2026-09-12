@@ -18,12 +18,12 @@ internal static class DownloadTaskSqlWriter
             INSERT INTO download_base
                 (id, need_download_content, bvid, avid, cid, episode_id, cover_url, page_cover_url,
                  zone_id, [order], main_title, name, duration, video_codec_name, resolution,
-                  audio_codec, file_path, output_reservation_key, file_size, published_artifacts, page, nfo_request, version,
+                  audio_codec, file_path, output_reservation_key, file_size, published_artifacts, staging_token, page, nfo_request, version,
                  created_at_utc, updated_at_utc)
             VALUES
                 (@id, @need_download_content, @bvid, @avid, @cid, @episode_id, @cover_url, @page_cover_url,
                  @zone_id, @order, @main_title, @name, @duration, @video_codec_name, @resolution,
-                   @audio_codec, @file_path, @output_reservation_key, @file_size, @published_artifacts, @page, @nfo_request, @version,
+                   @audio_codec, @file_path, @output_reservation_key, @file_size, @published_artifacts, @staging_token, @page, @nfo_request, @version,
                  @created_at_utc, @updated_at_utc)
             """;
         BindBase(command, task);
@@ -53,6 +53,7 @@ internal static class DownloadTaskSqlWriter
                     ELSE @output_reservation_key
                 END,
                  file_size = @file_size, published_artifacts = @published_artifacts,
+                 staging_token = @staging_token,
                  page = @page, nfo_request = @nfo_request,
                 version = @version, created_at_utc = @created_at_utc, updated_at_utc = @updated_at_utc
             WHERE id = @id AND version = @expected_version
@@ -138,6 +139,7 @@ internal static class DownloadTaskSqlWriter
         command.Parameters.AddWithValue(
             "@published_artifacts",
             DownloadStoreJson.WriteStringMap(task.Output.PublishedArtifacts));
+        command.Parameters.AddWithValue("@staging_token", task.Output.StagingToken);
         command.Parameters.AddWithValue("@page", task.Metadata.Media.Page);
         command.Parameters.AddWithValue(
             "@nfo_request",

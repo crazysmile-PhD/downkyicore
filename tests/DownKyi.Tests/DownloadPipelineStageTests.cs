@@ -84,6 +84,21 @@ public sealed class DownloadPipelineStageTests
     }
 
     [Fact]
+    public async Task ValidateStageRejectsMissingRecordedPublishedMediaOnRetry()
+    {
+        using var settings = new TestSettingsStore();
+        var context = CreateContext(settings.Store.Current);
+        context.PublishedArtifacts.Add("media", Path.Combine(
+            Path.GetTempPath(), $"missing-published-{Guid.NewGuid():N}.mp4"));
+
+        var result = await new ValidateStage().ExecuteAsync(
+            context, TestContext.Current.CancellationToken);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("download.validate.media", result.Error?.Code);
+    }
+
+    [Fact]
     public async Task ValidateStageAllowsOptionalSubtitleResponseWithoutFiles()
     {
         using var settings = new TestSettingsStore();

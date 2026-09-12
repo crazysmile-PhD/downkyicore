@@ -40,9 +40,13 @@ internal sealed class DownloadExecutionContext
         ? Input.OutputBasePath
         : Path.Combine(StagingDirectory, Path.GetFileName(Input.OutputBasePath));
 
-    public HashSet<string> PublishedKeys { get; } = new(StringComparer.Ordinal);
+    public Dictionary<string, string> PublishedArtifacts { get; } = new(StringComparer.Ordinal);
 
-    public bool HasPublished(string key) => PublishedKeys.Contains(key);
+    public bool HasPublished(string key) => PublishedArtifacts.ContainsKey(key);
+
+    public bool HasUsablePublishedMedia() =>
+        PublishedArtifacts.TryGetValue("media", out var path) &&
+        DownloadFileIntegrity.Check(path).IsUsable;
 
     public bool TryReuseStagedMedia()
     {
@@ -125,6 +129,7 @@ internal sealed class DownloadExecutionContext
 internal sealed record DownloadExecutionInput(
     DownloadTaskMetadata Metadata,
     DownloadContentSelection RequestedContent,
+    IReadOnlyDictionary<string, string> TransferFiles,
     string OutputBasePath,
     PlayStreamType StreamType,
     DownloadNfoRequest? NfoRequest,

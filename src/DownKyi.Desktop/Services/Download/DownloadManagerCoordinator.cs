@@ -158,7 +158,7 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator
 
         // Once physical deletion starts, finish the database/list transaction even if app shutdown is requested.
         var deletion = await _fileService
-            .DeleteGeneratedFilesAsync(item, CancellationToken.None)
+            .DeleteGeneratedFilesAsync(item, _storage.GetRequiredSnapshot(taskId), CancellationToken.None)
             .ConfigureAwait(true);
         if (!deletion.Succeeded)
         {

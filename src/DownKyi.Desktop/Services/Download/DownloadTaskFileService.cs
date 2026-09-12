@@ -78,13 +78,22 @@ internal sealed class DownloadTaskFileService
 
     public Task<DownloadFileDeletionResult> DeleteGeneratedFilesAsync(
         DownloadingItem downloading,
+        DownloadTask task,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(downloading);
+        ArgumentNullException.ThrowIfNull(task);
         cancellationToken.ThrowIfCancellationRequested();
-        if (_staging != null && downloading.DownloadBase is { } downloadBase)
+        if (downloading.DownloadBase?.Id != task.Id.Value)
         {
-            _staging.CleanupTask(new(downloadBase.Id));
+            throw new InvalidOperationException("Download task identity changed during deletion.");
+        }
+
+        if (_staging != null)
+        {
+            return Task.FromResult(_staging.CleanupTask(task)
+                ? new DownloadFileDeletionResult(1, 0)
+                : new DownloadFileDeletionResult(1, 1));
         }
 
         return Task.FromResult(new DownloadFileDeletionResult(0, 0));
@@ -130,7 +139,7 @@ internal sealed class DownloadTaskFileService
 
         await _stateWriter.RecordPublishedArtifactAsync(
             context.TaskId, key, destination, CancellationToken.None).ConfigureAwait(true);
-        context.PublishedKeys.Add(key);
+        context.PublishedArtifacts[key] = destination;
         return OperationResult.Success();
     }
 

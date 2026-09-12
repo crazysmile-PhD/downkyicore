@@ -222,7 +222,9 @@ public sealed class DownloadPipelineCommitBoundaryTests
                 downloading,
                 settings.Current);
             var staging = new DownloadTaskStaging(NullLogger<DownloadTaskStaging>.Instance);
-            context.StagingDirectory = staging.GetDirectory(taskId, downloadBase.FilePath);
+            context.StagingDirectory = staging.GetDirectory(
+                taskId, downloadBase.FilePath,
+                projectionStore.GetRequiredSnapshot(taskId).Output.StagingToken);
             Directory.CreateDirectory(context.StagingDirectory);
             var audio = CreateTransferFile(context.StagingDirectory, "audio.m4s");
             var video = CreateTransferFile(context.StagingDirectory, "video.m4s");
