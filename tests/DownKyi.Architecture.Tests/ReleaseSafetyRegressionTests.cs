@@ -103,8 +103,8 @@ public sealed class ReleaseSafetyRegressionTests
         AssertArm64PromotionContract(workflow);
         Assert.ThrowsAny<Exception>(() => AssertArm64PromotionContract(
             workflow.Replace(
-                "needs: [changelog, build-windows, build-linux, validate-linux-arm64, build-macos]",
-                "needs: [changelog, build-windows, build-linux, build-macos]",
+                "needs: [changelog, ffmpeg-linux-arm64-smoke, build-windows, build-linux, validate-linux-arm64, build-macos]",
+                "needs: [changelog, ffmpeg-linux-arm64-smoke, build-windows, build-linux, build-macos]",
                 StringComparison.Ordinal)));
         Assert.ThrowsAny<Exception>(() => AssertArm64PromotionContract(
             workflow.Replace(
@@ -1257,7 +1257,7 @@ public sealed class ReleaseSafetyRegressionTests
             StringComparison.Ordinal);
 
         Assert.Contains(
-            "needs: [changelog, build-windows, build-linux, validate-linux-arm64, build-macos]",
+            "needs: [changelog, ffmpeg-linux-arm64-smoke, build-windows, build-linux, validate-linux-arm64, build-macos]",
             release,
             StringComparison.Ordinal);
         Assert.Contains(

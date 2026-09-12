@@ -1,0 +1,158 @@
+name: FFmpeg manifest auto-merge
+
+on:
+  pull_request_target:
+    branches:
+      - main
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: ffmpeg-manifest-auto-merge
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    name: Reconcile trusted updater PRs
+    runs-on: ubuntu-latest
+    steps:
+      # This privileged workflow must never check out or execute pull-request content.
+      - name: Update and enable auto-merge for exact updater PRs
+        uses: actions/github-script@v8
+        with:
+          github-token: ${{ secrets.DOWNKYI_AUTOMATION_TOKEN }}
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const requiredChecks = new Set([
+              'FFmpeg manifest gate',
+              'Format check',
+              'Build and test (windows-latest)',
+              'Build and test (ubuntu-latest)',
+              'Build and test (macos-latest)',
+              'aria2 TLS security (win-x86)',
+              'aria2 TLS security (win-x64)',
+              'aria2 TLS security (linux-x64)',
+              'aria2 TLS security (linux-arm64)',
+              'aria2 TLS security (osx-x64)',
+              'aria2 TLS security (osx-arm64)',
+              'Package audit',
+              'Analyze C#',
+              'CodeQL',
+            ]);
+
+            const { data: protection } = await github.rest.repos.getBranchProtection({
+              owner,
+              repo,
+              branch: 'main',
+            });
+            const statusChecks = protection.required_status_checks;
+            const configuredChecks = new Set(statusChecks?.contexts ?? []);
+            const missingChecks = [...requiredChecks].filter(check => !configuredChecks.has(check));
+            if (!statusChecks?.strict || missingChecks.length > 0) {
+              core.setFailed(`FFmpeg auto-merge requires strict main checks; missing=${missingChecks.join(',')}`);
+              return;
+            }
+
+            let pullRequests;
+            if (context.eventName === 'pull_request_target') {
+              pullRequests = [context.payload.pull_request];
+            } else {
+              pullRequests = await github.paginate(github.rest.pulls.list, {
+                owner,
+                repo,
+                state: 'open',
+                base: 'main',
+                per_page: 100,
+              });
+            }
+
+            for (const summary of pullRequests) {
+              const { data: pull } = await github.rest.pulls.get({
+                owner,
+                repo,
+                pull_number: summary.number,
+              });
+              if (!pull.head.ref.startsWith('automation/ffmpeg-')) {
+                continue;
+              }
+
+              const titleMatch = /^build\(deps\): update mirrored FFmpeg to (ffmpeg-btbn-autobuild-\d{4}-\d{2}-\d{2}-\d{2}-\d{2})$/.exec(pull.title);
+              const files = await github.paginate(github.rest.pulls.listFiles, {
+                owner,
+                repo,
+                pull_number: pull.number,
+                per_page: 100,
+              });
+              const eligible = !pull.draft
+                && pull.state === 'open'
+                && pull.base.ref === 'main'
+                && pull.head.repo?.full_name.toLowerCase() === `${owner}/${repo}`.toLowerCase()
+                && pull.user?.login.toLowerCase() === owner.toLowerCase()
+                && titleMatch !== null
+                && pull.head.ref === `automation/ffmpeg-${titleMatch?.[1]}`
+                && files.length === 1
+                && files[0].filename === 'script/assets/external-assets.json'
+                && files[0].status === 'modified';
+
+              if (!eligible) {
+                if (pull.auto_merge) {
+                  await github.graphql(
+                    `mutation($pullRequestId: ID!) {
+                      disablePullRequestAutoMerge(input: {pullRequestId: $pullRequestId}) {
+                        pullRequest { number }
+                      }
+                    }`,
+                    { pullRequestId: pull.node_id },
+                  );
+                }
+                core.warning(`PR #${pull.number} is not an exact FFmpeg updater PR; auto-merge is disabled.`);
+                continue;
+              }
+
+              const { data: main } = await github.rest.git.getRef({
+                owner,
+                repo,
+                ref: 'heads/main',
+              });
+              const comparison = await github.rest.repos.compareCommitsWithBasehead({
+                owner,
+                repo,
+                basehead: `${main.object.sha}...${pull.head.sha}`,
+              });
+              if (!['ahead', 'identical'].includes(comparison.data.status)) {
+                await github.rest.pulls.updateBranch({
+                  owner,
+                  repo,
+                  pull_number: pull.number,
+                  expected_head_sha: pull.head.sha,
+                });
+                core.info(`PR #${pull.number} was updated with the current main branch.`);
+              }
+
+              if (!pull.auto_merge) {
+                await github.graphql(
+                  `mutation($pullRequestId: ID!) {
+                    enablePullRequestAutoMerge(input: {
+                      pullRequestId: $pullRequestId,
+                      mergeMethod: MERGE
+                    }) {
+                      pullRequest { number }
+                    }
+                  }`,
+                  { pullRequestId: pull.node_id },
+                );
+                core.info(`Auto-merge enabled for FFmpeg updater PR #${pull.number}.`);
+              }
+            }

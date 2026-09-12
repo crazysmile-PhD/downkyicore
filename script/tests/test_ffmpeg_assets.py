@@ -12,6 +12,7 @@ import sys
 import tempfile
 import threading
 import unittest
+import urllib.parse
 import zipfile
 from pathlib import Path
 from unittest import mock
@@ -106,6 +107,35 @@ def release_readback_for(candidate: dict, repository: str, tag: str) -> dict:
             })
             asset_id += 1
     return {"id": 99, "tag_name": tag, "immutable": True, "assets": assets}
+
+
+def automated_manifest_update(base: dict, tag: str = "autobuild-2099-01-02-03-04") -> dict:
+    updated = copy.deepcopy(base)
+    version = f"btbn-{tag}"
+    updated["ffmpeg"]["version"] = version
+    repository = updated["ffmpeg"]["mirror"]["repository"]
+    platform_names = {
+        "win-x64": "ffmpeg-N-999999-gdeadbeef-win64-gpl.zip",
+        "linux-x64": "ffmpeg-N-999999-gdeadbeef-linux64-gpl.tar.xz",
+        "linux-arm64": "ffmpeg-N-999999-gdeadbeef-linuxarm64-gpl.tar.xz",
+    }
+    for rid, original_name in platform_names.items():
+        sha256 = digest(f"{rid}-{tag}")
+        file_name = ffmpeg_assets.mirrored_file_name(rid, tag, original_name, sha256)
+        updated["ffmpeg"]["assets"][rid] = {
+            "url": ffmpeg_assets.mirror_url(repository, f"ffmpeg-{version}", file_name),
+            "sha256": sha256,
+            "fileName": file_name,
+            "provenance": {
+                "upstreamRepository": "https://github.com/BtbN/FFmpeg-Builds",
+                "upstreamRelease": tag,
+                "originalAssetName": original_name,
+                "upstreamUrl": f"https://github.com/BtbN/FFmpeg-Builds/releases/download/{tag}/{original_name}",
+                "mirroredAt": "2099-01-02T03:05:00Z",
+                "ffmpegVersion": original_name,
+            },
+        }
+    return updated
 
 
 class AssetRequestHandler(http.server.BaseHTTPRequestHandler):
@@ -226,6 +256,41 @@ class FfmpegAssetsTests(unittest.TestCase):
             with self.assertRaisesRegex(ffmpeg_assets.AssetError, "ffprobe"):
                 ffmpeg_assets.validate_candidate_archive(candidate, "linux-x64", directory, False, None)
 
+    def test_candidate_execution_transcodes_and_probes_a_real_stream(self) -> None:
+        candidate = candidate_for("linux-x64")
+        file = candidate["assets"]["linux-x64"]["files"][0]
+        calls: list[list[str]] = []
+
+        def run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            calls.append(command)
+            if "-encoders" in command:
+                return subprocess.CompletedProcess(command, 0, "V..... h264_nvenc", "")
+            if "-frames:v" in command:
+                Path(command[-1]).write_bytes(b"smoke")
+                return subprocess.CompletedProcess(command, 0, "", "")
+            if "-show_entries" in command:
+                output = json.dumps({"streams": [{"codec_name": "mpeg4", "width": 16, "height": 16}]})
+                return subprocess.CompletedProcess(command, 0, output, "")
+            return subprocess.CompletedProcess(command, 0, "version", "")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            archive = directory / file["mirroredFileName"]
+            with zipfile.ZipFile(archive, "w") as source:
+                source.writestr("bin/ffmpeg", b"binary")
+                source.writestr("bin/ffprobe", b"binary")
+            with mock.patch.object(ffmpeg_assets.subprocess, "run", side_effect=run):
+                ffmpeg_assets.validate_candidate_archive(candidate, "linux-x64", directory, True, "h264_nvenc")
+
+        self.assertEqual(5, len(calls))
+        self.assertIn("-frames:v", calls[3])
+        self.assertIn("-show_entries", calls[4])
+
+    def test_transcode_probe_rejects_unexpected_stream_metadata(self) -> None:
+        output = json.dumps({"streams": [{"codec_name": "h264", "width": 16, "height": 16}]})
+        with self.assertRaisesRegex(ffmpeg_assets.AssetError, "unexpected stream metadata"):
+            ffmpeg_assets.validate_smoke_probe_output("linux-x64", output)
+
     def test_workflow_authority_requires_same_branch_checkout_and_manifest_base(self) -> None:
         ffmpeg_assets.validate_workflow_authority(
             "branch",
@@ -295,6 +360,91 @@ class FfmpegAssetsTests(unittest.TestCase):
         with self.assertRaisesRegex(ffmpeg_assets.AssetError, "not immutable"):
             ffmpeg_assets.apply_update(manifest, candidate, mirror)
         self.assertEqual(before, manifest)
+
+    def test_manifest_release_readback_requires_immutable_exact_assets(self) -> None:
+        manifest = valid_manifest()
+        releases: dict[str, dict] = {}
+        for asset in manifest["ffmpeg"]["assets"].values():
+            for url_field, digest_field in (("url", "sha256"), ("ffprobeUrl", "ffprobeSha256")):
+                if url_field not in asset:
+                    continue
+                tag, name = ffmpeg_assets.release_tag_and_name(asset[url_field])
+                release = releases.setdefault(tag, {
+                    "tag_name": tag,
+                    "immutable": True,
+                    "draft": False,
+                    "prerelease": False,
+                    "assets": [],
+                })
+                release["assets"].append({
+                    "name": name,
+                    "state": "uploaded",
+                    "size": 123,
+                    "digest": f"sha256:{asset[digest_field]}",
+                    "browser_download_url": asset[url_field],
+                })
+
+        def github_api(path: str) -> dict:
+            tag = urllib.parse.unquote(path.rsplit("/", 1)[-1])
+            return releases[tag]
+
+        with mock.patch.object(ffmpeg_assets, "github_api", side_effect=github_api):
+            ffmpeg_assets.validate_manifest_mirror_releases(manifest)
+            next(iter(releases.values()))["immutable"] = False
+            with self.assertRaisesRegex(ffmpeg_assets.AssetError, "not an immutable"):
+                ffmpeg_assets.validate_manifest_mirror_releases(manifest)
+
+    def test_automated_manifest_change_accepts_only_the_updater_delta(self) -> None:
+        base = json.loads((SCRIPT.parent / "assets" / "external-assets.json").read_text(encoding="utf-8"))
+        updated = automated_manifest_update(base)
+        version = updated["ffmpeg"]["version"]
+        mirror_tag = f"ffmpeg-{version}"
+
+        ffmpeg_assets.validate_automated_manifest_change(
+            base,
+            updated,
+            f"automation/ffmpeg-{mirror_tag}",
+            f"build(deps): update mirrored FFmpeg to {mirror_tag}",
+        )
+
+        updated["aria2"]["version"] = "unexpected"
+        with self.assertRaisesRegex(ffmpeg_assets.AssetError, "outside the scheduled"):
+            ffmpeg_assets.validate_automated_manifest_change(
+                base,
+                updated,
+                f"automation/ffmpeg-{mirror_tag}",
+                f"build(deps): update mirrored FFmpeg to {mirror_tag}",
+            )
+
+    def test_automated_manifest_change_rejects_spoofed_branch(self) -> None:
+        base = json.loads((SCRIPT.parent / "assets" / "external-assets.json").read_text(encoding="utf-8"))
+        updated = automated_manifest_update(base)
+        mirror_tag = f"ffmpeg-{updated['ffmpeg']['version']}"
+        with self.assertRaisesRegex(ffmpeg_assets.AssetError, "branch"):
+            ffmpeg_assets.validate_automated_manifest_change(
+                base,
+                updated,
+                "automation/ffmpeg-spoofed",
+                f"build(deps): update mirrored FFmpeg to {mirror_tag}",
+            )
+
+    def test_auto_merge_workflow_never_executes_pull_request_content(self) -> None:
+        workflow = (SCRIPT.parents[1] / ".github" / "workflows" / "ffmpeg-manifest-auto-merge.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("pull_request_target:", workflow)
+        self.assertIn("enablePullRequestAutoMerge", workflow)
+        self.assertIn("disablePullRequestAutoMerge", workflow)
+        self.assertIn("getBranchProtection", workflow)
+        self.assertNotIn("actions/checkout", workflow)
+
+    def test_build_exposes_an_always_present_ffmpeg_manifest_gate(self) -> None:
+        workflow = (SCRIPT.parents[1] / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
+        pull_request_section = workflow.split("  pull_request:\n", 1)[1].split("  workflow_dispatch:\n", 1)[0]
+        self.assertNotIn("paths:", pull_request_section)
+        self.assertIn("name: FFmpeg manifest gate", workflow)
+        self.assertIn("validate-auto-merge-change", workflow)
+        self.assertIn("validate-mirror-releases", workflow)
 
     def test_readback_evidence_updates_only_the_selected_rid(self) -> None:
         manifest = valid_manifest()

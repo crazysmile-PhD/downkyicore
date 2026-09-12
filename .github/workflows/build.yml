@@ -12,14 +12,6 @@ on:
     branches:
       - main
       - release/v1.1.1-integration
-    paths:
-      - 'script/assets/external-assets.json'
-      - 'script/ffmpeg-assets.py'
-      - 'script/ffmpeg.ps1'
-      - 'script/ffmpeg.sh'
-      - 'script/tests/test_ffmpeg_assets.py'
-      - '.github/workflows/build.yml'
-      - '.github/workflows/update-ffmpeg-assets.yml'
   workflow_dispatch:
     inputs:
       update_ffmpeg_assets:
@@ -47,7 +39,7 @@ jobs:
       - name: Validate GitHub Actions workflow syntax
         uses: raven-actions/actionlint@v2
         with:
-          files: .github/workflows/build.yml,.github/workflows/update-ffmpeg-assets.yml
+          files: .github/workflows/build.yml,.github/workflows/ffmpeg-manifest-auto-merge.yml,.github/workflows/update-ffmpeg-assets.yml
           fail-on-error: true
           pyflakes: true
           shellcheck: true
@@ -95,8 +87,36 @@ jobs:
           python-version: '3.12'
       - name: Validate immutable FFmpeg manifest
         run: python script/ffmpeg-assets.py validate-manifest --manifest script/assets/external-assets.json
+      - name: Read back immutable mirror release evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python script/ffmpeg-assets.py validate-mirror-releases --manifest script/assets/external-assets.json
       - name: Check external asset availability
         run: python script/ffmpeg-assets.py preflight --manifest script/assets/external-assets.json --timeout 30
+
+  ffmpeg-linux-arm64-smoke:
+    name: FFmpeg runtime smoke (linux-arm64)
+    needs: external-assets-preflight
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Install Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install verified FFmpeg runtime
+        working-directory: ./script
+        run: |
+          chmod +x ffmpeg.sh
+          ./ffmpeg.sh linux arm64
+      - name: Transcode and probe a real stream
+        run: >
+          python script/ffmpeg-assets.py smoke-binaries
+          --ffmpeg DownKyi.Core/Binary/linux-arm64/ffmpeg/ffmpeg
+          --ffprobe DownKyi.Core/Binary/linux-arm64/ffmpeg/ffprobe
+          --rid linux-arm64
+          --required-encoder h264_nvenc
 
   release-gate:
     name: Release gate (${{ matrix.os }})
@@ -216,6 +236,14 @@ jobs:
           .\ffmpeg.ps1 ${{ matrix.cpu }}
           .\aria2.ps1 ${{ matrix.cpu }}
         working-directory: ./script
+      - name: Transcode and probe the installed FFmpeg runtime
+        if: ${{ matrix.cpu == 'x64' }}
+        run: >
+          python script/ffmpeg-assets.py smoke-binaries
+          --ffmpeg DownKyi.Core/Binary/win-x64/ffmpeg/ffmpeg.exe
+          --ffprobe DownKyi.Core/Binary/win-x64/ffmpeg/ffprobe.exe
+          --rid win-x64
+          --required-encoder h264_nvenc
       - name: Build canonical publish
         run: >
           dotnet publish ./DownKyi/DownKyi.csproj
@@ -290,6 +318,14 @@ jobs:
           ./ffmpeg.sh linux ${{ matrix.cpu }}
           ./aria2.sh linux-${{ matrix.cpu }}
         working-directory: ./script
+      - name: Transcode and probe the installed FFmpeg runtime
+        if: ${{ matrix.cpu == 'x64' }}
+        run: >
+          python script/ffmpeg-assets.py smoke-binaries
+          --ffmpeg DownKyi.Core/Binary/linux-x64/ffmpeg/ffmpeg
+          --ffprobe DownKyi.Core/Binary/linux-x64/ffmpeg/ffprobe
+          --rid linux-x64
+          --required-encoder h264_nvenc
       - name: Build canonical publish
         run: >
           dotnet publish ./DownKyi/DownKyi.csproj
@@ -715,7 +751,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    needs: [changelog, build-windows, build-linux, validate-linux-arm64, build-macos]
+    needs: [changelog, ffmpeg-linux-arm64-smoke, build-windows, build-linux, validate-linux-arm64, build-macos]
     if: ${{ startsWith(github.ref, 'refs/tags/') }}
     steps:
       - name: Checkout release validators
@@ -766,3 +802,93 @@ jobs:
           replacesArtifacts: true
           artifacts: artifacts/*
           body: ${{ needs.changelog.outputs.release_body }}
+
+  ffmpeg-manifest-gate:
+    name: FFmpeg manifest gate
+    if: ${{ always() && github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    needs:
+      - ffmpeg-tooling
+      - ffmpeg-asset-updater
+      - detect-production-manifest-change
+      - external-assets-preflight
+      - ffmpeg-linux-arm64-smoke
+      - release-gate
+      - changelog
+      - build-windows
+      - build-linux-publish
+      - build-linux
+      - validate-linux-arm64
+      - build-macos
+      - release
+    env:
+      HEAD_REF: ${{ github.head_ref }}
+      EXTERNAL_ASSETS_CHANGED: ${{ needs.detect-production-manifest-change.outputs.external_assets }}
+      FFMPEG_TOOLING_RESULT: ${{ needs.ffmpeg-tooling.result }}
+      UPDATER_RESULT: ${{ needs.ffmpeg-asset-updater.result }}
+      DETECT_RESULT: ${{ needs.detect-production-manifest-change.result }}
+      PREFLIGHT_RESULT: ${{ needs.external-assets-preflight.result }}
+      LINUX_ARM64_SMOKE_RESULT: ${{ needs.ffmpeg-linux-arm64-smoke.result }}
+      RELEASE_GATE_RESULT: ${{ needs.release-gate.result }}
+      CHANGELOG_RESULT: ${{ needs.changelog.result }}
+      WINDOWS_RESULT: ${{ needs.build-windows.result }}
+      LINUX_PUBLISH_RESULT: ${{ needs.build-linux-publish.result }}
+      LINUX_RESULT: ${{ needs.build-linux.result }}
+      LINUX_ARM64_RESULT: ${{ needs.validate-linux-arm64.result }}
+      MACOS_RESULT: ${{ needs.build-macos.result }}
+      PUBLISH_RESULT: ${{ needs.release.result }}
+    steps:
+      - name: Require the complete applicable Build result
+        shell: bash
+        run: |
+          test "$FFMPEG_TOOLING_RESULT" = success
+          test "$DETECT_RESULT" = success
+          test "$UPDATER_RESULT" = skipped
+
+          if [[ "$EXTERNAL_ASSETS_CHANGED" != true ]]; then
+            if [[ "$HEAD_REF" == automation/ffmpeg-* ]]; then
+              echo 'An FFmpeg automation branch must change the production manifest.' >&2
+              exit 1
+            fi
+            exit 0
+          fi
+
+          test "$PREFLIGHT_RESULT" = success
+          test "$LINUX_ARM64_SMOKE_RESULT" = success
+          test "$RELEASE_GATE_RESULT" = success
+          test "$CHANGELOG_RESULT" = success
+          test "$WINDOWS_RESULT" = success
+          test "$LINUX_PUBLISH_RESULT" = success
+          test "$LINUX_RESULT" = success
+          test "$LINUX_ARM64_RESULT" = success
+          test "$MACOS_RESULT" = success
+          test "$PUBLISH_RESULT" = skipped
+
+      - name: Checkout the tested merge
+        if: ${{ startsWith(github.head_ref, 'automation/ffmpeg-') }}
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Validate the exact updater-owned manifest delta
+        if: ${{ startsWith(github.head_ref, 'automation/ffmpeg-') }}
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          mapfile -t changed_paths < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          if [[ "${#changed_paths[@]}" -ne 1 || "${changed_paths[0]}" != 'script/assets/external-assets.json' ]]; then
+            echo 'FFmpeg auto-merge accepts only script/assets/external-assets.json.' >&2
+            printf 'changed=%s\n' "${changed_paths[@]}" >&2
+            exit 1
+          fi
+
+          mkdir -p .ffmpeg-update
+          git show "$BASE_SHA:script/assets/external-assets.json" > .ffmpeg-update/base-external-assets.json
+          python script/ffmpeg-assets.py validate-auto-merge-change \
+            --base-manifest .ffmpeg-update/base-external-assets.json \
+            --updated-manifest script/assets/external-assets.json \
+            --head-ref "$HEAD_REF" \
+            --title "$PR_TITLE"

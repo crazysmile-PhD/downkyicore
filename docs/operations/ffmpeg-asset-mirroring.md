@@ -60,7 +60,8 @@ The updater then:
    publisher API and its per-asset SHA-256 digest.
 2. Download the selected archives, verify size and SHA-256, extract them, and
    require non-empty `ffmpeg` and `ffprobe` files.
-3. On native runners run `ffmpeg -version`, `ffprobe -version`, and where
+3. On native runners run `ffmpeg -version`, `ffprobe -version`, perform a real
+   one-frame MPEG-4 transcode and probe its stream metadata, and where
    applicable verify the required `h264_nvenc` encoder is compiled in.
 4. Only after every matrix validation job succeeds and repository release
    immutability is confirmed, create a draft mirror release, upload the exact
@@ -69,6 +70,9 @@ The updater then:
    the preflight, require immutable release read-back, then create a manifest
    PR against the same branch that supplied the manifest. The workflow cannot
    push `main`.
+6. For `main`, the separate base-branch auto-merge workflow opts in only the
+   exact scheduled BtbN manifest PR. GitHub merges it after the strict current-
+   base checks and the complete package gate pass.
 
 A validation, download, checksum, extraction, capability, upload, or preflight
 failure stops before manifest mutation. A failed upload may leave an
@@ -76,6 +80,32 @@ unreferenced incomplete release for an operator to inspect, but it cannot
 update the production manifest or replace a historical asset. Manifest PR
 creation is path-scoped to `script/assets/external-assets.json`; downloaded
 archives and updater evidence remain ignored workspace data.
+
+## Automatic merge policy
+
+`.github/workflows/ffmpeg-manifest-auto-merge.yml` is the only component that
+may opt a generated manifest PR into GitHub auto-merge. It runs from the base
+branch with a narrowly scoped token and never checks out or executes pull-
+request content. It accepts only a non-draft PR owned by this repository and
+repository owner, targeting `main`, whose branch and title exactly encode a
+fixed `ffmpeg-btbn-autobuild-*` release and whose only changed file is
+`script/assets/external-assets.json`. If a previously opted-in updater PR stops
+matching those conditions, the workflow disables auto-merge.
+
+The required `FFmpeg manifest gate` is emitted for every PR. On an updater
+branch it fails closed unless the diff changes only the scheduled BtbN RIDs,
+moves to a newer fixed release, preserves every other manifest field, reads
+the project mirror back as immutable with exact asset names, sizes and SHA-256,
+and all release-gate and package jobs succeed. Other PRs are not opted into
+auto-merge by this policy.
+
+Repository auto-merge must be enabled, and `main` branch protection must use
+strict status checks so a PR is tested with the latest `main`. The required
+contexts are `FFmpeg manifest gate`, every unconditional Strict PR CI job,
+`Analyze C#`, and `CodeQL`; the privileged workflow verifies this protection
+before it enables auto-merge. When `main` advances, the same workflow updates
+eligible updater branches with `DOWNKYI_AUTOMATION_TOKEN`, which preserves the
+automatic CI trigger and causes the exact-head checks to run again.
 
 ## Bootstrap and recovery
 
@@ -96,8 +126,8 @@ If the bootstrap fails:
    not overwrite the partial mirror release/tag. If the release was fully
    published before a later step failed, a re-run may reuse it only as immutable
    read-back evidence after every expected asset matches exactly.
-4. Re-run the dispatch. Review the generated PR and require the release/package
-   workflow before merging.
+4. Re-run the dispatch. A normal `main` BtbN update is merged only by the
+   automatic policy above; bootstrap or non-`main` updates remain manual.
 
 To force a normal BtbN refresh, run the same workflow with `bootstrap=false`.
 If the selected fixed release is already represented in the manifest, it exits
@@ -113,9 +143,10 @@ The workflow uses two narrowly scoped credentials:
   assets, but has no DownKyi source-repository permission.
 - `DOWNKYI_AUTOMATION_TOKEN`: fine-grained token or GitHub App installation
   token with **Contents: read/write** and **Pull requests: read/write** only on
-  `crazysmile-PhD/downkyicore`. It creates the manifest PR. A separate token is
-  required because a PR opened by `GITHUB_TOKEN` does not reliably trigger the
-  repository's package CI.
+  `crazysmile-PhD/downkyicore`. It creates the manifest PR, updates an eligible
+  branch with current `main`, and enables GitHub auto-merge. A separate token
+  is required because a PR opened or updated by `GITHUB_TOKEN` does not
+  reliably trigger the repository's package CI without approval.
 
 No token is needed by normal builds or package downloaders.
 
@@ -128,6 +159,7 @@ same fail-closed checksum verifier.
 ```powershell
 python -m unittest script/tests/test_ffmpeg_assets.py -v
 python script/ffmpeg-assets.py validate-manifest --manifest script/assets/external-assets.json
+python script/ffmpeg-assets.py validate-mirror-releases --manifest script/assets/external-assets.json
 python script/ffmpeg-assets.py preflight --manifest script/assets/external-assets.json --timeout 30
 ```
 

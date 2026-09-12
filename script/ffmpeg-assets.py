@@ -31,11 +31,13 @@ from typing import Any, Iterable
 
 
 EXPECTED_RIDS = ("win-x86", "win-x64", "linux-x64", "linux-arm64", "osx-x64", "osx-arm64")
+AUTOMATED_RIDS = ("win-x64", "linux-x64", "linux-arm64")
 MIRROR_OWNER = "crazysmile-PhD"
 BTBN_REPOSITORY = "BtbN/FFmpeg-Builds"
 YTDLP_REPOSITORY = "yt-dlp/FFmpeg-Builds"
 GITHUB_API = "https://api.github.com"
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+BTBN_TAG_RE = re.compile(r"^autobuild-(\d{4})-(\d{2})-(\d{2})-(\d{2})-(\d{2})$")
 NATIVE_RUNNERS_BY_RID = {
     "win-x86": {"runner": "windows-latest", "architecture": "x64"},
     "win-x64": {"runner": "windows-latest", "architecture": "x64"},
@@ -396,18 +398,99 @@ def validate_candidate_archive(candidate: dict[str, Any], rid: str, directory: P
         if ffprobe is None:
             raise AssetError(f"Archive layout validation failed for {rid}: ffprobe is missing or empty.")
         if execute:
-            for binary in (ffmpeg, ffprobe):
-                ensure_executable(binary)
-                try:
-                    result = subprocess.run([str(binary), "-version"], capture_output=True, text=True, timeout=30, check=False)
-                except (OSError, subprocess.TimeoutExpired) as error:
-                    raise AssetError(f"Executable validation failed for {rid} {binary.name}: {error}.") from error
-                if result.returncode != 0 or not (result.stdout or result.stderr).strip():
-                    raise AssetError(f"Executable validation failed for {rid} {binary.name}: exit code {result.returncode}.")
-            if required_encoder:
-                result = subprocess.run([str(ffmpeg), "-hide_banner", "-encoders"], capture_output=True, text=True, timeout=30, check=False)
-                if result.returncode != 0 or required_encoder not in f"{result.stdout}\n{result.stderr}":
-                    raise AssetError(f"Capability validation failed for {rid}: encoder {required_encoder} is absent.")
+            validate_installed_binaries(ffmpeg, ffprobe, rid, required_encoder)
+
+
+def validate_smoke_probe_output(rid: str, output: str) -> None:
+    try:
+        value = json.loads(output)
+    except json.JSONDecodeError as error:
+        raise AssetError(f"Transcode probe failed for {rid}: invalid JSON output.") from error
+    streams = value.get("streams") if isinstance(value, dict) else None
+    if not isinstance(streams, list) or len(streams) != 1:
+        raise AssetError(f"Transcode probe failed for {rid}: expected exactly one video stream.")
+    stream = streams[0]
+    if not isinstance(stream, dict) or (
+        stream.get("codec_name") != "mpeg4"
+        or stream.get("width") != 16
+        or stream.get("height") != 16
+    ):
+        raise AssetError(f"Transcode probe failed for {rid}: unexpected stream metadata.")
+
+
+def validate_installed_binaries(ffmpeg: Path, ffprobe: Path, rid: str, required_encoder: str | None) -> None:
+    for binary in (ffmpeg, ffprobe):
+        if not binary.is_file() or binary.stat().st_size == 0:
+            raise AssetError(f"Executable validation failed for {rid}: {binary} is missing or empty.")
+        ensure_executable(binary)
+        try:
+            result = subprocess.run([str(binary), "-version"], capture_output=True, text=True, timeout=30, check=False)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise AssetError(f"Executable validation failed for {rid} {binary.name}: {error}.") from error
+        if result.returncode != 0 or not (result.stdout or result.stderr).strip():
+            raise AssetError(f"Executable validation failed for {rid} {binary.name}: exit code {result.returncode}.")
+
+    if required_encoder:
+        result = subprocess.run([str(ffmpeg), "-hide_banner", "-encoders"], capture_output=True, text=True, timeout=30, check=False)
+        if result.returncode != 0 or required_encoder not in f"{result.stdout}\n{result.stderr}":
+            raise AssetError(f"Capability validation failed for {rid}: encoder {required_encoder} is absent.")
+
+    with tempfile.TemporaryDirectory(prefix=f"downkyi-ffmpeg-smoke-{rid}-") as temp:
+        smoke_output = Path(temp) / "smoke.mp4"
+        try:
+            result = subprocess.run(
+                [
+                    str(ffmpeg),
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "color=c=black:s=16x16:r=1",
+                    "-frames:v",
+                    "1",
+                    "-c:v",
+                    "mpeg4",
+                    "-pix_fmt",
+                    "yuv420p",
+                    "-y",
+                    str(smoke_output),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise AssetError(f"Transcode smoke test failed for {rid}: {error}.") from error
+        if result.returncode != 0 or not smoke_output.is_file() or smoke_output.stat().st_size == 0:
+            raise AssetError(f"Transcode smoke test failed for {rid}: exit code {result.returncode}.")
+
+        try:
+            result = subprocess.run(
+                [
+                    str(ffprobe),
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "v:0",
+                    "-show_entries",
+                    "stream=codec_name,width,height",
+                    "-of",
+                    "json",
+                    str(smoke_output),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise AssetError(f"Transcode probe failed for {rid}: {error}.") from error
+        if result.returncode != 0:
+            raise AssetError(f"Transcode probe failed for {rid}: exit code {result.returncode}.")
+        validate_smoke_probe_output(rid, result.stdout)
 
 
 def is_project_owned_url(url: str, owner: str) -> bool:
@@ -484,6 +567,125 @@ def validate_manifest(manifest: dict[str, Any], owner: str = MIRROR_OWNER) -> No
         for field in ("upstreamRepository", "upstreamRelease", "originalAssetName", "upstreamUrl", "mirroredAt", "ffmpegVersion"):
             if not isinstance(provenance.get(field), str) or not provenance[field]:
                 raise AssetError(f"ffmpeg asset {rid} provenance is missing {field}.")
+
+
+def release_tag_and_name(url: str) -> tuple[str, str]:
+    pieces = [piece for piece in urllib.parse.urlparse(url).path.split("/") if piece]
+    if len(pieces) != 6 or pieces[2:4] != ["releases", "download"]:
+        raise AssetError(f"Malformed fixed mirror URL: {url}.")
+    return urllib.parse.unquote(pieces[4]), urllib.parse.unquote(pieces[5])
+
+
+def validate_manifest_mirror_releases(manifest: dict[str, Any]) -> None:
+    validate_manifest(manifest)
+    ffmpeg = manifest["ffmpeg"]
+    repository = ffmpeg["mirror"]["repository"]
+    expected_by_tag: dict[str, dict[str, str]] = {}
+    for rid in ffmpeg["requiredRids"]:
+        asset = ffmpeg["assets"][rid]
+        for url_field, digest_field in (("url", "sha256"), ("ffprobeUrl", "ffprobeSha256")):
+            if url_field not in asset:
+                continue
+            tag, name = release_tag_and_name(asset[url_field])
+            expected_by_tag.setdefault(tag, {})[name] = asset[digest_field].lower()
+
+    for tag, expected_assets in expected_by_tag.items():
+        encoded_tag = urllib.parse.quote(tag, safe="")
+        release = github_api(f"/repos/{repository}/releases/tags/{encoded_tag}")
+        if not isinstance(release, dict) or release.get("tag_name") != tag:
+            raise AssetError(f"Mirror release read-back failed for {repository}@{tag}.")
+        if release.get("immutable") is not True or release.get("draft") or release.get("prerelease"):
+            raise AssetError(f"Mirror release {repository}@{tag} is not an immutable published release.")
+        release_assets = release.get("assets")
+        if not isinstance(release_assets, list):
+            raise AssetError(f"Mirror release {repository}@{tag} has malformed assets.")
+        actual_assets = {
+            asset.get("name"): asset
+            for asset in release_assets
+            if isinstance(asset, dict) and isinstance(asset.get("name"), str)
+        }
+        for name, expected_digest in expected_assets.items():
+            actual = actual_assets.get(name)
+            if (
+                not isinstance(actual, dict)
+                or actual.get("state") != "uploaded"
+                or not isinstance(actual.get("size"), int)
+                or actual["size"] <= 0
+                or actual.get("digest") != f"sha256:{expected_digest}"
+                or actual.get("browser_download_url") != mirror_url(repository, tag, name)
+            ):
+                raise AssetError(f"Mirror release read-back mismatch for {repository}@{tag}/{name}.")
+
+
+def parse_btbn_tag(value: str) -> tuple[int, int, int, int, int]:
+    match = BTBN_TAG_RE.fullmatch(value)
+    if match is None:
+        raise AssetError(f"Invalid fixed BtbN release tag: {value!r}.")
+    return tuple(int(part) for part in match.groups())
+
+
+def validate_automated_manifest_change(
+    base: dict[str, Any],
+    updated: dict[str, Any],
+    head_ref: str,
+    title: str,
+) -> None:
+    """Accept only the deterministic manifest delta produced by the scheduled BtbN updater."""
+    validate_manifest(base)
+    validate_manifest(updated)
+    base_ffmpeg = base["ffmpeg"]
+    updated_ffmpeg = updated["ffmpeg"]
+    version = updated_ffmpeg.get("version")
+    if not isinstance(version, str) or not version.startswith("btbn-"):
+        raise AssetError("Automated FFmpeg update has an invalid version.")
+    upstream_tag = version.removeprefix("btbn-")
+    previous = base_ffmpeg.get("version")
+    if not isinstance(previous, str) or not previous.startswith("btbn-"):
+        raise AssetError("Automated FFmpeg update requires a BtbN base version.")
+    if parse_btbn_tag(upstream_tag) <= parse_btbn_tag(previous.removeprefix("btbn-")):
+        raise AssetError("Automated FFmpeg update must move to a newer fixed release.")
+
+    mirror_tag = f"ffmpeg-{version}"
+    if head_ref != f"automation/ffmpeg-{mirror_tag}":
+        raise AssetError("Automated FFmpeg update branch does not match the fixed release.")
+    if title != f"build(deps): update mirrored FFmpeg to {mirror_tag}":
+        raise AssetError("Automated FFmpeg update title does not match the fixed release.")
+
+    expected = copy.deepcopy(base)
+    expected["ffmpeg"]["version"] = version
+    for rid in AUTOMATED_RIDS:
+        asset = updated_ffmpeg["assets"][rid]
+        if asset == base_ffmpeg["assets"][rid]:
+            raise AssetError(f"Automated FFmpeg update did not replace {rid}.")
+        if set(asset) != {"url", "sha256", "fileName", "provenance"}:
+            raise AssetError(f"Automated FFmpeg update contains unexpected {rid} fields.")
+        provenance = asset["provenance"]
+        if set(provenance) != {
+            "upstreamRepository",
+            "upstreamRelease",
+            "originalAssetName",
+            "upstreamUrl",
+            "mirroredAt",
+            "ffmpegVersion",
+        }:
+            raise AssetError(f"Automated FFmpeg update contains unexpected {rid} provenance fields.")
+        original_name = provenance["originalAssetName"]
+        digest = asset["sha256"].lower()
+        expected_name = mirrored_file_name(rid, upstream_tag, original_name, digest)
+        if (
+            provenance["upstreamRepository"] != f"https://github.com/{BTBN_REPOSITORY}"
+            or provenance["upstreamRelease"] != upstream_tag
+            or provenance["upstreamUrl"]
+            != f"https://github.com/{BTBN_REPOSITORY}/releases/download/{upstream_tag}/{original_name}"
+            or provenance["ffmpegVersion"] != original_name
+            or asset["fileName"] != expected_name
+            or asset["url"] != mirror_url(updated_ffmpeg["mirror"]["repository"], mirror_tag, expected_name)
+        ):
+            raise AssetError(f"Automated FFmpeg update provenance mismatch for {rid}.")
+        expected["ffmpeg"]["assets"][rid] = copy.deepcopy(asset)
+
+    if expected != updated:
+        raise AssetError("Automated FFmpeg update changed content outside the scheduled BtbN manifest fields.")
 
 
 def expected_file_size(file: dict[str, Any]) -> int:
@@ -809,6 +1011,20 @@ def parse_args() -> argparse.Namespace:
     preflight_parser = subparsers.add_parser("preflight")
     preflight_parser.add_argument("--manifest", required=True)
     preflight_parser.add_argument("--timeout", type=int, default=30)
+    mirror_releases = subparsers.add_parser("validate-mirror-releases")
+    mirror_releases.add_argument("--manifest", required=True)
+
+    binary_smoke = subparsers.add_parser("smoke-binaries")
+    binary_smoke.add_argument("--ffmpeg", required=True)
+    binary_smoke.add_argument("--ffprobe", required=True)
+    binary_smoke.add_argument("--rid", required=True)
+    binary_smoke.add_argument("--required-encoder")
+
+    auto_merge = subparsers.add_parser("validate-auto-merge-change")
+    auto_merge.add_argument("--base-manifest", required=True)
+    auto_merge.add_argument("--updated-manifest", required=True)
+    auto_merge.add_argument("--head-ref", required=True)
+    auto_merge.add_argument("--title", required=True)
 
     authority = subparsers.add_parser("validate-workflow-authority")
     authority.add_argument("--ref-type", required=True)
@@ -862,6 +1078,22 @@ def main() -> int:
             validate_manifest(load_json(Path(args.manifest)))
         elif args.command == "preflight":
             preflight(load_json(Path(args.manifest)), args.timeout)
+        elif args.command == "validate-mirror-releases":
+            validate_manifest_mirror_releases(load_json(Path(args.manifest)))
+        elif args.command == "smoke-binaries":
+            validate_installed_binaries(
+                Path(args.ffmpeg),
+                Path(args.ffprobe),
+                args.rid,
+                args.required_encoder or None,
+            )
+        elif args.command == "validate-auto-merge-change":
+            validate_automated_manifest_change(
+                load_json(Path(args.base_manifest)),
+                load_json(Path(args.updated_manifest)),
+                args.head_ref,
+                args.title,
+            )
         elif args.command == "validate-workflow-authority":
             validate_workflow_authority(args.ref_type, args.ref_name, args.manifest_base)
         elif args.command == "discover":
