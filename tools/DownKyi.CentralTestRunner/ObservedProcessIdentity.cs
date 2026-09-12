@@ -108,8 +108,31 @@ internal static class ObservedProcessIdentity
         Func<ObservedProcess, ProcessIdentityState>? observe = null)
     {
         var read = observe ?? (process => Observe(process));
-        while (read(observed) != ProcessIdentityState.Gone)
+        while (true)
         {
+            var state = read(observed);
+            if (state == ProcessIdentityState.Gone)
+            {
+                return;
+            }
+
+            if (state == ProcessIdentityState.Same && OperatingSystem.IsWindows())
+            {
+                try
+                {
+                    using var process = Process.GetProcessById(observed.Pid);
+                    if (Observe(observed) == ProcessIdentityState.Same)
+                    {
+                        await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+                        return;
+                    }
+                }
+                catch (ArgumentException)
+                {
+                    return;
+                }
+            }
+
             await Task.Delay(ObservationInterval, cancellationToken).ConfigureAwait(false);
         }
     }
