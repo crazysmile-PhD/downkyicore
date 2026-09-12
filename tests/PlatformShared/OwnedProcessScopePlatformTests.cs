@@ -123,9 +123,9 @@ public sealed class OwnedProcessScopePlatformTests
             var result = await run.WaitAsync(TimeSpan.FromSeconds(8),
                 TestContext.Current.CancellationToken).ConfigureAwait(true);
             Assert.Equal(130, result.ExitCode);
-            Assert.False(IsAlive(result.RootPid));
-            Assert.False(IsAlive(childPid.Value));
-            Assert.False(IsAlive(grandchildPid.Value));
+            Assert.False(IsAlive(result.RootPid), DescribeLinuxState(result.RootPid));
+            Assert.False(IsAlive(childPid.Value), DescribeLinuxState(childPid.Value));
+            Assert.False(IsAlive(grandchildPid.Value), DescribeLinuxState(grandchildPid.Value));
             using var report = JsonDocument.Parse(await File.ReadAllTextAsync(
                 result.EvidencePath, TestContext.Current.CancellationToken).ConfigureAwait(true));
             Assert.Contains(report.RootElement.GetProperty("Events").EnumerateArray(),
@@ -196,6 +196,25 @@ public sealed class OwnedProcessScopePlatformTests
     }
 
     private static int GetProcessGroup(int pid) => NativeMethods.GetProcessGroup(pid);
+
+    private static string DescribeLinuxState(int pid)
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            return $"pid={pid}";
+        }
+
+        try
+        {
+            var state = File.ReadLines($"/proc/{pid}/status")
+                .FirstOrDefault(line => line.StartsWith("State:", StringComparison.Ordinal));
+            return $"pid={pid}, {state ?? "state unavailable"}";
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return $"pid={pid}, state unavailable: {exception.Message}";
+        }
+    }
 
     private static bool IsInJob(int pid, SafeFileHandle job)
     {

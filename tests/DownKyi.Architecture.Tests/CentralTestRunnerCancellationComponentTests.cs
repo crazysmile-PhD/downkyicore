@@ -261,7 +261,7 @@ public sealed class CentralTestRunnerCancellationComponentTests
             {
                 fixture = await StartHoldingFixtureAsync().ConfigureAwait(true);
                 var clock = Stopwatch.StartNew();
-                await Assert.ThrowsAsync<TimeoutException>(
+                var failure = await Record.ExceptionAsync(
                     () => BuildProcessRunner.CleanupAfterCancellationAsync(
                         fixture,
                         TimeSpan.FromSeconds(2),
@@ -269,6 +269,8 @@ public sealed class CentralTestRunnerCancellationComponentTests
                     .ConfigureAwait(true);
                 clock.Stop();
 
+                Assert.True(failure is TimeoutException,
+                    $"cleanup result={failure?.GetType().Name ?? "success"}, elapsed={clock.Elapsed}, root exited={fixture.HasExited}");
                 Assert.True(clock.Elapsed < TimeSpan.FromMilliseconds(2500));
                 Assert.True(fixture.HasExited);
             },
