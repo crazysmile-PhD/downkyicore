@@ -8,10 +8,22 @@ namespace DownKyi.MacOS.Tests;
 [SupportedOSPlatform("macos")]
 public sealed class CentralTestRunnerUnixTerminationTests
 {
-    [Fact]
-    public async Task UnixTerminationKillsCapturedDescendants()
+    public static TheoryData<int> Iterations()
     {
-        var directory = Path.Combine(Path.GetTempPath(), $"downkyi-unix-tree-{Guid.NewGuid():N}");
+        var data = new TheoryData<int>();
+        for (var iteration = 1; iteration <= 100; iteration++)
+        {
+            data.Add(iteration);
+        }
+
+        return data;
+    }
+
+    [Theory]
+    [MemberData(nameof(Iterations))]
+    public async Task UnixTerminationKillsCapturedDescendants(int iteration)
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"downkyi-unix-tree-{iteration}-{Guid.NewGuid():N}");
         Directory.CreateDirectory(directory);
         var script = Path.Combine(directory, "tree.sh");
         await File.WriteAllTextAsync(script, """
