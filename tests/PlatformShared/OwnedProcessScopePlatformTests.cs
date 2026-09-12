@@ -204,15 +204,21 @@ public sealed class OwnedProcessScopePlatformTests
             return $"pid={pid}";
         }
 
+        return $"pid={pid}, state={ReadLinuxStateCode(pid) ?? "unavailable"}";
+    }
+
+    private static string? ReadLinuxStateCode(int pid)
+    {
         try
         {
-            var state = File.ReadLines($"/proc/{pid}/status")
+            var stateLine = File.ReadLines($"/proc/{pid}/status")
                 .FirstOrDefault(line => line.StartsWith("State:", StringComparison.Ordinal));
-            return $"pid={pid}, {state ?? "state unavailable"}";
+            var fields = stateLine?.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
+            return fields is { Length: > 1 } ? fields[1] : null;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
-            return $"pid={pid}, state unavailable: {exception.Message}";
+            return null;
         }
     }
 
@@ -263,6 +269,15 @@ public sealed class OwnedProcessScopePlatformTests
 
     private static bool IsAlive(int pid)
     {
+        if (OperatingSystem.IsLinux())
+        {
+            var state = ReadLinuxStateCode(pid);
+            if (state is "Z" or "X")
+            {
+                return false;
+            }
+        }
+
         try
         {
             using var process = Process.GetProcessById(pid);
