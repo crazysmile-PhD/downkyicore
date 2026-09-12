@@ -88,6 +88,32 @@ internal static class Program
             return 0;
         }
 
+        if (args.Length > 2 && string.Equals(args[0], "fixture-legacy-tree-kill", StringComparison.Ordinal))
+        {
+            var treeInfo = new ProcessStartInfo("/bin/sh")
+            {
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            };
+            treeInfo.ArgumentList.Add(args[1]);
+            treeInfo.ArgumentList.Add(args[2]);
+            using var tree = Process.Start(treeInfo)
+                ?? throw new InvalidOperationException("The legacy tree-kill fixture did not start.");
+            var ready = await tree.StandardOutput.ReadLineAsync().ConfigureAwait(false);
+            if (!string.Equals(ready, "ready", StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("The legacy tree-kill fixture did not become ready.");
+            }
+
+            Console.WriteLine($"legacy-kill-start pid={tree.Id}");
+            await Console.Out.FlushAsync().ConfigureAwait(false);
+            tree.Kill(entireProcessTree: true);
+            Console.WriteLine($"legacy-kill-returned pid={tree.Id}");
+            await Console.Out.FlushAsync().ConfigureAwait(false);
+            return 0;
+        }
+
         if (args.Length > 4 && string.Equals(args[0], "fixture-sensitive-hold", StringComparison.Ordinal))
         {
             await Console.Out.WriteLineAsync($"Authorization: Bearer {args[1]}").ConfigureAwait(false);

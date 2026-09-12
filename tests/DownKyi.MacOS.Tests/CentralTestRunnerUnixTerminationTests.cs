@@ -96,4 +96,80 @@ public sealed class CentralTestRunnerUnixTerminationTests
             Directory.Delete(directory, recursive: true);
         }
     }
+
+    [Theory]
+    [MemberData(nameof(Iterations))]
+    public async Task LegacySynchronousTreeKillReturnsWithinBound(int iteration)
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"downkyi-legacy-tree-{iteration}-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        var script = Path.Combine(directory, "tree.sh");
+        await File.WriteAllTextAsync(script, """
+            #!/bin/sh
+            echo $$ > "$1/root.pid"
+            /bin/sh -c '/bin/sleep 60 & echo $! > "$1/grandchild.pid"; echo ready; wait' child "$1" &
+            echo $! > "$1/child.pid"
+            wait
+            """, TestContext.Current.CancellationToken);
+        var startInfo = new ProcessStartInfo("dotnet")
+        {
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
+        };
+        startInfo.ArgumentList.Add("exec");
+        startInfo.ArgumentList.Add("--runtimeconfig");
+        startInfo.ArgumentList.Add(Path.Combine(AppContext.BaseDirectory, "DownKyi.MacOS.Tests.runtimeconfig.json"));
+        startInfo.ArgumentList.Add(typeof(FlightRecorderExecution).Assembly.Location);
+        startInfo.ArgumentList.Add("fixture-legacy-tree-kill");
+        startInfo.ArgumentList.Add(script);
+        startInfo.ArgumentList.Add(directory);
+        using var supervisor = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("The legacy tree-kill supervisor did not start.");
+        try
+        {
+            Assert.StartsWith("legacy-kill-start pid=", await supervisor.StandardOutput
+                .ReadLineAsync(TestContext.Current.CancellationToken).AsTask()
+                .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken), StringComparison.Ordinal);
+            Assert.StartsWith("legacy-kill-returned pid=", await supervisor.StandardOutput
+                .ReadLineAsync(TestContext.Current.CancellationToken).AsTask()
+                .WaitAsync(TimeSpan.FromSeconds(3), TestContext.Current.CancellationToken), StringComparison.Ordinal);
+            await supervisor.WaitForExitAsync(TestContext.Current.CancellationToken)
+                .WaitAsync(TimeSpan.FromSeconds(3), TestContext.Current.CancellationToken);
+            Assert.Equal(0, supervisor.ExitCode);
+        }
+        finally
+        {
+            foreach (var marker in new[] { "grandchild.pid", "child.pid", "root.pid" })
+            {
+                var markerPath = Path.Combine(directory, marker);
+                if (File.Exists(markerPath) &&
+                    int.TryParse(await File.ReadAllTextAsync(markerPath, TestContext.Current.CancellationToken),
+                        CultureInfo.InvariantCulture, out var pid))
+                {
+                    try
+                    {
+                        using var descendant = Process.GetProcessById(pid);
+                        if (!descendant.HasExited)
+                        {
+                            descendant.Kill();
+                        }
+                    }
+                    catch (ArgumentException)
+                    {
+                        // A fixture process may have exited after the assertion.
+                    }
+                }
+            }
+
+            if (!supervisor.HasExited)
+            {
+                supervisor.Kill();
+            }
+
+            await supervisor.WaitForExitAsync(TestContext.Current.CancellationToken)
+                .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
 }
