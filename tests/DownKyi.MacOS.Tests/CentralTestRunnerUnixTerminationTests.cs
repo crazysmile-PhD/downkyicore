@@ -19,6 +19,19 @@ public sealed class CentralTestRunnerUnixTerminationTests
         return data;
     }
 
+    public static TheoryData<int, string> LegacyKillScenarios()
+    {
+        var data = new TheoryData<int, string>();
+        for (var iteration = 1; iteration <= 100; iteration++)
+        {
+            data.Add(iteration, "steady");
+            data.Add(iteration, "exiting-grandchild");
+            data.Add(iteration, "exiting-child");
+        }
+
+        return data;
+    }
+
     [Theory]
     [MemberData(nameof(Iterations))]
     public async Task UnixTerminationKillsCapturedDescendants(int iteration)
@@ -98,19 +111,44 @@ public sealed class CentralTestRunnerUnixTerminationTests
     }
 
     [Theory]
-    [MemberData(nameof(Iterations))]
-    public async Task LegacySynchronousTreeKillReturnsWithinBound(int iteration)
+    [MemberData(nameof(LegacyKillScenarios))]
+    public async Task LegacySynchronousTreeKillReturnsWithinBound(int iteration, string scenario)
     {
-        var directory = Path.Combine(Path.GetTempPath(), $"downkyi-legacy-tree-{iteration}-{Guid.NewGuid():N}");
+        var directory = Path.Combine(Path.GetTempPath(), $"downkyi-legacy-tree-{scenario}-{iteration}-{Guid.NewGuid():N}");
         Directory.CreateDirectory(directory);
         var script = Path.Combine(directory, "tree.sh");
-        await File.WriteAllTextAsync(script, """
+        var scriptContents = scenario switch
+        {
+            "steady" => """
             #!/bin/sh
             echo $$ > "$1/root.pid"
             /bin/sh -c '/bin/sleep 60 & echo $! > "$1/grandchild.pid"; echo ready; wait' child "$1" &
             echo $! > "$1/child.pid"
             wait
-            """, TestContext.Current.CancellationToken);
+            """,
+            "exiting-grandchild" => """
+            #!/bin/sh
+            echo $$ > "$1/root.pid"
+            /bin/sh -c '/bin/sleep 0.02 & echo $! > "$1/grandchild.pid"; wait' child "$1" &
+            echo $! > "$1/child.pid"
+            /bin/sleep 60 &
+            echo $! > "$1/root-sleeper.pid"
+            echo ready
+            wait
+            """,
+            "exiting-child" => """
+            #!/bin/sh
+            echo $$ > "$1/root.pid"
+            /bin/sh -c 'exit 0' child "$1" &
+            echo $! > "$1/child.pid"
+            /bin/sleep 60 &
+            echo $! > "$1/root-sleeper.pid"
+            echo ready
+            wait
+            """,
+            _ => throw new ArgumentOutOfRangeException(nameof(scenario))
+        };
+        await File.WriteAllTextAsync(script, scriptContents, TestContext.Current.CancellationToken);
         var startInfo = new ProcessStartInfo("dotnet")
         {
             UseShellExecute = false,
@@ -140,7 +178,7 @@ public sealed class CentralTestRunnerUnixTerminationTests
         }
         finally
         {
-            foreach (var marker in new[] { "grandchild.pid", "child.pid", "root.pid" })
+            foreach (var marker in new[] { "grandchild.pid", "child.pid", "root-sleeper.pid", "root.pid" })
             {
                 var markerPath = Path.Combine(directory, marker);
                 if (File.Exists(markerPath) &&
