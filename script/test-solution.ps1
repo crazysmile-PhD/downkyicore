@@ -22,6 +22,4 @@ $result = Invoke-DownKyiTestSolution `
     -ResultsDirectory $ResultsDirectory `
     -ExecutionTimeoutSeconds $ExecutionTimeoutSeconds `
     -EvidenceDirectory $EvidenceDirectory
-if ($result.ExitCode -ne 0) {
-    throw "CentralTestRunner failed with exit code $($result.ExitCode)."
-}
+exit $result.ExitCode

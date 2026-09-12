@@ -44,6 +44,7 @@ public sealed class DownloadTaskApplicationServiceTests
         var stored = Assert.IsType<DownloadTask>(store.Current);
         Assert.Equal(DownloadPhase.Downloading, stored.Phase);
         Assert.Equal("segment.m4s", stored.Plan.TransferFiles["video-1"]);
+        Assert.Equal(task.Plan.NfoRequest, stored.Plan.NfoRequest);
         Assert.Null(stored.Transfer.BackendIdentity);
         Assert.Equal("video-1", Assert.Single(stored.Transfer.CompletedFileKeys));
         Assert.Equal([0L, 1L, 2L, 3L, 4L], publishedVersions);
@@ -80,6 +81,29 @@ public sealed class DownloadTaskApplicationServiceTests
     }
 
     [Fact]
+    public async Task InterruptedReconciliationPreservesNewerPauseIntent()
+    {
+        var store = new RecordingStore();
+        using var service = new DownloadTaskApplicationService(store, new AdvancingClock());
+        var task = CreateTask();
+        await service.AddAsync(task, TestContext.Current.CancellationToken);
+        var snapshot = (await service.StartAsync(
+            task.Id,
+            TestContext.Current.CancellationToken)).RequireValue();
+        await service.PauseAsync(task.Id, TestContext.Current.CancellationToken);
+
+        var result = await service.ReconcileInterruptedAsync(
+            task.Id,
+            snapshot.Version,
+            TestContext.Current.CancellationToken);
+
+        var reconciled = result.RequireValue();
+        Assert.Equal(DownloadPhase.Paused, reconciled.Phase);
+        Assert.Equal(3, reconciled.Version);
+        Assert.Equal([0L, 1L, 2L], store.ExpectedVersions);
+    }
+
+    [Fact]
     public async Task ArtifactClaimsPreservePriorPathsAndBackendIdentity()
     {
         var store = new RecordingStore();
@@ -113,6 +137,7 @@ public sealed class DownloadTaskApplicationServiceTests
         Assert.Equal(2, stored.Plan.TransferFiles.Count);
         Assert.Equal("episode_Chinese.srt", stored.Plan.TransferFiles["subtitle-0001"]);
         Assert.Contains("episode_Traditional-Chinese.srt", stored.Plan.TransferFiles.Values);
+        Assert.Equal(task.Plan.NfoRequest, stored.Plan.NfoRequest);
     }
 
     [Fact]
@@ -214,6 +239,67 @@ public sealed class DownloadTaskApplicationServiceTests
         Assert.Same(task, store.Current);
     }
 
+    [Fact]
+    public async Task LegacyUpgradeAdmissionStateAndConfirmationDelegateToStore()
+    {
+        var store = new RecordingStore { LegacyUpgradeAdmissionBlocked = true };
+        using var service = new DownloadTaskApplicationService(store, new AdvancingClock());
+
+        Assert.True(await service.IsLegacyUpgradeAdmissionBlockedAsync(
+            TestContext.Current.CancellationToken));
+        Assert.True((await service.ConfirmLegacyRemoteTasksStoppedAsync(
+            TestContext.Current.CancellationToken)).IsSuccess);
+
+        Assert.False(await service.IsLegacyUpgradeAdmissionBlockedAsync(
+            TestContext.Current.CancellationToken));
+        Assert.Equal(1, store.LegacyRemoteStopConfirmationCount);
+    }
+
+    [Fact]
+    public async Task BlockedLegacyUpgradeRejectsQueuedTaskBeforeStoreAddAndAllowsSameSessionAfterConfirmation()
+    {
+        var store = new RecordingStore { LegacyUpgradeAdmissionBlocked = true };
+        using var service = new DownloadTaskApplicationService(store, new AdvancingClock());
+
+        var admission = await service.CheckNewDownloadAdmissionAsync(
+            TestContext.Current.CancellationToken);
+        var blocked = await service.AddAsync(
+            CreateTask(),
+            TestContext.Current.CancellationToken);
+
+        Assert.False(admission.IsSuccess);
+        Assert.True(DownloadAdmissionErrors.IsLegacyUpgradeBlocked(admission.Error));
+        Assert.False(blocked.IsSuccess);
+        Assert.True(DownloadAdmissionErrors.IsLegacyUpgradeBlocked(blocked.Error));
+        Assert.Equal(0, store.AddCount);
+        Assert.Null(store.Current);
+
+        Assert.True((await service.ConfirmLegacyRemoteTasksStoppedAsync(
+            TestContext.Current.CancellationToken)).IsSuccess);
+        Assert.True((await service.AddAsync(
+            CreateTask(),
+            TestContext.Current.CancellationToken)).IsSuccess);
+        Assert.Equal(1, store.AddCount);
+    }
+
+    [Fact]
+    public async Task BlockedLegacyUpgradeDoesNotRejectCompletedHistoryImport()
+    {
+        var store = new RecordingStore { LegacyUpgradeAdmissionBlocked = true };
+        using var service = new DownloadTaskApplicationService(store, new AdvancingClock());
+        var started = CreateTask().Start(Epoch.AddSeconds(1)).RequireValue();
+        var completed = started.Complete(
+            new DownloadCompletion(1, "finished", null),
+            Epoch.AddSeconds(2)).RequireValue();
+
+        var result = await service.AddAsync(completed, TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(1, store.AddCount);
+        Assert.Same(completed, store.Current);
+        Assert.True(store.LegacyUpgradeAdmissionBlocked);
+    }
+
     private static DownloadTask CreateTask()
     {
         return DownloadTask.Create(
@@ -230,9 +316,19 @@ public sealed class DownloadTaskApplicationServiceTests
                 string.Empty,
                 1),
             new DownloadPlan(
-                new Dictionary<string, bool> { ["downloadVideo"] = true },
+                new DownloadContentSelection(false, true, false, false, false),
                 [],
-                1),
+                1,
+                new DownloadNfoRequest(
+                    "Title",
+                    "Plot",
+                    "2026",
+                    ["Genre"],
+                    ["Tag"],
+                    [new DownloadNfoActor("Actor", "Role")],
+                    new DownloadNfoUniqueId("bilibili", "BV1"),
+                    "2026-09-09",
+                    [new DownloadNfoRating("bilibili", 9, 10, true)])),
             new DownloadOutput("episode", null),
             Epoch);
     }
@@ -257,6 +353,12 @@ public sealed class DownloadTaskApplicationServiceTests
 
         public List<long> ExpectedVersions { get; } = [];
 
+        public bool LegacyUpgradeAdmissionBlocked { get; set; }
+
+        public int LegacyRemoteStopConfirmationCount { get; private set; }
+
+        public int AddCount { get; private set; }
+
         public Task InitializeAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
         public Task<OperationResult> AddAsync(DownloadTask task, CancellationToken cancellationToken)
@@ -264,6 +366,7 @@ public sealed class DownloadTaskApplicationServiceTests
             cancellationToken.ThrowIfCancellationRequested();
             lock (_sync)
             {
+                AddCount++;
                 if (Current != null)
                 {
                     return Task.FromResult(OperationResult.Failure(new OperationError(
@@ -322,6 +425,18 @@ public sealed class DownloadTaskApplicationServiceTests
             string basePath,
             bool ignoreCase,
             CancellationToken cancellationToken) => Task.FromResult(false);
+
+        public Task<bool> IsLegacyUpgradeAdmissionBlockedAsync(
+            CancellationToken cancellationToken) =>
+            Task.FromResult(LegacyUpgradeAdmissionBlocked);
+
+        public Task<OperationResult> ConfirmLegacyRemoteTasksStoppedAsync(
+            CancellationToken cancellationToken)
+        {
+            LegacyRemoteStopConfirmationCount++;
+            LegacyUpgradeAdmissionBlocked = false;
+            return Task.FromResult(OperationResult.Success());
+        }
 
         public Task<DownloadHistoryPage> GetHistoryPageAsync(
             DownloadHistoryCursor? cursor,

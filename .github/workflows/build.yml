@@ -12,14 +12,6 @@ on:
     branches:
       - main
       - release/v1.1.1-integration
-    paths:
-      - 'script/assets/external-assets.json'
-      - 'script/ffmpeg-assets.py'
-      - 'script/ffmpeg.ps1'
-      - 'script/ffmpeg.sh'
-      - 'script/tests/test_ffmpeg_assets.py'
-      - '.github/workflows/build.yml'
-      - '.github/workflows/update-ffmpeg-assets.yml'
   workflow_dispatch:
     inputs:
       update_ffmpeg_assets:
@@ -36,6 +28,8 @@ on:
 jobs:
   ffmpeg-tooling:
     name: FFmpeg tooling / implementation gate
+    needs: detect-production-manifest-change
+    if: ${{ github.event_name != 'pull_request' || needs.detect-production-manifest-change.outputs.ffmpeg_related == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -69,8 +63,9 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       external_assets: ${{ steps.filter.outputs.external_assets }}
+      ffmpeg_related: ${{ steps.filter.outputs.ffmpeg_related }}
     steps:
-      - name: Detect external asset manifest changes in the PR diff
+      - name: Detect FFmpeg changes in the PR diff
         id: filter
         if: github.event_name == 'pull_request'
         uses: dorny/paths-filter@v3
@@ -78,6 +73,14 @@ jobs:
           filters: |
             external_assets:
               - 'script/assets/external-assets.json'
+            ffmpeg_related:
+              - 'script/assets/external-assets.json'
+              - 'script/ffmpeg-assets.py'
+              - 'script/ffmpeg.ps1'
+              - 'script/ffmpeg.sh'
+              - 'script/tests/test_ffmpeg_assets.py'
+              - '.github/workflows/build.yml'
+              - '.github/workflows/update-ffmpeg-assets.yml'
 
   external-assets-preflight:
     name: Production manifest preflight
@@ -97,6 +100,36 @@ jobs:
         run: python script/ffmpeg-assets.py validate-manifest --manifest script/assets/external-assets.json
       - name: Check external asset availability
         run: python script/ffmpeg-assets.py preflight --manifest script/assets/external-assets.json --timeout 30
+
+  ffmpeg-required-gate:
+    name: FFmpeg manifest gate
+    needs:
+      - detect-production-manifest-change
+      - ffmpeg-tooling
+      - external-assets-preflight
+    if: ${{ always() && github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report the FFmpeg validation result
+        env:
+          DETECTION_RESULT: ${{ needs.detect-production-manifest-change.result }}
+          TOOLING_RESULT: ${{ needs.ffmpeg-tooling.result }}
+          PREFLIGHT_RESULT: ${{ needs.external-assets-preflight.result }}
+          FFMPEG_RELATED: ${{ needs.detect-production-manifest-change.outputs.ffmpeg_related }}
+          EXTERNAL_ASSETS: ${{ needs.detect-production-manifest-change.outputs.external_assets }}
+        run: |
+          set -e
+          test "$DETECTION_RESULT" = success
+          if [ "$FFMPEG_RELATED" = true ]; then
+            test "$TOOLING_RESULT" = success
+          else
+            test "$TOOLING_RESULT" = skipped
+          fi
+          if [ "$EXTERNAL_ASSETS" = true ]; then
+            test "$PREFLIGHT_RESULT" = success
+          else
+            test "$PREFLIGHT_RESULT" = skipped
+          fi
 
   release-gate:
     name: Release gate (${{ matrix.os }})
@@ -163,16 +196,22 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - name: Validate exact v1.1.3 release subject
+      - name: Validate exact release subject
         if: startsWith(github.ref, 'refs/tags/')
         shell: pwsh
-        run: ./script/validate-v113-release-subject.ps1 -SubjectDirectory . -ReleaseVersion '${{ github.ref_name }}' -SubjectSha '${{ github.sha }}'
+        run: ./script/validate-release-subject.ps1 -SubjectDirectory . -ReleaseVersion '${{ github.ref_name }}' -SubjectSha '${{ github.sha }}'
+      - name: Resolve previous release tag
+        id: previous-release
+        shell: pwsh
+        run: |
+          $tag = ./script/resolve-previous-release-tag.ps1
+          "tag=$tag" | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
       - name: Generate a changelog
         uses: orhun/git-cliff-action@v4
         id: git-cliff
         with:
           config: cliff.toml
-          args: -vv --latest --strip header
+          args: -vv ${{ steps.previous-release.outputs.tag }}..HEAD --strip header
         env:
           OUTPUT: CHANGELOG.md
       - name: Print the changelog
@@ -239,7 +278,7 @@ jobs:
         shell: pwsh
         run: |
           $package = "script/pupnet/output/DownKyi-${{ steps.version.outputs.content }}-1.win-${{ matrix.cpu }}.${{ matrix.kind }}"
-          ./script/validate-v113-release-package.ps1 `
+          ./script/validate-release-package.ps1 `
             -PackagePath $package `
             -PackageKind "${{ matrix.kind }}" `
             -RuntimeIdentifier "win-${{ matrix.cpu }}" `
@@ -408,7 +447,7 @@ jobs:
           $package = Get-ChildItem "script/pupnet/output" -File -Filter "*${{ matrix.package-tail }}.${{ matrix.kind }}" |
             Select-Object -First 1
           if ($null -eq $package) { throw "Expected Linux package was not produced." }
-          ./script/validate-v113-release-package.ps1 `
+          ./script/validate-release-package.ps1 `
             -PackagePath $package.FullName `
             -PackageKind "${{ matrix.kind }}" `
             -RuntimeIdentifier "linux-${{ matrix.cpu }}" `
@@ -490,7 +529,7 @@ jobs:
           if ($packages.Count -ne 1) { throw "Expected exactly one ARM64 ${{ matrix.kind }} package, found $($packages.Count)." }
           $expectedManifest = "candidate/expected-publish-manifest-linux-arm64.json"
           $approvedManifest = "candidate/publish-manifest-linux-arm64-${{ matrix.kind }}.json"
-          ./script/validate-v113-release-package.ps1 `
+          ./script/validate-release-package.ps1 `
             -PackagePath $packages[0].FullName `
             -PackageKind "${{ matrix.kind }}" `
             -RuntimeIdentifier linux-arm64 `
@@ -620,9 +659,12 @@ jobs:
             -RuntimeIdentifier "osx-${{ matrix.cpu }}" `
             -ExpectedVersion "${{ steps.version.outputs.content }}" `
             -OutputPath "script/macos/publish-manifest-osx-${{ matrix.cpu }}.json"
+      - name: Verify pre-sign aria2 supply-chain boundary
+        run: /bin/bash ./aria2-runtime-integrity.sh verify 哔哩下载姬.app osx-${{ matrix.cpu }}
+        working-directory: ./script/macos
       - name: Sign app
         run: |
-          chmod +x codesign-common.sh prepare-app-layout.sh sign.sh verify-app.sh verify-app-launch.sh sign-dmg.sh verify-dmg.sh verify-dmg-contents.sh verify-runtime-architecture.sh
+          chmod +x codesign-common.sh prepare-app-layout.sh sign.sh verify-app.sh verify-app-launch.sh sign-dmg.sh verify-dmg.sh verify-dmg-contents.sh verify-runtime-architecture.sh aria2-runtime-integrity.sh verify-aria2-runtime-readiness.sh
           ./sign.sh
         working-directory: ./script/macos
         env:
@@ -630,6 +672,7 @@ jobs:
       - name: Verify app signature
         run: |
           ./verify-app.sh
+          ./aria2-runtime-integrity.sh verify 哔哩下载姬.app osx-${{ matrix.cpu }}
         working-directory: ./script/macos
       - name: Notarize app
         if: ${{ env.HAS_MACOS_SIGNING == 'true' }}
@@ -643,6 +686,7 @@ jobs:
         if: ${{ env.HAS_MACOS_SIGNING == 'true' }}
         run: |
           ./verify-app.sh
+          ./aria2-runtime-integrity.sh verify 哔哩下载姬.app osx-${{ matrix.cpu }}
         working-directory: ./script/macos
         env:
           MACOS_VERIFY_GATEKEEPER: true

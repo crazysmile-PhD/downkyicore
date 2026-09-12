@@ -17,7 +17,7 @@
 2. 若新增 violation，修正程式碼，不可直接加入 baseline。
 3. 若是外部 protocol 或 generated code 的必要例外，先新增 ADR、來源與 test，再以最小項目更新 baseline。
 4. 若移除 debt，刪除已不需要的 baseline entry。
-5. 同步更新 `module-boundary-naming-audit.md`、live plan 與 knowledge graph。
+5. 只有權威責任或非衍生不變量改變時，才更新對應設計文件或根層 `ARCHITECTURE.md`。
 
 全域「simple type name 不可重複」與「檔名必須等於第一個宣告型別」規則不採用，因為 protocol DTO、partial class、`.axaml.cs` 和 companion records 會被誤判。
 

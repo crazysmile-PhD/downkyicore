@@ -1,12 +1,14 @@
 # DownKyi Architecture
 
-本文件描述目前可執行的架構、已知邊界缺口與目標依賴方向。它不是理想化簡圖。若本文件、知識圖譜和程式碼不一致，以程式碼及可重現檢查結果為準，並在同一個 PR 修正文檔。
+本文件描述目前可執行的架構、已知邊界缺口與目標依賴方向。它不是理想化簡圖。若本文件和程式碼不一致，以程式碼及可重現檢查結果為準，並在同一個 PR 修正文檔。
 
 ## 閱讀入口
 
-- 模組、呼叫關係與穩定契約：`docs/ai-knowledge-graph.md`
-- 目前尚未完成的工作：`docs/refactoring-live-plan.md`
-- 模組邊界審查：`docs/design-docs/module-boundary-naming-audit.md`
+- Desktop 根組裝：`src/DownKyi.Desktop/Composition/DesktopComposition.cs`
+- Navigation/Dialog 局部組裝：`src/DownKyi.Desktop/Platform/DesktopInteractionComposition.cs`
+- Download 局部組裝：`src/DownKyi.Desktop/Services/Download/DownloadComposition.cs`
+- 穩定的 release 與驗證政策：`docs/refactoring-live-plan.md`
+- 歷史模組邊界 audit snapshot：`docs/design-docs/module-boundary-naming-audit.md`
 - 建置、測試、發布與外部 binary：`docs/maintenance.md`
 - 驗證及回滾：`docs/operations/verification-and-rollback.md`
 
@@ -39,8 +41,8 @@ flowchart TD
 - `DownKyi.exe` 只含 `Program.cs`，只引用 `DownKyi.Desktop`，不持有 UI、套件、資源或生命週期實作。
 - `DownKyi.Desktop` 是 Avalonia App、Views、ViewModels、`Presentation` projections、desktop adapters、Host composition 與 desktop runtime owner。Service contracts 不再引用 `DownKyi.ViewModels`。
 - `DownKyi.Core` 不含 `.axaml`、Avalonia 或 QRCoder；登入 API 留在 Core，QR bitmap renderer 與 Bilibili image dictionaries 位於 Desktop。
-- `DownKyi.Domain.DownloadTask` 已是持久化狀態轉換的權威；worker 與 pipeline 入口使用 `DownloadTaskId`，但 orchestrator channel 與部分 media stage 仍暫時持有 UI projection。
-- `DownKyi.Application` 已擁有 Bilibili HTTP/buvid/cookie、logging 與 physical output path contracts；`DownKyi.Infrastructure` 已擁有 async `IHttpClientFactory` transport、single-flight buvid provider、SQLite、write-behind、filesystem physical output path resolver，以及私有 NLog logging sink、retention 與 diagnostic exporter。aria2、FFmpeg 與其餘 file system ownership 尚待後續切片。
+- `DownKyi.Domain.DownloadTask` 已是持久化狀態轉換的權威；orchestrator channels、workers 與 pipeline 入口都使用 `DownloadTaskId`。`DownloadExecutionContextFactory` 從 committed Domain snapshot 與目前 settings 建立單次 immutable `DownloadExecutionInput`，只另外擷取建立當下的 `PlayUrl` reference；media stages 不再持有 `DownloadingItem` UI projection。
+- `DownKyi.Application` 已擁有 Bilibili HTTP/buvid/cookie、logging 與 physical output path contracts；`DownKyi.Infrastructure` 已擁有 async `IHttpClientFactory` transport、single-flight buvid provider、SQLite、write-behind、filesystem physical output path resolver，以及私有 NLog logging sink、retention 與 diagnostic exporter。aria2 與 FFmpeg 實作目前仍主要位於 `DownKyi.Core`，其 runtime adapters 與其餘 file-system workflow 仍位於 Desktop/Core；將這些實作收斂至 Infrastructure 是目標 ownership，不是目前已實作的狀態。
 - Prism、DryIoc、EventAggregator、RegionManager 和 ContainerLocator 已從 production source 移除，不得重新引入。
 
 ## 目前啟動鏈
@@ -51,12 +53,14 @@ Program
   -> Avalonia App
   -> DownKyiHost.Create()
   -> DesktopComposition.AddDownKyiDesktop()
+  -> DesktopInteractionComposition.AddDesktopInteractions()
+  -> DownloadComposition.AddDownloadModule()
   -> Microsoft.Extensions.DependencyInjection
   -> MainWindow and MainWindowViewModel
   -> AvaloniaApplicationLifecycle.StartHostAsync()
 ```
 
-`DesktopApplication`、`DownKyiHost` 與 `DesktopComposition` 共同形成 Desktop composition root；executable 只做單次委派。
+`DesktopApplication`、`DownKyiHost` 與 `DesktopComposition` 共同形成 Desktop composition root；root 選擇模組，Navigation/Dialog 與 Download 的內部實作、生命週期和多介面 alias 則由各自的局部 composition 接合。executable 只做單次委派。`DownKyiHost` 在建立 Microsoft DI provider 時驗證必要依賴與 singleton/scoped lifetime；這不取代產品組裝與行為測試。
 
 Bilibili endpoint adapters 仍位於 `DownKyi.Core/BiliApi` 以保留 DTO 與外部協定相容性，但所有 production 呼叫都接收注入的 async port。普通 API 使用 `IBilibiliApiClient`；QR 登入使用隔離的 `IBilibiliLoginSession`，由同一 session 貫穿 generate、poll 和受信任 callback，保留 response cookies。Host 是 client、login session factory、cookie provider、buvid provider 與網路設定的唯一組合點；static client、全域 `Configure()` 和同步 HTTP compatibility path 已刪除。
 
@@ -79,6 +83,8 @@ flowchart LR
 ```
 
 Main region 的返回操作必須先縮減 `AvaloniaNavigationService` 的既有歷史，並恢復原本的 View/ViewModel instance；只有沒有歷史時才建立 typed parent route。UserSpace 的公開收藏夾由注入的 coordinator 一次映射到 snapshot，返回同一個 MID 時保留原頁面與清單狀態。失效收藏項目保留在 UI 供辨識，但不能選取、開啟或加入下載。
+
+ViewModel 與其他呼叫者只依賴 Application 的 `IAppNavigationService`／`IAppDialogService`。只有 `NavigationViewModelFactory` 與 `DialogContentFactory` 能在局部組裝邊界使用 provider，依 typed enum 選擇已註冊的 transient ViewModel/View；Avalonia adapters 本身不持有容器。
 
 投稿路由只接受 `PublicationNavigationPayload`。裸 `bilibili.com/list/<MID>` 代表該使用者全部投稿；`x/series/archives` 契約已完成審查，但帶 `sid` 的 URL 在建立獨立 typed series payload 與產品測試前仍不得被猜成全部投稿。投稿搜尋採 WBI 回應的精確 `page.count`；收藏搜尋的 `media_count` 是未篩選總數，因此分頁只能依 `has_more` 逐頁擴展。兩頁返回時保留 query、頁碼與既有 media instances；被取消的未完成頁才會補載。
 
@@ -116,11 +122,15 @@ flowchart LR
     CompletionProjector --> UiList
 ```
 
-目前所有 durable command 都先載入 Domain aggregate、執行合法 transition、以 optimistic version 寫入 SQLite，再發布 committed snapshot。一般 runtime 不再從 mutable UI model 反向重建 Domain；`DownloadTask.Restore` 只允許出現在 SQLite materializer 與 legacy migration adapter。
+目前所有 durable command 都先載入 Domain aggregate、執行合法 transition、以 optimistic version 寫入 SQLite，再發布 committed snapshot。一般 runtime 不再從 mutable UI model 反向重建 Domain；`DownloadTask.Restore` 只允許出現在 SQLite materializer 與 legacy migration adapter。使用者要求的 audio、video、danmaku、subtitle 與 cover 由 Domain `DownloadContentSelection` 表達；舊字串 map 只存在於 dialog、SQLite 與 NRBF 相容邊界。
 
-佇列已不再掃描 UI collection；新增、續傳與一次性啟動恢復都直接傳遞 `DownloadTaskId`。啟動查詢在同一份結果中提供 Domain snapshots 與 UI projections，runtime 只使用前者。`DownloadPipeline` 只建立單次 execution context 並依序執行 typed stages；階段失敗會立即停止並經 typed state writer 標記失敗。Presenter、projector 與 projection models 已由 Desktop 擁有，`DownloadListState` 只公開穩定的 `ReadOnlyObservableCollection<T>`。剩餘過渡債是 media execution context 仍讀取 `DownloadingItem` 作為播放流與畫面上下文，後續需改為明確 execution input，而不是讓 UI projection 進入 runtime。
+佇列已不再掃描 UI collection；新增、續傳與一次性啟動恢復都直接傳遞 `DownloadTaskId`。啟動查詢在同一份結果中提供 Domain snapshots 與 UI projections，runtime decision inputs 取自前者。`DownloadPipeline` 只建立單次 execution context 並依序執行 typed stages；階段失敗會立即停止並經 typed state writer 標記失敗。`DownloadExecutionContextFactory` 是 immutable `DownloadExecutionInput` 的唯一建構 owner；初始 `PlayUrl` 只在建立 context 時從 UI projection 擷取一次，之後的 refresh 留在 execution context。Presenter、completion projector 與 projection models 由 Desktop 擁有，只透過 `DownloadTaskId` 更新 UI；`DownloadListState` 只公開穩定的 `ReadOnlyObservableCollection<T>`。
+
+`DownloadComposition.AddDownloadModule()` 是 Download 實作的註冊入口。`DownloadTaskQueueGateway` 以同一 singleton 同時提供 `IDownloadTaskQueue` 與 `IDownloadRuntimeAvailability`；`DownloadBootstrapHostedService` 也以同一 singleton 暴露為 `IHostedService`，避免重複 queue/runtime owner 或重複啟停與釋放。
 
 ## 目標拓樸
+
+本節以及後文的「目標」描述是未來 dependency/ownership 方向，不代表目前程式已搬移完成。現行 owner 以上方「目前拓樸」與「目前的正確事實」為準。
 
 ```text
 DownKyi.exe
@@ -241,7 +251,7 @@ address failure rather than a reason to downgrade. The six-RID real-binary gate,
 legacy `UseSsl` migration and third-party binary evidence are documented in
 `docs/operations/aria2-security.md`.
 
-## 邊界規則
+## 邊界規則（現行限制與目標 ownership）
 
 ### Domain
 
@@ -258,8 +268,8 @@ legacy `UseSsl` migration and third-party binary evidence are documented in
 
 ### Infrastructure
 
-- 實作 Application ports。
-- 擁有 SQLite、HTTP、aria2、FFmpeg、file system 與 logging sink 的生命週期。
+- 目前實作 Application ports，並擁有 SQLite、Bilibili HTTP/buvid、physical output path resolver 與 logging sink 生命週期。
+- 目標是再接手 aria2、FFmpeg 與其餘 file-system implementation；在該搬移發生前，Core/Desktop 仍是這些實作的現行 owner。
 - 不依賴 Desktop types 或 UI collections。
 
 ### Desktop
@@ -287,6 +297,7 @@ legacy `UseSsl` migration and third-party binary evidence are documented in
 
 - `tests/DownKyi.Architecture.Tests/ProjectDependencyTests.cs`
 - `tests/DownKyi.Architecture.Tests/ModuleBoundaryBaselineTests.cs`
+- `tests/DownKyi.Architecture.Tests/LocalModuleWiringArchitectureTests.cs`
 - `tests/DownKyi.Architecture.Tests/AgentEnvironmentArchitectureTests.cs`
 - `tests/DownKyi.Architecture.Tests/BilibiliApiInventoryArchitectureTests.cs`
 - `script/audit-module-boundaries.ps1`
@@ -294,5 +305,6 @@ legacy `UseSsl` migration and third-party binary evidence are documented in
 - `script/audit-bilibili-authenticated-api.ps1`
 - `script/scan-secrets.ps1`
 - `tests/DownKyi.Desktop.Tests/UiSmokeTests.cs`
+- `tests/DownKyi.Tests/LocalModuleCompositionTests.cs`
 
 基線測試採 ratchet 模式：現有違規可以減少或移除，新增違規或擴大巨檔會失敗。基線不是豁免，也不能成為長期目標。

@@ -51,8 +51,8 @@ public sealed class DesktopInteractionArchitectureTests
     {
         var compositionSource = ReadSource(
             "src", "DownKyi.Desktop",
-            "Composition",
-            "DesktopComposition.cs");
+            "Platform",
+            "DesktopInteractionComposition.cs");
         var navigationAdapter = ReadSource(
             "src", "DownKyi.Desktop",
             "Platform",
@@ -61,6 +61,14 @@ public sealed class DesktopInteractionArchitectureTests
             "src", "DownKyi.Desktop",
             "Platform",
             "AvaloniaDialogService.cs");
+        var navigationFactory = ReadSource(
+            "src", "DownKyi.Desktop",
+            "Platform",
+            "NavigationViewModelFactory.cs");
+        var dialogFactory = ReadSource(
+            "src", "DownKyi.Desktop",
+            "Platform",
+            "DialogContentFactory.cs");
 
         Assert.Contains("IUserNotificationService, DesktopNotificationService", compositionSource,
             StringComparison.Ordinal);
@@ -68,9 +76,11 @@ public sealed class DesktopInteractionArchitectureTests
             StringComparison.Ordinal);
         Assert.Contains("IAppDialogService, AvaloniaDialogService", compositionSource,
             StringComparison.Ordinal);
-        Assert.Contains("GetViewModelType", navigationAdapter, StringComparison.Ordinal);
-        Assert.Contains("GetDialogTypes", dialogAdapter, StringComparison.Ordinal);
+        Assert.Contains("GetViewModelType", navigationFactory, StringComparison.Ordinal);
+        Assert.Contains("GetDialogTypes", dialogFactory, StringComparison.Ordinal);
         Assert.Contains("Dispatcher.UIThread.CheckAccess()", dialogAdapter, StringComparison.Ordinal);
+        Assert.DoesNotContain("IServiceProvider", navigationAdapter, StringComparison.Ordinal);
+        Assert.DoesNotContain("IServiceProvider", dialogAdapter, StringComparison.Ordinal);
         Assert.DoesNotContain("Prism", compositionSource, StringComparison.Ordinal);
         Assert.DoesNotContain("Prism", navigationAdapter, StringComparison.Ordinal);
         Assert.DoesNotContain("Prism", dialogAdapter, StringComparison.Ordinal);

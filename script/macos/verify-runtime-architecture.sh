@@ -8,7 +8,7 @@ case "$RUNTIME_IDENTIFIER" in
   osx-x64) EXPECTED_ARCH="x86_64" ;;
   osx-arm64) EXPECTED_ARCH="arm64" ;;
   *)
-    echo "::error::Unsupported v1.1.3 macOS runtime identifier: $RUNTIME_IDENTIFIER" >&2
+    echo "::error::Unsupported macOS runtime identifier: $RUNTIME_IDENTIFIER" >&2
     exit 1
     ;;
 esac

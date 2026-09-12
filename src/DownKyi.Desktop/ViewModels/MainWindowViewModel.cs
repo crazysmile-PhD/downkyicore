@@ -13,6 +13,7 @@ using DownKyi.Core.Settings;
 using DownKyi.Models;
 using DownKyi.Platform;
 using DownKyi.Services;
+using DownKyi.Services.Download;
 using Microsoft.Extensions.Logging;
 
 namespace DownKyi.ViewModels;
@@ -27,6 +28,7 @@ internal sealed class MainWindowViewModel : ObservableObject, IDisposable
     private readonly IClipboardMonitor _clipboardMonitor;
     private readonly SearchService _searchService;
     private readonly VersionCheckerService _versionChecker;
+    private readonly IDownloadRuntimeAvailability _downloadRuntimeAvailability;
     private readonly ILogger<MainWindowViewModel> _logger;
     private readonly CancellationTokenSource _lifetimeCancellation = new();
     private readonly CancellationToken _lifetimeToken;
@@ -131,6 +133,7 @@ internal sealed class MainWindowViewModel : ObservableObject, IDisposable
         IClipboardMonitor clipboardMonitor,
         SearchService searchService,
         VersionCheckerService versionChecker,
+        IDownloadRuntimeAvailability downloadRuntimeAvailability,
         ILogger<MainWindowViewModel> logger)
     {
         _navigationService = navigationService ?? throw new ArgumentNullException(nameof(navigationService));
@@ -140,6 +143,8 @@ internal sealed class MainWindowViewModel : ObservableObject, IDisposable
         _clipboardMonitor = clipboardMonitor ?? throw new ArgumentNullException(nameof(clipboardMonitor));
         _searchService = searchService ?? throw new ArgumentNullException(nameof(searchService));
         _versionChecker = versionChecker ?? throw new ArgumentNullException(nameof(versionChecker));
+        _downloadRuntimeAvailability = downloadRuntimeAvailability
+            ?? throw new ArgumentNullException(nameof(downloadRuntimeAvailability));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _lifetimeToken = _lifetimeCancellation.Token;
 
@@ -283,6 +288,12 @@ internal sealed class MainWindowViewModel : ObservableObject, IDisposable
             return;
         }
 
+        await ShowDownloadRuntimeFailureDialogAsync().ConfigureAwait(true);
+        if (_lifetimeToken.IsCancellationRequested)
+        {
+            return;
+        }
+
         await CheckForUpdatesAsync().ConfigureAwait(true);
     }
 
@@ -312,6 +323,37 @@ internal sealed class MainWindowViewModel : ObservableObject, IDisposable
         catch (InvalidOperationException e)
         {
             _logger.LogErrorMessage("Legacy upgrade dialog failed to open.", e);
+        }
+    }
+
+    private async Task ShowDownloadRuntimeFailureDialogAsync()
+    {
+        try
+        {
+            var outcome = await _downloadRuntimeAvailability
+                .WaitForStartupOutcomeAsync(_lifetimeToken)
+                .ConfigureAwait(true);
+            if (outcome.State == DownloadRuntimeStartupState.Ready)
+            {
+                return;
+            }
+
+            var failure = outcome.Failure
+                ?? throw new InvalidOperationException(
+                    "The faulted download startup outcome has no failure.");
+            await _dialogService.ShowAsync(
+                new AppDialogRequest(
+                    AppDialog.DownloadRuntimeFailure,
+                    new Dictionary<string, object?> { ["failure"] = failure }),
+                _lifetimeToken).ConfigureAwait(true);
+        }
+        catch (OperationCanceledException) when (_lifetimeToken.IsCancellationRequested)
+        {
+            return;
+        }
+        catch (InvalidOperationException e)
+        {
+            _logger.LogErrorMessage("Download runtime failure dialog failed to open.", e);
         }
     }
 

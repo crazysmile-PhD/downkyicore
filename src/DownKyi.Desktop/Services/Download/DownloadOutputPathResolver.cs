@@ -20,16 +20,18 @@ internal static class DownloadOutputPathResolver
         ArgumentException.ThrowIfNullOrWhiteSpace(basePath);
         ArgumentNullException.ThrowIfNull(isReservedAsync);
         comparer ??= PlatformComparer;
-        var occupiedPaths = GetExistingBasePaths(basePath).ToHashSet(comparer);
+        var occupiedPaths = GetExistingBasePaths(basePath)
+            .Select(CreateComparisonKey)
+            .ToHashSet(comparer);
         for (var suffix = 0; ; suffix++)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var candidate = suffix == 0 ? basePath : $"{basePath}({suffix})";
-            var normalizedCandidate = Normalize(candidate);
-            if (!occupiedPaths.Contains(normalizedCandidate) &&
-                !await isReservedAsync(normalizedCandidate, cancellationToken).ConfigureAwait(false))
+            var comparisonKey = CreateComparisonKey(candidate);
+            if (!occupiedPaths.Contains(comparisonKey) &&
+                !await isReservedAsync(candidate, cancellationToken).ConfigureAwait(false))
             {
-                return normalizedCandidate;
+                return candidate;
             }
 
             if (!autoAddNumberSuffix)
@@ -46,8 +48,7 @@ internal static class DownloadOutputPathResolver
 
     private static string[] GetExistingBasePaths(string basePath)
     {
-        var normalizedBasePath = Normalize(basePath);
-        var directory = Path.GetDirectoryName(normalizedBasePath);
+        var directory = Path.GetDirectoryName(basePath);
         if (directory == null || !Directory.Exists(directory))
         {
             return [];
@@ -56,11 +57,10 @@ internal static class DownloadOutputPathResolver
         return Directory
             .EnumerateFiles(directory)
             .Select(file => Path.Combine(directory, Path.GetFileNameWithoutExtension(file)))
-            .Select(Normalize)
             .ToArray();
     }
 
-    private static string Normalize(string path)
+    private static string CreateComparisonKey(string path)
     {
         return DownloadOutputPathKey.Create(path, ignoreCase: false);
     }

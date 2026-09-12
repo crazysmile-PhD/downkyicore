@@ -160,12 +160,14 @@ public sealed class MuxFailureRecoveryTests
         private readonly string _directory;
         private readonly TestSettingsStore _settings;
         private readonly DownloadTaskApplicationService _tasks;
+        private readonly DownloadTaskProjectionStore _projectionStore;
         private readonly DownloadTaskStateWriter _stateWriter;
 
         private MuxTestContext(
             string directory,
             TestSettingsStore settings,
             DownloadTaskApplicationService tasks,
+            DownloadTaskProjectionStore projectionStore,
             DownloadTaskStateWriter stateWriter,
             DownloadExecutionContext execution,
             string audioFile,
@@ -176,6 +178,7 @@ public sealed class MuxFailureRecoveryTests
             _directory = directory;
             _settings = settings;
             _tasks = tasks;
+            _projectionStore = projectionStore;
             _stateWriter = stateWriter;
             Execution = execution;
             AudioFile = audioFile;
@@ -202,7 +205,9 @@ public sealed class MuxFailureRecoveryTests
             Directory.CreateDirectory(directory);
             var settings = new TestSettingsStore();
             var store = new SingleTaskStore();
-            var tasks = new DownloadTaskApplicationService(store, new SystemClock());
+            var clock = new SystemClock();
+            var tasks = new DownloadTaskApplicationService(store, clock);
+            var projectionStore = new DownloadTaskProjectionStore(tasks, clock);
             var stateWriter = new DownloadTaskStateWriter(tasks);
             var taskId = new DownloadTaskId("mux-recovery");
             var downloadBase = new DownloadBase
@@ -220,15 +225,11 @@ public sealed class MuxFailureRecoveryTests
                     DownloadStatus = DownloadStatus.WaitForDownload
                 }
             };
-            var task = DownloadTaskProjectionMapper.CreateNewTask(
+            await projectionStore.AddDownloadingAsync(
                 downloading,
-                DateTimeOffset.UnixEpoch);
-            Assert.True((await tasks.AddAsync(
-                task,
-                TestContext.Current.CancellationToken).ConfigureAwait(true)).IsSuccess);
+                TestContext.Current.CancellationToken).ConfigureAwait(true);
             await stateWriter.StartAsync(taskId, TestContext.Current.CancellationToken)
                 .ConfigureAwait(true);
-            downloading.Downloading.DownloadStatus = DownloadStatus.Downloading;
 
             const string audioKey = "audio-key";
             const string videoKey = "video-key";
@@ -271,22 +272,20 @@ public sealed class MuxFailureRecoveryTests
                 "resume-identity",
                 TestContext.Current.CancellationToken).ConfigureAwait(true);
 
-            var execution = new DownloadExecutionContext(
-                taskId,
-                downloading,
-                settings.Store.Current,
-                static (_, token) => token.ThrowIfCancellationRequested())
-            {
-                MediaKind = DownloadMediaKind.Dash,
-                AudioFile = audioFile,
-                AudioTransferKey = audioKey,
-                VideoFile = videoFile,
-                VideoTransferKey = videoKey
-            };
+            var execution = new DownloadExecutionContextFactory(
+                projectionStore,
+                settings.Store).Create(taskId);
+            execution.StagingDirectory = directory;
+            execution.MediaKind = DownloadMediaKind.Dash;
+            execution.AudioFile = audioFile;
+            execution.AudioTransferKey = audioKey;
+            execution.VideoFile = videoFile;
+            execution.VideoTransferKey = videoKey;
             return new MuxTestContext(
                 directory,
                 settings,
                 tasks,
+                projectionStore,
                 stateWriter,
                 execution,
                 audioFile,
@@ -298,7 +297,7 @@ public sealed class MuxFailureRecoveryTests
         public MuxStage CreateStage(FfmpegOperationResult result)
         {
             return new MuxStage(
-                new DownloadActivityPresenter(_stateWriter),
+                new DownloadActivityPresenter(_projectionStore, _stateWriter),
                 new StubMuxer(result),
                 _stateWriter,
                 NullLogger<MuxStage>.Instance);
@@ -353,6 +352,7 @@ public sealed class MuxFailureRecoveryTests
 
         public ValueTask DisposeAsync()
         {
+            _projectionStore.Dispose();
             _tasks.Dispose();
             _settings.Dispose();
             Directory.Delete(_directory, recursive: true);

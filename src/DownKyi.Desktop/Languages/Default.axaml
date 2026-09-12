@@ -137,6 +137,8 @@
     <system:String x:Key="TipAddDownloadingZero">没有选中项符合下载要求！</system:String>
     <system:String x:Key="TipAddDownloadingFinished1">成功添加了</system:String>
     <system:String x:Key="TipAddDownloadingFinished2">项~</system:String>
+    <system:String x:Key="LegacyDownloadAdmissionBlocked">升级时发现部分旧的未完成任务保存位置不安全或已经变化。程序无法确认这些任务是否由原来的自定义远端 aria2 负责；旧的远端 aria2 可能仍在写入文件。为避免两个 aria2 同时写入，现已暂时阻止新增下载。&#10;&#10;请先到原来的远端 aria2 停止这些旧任务。确认已经停止后，点击“确定”恢复新增下载；取消或关闭不会解除阻止。</system:String>
+    <system:String x:Key="LegacyDownloadAdmissionConfirmationFailed">无法保存确认，新增下载仍被阻止。</system:String>
     
     <!--  DownloadManager  -->
     <system:String x:Key="Downloading">正在下载</system:String>
@@ -154,6 +156,7 @@
     <system:String x:Key="Pausing">暂停中……</system:String>
     <system:String x:Key="Waiting">等待中……</system:String>
     <system:String x:Key="DownloadFailed">下载失败</system:String>
+    <system:String x:Key="DownloadRuntimeUnavailable">下载服务启动失败，请重新启动应用并查看日志。</system:String>
     <system:String x:Key="TotalDownloading1">正在下载</system:String>
     <system:String x:Key="TotalDownloading2">个视频！</system:String>
     <system:String x:Key="PauseAllDownloading">全部暂停</system:String>
@@ -208,6 +211,7 @@
     <system:String x:Key="BuiltinDownloader">内建下载器</system:String>
     <system:String x:Key="Aria2cDownloader">Aria2下载器</system:String>
     <system:String x:Key="CustomAria2cDownloader">自定义Aria2下载器</system:String>
+    <system:String x:Key="CustomAriaCompatibilityRequirement">仅支持 aria2.getVersion().enabledFeatures 包含 downkyi-secure-redirect-v2 的 DownKyi 兼容端点；标准 aria2 与 Motrix 不受支持。</system:String>
     <system:String x:Key="HighSpeedDownloadMode">高速下载模式（套用推荐分片/连接参数）</system:String>
     <system:String x:Key="HighSpeedDownloadModeTip">开启时会将内建线程数设为16，Aria最大线程数设为16，同服务器连接数设为16，最小分片设为1MB。</system:String>
     <system:String x:Key="AriaServerHost">Aria服务器地址：</system:String>
@@ -335,6 +339,12 @@
     <system:String x:Key="Info">信息</system:String>
     <system:String x:Key="Warning">警告</system:String>
     <system:String x:Key="Error">错误</system:String>
+    <system:String x:Key="DownloadRuntimeFailureTitle">下载系统无法启动</system:String>
+    <system:String x:Key="DownloadRuntimeFailureMessage">应用仍可继续使用，但本次运行无法下载。请复制下面的错误信息，并在 GitHub 建立议题。</system:String>
+    <system:String x:Key="CopyErrorDetails">复制错误信息</system:String>
+    <system:String x:Key="ErrorDetailsCopied">错误信息已复制</system:String>
+    <system:String x:Key="CreateGitHubIssue">在 GitHub 建立议题</system:String>
+    <system:String x:Key="OpenGitHubIssueFailed">无法打开 GitHub，请手动前往项目议题页面。</system:String>
     <system:String x:Key="Allow">确定</system:String>
     <system:String x:Key="ActionUpdate">前往下载</system:String>
     <system:String x:Key="SkipCurrentVersion">跳过此版本</system:String>

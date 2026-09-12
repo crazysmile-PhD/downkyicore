@@ -27,6 +27,13 @@ public interface IDownloadTaskStore
         bool ignoreCase,
         CancellationToken cancellationToken);
 
+    Task<bool> IsLegacyUpgradeAdmissionBlockedAsync(CancellationToken cancellationToken) =>
+        Task.FromResult(false);
+
+    Task<OperationResult> ConfirmLegacyRemoteTasksStoppedAsync(
+        CancellationToken cancellationToken) =>
+        Task.FromResult(OperationResult.Success());
+
     Task<DownloadHistoryPage> GetHistoryPageAsync(
         DownloadHistoryCursor? cursor,
         int pageSize,

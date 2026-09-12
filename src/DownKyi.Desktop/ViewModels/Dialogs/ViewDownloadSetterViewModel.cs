@@ -11,6 +11,7 @@ using DownKyi.Application.Diagnostics;
 using DownKyi.Commands;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Utils;
+using DownKyi.Domain.Downloads;
 using DownKyi.Images;
 using DownKyi.Utils;
 using Microsoft.Extensions.Logging;
@@ -414,15 +415,15 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
         });
 
         // 返回数据
-        var parameters = new Dictionary<string, object?>(StringComparer.Ordinal)
-        {
-            { "directory", Directory },
-            { "downloadAudio", DownloadAudio },
-            { "downloadVideo", DownloadVideo },
-            { "downloadDanmaku", DownloadDanmaku },
-            { "downloadSubtitle", DownloadSubtitle },
-            { "downloadCover", DownloadCover }
-        };
+        var parameters = new DownloadContentSelection(
+                DownloadAudio,
+                DownloadVideo,
+                DownloadDanmaku,
+                DownloadSubtitle,
+                DownloadCover)
+            .ToLegacyMap()
+            .ToDictionary(entry => entry.Key, entry => (object?)entry.Value, StringComparer.Ordinal);
+        parameters["directory"] = Directory;
 
         CloseDialog(AppDialogOutcome.Accepted, parameters);
     }

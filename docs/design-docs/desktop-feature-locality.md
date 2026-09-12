@@ -1,7 +1,7 @@
 # Desktop Feature Locality
 
 Status: accepted target design; implementation deferred until v1.1.1 completes
-Last reviewed: 2026-08-11
+Last reviewed: 2026-09-11
 Evidence baseline: `912949735733c986bcfeefaa4300a5fdb25c907e`
 
 ## Scope
@@ -18,8 +18,9 @@ document.
 ## Current Ownership
 
 - `AppRoute` in `DownKyi.Application` is the sole navigation identity authority.
-- `AvaloniaNavigationService.GetViewModelType` owns route-to-ViewModel mapping.
-- `DesktopComposition` owns production DI registrations.
+- `NavigationViewModelFactory.GetViewModelType` owns route-to-ViewModel mapping.
+- `DesktopInteractionComposition` owns Navigation/Dialog registrations;
+  `DesktopComposition` selects that local composition from the root.
 - `App.axaml` owns Avalonia ViewModel-to-View presentation templates.
 - Shell ViewModels own local display order, titles, icons and selection state.
 

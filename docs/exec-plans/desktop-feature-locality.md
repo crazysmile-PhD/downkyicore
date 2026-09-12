@@ -82,7 +82,7 @@ navigation and return-state tests pass on all three Shells.
 1. Remove only `Tag` declarations and compatibility consumers proven unused.
 2. Resolve `UserSpaceChannel` according to the product decision and PR A
    reachability evidence.
-3. Update current architecture and knowledge graph to the implemented state.
+3. Update root `ARCHITECTURE.md` to the implemented state.
 
 Acceptance: no unowned legacy identity remains and focused navigation behavior
 stays green.
@@ -116,8 +116,8 @@ new source scanners or verifier frameworks.
 
 ## Documentation Rules
 
-- Stable current ownership belongs in `../ai-knowledge-graph.md` and, after an
-  executable architecture change, root `ARCHITECTURE.md`.
+- Stable non-derived current ownership belongs in root `ARCHITECTURE.md`;
+  executable wiring belongs in the responsible composition code and tests.
 - Target rationale remains in the design document.
 - Temporary measurements remain in the implementing PR rather than stable
   documentation.

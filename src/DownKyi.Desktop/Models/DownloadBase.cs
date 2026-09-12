@@ -1,7 +1,7 @@
 using System;
-using System.Collections.Generic;
 using System.ComponentModel;
 using DownKyi.Core.BiliApi.BiliUtils;
+using DownKyi.Domain.Downloads;
 
 namespace DownKyi.Models;
 
@@ -13,22 +13,14 @@ internal class DownloadBase
         // 唯一id
         Id = Guid.NewGuid().ToString("N");
 
-        // 初始化需要下载的内容
-        NeedDownloadContent = new Dictionary<string, bool>
-        {
-            { "downloadAudio", true },
-            { "downloadVideo", true },
-            { "downloadDanmaku", true },
-            { "downloadSubtitle", true },
-            { "downloadCover", true }
-        };
+        NeedDownloadContent = DownloadContentSelection.All;
     }
 
     // 此条下载项的id
     public string Id { get; set; } = string.Empty;
 
     // 需要下载的内容
-    public IDictionary<string, bool> NeedDownloadContent { get; internal set; }
+    public DownloadContentSelection NeedDownloadContent { get; internal set; }
 
     // 视频的id
     public string Bvid { get; set; } = string.Empty;

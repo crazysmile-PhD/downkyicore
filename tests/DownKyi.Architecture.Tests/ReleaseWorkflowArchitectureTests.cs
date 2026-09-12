@@ -62,6 +62,76 @@ public sealed class ReleaseWorkflowArchitectureTests
     }
 
     [Fact]
+    public void OrdinaryPullRequestProducesSuccessfulFfmpegRequiredCheckWithoutReleaseWork()
+    {
+        var workflow = File.ReadAllText(
+            Path.Combine(RepositoryRoot, ".github", "workflows", "build.yml"));
+        var lines = workflow.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+        var pullRequest = GetYamlBlock(lines, "  pull_request:", 2);
+        var detector = GetYamlBlock(lines, "  detect-production-manifest-change:", 2);
+        var tooling = GetYamlBlock(lines, "  ffmpeg-tooling:", 2);
+        var preflight = GetYamlBlock(lines, "  external-assets-preflight:", 2);
+        var gate = GetYamlBlock(lines, "  ffmpeg-required-gate:", 2);
+        var release = GetYamlBlock(lines, "  release-gate:", 2);
+
+        Assert.DoesNotContain(pullRequest, line =>
+            GetIndent(line) == 4 && line.Trim() == "paths:");
+        Assert.Contains("    if: ${{ github.event_name != 'pull_request' || needs.detect-production-manifest-change.outputs.ffmpeg_related == 'true' }}", tooling);
+        Assert.Contains("    if: ${{ always() && !inputs.update_ffmpeg_assets && needs.ffmpeg-tooling.result == 'success' && (github.event_name != 'pull_request' || needs.detect-production-manifest-change.outputs.external_assets == 'true') }}", preflight);
+        Assert.Contains("    needs: external-assets-preflight", release);
+        Assert.Contains("    name: FFmpeg manifest gate", gate);
+        Assert.Contains("    if: ${{ always() && github.event_name == 'pull_request' }}", gate);
+        Assert.Contains("      - detect-production-manifest-change", gate);
+        Assert.Contains("      - ffmpeg-tooling", gate);
+        Assert.Contains("      - external-assets-preflight", gate);
+        Assert.Contains("          test \"$DETECTION_RESULT\" = success", gate);
+        Assert.Contains("          if [ \"$FFMPEG_RELATED\" = true ]; then", gate);
+        Assert.Contains("          if [ \"$EXTERNAL_ASSETS\" = true ]; then", gate);
+        Assert.Contains("            test \"$TOOLING_RESULT\" = skipped", gate);
+        Assert.Contains("            test \"$PREFLIGHT_RESULT\" = skipped", gate);
+        Assert.DoesNotContain("              - 'src/DownKyi.Desktop/**'", detector);
+    }
+
+    [Fact]
+    public void FfmpegPullRequestValidationFailuresReachTheRequiredCheck()
+    {
+        var workflow = File.ReadAllText(
+            Path.Combine(RepositoryRoot, ".github", "workflows", "build.yml"));
+        var lines = workflow.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+        var detector = GetYamlBlock(lines, "  detect-production-manifest-change:", 2);
+        var tooling = GetYamlBlock(lines, "  ffmpeg-tooling:", 2);
+        var preflight = GetYamlBlock(lines, "  external-assets-preflight:", 2);
+        var gate = GetYamlBlock(lines, "  ffmpeg-required-gate:", 2);
+        var ffmpegPaths = GetYamlBlock(detector.ToArray(), "            ffmpeg_related:", 12)
+            .Where(line => GetIndent(line) == 14 && line.TrimStart().StartsWith("- ", StringComparison.Ordinal))
+            .Select(line => line.Trim()[2..].Trim('\'', '"'))
+            .ToArray();
+
+        Assert.Equal(
+            [
+                "script/assets/external-assets.json",
+                "script/ffmpeg-assets.py",
+                "script/ffmpeg.ps1",
+                "script/ffmpeg.sh",
+                "script/tests/test_ffmpeg_assets.py",
+                ".github/workflows/build.yml",
+                ".github/workflows/update-ffmpeg-assets.yml"
+            ], ffmpegPaths);
+        Assert.Contains("    needs: detect-production-manifest-change", tooling);
+        Assert.Contains("      - name: Run FFmpeg asset guards", tooling);
+        Assert.Contains("        run: python -m unittest script/tests/test_ffmpeg_assets.py -v", tooling);
+        Assert.DoesNotContain("continue-on-error: true", tooling);
+        Assert.Contains("        run: python script/ffmpeg-assets.py validate-manifest --manifest script/assets/external-assets.json", preflight);
+        Assert.Contains("        run: python script/ffmpeg-assets.py preflight --manifest script/assets/external-assets.json --timeout 30", preflight);
+        Assert.Contains("          set -e", gate);
+        Assert.Contains("          FFMPEG_RELATED: ${{ needs.detect-production-manifest-change.outputs.ffmpeg_related }}", gate);
+        Assert.Contains("          EXTERNAL_ASSETS: ${{ needs.detect-production-manifest-change.outputs.external_assets }}", gate);
+        Assert.Contains("            test \"$TOOLING_RESULT\" = success", gate);
+        Assert.Contains("            test \"$PREFLIGHT_RESULT\" = success", gate);
+        Assert.DoesNotContain("continue-on-error: true", gate);
+    }
+
+    [Fact]
     public void TagReleaseDependencyGuardRejectsJobLevelSkipsAndNonExecutableLookalikes()
     {
         const string validWorkflow = """
@@ -411,6 +481,12 @@ public sealed class ReleaseWorkflowArchitectureTests
             Path.Combine(RepositoryRoot, "script", "macos", "verify-app-launch.sh"));
         var verifyDmgScript = File.ReadAllText(
             Path.Combine(RepositoryRoot, "script", "macos", "verify-dmg.sh"));
+        var verifyDmgContentsScript = File.ReadAllText(
+            Path.Combine(RepositoryRoot, "script", "macos", "verify-dmg-contents.sh"));
+        var ariaIntegrityScript = File.ReadAllText(
+            Path.Combine(RepositoryRoot, "script", "macos", "aria2-runtime-integrity.sh"));
+        var ariaReadinessScript = File.ReadAllText(
+            Path.Combine(RepositoryRoot, "script", "macos", "verify-aria2-runtime-readiness.sh"));
 
         Assert.DoesNotContain(
             "MACOS_SIGNING_REQUIRED",
@@ -435,6 +511,7 @@ public sealed class ReleaseWorkflowArchitectureTests
             workflow,
             "Package app",
             "Validate packaged runtime",
+            "Verify pre-sign aria2 supply-chain boundary",
             "Sign app",
             "Verify app signature",
             "Notarize app",
@@ -453,6 +530,13 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.Contains("find \"$APP_NAME/Contents\" -type f", signScript, StringComparison.Ordinal);
         Assert.Contains("is_signable_app_file \"$file\"", signScript, StringComparison.Ordinal);
         Assert.Contains("codesign_app_path \"$file\"", signScript, StringComparison.Ordinal);
+        AssertInOrder(
+            signScript,
+            "aria2-runtime-integrity.sh\" verify \"$APP_NAME\"",
+            "codesign_app_path \"$file\"",
+            "aria2-runtime-integrity.sh\" refresh \"$APP_NAME\"",
+            "codesign_app_path \"$MAIN_EXECUTABLE\"",
+            "codesign_app_path \"$APP_NAME\"");
         Assert.Contains("Print :CFBundleExecutable", signScript, StringComparison.Ordinal);
         Assert.Contains("codesign_app_path \"$MAIN_EXECUTABLE\"", signScript, StringComparison.Ordinal);
         Assert.Contains("codesign_app_path \"$APP_NAME\"", signScript, StringComparison.Ordinal);
@@ -472,6 +556,110 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.Contains("codesign --verify --verbose=2", verifyDmgScript, StringComparison.Ordinal);
         Assert.Contains("xcrun stapler validate", verifyDmgScript, StringComparison.Ordinal);
         Assert.Contains("spctl --assess --type open --context context:primary-signature", verifyDmgScript, StringComparison.Ordinal);
+        Assert.Contains("/usr/bin/ditto \"$APP_PATH\" \"$COPIED_APP_PATH\"", verifyDmgContentsScript, StringComparison.Ordinal);
+        Assert.Contains("verify-app.sh\" \"$COPIED_APP_PATH\"", verifyDmgContentsScript, StringComparison.Ordinal);
+        Assert.Equal(2, CountOccurrences(verifyDmgContentsScript, "aria2-runtime-integrity.sh\" verify"));
+        Assert.Equal(2, CountOccurrences(verifyDmgContentsScript, "verify-aria2-runtime-readiness.sh"));
+        Assert.Contains("verify-app-launch.sh\" \"$COPIED_APP_PATH\"", verifyDmgContentsScript, StringComparison.Ordinal);
+
+        Assert.Contains("runtime checksum path must remain a symlink", ariaIntegrityScript, StringComparison.Ordinal);
+        Assert.Contains("Contents/_CodeSignature/CodeResources", ariaIntegrityScript, StringComparison.Ordinal);
+        Assert.Contains("refusing to modify the runtime checksum after the outer app signature is sealed", ariaIntegrityScript, StringComparison.Ordinal);
+        Assert.Contains("lipo -archs", ariaIntegrityScript, StringComparison.Ordinal);
+        Assert.Contains("aria2.getVersion", ariaReadinessScript, StringComparison.Ordinal);
+        Assert.Contains("downkyi-secure-redirect-v2", ariaReadinessScript, StringComparison.Ordinal);
+        Assert.Contains("isinstance(features, list)", ariaReadinessScript, StringComparison.Ordinal);
+        Assert.Contains("--help=#all", ariaReadinessScript, StringComparison.Ordinal);
+        Assert.Contains("\"$PROBE_ROOT/dht.dat\"", ariaReadinessScript, StringComparison.Ordinal);
+        Assert.Contains("\"$PROBE_ROOT/dht6.dat\"", ariaReadinessScript, StringComparison.Ordinal);
+        Assert.Contains("aria2.shutdown", ariaReadinessScript, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void MacBuildKeepsCredentialFreePackagingAndLaunchValidation()
+    {
+        var workflow = File.ReadAllText(
+            Path.Combine(RepositoryRoot, ".github", "workflows", "build.yml"));
+        var macSteps = GetWorkflowSteps(workflow, "  build-macos:");
+
+        Assert.Contains("MACOS_ADHOC_SIGNING: ${{ env.HAS_MACOS_SIGNING != 'true' }}", workflow, StringComparison.Ordinal);
+        foreach (var stepName in new[]
+                 {
+                     "Run macOS packaging regressions",
+                     "Build ${{ matrix.cpu }}",
+                     "Package app",
+                     "Verify pre-sign aria2 supply-chain boundary",
+                     "Sign app",
+                     "Verify app signature",
+                     "Create DMG",
+                     "Verify packaged DMG contents and launch app"
+                 })
+        {
+            AssertStepHasNoCondition(macSteps, stepName);
+        }
+
+        foreach (var stepName in new[]
+                 {
+                     "Import certificate",
+                     "Resolve signing identity",
+                     "Notarize app",
+                     "Verify notarized app",
+                     "Sign DMG",
+                     "Verify signed DMG",
+                     "Notarize DMG",
+                     "Verify notarized DMG"
+                 })
+        {
+            AssertStepCondition(macSteps, stepName, "${{ env.HAS_MACOS_SIGNING == 'true' }}");
+        }
+    }
+
+    [Fact]
+    public void MacAdHocPackageWorkflowCoversBothRidsWithoutAppleCredentials()
+    {
+        var workflow = File.ReadAllText(
+            Path.Combine(RepositoryRoot, ".github", "workflows", "macos-adhoc-package.yml"));
+        var lines = workflow.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+        var pullRequest = GetYamlBlock(lines, "  pull_request:", 2);
+        var pathBlock = GetYamlBlock(pullRequest.ToArray(), "    paths:", 4);
+        var triggerPaths = pathBlock
+            .Where(line => GetIndent(line) == 6 && line.TrimStart().StartsWith("- ", StringComparison.Ordinal))
+            .Select(line => line.Trim()[2..].Trim('\'', '"'))
+            .ToHashSet(StringComparer.Ordinal);
+
+        Assert.Contains("runs-on: ${{ matrix.os }}", workflow, StringComparison.Ordinal);
+        Assert.Contains("os: macos-26", workflow, StringComparison.Ordinal);
+        Assert.Contains("os: macos-15-intel", workflow, StringComparison.Ordinal);
+        Assert.Contains("runtime: osx-x64", workflow, StringComparison.Ordinal);
+        Assert.Contains("runtime: osx-arm64", workflow, StringComparison.Ordinal);
+        Assert.Contains("MACOS_ADHOC_SIGNING: 'true'", workflow, StringComparison.Ordinal);
+        foreach (var packageInput in new[]
+                 {
+                     "DownKyi/**",
+                     "DownKyi.Core/**",
+                     "src/**",
+                     "script/aria2.sh",
+                     "script/ffmpeg.sh",
+                     "script/ffmpeg-assets.py",
+                     "script/validate-publish-output.ps1",
+                     "script/assets/**",
+                     "script/macos/**"
+                 })
+        {
+            Assert.Contains(packageInput, triggerPaths);
+        }
+
+        Assert.Contains("dotnet publish", workflow, StringComparison.Ordinal);
+        Assert.Contains("./sign.sh", workflow, StringComparison.Ordinal);
+        Assert.Contains("./verify-app.sh", workflow, StringComparison.Ordinal);
+        Assert.Contains("./aria2-runtime-integrity.sh verify", workflow, StringComparison.Ordinal);
+        Assert.Contains("flags=.*runtime", workflow, StringComparison.Ordinal);
+        Assert.Contains("create-dmg", workflow, StringComparison.Ordinal);
+        Assert.Contains("./verify-dmg-contents.sh", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("secrets.", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("notarytool", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("stapler", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("spctl", workflow, StringComparison.Ordinal);
     }
 
     [Fact]

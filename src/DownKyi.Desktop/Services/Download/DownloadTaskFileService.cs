@@ -1,11 +1,12 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Net.Http;
+using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Diagnostics;
+using DownKyi.Domain.Downloads;
+using DownKyi.Domain.Results;
 using DownKyi.ViewModels.DownloadManager;
 using Microsoft.Extensions.Logging;
 
@@ -13,20 +14,22 @@ namespace DownKyi.Services.Download;
 
 internal sealed class DownloadTaskFileService
 {
-    private static readonly string[] MediaExtensions = { ".mp4", ".aac", ".mp3", ".flac" };
-    private static readonly string[] TextExtensions = { ".ass", ".srt", ".nfo" };
-    private static readonly string[] ImageExtensions = { ".jpg", ".jpeg", ".png", ".webp", ".avif", ".gif" };
-    private static readonly string[] TempExtensions = { "", ".aria2", ".download" };
     private readonly AriaRuntimeClientRegistry _ariaClientRegistry;
     private readonly ILogger<DownloadTaskFileService> _logger;
+    private readonly DownloadTaskStaging? _staging;
+    private readonly DownloadTaskStateWriter? _stateWriter;
 
     public DownloadTaskFileService(
         AriaRuntimeClientRegistry ariaClientRegistry,
-        ILogger<DownloadTaskFileService> logger)
+        ILogger<DownloadTaskFileService> logger,
+        DownloadTaskStaging? staging = null,
+        DownloadTaskStateWriter? stateWriter = null)
     {
         _ariaClientRegistry = ariaClientRegistry
             ?? throw new ArgumentNullException(nameof(ariaClientRegistry));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _staging = staging;
+        _stateWriter = stateWriter;
     }
 
     public async Task CancelActiveDownloadAsync(DownloadingItem downloading)
@@ -76,204 +79,171 @@ internal sealed class DownloadTaskFileService
 
     public Task<DownloadFileDeletionResult> DeleteGeneratedFilesAsync(
         DownloadingItem downloading,
+        DownloadTask task,
         CancellationToken cancellationToken = default)
-    {
-        var files = GetGeneratedFiles(downloading);
-        return DeleteFilesAsync(files, cancellationToken);
-    }
-
-    internal Task<DownloadFileDeletionResult> DeleteFilesAsync(
-        IEnumerable<string> files,
-        CancellationToken cancellationToken = default)
-    {
-        // File.Delete has no async API and can block on network drives or antivirus scans.
-        return Task.Run(() => DeleteFilesCoreAsync(files, cancellationToken), cancellationToken);
-    }
-
-    internal Task<DownloadFileDeletionResult> DeleteTransferFilesAsync(
-        IEnumerable<string> transferFiles,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(transferFiles);
-        var files = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var transferFile in transferFiles)
-        {
-            if (!string.IsNullOrWhiteSpace(transferFile))
-            {
-                AddWithTempFiles(files, Path.GetFullPath(transferFile));
-            }
-        }
-
-        return DeleteFilesAsync(files, cancellationToken);
-    }
-
-    private async Task<DownloadFileDeletionResult> DeleteFilesCoreAsync(
-        IEnumerable<string> files,
-        CancellationToken cancellationToken)
-    {
-        var attemptedCount = 0;
-        var failedCount = 0;
-        foreach (var file in files)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            attemptedCount++;
-            if (!await TryDeleteFileAsync(file, cancellationToken).ConfigureAwait(false))
-            {
-                failedCount++;
-            }
-        }
-
-        return new DownloadFileDeletionResult(attemptedCount, failedCount);
-    }
-
-    public IReadOnlyCollection<string> GetGeneratedFiles(DownloadingItem downloading)
     {
         ArgumentNullException.ThrowIfNull(downloading);
+        ArgumentNullException.ThrowIfNull(task);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (downloading.DownloadBase?.Id != task.Id.Value)
+        {
+            throw new InvalidOperationException("Download task identity changed during deletion.");
+        }
 
-        return GetGeneratedFiles(
-            downloading.DownloadBase?.FilePath,
-            downloading.Downloading.DownloadFiles?.Values);
+        if (_staging != null)
+        {
+            return Task.FromResult(_staging.CleanupTask(task)
+                ? new DownloadFileDeletionResult(1, 0)
+                : new DownloadFileDeletionResult(1, 1));
+        }
+
+        return Task.FromResult(new DownloadFileDeletionResult(0, 0));
     }
 
-    internal IReadOnlyCollection<string> GetGeneratedFiles(
-        string? filePath,
-        IEnumerable<string>? downloadFiles)
+    public async Task<OperationResult> PublishAsync(
+        DownloadExecutionContext context,
+        string key,
+        string stagedFile,
+        CancellationToken cancellationToken)
     {
-        var files = OperatingSystem.IsWindows()
-            ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            : new HashSet<string>(StringComparer.Ordinal);
-
-        var basePath = NormalizePath(filePath);
-        var directory = Path.GetDirectoryName(basePath);
-
-        if (!string.IsNullOrWhiteSpace(directory))
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        ArgumentException.ThrowIfNullOrWhiteSpace(stagedFile);
+        if (_staging == null || _stateWriter == null || context.StagingDirectory == null)
         {
-            foreach (var fileName in downloadFiles ?? Enumerable.Empty<string>())
-            {
-                AddWithTempFiles(files, ResolveDownloadFile(directory, fileName));
-            }
+            throw new InvalidOperationException("Task-private staging is required for publication.");
         }
 
-        AddKnownOutputFiles(files, basePath);
-        AddSubtitleVariants(files, basePath);
-
-        return files
-            .Where(file => !string.IsNullOrWhiteSpace(file))
-            .Select(Path.GetFullPath)
-            .ToList();
-    }
-
-    private static void AddKnownOutputFiles(ISet<string> files, string basePath)
-    {
-        if (string.IsNullOrWhiteSpace(basePath))
+        var fullSource = Path.GetFullPath(stagedFile);
+        var stagingPath = Path.GetFullPath(context.StagingDirectory);
+        var comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        if (!string.Equals(Path.GetDirectoryName(fullSource), stagingPath, comparison))
         {
-            return;
+            throw new InvalidOperationException("Only a task-private staged file may be published.");
         }
 
-        foreach (var extension in MediaExtensions.Concat(TextExtensions))
-        {
-            AddWithTempFiles(files, basePath + extension);
-        }
-
-        foreach (var extension in ImageExtensions)
-        {
-            AddWithTempFiles(files, basePath + extension);
-            AddWithTempFiles(files, basePath + ".Cover" + extension);
-        }
-    }
-
-    private void AddSubtitleVariants(ISet<string> files, string basePath)
-    {
-        var directory = Path.GetDirectoryName(basePath);
-        var name = Path.GetFileName(basePath);
-        if (string.IsNullOrWhiteSpace(directory) || string.IsNullOrWhiteSpace(name) || !Directory.Exists(directory))
-        {
-            return;
-        }
-
+        var outputRoot = Path.GetDirectoryName(Path.GetFullPath(context.Input.OutputBasePath))!;
+        var destination = Path.Combine(outputRoot, Path.GetFileName(fullSource));
+        context.EnsureActive(cancellationToken);
+        var publishing = await FingerprintAsync(key, fullSource, cancellationToken).ConfigureAwait(true);
+        await _stateWriter.BeginPublishingArtifactAsync(
+            context.TaskId, publishing, cancellationToken).ConfigureAwait(true);
+        context.EnsureActive(cancellationToken);
         try
         {
-            foreach (var subtitle in Directory.EnumerateFiles(directory, $"{name}_*.srt", SearchOption.TopDirectoryOnly))
-            {
-                AddWithTempFiles(files, subtitle);
-            }
+            File.Move(fullSource, destination, overwrite: false);
         }
-        catch (IOException e)
+        catch (IOException)
         {
-            _logger.LogDebugMessage($"Enumerate subtitle variants failed: {e.Message}");
+            return OperationResult.Failure(new OperationError(
+                "download.publish.collision",
+                "The destination already exists or could not be published.",
+                OperationErrorKind.Conflict));
         }
-        catch (UnauthorizedAccessException e)
-        {
-            _logger.LogDebugMessage($"Enumerate subtitle variants was denied: {e.Message}");
-        }
+
+        await _stateWriter.RecordPublishedArtifactAsync(
+            context.TaskId, publishing, destination, CancellationToken.None).ConfigureAwait(true);
+        context.PublishedArtifacts[key] = destination;
+        return OperationResult.Success();
     }
 
-    private static void AddWithTempFiles(ISet<string> files, string file)
+    public async Task<(DownloadTask Task, bool CanRun)> ReconcilePublishingAsync(
+        DownloadTask task,
+        CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(file))
+        ArgumentNullException.ThrowIfNull(task);
+        var publishing = task.Output.PublishingArtifact;
+        if (publishing == null)
         {
-            return;
+            return (task, true);
         }
 
-        foreach (var extension in TempExtensions)
+        if (_staging == null || _stateWriter == null)
         {
-            files.Add(file + extension);
-        }
-    }
-
-    private static string ResolveDownloadFile(string directory, string fileName)
-    {
-        var normalized = NormalizePath(fileName);
-        return Path.IsPathRooted(normalized)
-            ? normalized
-            : Path.Combine(directory, normalized);
-    }
-
-    private static string NormalizePath(string? path)
-    {
-        return string.IsNullOrWhiteSpace(path)
-            ? string.Empty
-            : path.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar);
-    }
-
-    private async Task<bool> TryDeleteFileAsync(string file, CancellationToken cancellationToken)
-    {
-        for (var attempt = 0; attempt < 5; attempt++)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            try
-            {
-                if (File.Exists(file))
-                {
-                    File.Delete(file);
-                }
-
-                return true;
-            }
-            catch (IOException e) when (attempt < 4)
-            {
-                _logger.LogDebugMessage($"Delete generated file retry {attempt + 1}: {e.Message}");
-                await Task.Delay(TimeSpan.FromMilliseconds(200), cancellationToken).ConfigureAwait(false);
-            }
-            catch (UnauthorizedAccessException e) when (attempt < 4)
-            {
-                _logger.LogDebugMessage($"Delete generated file retry {attempt + 1}: {e.Message}");
-                await Task.Delay(TimeSpan.FromMilliseconds(200), cancellationToken).ConfigureAwait(false);
-            }
-            catch (IOException e)
-            {
-                _logger.LogErrorMessage("Generated file deletion failed.", e);
-                return false;
-            }
-            catch (UnauthorizedAccessException e)
-            {
-                _logger.LogErrorMessage("Generated file deletion was denied.", e);
-                return false;
-            }
+            throw new InvalidOperationException("Task-private staging is required for publication recovery.");
         }
 
-        return false;
+        var directory = _staging.GetDirectory(
+            task.Id, task.Output.BasePath, task.Output.StagingToken);
+        var stagedFile = Path.Combine(directory, publishing.FileName);
+        var destination = Path.Combine(
+            Path.GetDirectoryName(Path.GetFullPath(task.Output.BasePath))!,
+            publishing.FileName);
+        var stagedExists = File.Exists(stagedFile);
+        var destinationExists = File.Exists(destination);
+        if (stagedExists)
+        {
+            if (destinationExists ||
+                !await MatchesFingerprintAsync(stagedFile, publishing, cancellationToken)
+                    .ConfigureAwait(true))
+            {
+                return (task, false);
+            }
+
+            if (task.Phase == DownloadPhase.Canceled)
+            {
+                var cleared = await _stateWriter.ClearPublishingArtifactAsync(
+                    task.Id, cancellationToken).ConfigureAwait(true);
+                return (cleared, false);
+            }
+
+            return (task, true); // The existing staged product can retry its non-overwrite move.
+        }
+
+        if (!destinationExists)
+        {
+            var cleared = await _stateWriter.ClearPublishingArtifactAsync(
+                task.Id, cancellationToken).ConfigureAwait(true);
+            return (cleared, true);
+        }
+
+        if (!await MatchesFingerprintAsync(destination, publishing, cancellationToken)
+                .ConfigureAwait(true))
+        {
+            return (task, false);
+        }
+
+        var published = await _stateWriter.RecordPublishedArtifactAsync(
+            task.Id, publishing, destination, cancellationToken).ConfigureAwait(true);
+        return (published, true);
     }
+
+    private static async Task<DownloadPublishingArtifact> FingerprintAsync(
+        string key,
+        string path,
+        CancellationToken cancellationToken)
+    {
+        if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+        {
+            throw new IOException("A redirected file cannot be published.");
+        }
+
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read,
+            FileShare.Read, 1024 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        var length = stream.Length;
+        var digest = await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false);
+        return new DownloadPublishingArtifact(key, Path.GetFileName(path), length,
+            Convert.ToHexString(digest));
+    }
+
+    private static async Task<bool> MatchesFingerprintAsync(
+        string path,
+        DownloadPublishingArtifact expected,
+        CancellationToken cancellationToken)
+    {
+        if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+        {
+            return false;
+        }
+
+        var actual = await FingerprintAsync(expected.Key, path, cancellationToken)
+            .ConfigureAwait(false);
+        return actual.Length == expected.Length && actual.Sha256 == expected.Sha256;
+    }
+
+    public void CleanupStaging(DownloadTaskId taskId) => _staging?.CleanupTask(taskId);
+
 }
 
 internal readonly record struct DownloadFileDeletionResult(int AttemptedCount, int FailedCount)

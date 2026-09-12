@@ -11,6 +11,7 @@ public sealed class ApplicationLogProvider :
     IAsyncDisposable
 {
     private readonly ApplicationLogOptions _options;
+    private readonly ISensitiveDataRedactor _redactor;
     private readonly ApplicationLogRecordFactory _recordFactory;
     private readonly ApplicationRecentLogBuffer _recentBuffer;
     private readonly NLogAsyncRollingFileSink _sink;
@@ -37,6 +38,7 @@ public sealed class ApplicationLogProvider :
     {
         ValidateOptions(options);
         _options = options with { LogDirectory = Path.GetFullPath(options.LogDirectory) };
+        _redactor = redactor ?? throw new ArgumentNullException(nameof(redactor));
         _recordFactory = new ApplicationLogRecordFactory(redactor, timeProvider);
         _recentBuffer = new ApplicationRecentLogBuffer(_options.RecentEventCapacity);
         _sink = new NLogAsyncRollingFileSink(_options);
@@ -85,6 +87,11 @@ public sealed class ApplicationLogProvider :
             (double)retention.RetainedBytes / _options.MaxTotalBytes,
             retention.LastMaintenanceUtc,
             retention.MalformedExportRecords);
+    }
+
+    public string RedactDiagnosticText(string? text)
+    {
+        return _redactor.Redact(text);
     }
 
     public async Task FlushAsync(CancellationToken cancellationToken = default)

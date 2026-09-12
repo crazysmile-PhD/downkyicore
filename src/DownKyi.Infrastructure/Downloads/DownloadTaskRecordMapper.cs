@@ -55,11 +55,16 @@ internal static class DownloadTaskRecordMapper
             GetString(reader, "page_cover_url"),
             reader.GetInt32(reader.GetOrdinal("zone_id")));
         var plan = new DownloadPlan(
-            requestedAssets,
+            DownloadContentSelection.FromLegacyMap(requestedAssets),
             transferFiles,
             reader.IsDBNull(reader.GetOrdinal("play_stream_type"))
                 ? 0
-                : reader.GetInt32(reader.GetOrdinal("play_stream_type")));
+                : reader.GetInt32(reader.GetOrdinal("play_stream_type")),
+            reader.IsDBNull(reader.GetOrdinal("nfo_request"))
+                ? null
+                : DownloadStoreJson.ReadNfoRequest(
+                    reader.GetString(reader.GetOrdinal("nfo_request")),
+                    "nfo_request"));
         var progress = new DownloadProgress(
             reader.IsDBNull(reader.GetOrdinal("progress")) ? 0 : reader.GetDouble(reader.GetOrdinal("progress")),
             GetNullableInt64(reader, "downloaded_bytes"),
@@ -109,7 +114,12 @@ internal static class DownloadTaskRecordMapper
             id,
             metadata,
             plan,
-            new DownloadOutput(GetString(reader, "file_path"), GetNullableString(reader, "file_size")),
+            new DownloadOutput(
+                GetString(reader, "file_path"),
+                GetNullableString(reader, "file_size"),
+                DownloadStoreJson.ReadStringMap(GetString(reader, "published_artifacts"), "published_artifacts"),
+                GetString(reader, "staging_token"),
+                ReadPublishingArtifact(reader)),
             phase,
             progress,
             transfer,
@@ -156,6 +166,26 @@ internal static class DownloadTaskRecordMapper
     {
         var ordinal = reader.GetOrdinal(column);
         return reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
+    }
+
+    private static DownloadPublishingArtifact? ReadPublishingArtifact(SqliteDataReader reader)
+    {
+        var key = GetNullableString(reader, "publishing_key");
+        var fileName = GetNullableString(reader, "publishing_file_name");
+        var length = GetNullableInt64(reader, "publishing_length");
+        var sha256 = GetNullableString(reader, "publishing_sha256");
+        if (key == null && fileName == null && length == null && sha256 == null)
+        {
+            return null;
+        }
+
+        if (key == null || fileName == null || length == null || sha256 == null)
+        {
+            throw new DownloadRecordCorruptException(
+                "publishing_artifact", "Stored publishing artifact is incomplete.");
+        }
+
+        return new DownloadPublishingArtifact(key, fileName, length.Value, sha256);
     }
 
     private static long? GetNullableInt64(SqliteDataReader reader, string column)

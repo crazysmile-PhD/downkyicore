@@ -1,0 +1,116 @@
+name: Retry timed-out Strict PR CI job
+
+on:
+  workflow_run:
+    workflows:
+      - Strict PR CI
+    types:
+      - completed
+
+permissions:
+  actions: write
+  checks: read
+
+concurrency:
+  group: retry-timed-out-strict-pr-ci-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+jobs:
+  retry-single-timeout:
+    name: Retry one timed-out build-test job
+    if: >-
+      ${{
+        github.event.workflow_run.run_attempt == 1 &&
+        github.event.workflow_run.conclusion != 'success'
+      }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Retry eligible job
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const eventRun = context.payload.workflow_run;
+            const expectedBuildTests = [
+              "Build and test (windows-latest)",
+              "Build and test (ubuntu-latest)",
+              "Build and test (macos-latest)",
+            ];
+            const readRun = async () => (await github.request(
+              "GET /repos/{owner}/{repo}/actions/runs/{run_id}",
+              { owner, repo, run_id: eventRun.id },
+            )).data;
+            const isOriginalCompletedRun = (run) =>
+              run.id === eventRun.id &&
+              run.path === ".github/workflows/quality.yml" &&
+              run.head_sha === eventRun.head_sha &&
+              run.status === "completed" &&
+              run.run_attempt === 1;
+
+            const liveRun = await readRun();
+            if (!isOriginalCompletedRun(liveRun)) {
+              core.info("No retry: the triggering run is no longer the original completed attempt.");
+              return;
+            }
+
+            const jobs = await github.paginate(
+              "GET /repos/{owner}/{repo}/actions/runs/{run_id}/attempts/{attempt_number}/jobs",
+              { owner, repo, run_id: eventRun.id, attempt_number: 1, per_page: 100 },
+            );
+            const buildJobs = jobs.filter((job) => job.name.startsWith("Build and test ("));
+            const exactMatrix =
+              buildJobs.length === expectedBuildTests.length &&
+              expectedBuildTests.every(
+                (name) => buildJobs.filter((job) => job.name === name).length === 1,
+              );
+            if (!exactMatrix) {
+              core.info("No retry: the build-test matrix does not match the guarded policy.");
+              return;
+            }
+
+            const cancelledBuildJobs = buildJobs.filter(
+              (job) => job.status === "completed" && job.conclusion === "cancelled",
+            );
+            const timedOut = [];
+            for (const job of cancelledBuildJobs) {
+              const annotations = await github.paginate(
+                "GET /repos/{owner}/{repo}/check-runs/{check_run_id}/annotations",
+                { owner, repo, check_run_id: job.id, per_page: 100 },
+              );
+              const hasTimeoutAnnotation = annotations.some(
+                (annotation) =>
+                  annotation.annotation_level === "failure" &&
+                  annotation.message === "The job has exceeded the maximum execution time of 20m0s",
+              );
+              if (hasTimeoutAnnotation) {
+                timedOut.push(job);
+              }
+            }
+            if (timedOut.length !== 1) {
+              core.info(`No retry: expected one timed-out build-test job, found ${timedOut.length}.`);
+              return;
+            }
+
+            const timedOutJob = timedOut[0];
+            const otherUnsuccessful = jobs.filter(
+              (job) =>
+                job.id !== timedOutJob.id &&
+                (job.status !== "completed" || job.conclusion !== "success"),
+            );
+            if (otherUnsuccessful.length !== 0) {
+              core.info("No retry: another job was unsuccessful or inconclusive.");
+              return;
+            }
+
+            const recheck = await readRun();
+            if (!isOriginalCompletedRun(recheck)) {
+              core.info("No retry: another retry started before the final check.");
+              return;
+            }
+
+            core.info(`Retrying ${timedOutJob.name} (${timedOutJob.id}) for ${eventRun.head_sha}.`);
+            await github.request(
+              "POST /repos/{owner}/{repo}/actions/jobs/{job_id}/rerun",
+              { owner, repo, job_id: timedOutJob.id },
+            );

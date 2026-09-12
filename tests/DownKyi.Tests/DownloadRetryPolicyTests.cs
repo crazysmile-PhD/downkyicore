@@ -686,6 +686,7 @@ public sealed class DownloadRetryPolicyTests
         {
             var result = DownloadTransferFileCleanup.DeleteInvalidArtifacts(
                 media,
+                directory,
                 NullLogger.Instance);
 
             Assert.True(result.Succeeded);
@@ -693,6 +694,30 @@ public sealed class DownloadRetryPolicyTests
             Assert.False(File.Exists(media));
             Assert.False(File.Exists($"{media}.aria2"));
             Assert.False(File.Exists($"{media}.download"));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void InvalidArtifactCleanupRefusesPublishedPathOutsideTaskStaging()
+    {
+        var directory = CreateTemporaryDirectory("cleanup-boundary");
+        var staging = Path.Combine(directory, ".downkyi", "staging", "session", "task");
+        Directory.CreateDirectory(staging);
+        var published = Path.Combine(directory, "output.mp4");
+        File.WriteAllBytes(published, [91, 0, 255, 17]);
+        File.WriteAllBytes(published + ".aria2", [4]);
+        try
+        {
+            var result = DownloadTransferFileCleanup.DeleteInvalidArtifacts(
+                published, staging, NullLogger.Instance);
+
+            Assert.False(result.Succeeded);
+            Assert.Equal(new byte[] { 91, 0, 255, 17 }, File.ReadAllBytes(published));
+            Assert.True(File.Exists(published + ".aria2"));
         }
         finally
         {
@@ -729,6 +754,7 @@ public sealed class DownloadRetryPolicyTests
             var request = CreateRequest("https://primary.invalid/media") with
             {
                 Directory = directory,
+                StagingDirectory = directory,
                 FileName = Path.GetFileName(target)
             };
 
@@ -792,7 +818,8 @@ public sealed class DownloadRetryPolicyTests
             PersistProgressAsync: static (_, _) => Task.CompletedTask,
             SetBackendIdentityAsync: setBackendIdentityAsync,
             SetBuiltinDownloadService: static _ => { },
-            CancellationToken.None);
+            CancellationToken.None,
+            directory);
     }
 
     private static string CreateTemporaryDirectory(string purpose)

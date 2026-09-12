@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.Versioning;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace DownKyi.MacOS.Tests;
@@ -18,6 +19,8 @@ public sealed class MacSigningScriptTests
         Assert.All(calls, arguments =>
         {
             Assert.DoesNotContain("--timestamp", arguments);
+            Assert.DoesNotContain("--options=runtime", arguments);
+            Assert.DoesNotContain("--entitlements", arguments);
             AssertCodesignIdentity(arguments, "-");
         });
     }
@@ -32,6 +35,8 @@ public sealed class MacSigningScriptTests
         Assert.All(calls, arguments =>
         {
             Assert.Contains("--timestamp", arguments);
+            Assert.Contains("--options=runtime", arguments);
+            Assert.Contains("--entitlements", arguments);
             AssertCodesignIdentity(arguments, identity);
         });
     }
@@ -51,7 +56,13 @@ public sealed class MacSigningScriptTests
 
         try
         {
-            foreach (var fileName in new[] { "sign.sh", "codesign-common.sh", "DownKyi.entitlements" })
+            foreach (var fileName in new[]
+                     {
+                         "sign.sh",
+                         "codesign-common.sh",
+                         "aria2-runtime-integrity.sh",
+                         "DownKyi.entitlements"
+                     })
             {
                 var source = File.ReadAllText(
                     Path.Combine(RepositoryRoot, "script", "macos", fileName));
@@ -67,7 +78,7 @@ public sealed class MacSigningScriptTests
                 #!/bin/bash
                 set -eu
                 case "$1" in
-                  */DownKyi|*.dylib)
+                  */DownKyi|*/aria2c|*.dylib)
                     printf '%s: Mach-O 64-bit executable\n' "$1"
                     ;;
                   *.dll)
@@ -83,6 +94,9 @@ public sealed class MacSigningScriptTests
                 """
                 #!/bin/bash
                 set -eu
+                if [ "${1:-}" = "--verify" ] || [ "${1:-}" = "-d" ]; then
+                  exit 1
+                fi
                 {
                   printf 'CALL'
                   for argument in "$@"; do
@@ -95,6 +109,22 @@ public sealed class MacSigningScriptTests
             File.WriteAllText(Path.Combine(appBinaryDirectory, "libfixture.dylib"), "fixture");
             File.WriteAllText(Path.Combine(appBinaryDirectory, "ManagedDependency.dll"), "fixture");
             File.WriteAllText(Path.Combine(appBinaryDirectory, "runtimeconfig.json"), "{}");
+            var ariaDirectory = Path.Combine(appBinaryDirectory, "aria2");
+            var ariaResourceDirectory = Path.Combine(
+                appContentsDirectory,
+                "Resources",
+                "dotnet",
+                "aria2");
+            Directory.CreateDirectory(ariaDirectory);
+            Directory.CreateDirectory(ariaResourceDirectory);
+            var ariaExecutable = Path.Combine(ariaDirectory, "aria2c");
+            File.WriteAllText(ariaExecutable, "fixture");
+            File.WriteAllText(
+                Path.Combine(ariaResourceDirectory, "aria2c.sha256"),
+                Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(ariaExecutable))));
+            File.CreateSymbolicLink(
+                Path.Combine(ariaDirectory, "aria2c.sha256"),
+                "../../Resources/dotnet/aria2/aria2c.sha256");
             File.WriteAllText(
                 Path.Combine(appContentsDirectory, "Info.plist"),
                 """
@@ -121,7 +151,7 @@ public sealed class MacSigningScriptTests
             startInfo.ArgumentList.Add("-c");
             startInfo.ArgumentList.Add(
                 "set -euo pipefail; " +
-                "chmod +x stub-bin/file stub-bin/codesign; " +
+                "chmod +x stub-bin/file stub-bin/codesign Test.app/Contents/MacOS/aria2/aria2c; " +
                 "export PATH=\"$PWD/stub-bin:$PATH\"; " +
                 "export CODESIGN_LOG=\"$PWD/codesign.log\"; " +
                 $"export MACOS_ADHOC_SIGNING={(adHoc ? "true" : "false")}; " +
@@ -159,12 +189,13 @@ public sealed class MacSigningScriptTests
 
     private static void AssertSigningCoverage(string[][] calls)
     {
-        Assert.Equal(4, calls.Length);
+        Assert.Equal(5, calls.Length);
 
         var signedPaths = calls.Select(arguments => arguments[^1]).ToArray();
         Assert.Contains("Test.app/Contents/MacOS/DownKyi", signedPaths);
         Assert.Contains("Test.app/Contents/MacOS/libfixture.dylib", signedPaths);
         Assert.Contains("Test.app/Contents/MacOS/ManagedDependency.dll", signedPaths);
+        Assert.Contains("Test.app/Contents/MacOS/aria2/aria2c", signedPaths);
         Assert.DoesNotContain("Test.app/Contents/MacOS/runtimeconfig.json", signedPaths);
         Assert.Equal("Test.app/Contents/MacOS/DownKyi", signedPaths[^2]);
         Assert.Equal("Test.app", signedPaths[^1]);

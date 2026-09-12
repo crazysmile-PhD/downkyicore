@@ -9,7 +9,7 @@
 
 </div>
 
-DownKyi Core 是基于哔哩下载姬 Windows 版与 Avalonia 的跨平台 B 站视频下载工具。v1.1.3 使用 .NET 10、Avalonia 12、Microsoft Generic Host、Microsoft DI 与 CommunityToolkit MVVM，并重构了导航、下载状态、SQLite、HTTP、日志、aria2、FFmpeg 和应用生命周期。
+DownKyi Core 是基于哔哩下载姬 Windows 版与 Avalonia 的跨平台 B 站视频下载工具。项目使用 .NET 10、Avalonia 12、Microsoft Generic Host、Microsoft DI 与 CommunityToolkit MVVM，并重构了导航、下载状态、SQLite、HTTP、日志、aria2、FFmpeg 和应用生命周期。
 
 ## 下载
 
@@ -125,7 +125,7 @@ flowchart TD
 
 - `AGENTS.md`：Agent 与贡献者入口、禁止事项和常用命令。
 - `ARCHITECTURE.md`：目前可执行拓扑与目标拓扑；两者尚未完全一致。
-- `docs/ai-knowledge-graph.md`：模块、调用关系、稳定契约与测试锚点。
+- `src/DownKyi.Desktop/Composition/DesktopComposition.cs`：Desktop 根组装；从这里进入相关模块的局部 composition、契约与构造函数。
 - `docs/refactoring-live-plan.md`：只包含尚未完成的工作和发布阻塞项。
 - `docs/design-docs/module-boundary-naming-audit.md`：可重现的模块边界与命名审查。
 
@@ -164,7 +164,7 @@ git diff --check
 - `tests/DownKyi.Tests`: UI 外围可抽取逻辑、下载流程与文件完整性测试。
 - `script`: release workflow 使用的 aria2、FFmpeg、PupNet 和平台打包脚本。
 - `docs/maintenance.md`: 依赖更新、外部 binary checksum、release tag 和回归 checklist。
-- `docs/ai-knowledge-graph.md`: 给 AI/维护者使用的代码结构、模块职责和调用关系索引。
+- `ARCHITECTURE.md`: 当前依赖方向、兼容性不变量与局部 composition 入口。
 
 注意：Desktop/UI、Bilibili HTTP、SQLite 与 logging ownership 已实际迁移，不是空壳专案。aria2、FFmpeg、filesystem compatibility 仍主要位于 `DownKyi.Core`；剩余边界与风险以 `ARCHITECTURE.md` 和 `docs/refactoring-live-plan.md` 为准。
 

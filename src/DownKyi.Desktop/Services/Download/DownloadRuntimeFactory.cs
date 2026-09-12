@@ -35,6 +35,7 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
     private readonly IUiDispatcher _uiDispatcher;
     private readonly ILoggerFactory _loggerFactory;
     private readonly IBilibiliApiClient _client;
+    private readonly DownloadTaskStaging? _staging;
 
     public DownloadRuntimeFactory(
         DownloadListState downloadLists,
@@ -51,7 +52,8 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
         AriaRuntimeClientRegistry ariaClientRegistry,
         AriaServer ariaServer,
         ILoggerFactory loggerFactory,
-        IBilibiliApiClient client)
+        IBilibiliApiClient client,
+        DownloadTaskStaging? staging = null)
     {
         _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
         _projectionStore = projectionStore
@@ -70,6 +72,7 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
         _ariaServer = ariaServer ?? throw new ArgumentNullException(nameof(ariaServer));
         _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
         _client = client ?? throw new ArgumentNullException(nameof(client));
+        _staging = staging;
     }
 
     public IDownloadRuntime? Create()
@@ -110,12 +113,14 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
         var shutdownRecovery = new DownloadTaskShutdownRecovery(
             _tasks,
             _stateWriter);
-        var presenter = new DownloadActivityPresenter(_stateWriter);
+        var presenter = new DownloadActivityPresenter(_projectionStore, _stateWriter);
         var contextFactory = new DownloadExecutionContextFactory(
             _projectionStore,
-            _settingsStore);
+            _settingsStore,
+            _staging);
         var completionProjector = new DownloadCompletionProjector(
             _downloadLists,
+            _projectionStore,
             _uiDispatcher);
         var playbackResolver = new DownloadPlaybackResolver(
             _wbiKeyProvider,
@@ -138,8 +143,9 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
                 _stateWriter,
                 transferCoordinator,
                 playbackResolver,
+                presenter,
                 _loggerFactory.CreateLogger<DownloadMediaStage>()),
-            new DownloadArtifactsStage(artifactWriter),
+            new DownloadArtifactsStage(artifactWriter, presenter, _fileService),
             new MuxStage(
                 presenter,
                 _ffmpegProcessor,

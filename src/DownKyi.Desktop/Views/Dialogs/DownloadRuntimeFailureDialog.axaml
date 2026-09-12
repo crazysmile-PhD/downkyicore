@@ -1,0 +1,67 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vmd="clr-namespace:DownKyi.ViewModels.Dialogs"
+             x:Class="DownKyi.Views.Dialogs.DownloadRuntimeFailureDialog"
+             x:DataType="vmd:DownloadRuntimeFailureDialogViewModel"
+             Width="640"
+             Height="470">
+    <Border Background="{DynamicResource BrushBackground}"
+            CornerRadius="8"
+            BorderBrush="{DynamicResource BrushPrimary}"
+            BorderThickness="1">
+        <Grid Margin="16" RowDefinitions="Auto,Auto,*,Auto">
+            <Grid Grid.Row="0"
+                  Margin="0,0,0,16"
+                  WindowDecorationProperties.ElementRole="TitleBar">
+                <StackPanel Orientation="Horizontal"
+                            VerticalAlignment="Center"
+                            Spacing="8">
+                    <PathIcon Width="20"
+                              Height="20"
+                              Data="M12,2 C6.48,2 2,6.48 2,12 C2,17.52 6.48,22 12,22 C17.52,22 22,17.52 22,12 C22,6.48 17.52,2 12,2 M13,17 L11,17 L11,15 L13,15 L13,17 M13,13 L11,13 L11,7 L13,7 L13,13" />
+                    <TextBlock Text="{DynamicResource DownloadRuntimeFailureTitle}"
+                               FontSize="18"
+                               FontWeight="Bold" />
+                </StackPanel>
+                <Button HorizontalAlignment="Right"
+                        ToolTip.Tip="{DynamicResource Close}"
+                        Theme="{StaticResource ImageBtnStyle}"
+                        WindowDecorationProperties.ElementRole="User"
+                        Command="{Binding CloseCommand}">
+                    <PathIcon Data="{Binding CloseIcon.Data}"
+                              Width="16"
+                              Height="16" />
+                </Button>
+            </Grid>
+
+            <TextBlock Grid.Row="1"
+                       Margin="0,0,0,12"
+                       Text="{DynamicResource DownloadRuntimeFailureMessage}"
+                       TextWrapping="Wrap" />
+
+            <TextBox Grid.Row="2"
+                     Text="{Binding DiagnosticText, Mode=OneWay}"
+                     IsReadOnly="True"
+                     AcceptsReturn="True"
+                     TextWrapping="NoWrap"
+                     ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                     ScrollViewer.VerticalScrollBarVisibility="Auto" />
+
+            <StackPanel Grid.Row="3"
+                        Margin="0,16,0,0"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Right"
+                        Spacing="12">
+                <Button MinWidth="110"
+                        Content="{DynamicResource CopyErrorDetails}"
+                        Command="{Binding CopyErrorDetailsCommand}" />
+                <Button MinWidth="140"
+                        Content="{DynamicResource CreateGitHubIssue}"
+                        Command="{Binding CreateGitHubIssueCommand}" />
+                <Button MinWidth="90"
+                        Content="{DynamicResource Close}"
+                        Command="{Binding CloseCommand}" />
+            </StackPanel>
+        </Grid>
+    </Border>
+</UserControl>

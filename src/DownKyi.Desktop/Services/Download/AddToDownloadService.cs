@@ -9,6 +9,7 @@ using DownKyi.Application.Diagnostics;
 using DownKyi.Core.BiliApi.Sign;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.Settings;
+using DownKyi.Domain.Downloads;
 using DownKyi.Presentation;
 using DownKyi.Services.Video;
 using DownKyi.Utils;
@@ -22,6 +23,7 @@ namespace DownKyi.Services.Download;
 internal sealed class AddToDownloadService : IAddToDownloadSession
 {
     private readonly DownloadTaskAdmissionService _admission;
+    private readonly LegacyDownloadAdmissionPresenter _admissionPresenter;
     private readonly DownloadDuplicatePolicy _duplicatePolicy;
     private readonly DownloadMovieMetadataBuilder _metadataBuilder;
     private readonly ISettingsStore _settingsStore;
@@ -35,6 +37,7 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
     public AddToDownloadService(
         PlayStreamType streamType,
         DownloadTaskAdmissionService admission,
+        LegacyDownloadAdmissionPresenter admissionPresenter,
         DownloadDuplicatePolicy duplicatePolicy,
         DownloadMovieMetadataBuilder metadataBuilder,
         ISettingsStore settingsStore,
@@ -45,6 +48,8 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
         ILogger<AddToDownloadService> logger)
     {
         _admission = admission ?? throw new ArgumentNullException(nameof(admission));
+        _admissionPresenter = admissionPresenter
+            ?? throw new ArgumentNullException(nameof(admissionPresenter));
         _duplicatePolicy = duplicatePolicy ?? throw new ArgumentNullException(nameof(duplicatePolicy));
         _metadataBuilder = metadataBuilder ?? throw new ArgumentNullException(nameof(metadataBuilder));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
@@ -70,6 +75,11 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
                 _videoInfoService = new CheeseInfoService(settingsStore, client);
                 break;
         }
+    }
+
+    public Task<bool> EnsureAdmissionAsync(CancellationToken cancellationToken = default)
+    {
+        return _admissionPresenter.EnsureAdmissionAsync(cancellationToken);
     }
 
     public void SetVideoInfoService(IInfoService videoInfoService)
@@ -149,7 +159,12 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
         var videoSettings = _settingsStore.Current.Video;
         if (videoSettings.IsUseSaveVideoRootPath == AllowStatus.Yes)
         {
-            _downloadContent = DownloadContentSelection.From(videoSettings.Content);
+            _downloadContent = new DownloadContentSelection(
+                videoSettings.Content.DownloadAudio,
+                videoSettings.Content.DownloadVideo,
+                videoSettings.Content.DownloadDanmaku,
+                videoSettings.Content.DownloadSubtitle,
+                videoSettings.Content.DownloadCover);
             directory = videoSettings.SaveVideoRootPath;
         }
         else
@@ -162,12 +177,7 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
                 directory = result.Parameters.TryGetValue("directory", out var directoryValue)
                     ? directoryValue as string ?? string.Empty
                     : string.Empty;
-                _downloadContent = new DownloadContentSelection(
-                    GetBoolean(result.Parameters, "downloadAudio"),
-                    GetBoolean(result.Parameters, "downloadVideo"),
-                    GetBoolean(result.Parameters, "downloadDanmaku"),
-                    GetBoolean(result.Parameters, "downloadSubtitle"),
-                    GetBoolean(result.Parameters, "downloadCover"));
+                _downloadContent = ReadDownloadContent(result.Parameters);
             }
         }
 
@@ -258,21 +268,55 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
                         .ConfigureAwait(true);
                 }
 
-                await _admission
-                    .AdmitAsync(
-                        downloadingItem,
-                        settings.Basic.RepeatFileAutoAddNumberSuffix,
-                        cancellationToken)
-                    .ConfigureAwait(true);
-                addedCount++;
+                try
+                {
+                    await _admission
+                        .AdmitAsync(
+                            downloadingItem,
+                            settings.Basic.RepeatFileAutoAddNumberSuffix,
+                            cancellationToken)
+                        .ConfigureAwait(true);
+                    addedCount++;
+                }
+                catch (DownloadRuntimeUnavailableException exception)
+                {
+                    _logger.LogWarningMessage("Download task admission rejected because runtime is unavailable.", exception);
+                    var alert = new AlertService(_dialogService);
+                    await alert
+                        .ShowError(
+                            DictionaryResource.GetString("DownloadRuntimeUnavailable"),
+                            cancellationToken)
+                        .ConfigureAwait(true);
+                    return addedCount;
+                }
+                catch (IOException exception)
+                {
+                    _logger.LogWarningMessage("Download task admission failed.", exception);
+                    var alert = new AlertService(_dialogService);
+                    await alert
+                        .ShowError(
+                            DictionaryResource.GetString("DirectoryError"),
+                            cancellationToken)
+                        .ConfigureAwait(true);
+                }
             }
         }
 
         return addedCount;
     }
 
-    private static bool GetBoolean(IReadOnlyDictionary<string, object?> parameters, string key)
+    private static DownloadContentSelection ReadDownloadContent(
+        IReadOnlyDictionary<string, object?> parameters)
     {
-        return parameters.TryGetValue(key, out var value) && value is true;
+        var values = new Dictionary<string, bool>(StringComparer.Ordinal);
+        foreach (var (key, value) in parameters)
+        {
+            if (value is bool selected)
+            {
+                values[key] = selected;
+            }
+        }
+
+        return DownloadContentSelection.FromLegacyMap(values);
     }
 }

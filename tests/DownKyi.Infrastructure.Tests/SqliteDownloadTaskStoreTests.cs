@@ -24,7 +24,12 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
         using var connection = await OpenReadOnlyConnectionAsync().ConfigureAwait(true);
         using var version = connection.CreateCommand();
         version.CommandText = "PRAGMA user_version";
-        Assert.Equal(3L, await version.ExecuteScalarAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(8L, await version.ExecuteScalarAsync(TestContext.Current.CancellationToken));
+        Assert.True(await TableExistsAsync("download_upgrade_admission_gate"));
+        Assert.Equal(1, await CountSchemaMigrationAsync(4));
+        Assert.Equal(1, await CountSchemaMigrationAsync(5));
+        Assert.False(await store.IsLegacyUpgradeAdmissionBlockedAsync(
+            TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -40,12 +45,280 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
         Assert.Equal("legacy-resume", restored.Id.Value);
         Assert.Equal(DownloadPhase.Paused, restored.Phase);
         Assert.Equal("aria-gid", restored.Transfer.BackendIdentity);
+        Assert.Equal(
+            DownloadContentSelection.None with { Video = true },
+            restored.Plan.RequestedContent);
         Assert.Equal("video.m4s", restored.Plan.TransferFiles["video"]);
         Assert.Equal("cover", Assert.Single(restored.Transfer.CompletedFileKeys));
         Assert.Equal(42.5, restored.Progress.Percentage);
+        Assert.Null(restored.Plan.NfoRequest);
         Assert.Single(Directory.GetFiles(
             Path.Combine(_directory, "Backup"),
             "download.db.schema-v0-*.bak"));
+    }
+
+    [Fact]
+    public async Task VersionThreeEquivalentPhysicalPathRemainsAvailableWithoutBlockingAdmission()
+    {
+        var originalPath = Path.Combine(_directory, "equivalent", "video");
+        var equivalentPath = Path.Combine(originalPath, ".") + Path.DirectorySeparatorChar;
+        if (Path.DirectorySeparatorChar != Path.AltDirectorySeparatorChar)
+        {
+            equivalentPath = equivalentPath.Replace(
+                Path.DirectorySeparatorChar,
+                Path.AltDirectorySeparatorChar);
+        }
+
+        if (DownloadOutputPathKey.UsesCaseInsensitiveComparison)
+        {
+            equivalentPath = equivalentPath.ToUpperInvariant();
+        }
+
+        await CreateVersionThreeDatabaseAsync(CreatePausedTask("equivalent", originalPath));
+        var resolutionCalls = 0;
+        using var store = CreateStore(new StubPhysicalOutputPathResolver(_ =>
+        {
+            resolutionCalls++;
+            return equivalentPath;
+        }));
+
+        await store.InitializeAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, resolutionCalls);
+        Assert.Equal(
+            "equivalent",
+            Assert.Single(await store.GetUnfinishedAsync(TestContext.Current.CancellationToken)).Id.Value);
+        Assert.Empty(await store.GetQuarantinedRecordsAsync(TestContext.Current.CancellationToken));
+        Assert.False(await store.IsLegacyUpgradeAdmissionBlockedAsync(
+            TestContext.Current.CancellationToken));
+        Assert.Equal(originalPath, (await ReadStoredStateAsync("equivalent")).Path);
+    }
+
+    [Fact]
+    public async Task VersionThreePhysicalPathChangeQuarantinesWithoutMutatingTaskOrFiles()
+    {
+        var originalPath = Path.Combine(_directory, "logical", "video");
+        var physicalPath = Path.Combine(_directory, "physical", "video");
+        var partialPath = Path.Combine(_directory, "logical", "video.download");
+        var ariaPath = Path.Combine(_directory, "logical", "video.aria2");
+        Directory.CreateDirectory(Path.GetDirectoryName(partialPath)!);
+        await File.WriteAllTextAsync(partialPath, "partial", TestContext.Current.CancellationToken);
+        await File.WriteAllTextAsync(ariaPath, "aria", TestContext.Current.CancellationToken);
+        await CreateVersionThreeDatabaseAsync(CreatePausedTask("changed", originalPath));
+        var before = await ReadStoredStateAsync("changed");
+        using var store = CreateStore(new StubPhysicalOutputPathResolver(_ => physicalPath));
+
+        await store.InitializeAsync(TestContext.Current.CancellationToken);
+
+        Assert.Empty(await store.GetUnfinishedAsync(TestContext.Current.CancellationToken));
+        var quarantine = Assert.Single(
+            await store.GetQuarantinedRecordsAsync(TestContext.Current.CancellationToken));
+        Assert.Equal("changed", quarantine.RecordId);
+        Assert.Equal("downloading", quarantine.SourceTable);
+        Assert.Equal("file_path", quarantine.FieldName);
+        Assert.Equal("legacy-output-path-unverified", quarantine.Reason);
+        Assert.True(await store.IsLegacyUpgradeAdmissionBlockedAsync(
+            TestContext.Current.CancellationToken));
+        Assert.Equal(before, await ReadStoredStateAsync("changed"));
+        Assert.True(File.Exists(partialPath));
+        Assert.True(File.Exists(ariaPath));
+    }
+
+    [Fact]
+    public async Task VersionThreePhysicalAliasCollisionQuarantinesEntireGroupOnly()
+    {
+        var physicalPath = Path.Combine(_directory, "physical", "video");
+        var aliasPath = Path.Combine(_directory, "alias", "video");
+        var otherPath = Path.Combine(_directory, "other", "video");
+        await CreateVersionThreeDatabaseAsync(
+            CreatePausedTask("physical", physicalPath),
+            CreatePausedTask("alias", aliasPath),
+            CreatePausedTask("other", otherPath));
+        var physicalBefore = await ReadStoredStateAsync("physical");
+        var aliasBefore = await ReadStoredStateAsync("alias");
+        var otherBefore = await ReadStoredStateAsync("other");
+        var resolutionCalls = new Dictionary<string, int>(StringComparer.Ordinal);
+        using var store = CreateStore(new StubPhysicalOutputPathResolver(path =>
+        {
+            resolutionCalls[path] = resolutionCalls.GetValueOrDefault(path) + 1;
+            return path == aliasPath ? physicalPath : path;
+        }));
+
+        await store.InitializeAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(3, resolutionCalls.Count);
+        Assert.All(resolutionCalls.Values, count => Assert.Equal(1, count));
+        Assert.Equal(
+            "other",
+            Assert.Single(await store.GetUnfinishedAsync(TestContext.Current.CancellationToken)).Id.Value);
+        Assert.Equal(
+            ["alias", "physical"],
+            (await store.GetQuarantinedRecordsAsync(TestContext.Current.CancellationToken))
+                .Select(record => record.RecordId));
+        Assert.True(await store.IsLegacyUpgradeAdmissionBlockedAsync(
+            TestContext.Current.CancellationToken));
+        Assert.Equal(physicalBefore, await ReadStoredStateAsync("physical"));
+        Assert.Equal(aliasBefore, await ReadStoredStateAsync("alias"));
+        Assert.Equal(otherBefore, await ReadStoredStateAsync("other"));
+    }
+
+    [Fact]
+    public async Task VersionThreePhysicalResolverFailureQuarantinesAndBlocksAdmission()
+    {
+        var originalPath = Path.Combine(_directory, "unresolved", "video");
+        var safePath = Path.Combine(_directory, "safe", "video");
+        await CreateVersionThreeDatabaseAsync(
+            CreatePausedTask("unresolved", originalPath),
+            CreatePausedTask("safe", safePath));
+        var before = await ReadStoredStateAsync("unresolved");
+        using var store = CreateStore(new StubPhysicalOutputPathResolver(
+            path => path == originalPath
+                ? throw new IOException("Synthetic resolver failure.")
+                : path));
+
+        await store.InitializeAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            "safe",
+            Assert.Single(await store.GetUnfinishedAsync(TestContext.Current.CancellationToken)).Id.Value);
+        Assert.Equal(
+            "unresolved",
+            Assert.Single(
+                await store.GetQuarantinedRecordsAsync(TestContext.Current.CancellationToken)).RecordId);
+        Assert.True(await store.IsLegacyUpgradeAdmissionBlockedAsync(
+            TestContext.Current.CancellationToken));
+        Assert.Equal(before, await ReadStoredStateAsync("unresolved"));
+    }
+
+    [Fact]
+    public async Task VersionThreeCompletedTaskIsSkippedAndExistingQuarantineStillBlocksPathRisk()
+    {
+        var completed = CreateCompletedTask(
+            "completed",
+            123,
+            Path.Combine(_directory, "completed", "video"));
+        var quarantined = CreatePausedTask(
+            "already-quarantined",
+            Path.Combine(_directory, "quarantined", "video"));
+        await CreateVersionThreeDatabaseAsync(completed, quarantined);
+        await InsertPreexistingQuarantineAsync("already-quarantined");
+        var completedBefore = await ReadStoredStateAsync("completed");
+        var quarantinedBefore = await ReadStoredStateAsync("already-quarantined");
+        var resolvedPaths = new List<string>();
+        using var store = CreateStore(new StubPhysicalOutputPathResolver(path =>
+        {
+            resolvedPaths.Add(path);
+            return path + "-physical";
+        }));
+
+        await store.InitializeAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal([quarantined.Output.BasePath], resolvedPaths);
+        Assert.Equal(
+            "completed",
+            Assert.Single((await store.GetHistoryPageAsync(
+                null,
+                10,
+                TestContext.Current.CancellationToken)).Items).Id.Value);
+        Assert.Empty(await store.GetUnfinishedAsync(TestContext.Current.CancellationToken));
+        var quarantine = Assert.Single(
+            await store.GetQuarantinedRecordsAsync(TestContext.Current.CancellationToken));
+        Assert.Equal("already-quarantined", quarantine.RecordId);
+        Assert.Equal("preexisting-corrupt-record", quarantine.Reason);
+        Assert.True(await store.IsLegacyUpgradeAdmissionBlockedAsync(
+            TestContext.Current.CancellationToken));
+        Assert.Equal(completedBefore, await ReadStoredStateAsync("completed"));
+        Assert.Equal(quarantinedBefore, await ReadStoredStateAsync("already-quarantined"));
+    }
+
+    [Fact]
+    public async Task VersionFourMigrationAndRestartAreIdempotentAcrossMultipleLegacyTasks()
+    {
+        var safePath = Path.Combine(_directory, "safe", "video");
+        await CreateVersionThreeDatabaseAsync(
+            CreatePausedTask("unsafe-a", Path.Combine(_directory, "logical-a", "video")),
+            CreatePausedTask("safe", safePath),
+            CreatePausedTask("unsafe-b", Path.Combine(_directory, "logical-b", "video")));
+        using (var first = CreateStore(new StubPhysicalOutputPathResolver(path =>
+               path == safePath ? path : path + "-physical")))
+        {
+            await first.InitializeAsync(TestContext.Current.CancellationToken);
+            await first.InitializeAsync(TestContext.Current.CancellationToken);
+            Assert.Equal(
+                ["unsafe-a", "unsafe-b"],
+                (await first.GetQuarantinedRecordsAsync(TestContext.Current.CancellationToken))
+                    .Select(record => record.RecordId));
+            Assert.True(await first.IsLegacyUpgradeAdmissionBlockedAsync(
+                TestContext.Current.CancellationToken));
+        }
+
+        using var reopened = CreateStore(new StubPhysicalOutputPathResolver(
+            _ => throw new InvalidOperationException("Version four must not rescan.")));
+        await reopened.InitializeAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            ["unsafe-a", "unsafe-b"],
+            (await reopened.GetQuarantinedRecordsAsync(TestContext.Current.CancellationToken))
+                .Select(record => record.RecordId));
+        Assert.Equal(
+            "safe",
+            Assert.Single(await reopened.GetUnfinishedAsync(TestContext.Current.CancellationToken)).Id.Value);
+        Assert.True(await reopened.IsLegacyUpgradeAdmissionBlockedAsync(
+            TestContext.Current.CancellationToken));
+        Assert.Equal(1, await CountSchemaMigrationAsync(4));
+        Assert.Equal(1, await CountSchemaMigrationAsync(5));
+    }
+
+    [Fact]
+    public async Task ConfirmationOnlyReleasesAdmissionGateAndPersistsAcrossRestart()
+    {
+        var originalPath = Path.Combine(_directory, "confirm-logical", "video");
+        await CreateVersionThreeDatabaseAsync(CreatePausedTask("confirm", originalPath));
+        var before = await ReadStoredStateAsync("confirm");
+        using (var store = CreateStore(new StubPhysicalOutputPathResolver(path => path + "-physical")))
+        {
+            await store.InitializeAsync(TestContext.Current.CancellationToken);
+            Assert.True((await store.ConfirmLegacyRemoteTasksStoppedAsync(
+                TestContext.Current.CancellationToken)).IsSuccess);
+            Assert.False(await store.IsLegacyUpgradeAdmissionBlockedAsync(
+                TestContext.Current.CancellationToken));
+            Assert.Empty(await store.GetUnfinishedAsync(TestContext.Current.CancellationToken));
+            Assert.Single(await store.GetQuarantinedRecordsAsync(TestContext.Current.CancellationToken));
+            Assert.Equal(before, await ReadStoredStateAsync("confirm"));
+        }
+
+        using var reopened = CreateStore(new StubPhysicalOutputPathResolver(
+            _ => throw new InvalidOperationException("Version four must not rescan.")));
+        Assert.False(await reopened.IsLegacyUpgradeAdmissionBlockedAsync(
+            TestContext.Current.CancellationToken));
+        Assert.Empty(await reopened.GetUnfinishedAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(
+            "confirm",
+            Assert.Single(
+                await reopened.GetQuarantinedRecordsAsync(TestContext.Current.CancellationToken)).RecordId);
+        Assert.Equal(before, await ReadStoredStateAsync("confirm"));
+    }
+
+    [Fact]
+    public async Task VersionFourFailureRollsBackQuarantineGateLedgerAndUserVersion()
+    {
+        var originalPath = Path.Combine(_directory, "rollback-logical", "video");
+        await CreateVersionThreeDatabaseAsync(CreatePausedTask("rollback", originalPath));
+        await CreateQuarantineFailureTriggerAsync();
+        var before = await ReadStoredStateAsync("rollback");
+        using var store = CreateStore(new StubPhysicalOutputPathResolver(path => path + "-physical"));
+
+        await Assert.ThrowsAsync<SqliteException>(() =>
+            store.InitializeAsync(TestContext.Current.CancellationToken));
+
+        Assert.Equal(3, await ReadSchemaVersionAsync());
+        Assert.False(await TableExistsAsync("download_upgrade_admission_gate"));
+        Assert.Equal(0, await CountSchemaMigrationAsync(4));
+        Assert.Equal(0, await CountQuarantineRecordsAsync());
+        Assert.Equal(before, await ReadStoredStateAsync("rollback"));
+        Assert.Single(Directory.GetFiles(
+            Path.Combine(_directory, "Backup"),
+            "download.db.schema-v3-*.bak"));
     }
 
     [Fact]
@@ -129,7 +402,7 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
             await reopened.InitializeAsync(TestContext.Current.CancellationToken);
         }
 
-        Assert.Equal(3, await ReadSchemaVersionAsync());
+        Assert.Equal(8, await ReadSchemaVersionAsync());
         Assert.Equal(0, await CountDownloadingRecordAsync("orphaned-download"));
     }
 
@@ -142,7 +415,7 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
 
         await store.InitializeAsync(TestContext.Current.CancellationToken);
 
-        Assert.Equal(3, await ReadSchemaVersionAsync());
+        Assert.Equal(8, await ReadSchemaVersionAsync());
         Assert.Equal(1, await CountDownloadBaseRecordAsync("legacy-resume"));
         Assert.Equal(1, await CountDownloadingRecordAsync("legacy-resume"));
         Assert.Equal(0, await CountDownloadingRecordAsync("orphaned-download"));
@@ -186,8 +459,226 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
         Assert.Equal(expected.Phase, restored.Phase);
         Assert.Equal(expected.Transfer.BackendIdentity, restored.Transfer.BackendIdentity);
         Assert.Equal(expected.Transfer.CompletedFileKeys, restored.Transfer.CompletedFileKeys);
+        Assert.Equal(expected.Output.StagingToken, restored.Output.StagingToken);
+        Assert.Equal(expected.Plan.RequestedContent, restored.Plan.RequestedContent);
         Assert.Equal(expected.Plan.TransferFiles, restored.Plan.TransferFiles);
         Assert.Equal(expected.Progress, restored.Progress);
+    }
+
+    [Fact]
+    public async Task CompletedPublishedArtifactMapSurvivesDatabaseReopen()
+    {
+        var media = Path.Combine(_directory, "published.flv");
+        var subtitle = Path.Combine(_directory, "published.zh-Hant.srt");
+        var task = DownloadTask.Create(
+            new DownloadTaskId("published-reopen"),
+            CreateMetadata("published-reopen"),
+            CreatePlan(),
+            new DownloadOutput(Path.Combine(_directory, "base-without-matching-suffix"), null),
+            _clock.UtcNow);
+        task = task.Start(_clock.UtcNow.AddSeconds(1)).RequireValue();
+        var mediaPublishing = new DownloadPublishingArtifact(
+            "media", Path.GetFileName(media), 3, new string('A', 64));
+        task = task.BeginPublishingArtifact(mediaPublishing,
+            _clock.UtcNow.AddSeconds(2)).RequireValue();
+        task = task.RecordPublishedArtifact(mediaPublishing, media,
+            _clock.UtcNow.AddSeconds(3)).RequireValue();
+        var subtitlePublishing = new DownloadPublishingArtifact(
+            "subtitle:zh-Hant", Path.GetFileName(subtitle), 3, new string('B', 64));
+        task = task.BeginPublishingArtifact(subtitlePublishing,
+            _clock.UtcNow.AddSeconds(4)).RequireValue();
+        task = task.RecordPublishedArtifact(subtitlePublishing, subtitle,
+            _clock.UtcNow.AddSeconds(5)).RequireValue();
+        task = task.Complete(
+            new DownloadCompletion(123, "finished", null),
+            _clock.UtcNow.AddSeconds(6)).RequireValue();
+        using (var store = CreateStore())
+        {
+            Assert.True((await store.AddAsync(task, TestContext.Current.CancellationToken)).IsSuccess);
+        }
+
+        using var reopened = CreateStore();
+        var restored = Assert.Single((await reopened.GetHistoryPageAsync(
+            null, 10, TestContext.Current.CancellationToken)).Items);
+
+        Assert.Equal(DownloadPhase.Completed, restored.Phase);
+        Assert.Equal(media, restored.Output.PublishedArtifacts["media"]);
+        Assert.Equal(subtitle, restored.Output.PublishedArtifacts["subtitle:zh-Hant"]);
+        Assert.Equal(task.Output.BasePath, restored.Output.BasePath);
+        Assert.Equal(task.Output.StagingToken, restored.Output.StagingToken);
+    }
+
+    [Fact]
+    public async Task PendingPublicationSurvivesDatabaseReopenWithoutBecomingPublished()
+    {
+        var task = DownloadTask.Create(
+            new DownloadTaskId("publishing-reopen"),
+            CreateMetadata("publishing-reopen"),
+            CreatePlan(),
+            new DownloadOutput(Path.Combine(_directory, "output"), null),
+            _clock.UtcNow);
+        task = task.Start(_clock.UtcNow.AddSeconds(1)).RequireValue();
+        var publishing = new DownloadPublishingArtifact(
+            "media", "output.mp4", 3, new string('A', 64));
+        task = task.BeginPublishingArtifact(publishing, _clock.UtcNow.AddSeconds(2))
+            .RequireValue();
+        Assert.False(task.Complete(new DownloadCompletion(123, "finished", null),
+            _clock.UtcNow.AddSeconds(3)).IsSuccess);
+        using (var store = CreateStore())
+        {
+            Assert.True((await store.AddAsync(task, TestContext.Current.CancellationToken)).IsSuccess);
+        }
+
+        using var reopened = CreateStore();
+        var restored = Assert.Single(
+            await reopened.GetUnfinishedAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(publishing, restored.Output.PublishingArtifact);
+        Assert.Empty(restored.Output.PublishedArtifacts);
+        var canceled = restored.Cancel(restored.UpdatedAtUtc.AddSeconds(1)).RequireValue();
+        var publishedAfterCancel = canceled.RecordPublishedArtifact(publishing,
+            Path.Combine(_directory, publishing.FileName),
+            canceled.UpdatedAtUtc.AddSeconds(1)).RequireValue();
+        Assert.Equal(DownloadPhase.Canceled, publishedAfterCancel.Phase);
+        Assert.Null(publishedAfterCancel.Output.PublishingArtifact);
+    }
+
+    [Fact]
+    public async Task VersionSevenDatabaseUpgradesWithNoInventedPendingPublication()
+    {
+        var expected = CreatePausedTask("v7-publishing-upgrade");
+        using (var store = CreateStore())
+        {
+            Assert.True((await store.AddAsync(expected, TestContext.Current.CancellationToken)).IsSuccess);
+        }
+
+        using (var connection = await OpenConnectionAsync(readOnly: false).ConfigureAwait(true))
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = """
+                ALTER TABLE download_base DROP COLUMN publishing_key;
+                ALTER TABLE download_base DROP COLUMN publishing_file_name;
+                ALTER TABLE download_base DROP COLUMN publishing_length;
+                ALTER TABLE download_base DROP COLUMN publishing_sha256;
+                DELETE FROM download_schema_migrations WHERE version = 8;
+                PRAGMA user_version = 7;
+                """;
+            await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+            command.CommandText = "SELECT COUNT(*) FROM pragma_table_info('download_base') WHERE name = 'publishing_key'";
+            Assert.Equal(0L, await command.ExecuteScalarAsync(TestContext.Current.CancellationToken)
+                .ConfigureAwait(true));
+        }
+
+        ClearStorePool(); // A process restart does not reuse a pre-migration SQLite connection.
+
+        using var reopened = CreateStore();
+        await reopened.InitializeAsync(TestContext.Current.CancellationToken);
+        var restored = Assert.Single(
+            await reopened.GetUnfinishedAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(8, await ReadSchemaVersionAsync());
+        Assert.Equal(1, await CountSchemaMigrationAsync(8));
+        Assert.Equal(expected.Output.StagingToken, restored.Output.StagingToken);
+        Assert.Null(restored.Output.PublishingArtifact);
+    }
+
+    [Fact]
+    public async Task VersionFourRowMigratesWithNoInventedNfoIntent()
+    {
+        await CreateVersionFourDatabaseAsync();
+        using var store = CreateStore();
+
+        await store.InitializeAsync(TestContext.Current.CancellationToken);
+        var restored = Assert.Single(
+            await store.GetUnfinishedAsync(TestContext.Current.CancellationToken));
+
+        Assert.Null(restored.Plan.NfoRequest);
+        Assert.Equal(DownloadContentSelection.None, restored.Plan.RequestedContent);
+        Assert.Equal(8, await ReadSchemaVersionAsync());
+        Assert.Equal(1, await CountSchemaMigrationAsync(5));
+    }
+
+    [Fact]
+    public async Task TypedNfoRequestRoundTripsAcrossReopen()
+    {
+        var expected = CreatePausedTask("nfo-resume", nfoRequest: CreateNfoRequest());
+        using (var store = CreateStore())
+        {
+            Assert.True((await store.AddAsync(expected, TestContext.Current.CancellationToken)).IsSuccess);
+        }
+
+        using var reopened = CreateStore();
+        var restored = Assert.Single(
+            await reopened.GetUnfinishedAsync(TestContext.Current.CancellationToken));
+
+        var request = Assert.IsType<DownloadNfoRequest>(restored.Plan.NfoRequest);
+        Assert.Equal("Saved title", request.Title);
+        Assert.Equal("Saved plot", request.Plot);
+        Assert.Equal("2026", request.Year);
+        Assert.Equal(["genre", "genre"], request.Genres);
+        Assert.Equal(["tag"], request.Tags);
+        Assert.Equal([new DownloadNfoActor("actor", "role")], request.Actors);
+        Assert.Equal(new DownloadNfoUniqueId("bilibili", "BV1NFO"), request.BilibiliId);
+        Assert.Equal("2026-09-09", request.Premiered);
+        Assert.Equal([new DownloadNfoRating("bilibili", 9.5f, 10, true)], request.Ratings);
+    }
+
+    [Fact]
+    public async Task TypedRequestedContentRoundTripsAcrossReopenUsingLegacyWireKeys()
+    {
+        var expected = new DownloadContentSelection(
+            Audio: true,
+            Video: false,
+            Danmaku: true,
+            Subtitle: false,
+            Cover: true);
+        using (var store = CreateStore())
+        {
+            Assert.True((await store.AddAsync(
+                CreatePausedTask("typed-content", requestedContent: expected),
+                TestContext.Current.CancellationToken)).IsSuccess);
+        }
+
+        using var reopened = CreateStore();
+        var restored = Assert.Single(
+            await reopened.GetUnfinishedAsync(TestContext.Current.CancellationToken));
+
+        Assert.Equal(expected, restored.Plan.RequestedContent);
+        using var connection = await OpenReadOnlyConnectionAsync().ConfigureAwait(true);
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT need_download_content FROM download_base WHERE id = 'typed-content'";
+        var json = Assert.IsType<string>(
+            await command.ExecuteScalarAsync(TestContext.Current.CancellationToken));
+        using var payload = System.Text.Json.JsonDocument.Parse(json);
+        Assert.Equal(5, payload.RootElement.EnumerateObject().Count());
+        Assert.True(payload.RootElement.GetProperty("downloadAudio").GetBoolean());
+        Assert.False(payload.RootElement.GetProperty("downloadVideo").GetBoolean());
+        Assert.True(payload.RootElement.GetProperty("downloadDanmaku").GetBoolean());
+        Assert.False(payload.RootElement.GetProperty("downloadSubtitle").GetBoolean());
+        Assert.True(payload.RootElement.GetProperty("downloadCover").GetBoolean());
+    }
+
+    [Theory]
+    [InlineData("not-json")]
+    [InlineData("""{"Version":1,"Title":"x","Plot":"x","Year":"2026","Genres":null,"Tags":[],"Actors":[],"BilibiliId":null,"Premiered":"","Ratings":[]}""")]
+    public async Task CorruptModernNfoRequestIsQuarantined(string payload)
+    {
+        using var store = CreateStore();
+        Assert.True((await store.AddAsync(
+            CreatePausedTask("valid-nfo-sibling"),
+            TestContext.Current.CancellationToken)).IsSuccess);
+        Assert.True((await store.AddAsync(
+            CreatePausedTask("corrupt-nfo", nfoRequest: CreateNfoRequest()),
+            TestContext.Current.CancellationToken)).IsSuccess);
+        await ReplaceNfoRequestAsync("corrupt-nfo", payload);
+
+        Assert.Equal(
+            "valid-nfo-sibling",
+            Assert.Single(await store.GetUnfinishedAsync(TestContext.Current.CancellationToken)).Id.Value);
+        var quarantine = Assert.Single(
+            await store.GetQuarantinedRecordsAsync(TestContext.Current.CancellationToken));
+        Assert.Equal("corrupt-nfo", quarantine.RecordId);
+        Assert.Equal("nfo_request", quarantine.FieldName);
+        Assert.DoesNotContain(payload, quarantine.Reason, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -399,7 +890,30 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
             (long)(await findProbe.ExecuteScalarAsync(TestContext.Current.CancellationToken))!);
     }
 
+    [Fact]
+    public async Task DisposedStoreReportsThePublicStoreAsObjectName()
+    {
+        var store = CreateStore();
+        await store.InitializeAsync(TestContext.Current.CancellationToken);
+        store.Dispose();
+
+        var operation = store.GetUnfinishedAsync(TestContext.Current.CancellationToken);
+        var exception = await Assert.ThrowsAsync<ObjectDisposedException>(async () =>
+            await operation.ConfigureAwait(true));
+
+        Assert.Equal(typeof(SqliteDownloadTaskStore).FullName, exception.ObjectName);
+    }
+
     public void Dispose()
+    {
+        ClearStorePool();
+        if (Directory.Exists(_directory))
+        {
+            Directory.Delete(_directory, recursive: true);
+        }
+    }
+
+    private void ClearStorePool()
     {
         using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
         {
@@ -409,27 +923,28 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
             DefaultTimeout = 5
         }.ToString());
         SqliteConnection.ClearPool(connection);
-        if (Directory.Exists(_directory))
-        {
-            Directory.Delete(_directory, recursive: true);
-        }
     }
 
-    private SqliteDownloadTaskStore CreateStore()
+    private SqliteDownloadTaskStore CreateStore(IPhysicalOutputPathResolver? resolver = null)
     {
         Directory.CreateDirectory(_directory);
         return new SqliteDownloadTaskStore(
             new SqliteDownloadTaskStoreOptions(Path.Combine(_directory, "download.db")),
-            _clock);
+            _clock,
+            resolver ?? new StubPhysicalOutputPathResolver(static path => path));
     }
 
-    private DownloadTask CreatePausedTask(string id)
+    private DownloadTask CreatePausedTask(
+        string id,
+        string? outputPath = null,
+        DownloadNfoRequest? nfoRequest = null,
+        DownloadContentSelection? requestedContent = null)
     {
         var task = DownloadTask.Create(
             new DownloadTaskId(id),
             CreateMetadata(id),
-            CreatePlan(),
-            new DownloadOutput(Path.Combine(_directory, id), "1 GB"),
+            CreatePlan(nfoRequest, requestedContent),
+            new DownloadOutput(outputPath ?? Path.Combine(_directory, id), "1 GB"),
             _clock.UtcNow);
         task = task.Start(_clock.UtcNow.AddSeconds(1)).RequireValue();
         task = task.UpdateTransferState(
@@ -452,13 +967,16 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
             _clock.UtcNow);
     }
 
-    private DownloadTask CreateCompletedTask(string id, long finishedTimestamp)
+    private DownloadTask CreateCompletedTask(
+        string id,
+        long finishedTimestamp,
+        string? outputPath = null)
     {
         var task = DownloadTask.Create(
             new DownloadTaskId(id),
             CreateMetadata(id),
             CreatePlan(),
-            new DownloadOutput(Path.Combine(_directory, id), "1 GB"),
+            new DownloadOutput(outputPath ?? Path.Combine(_directory, id), "1 GB"),
             _clock.UtcNow);
         task = task.Start(_clock.UtcNow.AddSeconds(1)).RequireValue();
         return task.Complete(
@@ -481,12 +999,29 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
             0);
     }
 
-    private static DownloadPlan CreatePlan()
+    private static DownloadPlan CreatePlan(
+        DownloadNfoRequest? nfoRequest = null,
+        DownloadContentSelection? requestedContent = null)
     {
         return new DownloadPlan(
-            new Dictionary<string, bool>(StringComparer.Ordinal) { ["video"] = true },
+            requestedContent ?? new DownloadContentSelection(false, true, false, false, false),
             new Dictionary<string, string>(StringComparer.Ordinal) { ["video"] = "video.m4s" },
-            1);
+            1,
+            nfoRequest);
+    }
+
+    private static DownloadNfoRequest CreateNfoRequest()
+    {
+        return new DownloadNfoRequest(
+            "Saved title",
+            "Saved plot",
+            "2026",
+            ["genre", "genre"],
+            ["tag"],
+            [new DownloadNfoActor("actor", "role")],
+            new DownloadNfoUniqueId("bilibili", "BV1NFO"),
+            "2026-09-09",
+            [new DownloadNfoRating("bilibili", 9.5f, 10, true)]);
     }
 
     private async Task<SqliteConnection> OpenReadOnlyConnectionAsync()
@@ -536,12 +1071,197 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
         return (long)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken).ConfigureAwait(false))!;
     }
 
+    private async Task CreateVersionThreeDatabaseAsync(params DownloadTask[] tasks)
+    {
+        using (var store = CreateStore())
+        {
+            await store.InitializeAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
+            foreach (var task in tasks)
+            {
+                Assert.True((await store.AddAsync(
+                    task,
+                    TestContext.Current.CancellationToken).ConfigureAwait(false)).IsSuccess);
+            }
+        }
+
+        using var connection = await OpenConnectionAsync(readOnly: false).ConfigureAwait(false);
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            ALTER TABLE download_base DROP COLUMN publishing_key;
+            ALTER TABLE download_base DROP COLUMN publishing_file_name;
+            ALTER TABLE download_base DROP COLUMN publishing_length;
+            ALTER TABLE download_base DROP COLUMN publishing_sha256;
+            ALTER TABLE download_base DROP COLUMN nfo_request;
+            ALTER TABLE download_base DROP COLUMN published_artifacts;
+            ALTER TABLE download_base DROP COLUMN staging_token;
+            DROP TABLE download_upgrade_admission_gate;
+            DELETE FROM download_schema_migrations WHERE version IN (4, 5, 6, 7, 8);
+            PRAGMA user_version = 3;
+            """;
+        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task InsertPreexistingQuarantineAsync(string id)
+    {
+        using var connection = await OpenConnectionAsync(readOnly: false).ConfigureAwait(false);
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO download_quarantine
+                (source_table, record_id, field_name, reason, quarantined_at_utc)
+            VALUES ('downloading', @id, 'need_download_content',
+                    'preexisting-corrupt-record', @now)
+            """;
+        command.Parameters.AddWithValue("@id", id);
+        command.Parameters.AddWithValue("@now", _clock.UtcNow.ToUnixTimeMilliseconds());
+        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task CreateQuarantineFailureTriggerAsync()
+    {
+        using var connection = await OpenConnectionAsync(readOnly: false).ConfigureAwait(false);
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            CREATE TRIGGER reject_version_four_quarantine
+            BEFORE INSERT ON download_quarantine
+            BEGIN
+                SELECT RAISE(ABORT, 'synthetic version four failure');
+            END;
+            """;
+        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<StoredDownloadState> ReadStoredStateAsync(string id)
+    {
+        using var connection = await OpenReadOnlyConnectionAsync().ConfigureAwait(false);
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT db.file_path, dl.gid, dl.download_files, dl.downloaded_files,
+                   d.finished_timestamp
+            FROM download_base db
+            LEFT JOIN downloading dl ON dl.id = db.id
+            LEFT JOIN downloaded d ON d.id = db.id
+            WHERE db.id = @id
+            """;
+        command.Parameters.AddWithValue("@id", id);
+        using var reader = await command.ExecuteReaderAsync(TestContext.Current.CancellationToken)
+            .ConfigureAwait(false);
+        Assert.True(await reader.ReadAsync(TestContext.Current.CancellationToken).ConfigureAwait(false));
+        var gidIsNull = await reader.IsDBNullAsync(1, TestContext.Current.CancellationToken)
+            .ConfigureAwait(false);
+        var downloadFilesIsNull = await reader.IsDBNullAsync(2, TestContext.Current.CancellationToken)
+            .ConfigureAwait(false);
+        var downloadedFilesIsNull = await reader.IsDBNullAsync(3, TestContext.Current.CancellationToken)
+            .ConfigureAwait(false);
+        var finishedTimestampIsNull = await reader.IsDBNullAsync(4, TestContext.Current.CancellationToken)
+            .ConfigureAwait(false);
+        return new StoredDownloadState(
+            reader.GetString(0),
+            gidIsNull ? null : reader.GetString(1),
+            downloadFilesIsNull ? null : reader.GetString(2),
+            downloadedFilesIsNull ? null : reader.GetString(3),
+            finishedTimestampIsNull ? null : reader.GetInt64(4));
+    }
+
+    private async Task<bool> TableExistsAsync(string tableName)
+    {
+        using var connection = await OpenReadOnlyConnectionAsync().ConfigureAwait(false);
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT EXISTS (
+                SELECT 1 FROM sqlite_master
+                WHERE type = 'table' AND name = @name)
+            """;
+        command.Parameters.AddWithValue("@name", tableName);
+        return (long)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken)
+            .ConfigureAwait(false))! != 0;
+    }
+
+    private async Task<long> CountSchemaMigrationAsync(int version)
+    {
+        using var connection = await OpenReadOnlyConnectionAsync().ConfigureAwait(false);
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM download_schema_migrations WHERE version = @version";
+        command.Parameters.AddWithValue("@version", version);
+        return (long)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken)
+            .ConfigureAwait(false))!;
+    }
+
+    private async Task<long> CountQuarantineRecordsAsync()
+    {
+        using var connection = await OpenReadOnlyConnectionAsync().ConfigureAwait(false);
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM download_quarantine";
+        return (long)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken)
+            .ConfigureAwait(false))!;
+    }
+
     private async Task CorruptRequestedAssetsAsync(string id, string sensitiveValue)
     {
         using var connection = await OpenConnectionAsync(readOnly: false).ConfigureAwait(false);
         using var command = connection.CreateCommand();
         command.CommandText = "UPDATE download_base SET need_download_content = @value WHERE id = @id";
         command.Parameters.AddWithValue("@value", sensitiveValue);
+        command.Parameters.AddWithValue("@id", id);
+        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task CreateVersionFourDatabaseAsync()
+    {
+        Directory.CreateDirectory(_directory);
+        using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = Path.Combine(_directory, "download.db"),
+            Mode = SqliteOpenMode.ReadWriteCreate,
+            Pooling = false
+        }.ToString());
+        await connection.OpenAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
+        using var transaction = (SqliteTransaction)await connection
+            .BeginTransactionAsync(TestContext.Current.CancellationToken)
+            .ConfigureAwait(false);
+        await DownloadStoreSchemaV1Migration.ApplyAsync(
+            connection, transaction, _clock.UtcNow, TestContext.Current.CancellationToken)
+            .ConfigureAwait(false);
+        await DownloadStoreSchemaV2Migration.ApplyAsync(
+            connection, transaction, _clock.UtcNow, TestContext.Current.CancellationToken)
+            .ConfigureAwait(false);
+        await DownloadStoreSchemaV3Migration.ApplyAsync(
+            connection, transaction, _clock.UtcNow, TestContext.Current.CancellationToken)
+            .ConfigureAwait(false);
+        await DownloadStoreSchemaV4Migration.ApplyAsync(
+            connection,
+            transaction,
+            _clock.UtcNow,
+            new StubPhysicalOutputPathResolver(static path => path),
+            TestContext.Current.CancellationToken)
+            .ConfigureAwait(false);
+
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            INSERT INTO download_base
+                (id, need_download_content, bvid, avid, cid, main_title, name, resolution,
+                 file_path, version, created_at_utc, updated_at_utc)
+            VALUES
+                ('version-four', '{}', 'BV1V4', 1, 2, 'Version Four', 'Resume',
+                 '{"Name":"1080P","Id":80}', 'version-four-output', 0, 1, 1);
+            INSERT INTO downloading
+                (id, download_files, downloaded_files, play_stream_type, download_status,
+                 progress, max_speed, phase, bytes_per_second)
+            VALUES
+                ('version-four', '{}', '[]', 0, 3, 0, 0, @paused, 0);
+            PRAGMA user_version = 4;
+            """;
+        command.Parameters.AddWithValue("@paused", (int)DownloadPhase.Paused);
+        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
+        await transaction.CommitAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task ReplaceNfoRequestAsync(string id, string payload)
+    {
+        using var connection = await OpenConnectionAsync(readOnly: false).ConfigureAwait(false);
+        using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE download_base SET nfo_request = @payload WHERE id = @id";
+        command.Parameters.AddWithValue("@payload", payload);
         command.Parameters.AddWithValue("@id", id);
         await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
     }
@@ -669,4 +1389,17 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
             return Task.Delay(delay, cancellationToken);
         }
     }
+
+    private sealed class StubPhysicalOutputPathResolver(Func<string, string> resolve)
+        : IPhysicalOutputPathResolver
+    {
+        public string ResolvePhysicalBasePath(string logicalBasePath) => resolve(logicalBasePath);
+    }
+
+    private sealed record StoredDownloadState(
+        string Path,
+        string? Gid,
+        string? DownloadFiles,
+        string? DownloadedFiles,
+        long? FinishedTimestamp);
 }

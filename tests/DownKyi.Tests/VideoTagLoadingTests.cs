@@ -4,11 +4,13 @@ using DownKyi.Application.Desktop;
 using DownKyi.Application.Downloads;
 using DownKyi.Domain.Downloads;
 using DownKyi.Domain.Results;
+using DownKyi.Infrastructure.Downloads;
 using DownKyi.Infrastructure.Time;
 using DownKyi.Presentation;
 using DownKyi.Services;
 using DownKyi.Services.Download;
 using DownKyi.Services.Video;
+using DownKyi.Utils;
 using Microsoft.Extensions.Logging;
 using CoreVideoPage = DownKyi.Core.BiliApi.Video.Models.VideoPage;
 using VideoPage = DownKyi.Presentation.VideoPage;
@@ -186,6 +188,40 @@ public sealed class VideoTagLoadingTests : IDisposable
     }
 
     [Fact]
+    public async Task MalformedOptionalApiTagsDoNotBlockDownloadTaskCreation()
+    {
+        var client = new TestBilibiliApiClient
+        {
+            GetStringAsyncHandler = static (_, _) => Task.FromResult(
+                """
+                {
+                  "code": 0,
+                  "data": [
+                    { "tag_id": 1, "tag_name": null },
+                    { "tag_id": 2, "tag_name": "" },
+                    { "tag_id": 3, "tag_name": "   " },
+                    { "tag_id": 4, "tag_name": "kept" }
+                  ]
+                }
+                """)
+        };
+        var provider = new VideoTagProvider(client);
+        using var context = CreateContext(generateMetadata: true);
+        context.Prepare(CreatePage(cancellationToken => provider.GetTagsAsync(
+            "BV1test",
+            84,
+            cancellationToken)));
+
+        var added = await context.Service
+            .AddToDownload(_directory, cancellationToken: TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
+
+        Assert.Equal(1, added);
+        Assert.Equal(["kept"], Assert.Single(context.ListState.Downloading).Metadata!.Tags);
+        Assert.Single(context.Queue.Enqueued);
+    }
+
+    [Fact]
     public async Task DisabledMovieMetadataDoesNotLoadTags()
     {
         using var context = CreateContext(generateMetadata: false);
@@ -205,12 +241,87 @@ public sealed class VideoTagLoadingTests : IDisposable
         Assert.Null(Assert.Single(context.ListState.Downloading).Metadata);
     }
 
-    private DownloadTestContext CreateContext(bool generateMetadata)
+    [Fact]
+    public async Task ResolverFailureIsReportedAndDoesNotBlockNextAdmission()
+    {
+        var resolver = new FailFirstPhysicalOutputPathResolver();
+        using var context = CreateContext(generateMetadata: false, resolver);
+        var first = CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]));
+        first.Cid = 1;
+        first.Name = "first";
+        var second = CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]));
+        second.Cid = 2;
+        second.Name = "second";
+        context.Prepare(first, second);
+
+        var added = await context.Service
+            .AddToDownload(_directory, cancellationToken: TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
+
+        Assert.Equal(1, added);
+        Assert.Equal(2, resolver.CallCount);
+        Assert.Equal(1, context.Store.AddCount);
+        Assert.Equal("second", Assert.Single(context.ListState.Downloading).DownloadBase.Name);
+        Assert.Single(context.Queue.Enqueued);
+        var request = Assert.Single(context.Dialogs.Requests);
+        Assert.Equal(AppDialog.Alert, request.Dialog);
+        var message = Assert.IsType<string>(request.Parameters!["message"]);
+        Assert.Equal(DictionaryResource.GetString("DirectoryError"), message);
+        Assert.DoesNotContain(_directory, message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task UnknownResolverFailureKeepsExistingFailureBehavior()
+    {
+        using var context = CreateContext(
+            generateMetadata: false,
+            new UnknownFailurePhysicalOutputPathResolver());
+        context.Prepare(CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([])));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => context.Service.AddToDownload(
+            _directory,
+            cancellationToken: TestContext.Current.CancellationToken));
+
+        Assert.Equal(0, context.Store.AddCount);
+        Assert.Empty(context.ListState.Downloading);
+        Assert.Empty(context.Queue.Enqueued);
+        Assert.Empty(context.Dialogs.Requests);
+    }
+
+    [Fact]
+    public async Task RuntimeFailureStopsAdmissionAcrossRemainingSections()
+    {
+        using var context = CreateContext(
+            generateMetadata: false,
+            runtimeAvailability: new UnavailableDownloadRuntimeAvailability());
+        context.PrepareSections(
+            [CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]))],
+            [CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]))]);
+
+        var added = await context.Service.AddToDownload(
+            _directory,
+            isAll: true,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, added);
+        Assert.Equal(0, context.Store.AddCount);
+        Assert.Empty(context.ListState.Downloading);
+        Assert.Single(context.Dialogs.Requests);
+    }
+
+    private DownloadTestContext CreateContext(
+        bool generateMetadata,
+        IPhysicalOutputPathResolver? resolver = null,
+        IDownloadTaskQueue? taskQueue = null,
+        IDownloadRuntimeAvailability? runtimeAvailability = null)
     {
         Directory.CreateDirectory(_directory);
         return new DownloadTestContext(
             Path.Combine(_directory, $"settings-{Guid.NewGuid():N}.json"),
-            generateMetadata);
+            generateMetadata,
+            resolver,
+            taskQueue,
+            runtimeAvailability);
     }
 
     private static VideoPage CreatePage(
@@ -253,7 +364,12 @@ public sealed class VideoTagLoadingTests : IDisposable
         private readonly DownloadTaskProjectionStore _projectionStore;
         private readonly DownloadTaskAdmissionService _admission;
 
-        public DownloadTestContext(string settingsPath, bool generateMetadata)
+        public DownloadTestContext(
+            string settingsPath,
+            bool generateMetadata,
+            IPhysicalOutputPathResolver? resolver,
+            IDownloadTaskQueue? taskQueue,
+            IDownloadRuntimeAvailability? runtimeAvailability)
         {
             _settings = new DownKyi.Core.Settings.SettingsStore(settingsPath);
             _settings.Update(settings => settings with
@@ -273,28 +389,33 @@ public sealed class VideoTagLoadingTests : IDisposable
             ListState = new DownloadListState();
             Queue = new RecordingDownloadTaskQueue();
             Logger = new RecordingLogger<DownloadMovieMetadataBuilder>();
+            Dialogs = new RecordingDialogService();
             var desktop = new TestDesktopInteractionContext();
             var client = new TestBilibiliApiClient();
             _admission = new DownloadTaskAdmissionService(
                 ListState,
                 _taskService,
                 _projectionStore,
-                Queue);
+                new DownloadTaskStateWriter(_taskService),
+                taskQueue ?? Queue,
+                runtimeAvailability ?? new ReadyDownloadRuntimeAvailability(),
+                resolver ?? new FileSystemPhysicalOutputPathResolver());
             var duplicatePolicy = new DownloadDuplicatePolicy(
                 ListState,
                 _projectionStore,
                 desktop.Notifications,
-                desktop.Dialogs);
+                Dialogs);
             Service = new AddToDownloadService(
                 DownKyi.Core.BiliApi.VideoStream.PlayStreamType.Video,
                 _admission,
+                new LegacyDownloadAdmissionPresenter(_taskService, Dialogs),
                 duplicatePolicy,
                 new DownloadMovieMetadataBuilder(Logger),
                 _settings,
                 new VideoTagProvider(client),
                 new TestWbiKeyProvider(),
                 client,
-                desktop.Dialogs,
+                Dialogs,
                 new RecordingLogger<AddToDownloadService>());
         }
 
@@ -308,7 +429,9 @@ public sealed class VideoTagLoadingTests : IDisposable
 
         public RecordingLogger<DownloadMovieMetadataBuilder> Logger { get; }
 
-        public void Prepare(VideoPage page)
+        public RecordingDialogService Dialogs { get; }
+
+        public void Prepare(params VideoPage[] pages)
         {
             Service.GetVideo(
                 new VideoInfoView
@@ -323,9 +446,27 @@ public sealed class VideoTagLoadingTests : IDisposable
                         Id = 1,
                         IsSelected = true,
                         Title = "section",
-                        VideoPages = [page]
+                        VideoPages = pages
                     }
                 ]);
+        }
+
+        public void PrepareSections(params VideoPage[][] sections)
+        {
+            Service.GetVideo(
+                new VideoInfoView
+                {
+                    Title = "video",
+                    Description = "description",
+                    VideoZone = "Technology"
+                },
+                sections.Select((pages, index) => new VideoSection
+                {
+                    Id = index + 1,
+                    IsSelected = true,
+                    Title = $"section-{index + 1}",
+                    VideoPages = pages
+                }).ToArray());
         }
 
         public void Dispose()
@@ -334,6 +475,64 @@ public sealed class VideoTagLoadingTests : IDisposable
             _projectionStore.Dispose();
             _taskService.Dispose();
             _settings.Dispose();
+        }
+    }
+
+    private sealed class RecordingDialogService : IAppDialogService
+    {
+        public List<AppDialogRequest> Requests { get; } = [];
+
+        public Task<AppDialogResult> ShowAsync(
+            AppDialogRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Requests.Add(request);
+            return Task.FromResult(new AppDialogResult(
+                AppDialogOutcome.Canceled,
+                new Dictionary<string, object?>()));
+        }
+    }
+
+    private sealed class FailFirstPhysicalOutputPathResolver : IPhysicalOutputPathResolver
+    {
+        public int CallCount { get; private set; }
+
+        public string ResolvePhysicalBasePath(string logicalBasePath)
+        {
+            CallCount++;
+            if (CallCount == 1)
+            {
+                throw new IOException("Unable to resolve physical output path.");
+            }
+
+            return logicalBasePath;
+        }
+    }
+
+    private sealed class UnknownFailurePhysicalOutputPathResolver : IPhysicalOutputPathResolver
+    {
+        public string ResolvePhysicalBasePath(string logicalBasePath)
+        {
+            throw new InvalidOperationException("Unexpected resolver failure.");
+        }
+    }
+
+    private sealed class UnavailableDownloadRuntimeAvailability : IDownloadRuntimeAvailability
+    {
+        public void EnsureAcceptingTasks()
+        {
+            throw new DownloadRuntimeUnavailableException(
+                "Synthetic unavailable download runtime.");
+        }
+
+        public Task<DownloadRuntimeStartupOutcome> WaitForStartupOutcomeAsync(
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(DownloadRuntimeStartupOutcome.Faulted(
+                new DownloadRuntimeUnavailableException(
+                    "Synthetic unavailable download runtime.")));
         }
     }
 

@@ -57,7 +57,11 @@ flowchart LR
 - Packaged aria2 starts only after its SHA-256 sidecar matches the executable.
   Both packaged and custom endpoints must report
   `downkyi-secure-redirect-v2` through `aria2.getVersion().enabledFeatures`;
-  missing integrity or capability evidence fails closed.
+  missing integrity or capability evidence fails closed. Consequently, the
+  Custom Aria setting supports only a DownKyi-compatible aria2 fork that
+  advertises this capability. Generic upstream aria2 and Motrix are not
+  supported endpoints; the setting UI and bootstrap diagnostic must state this
+  requirement rather than presenting them as generic-compatible alternatives.
 - RPC error code `33` identifies HTTPS downgrade rejection and `34` identifies
   sensitive-header cross-origin rejection. These machine codes remain stable
   when aria2 exhausts a URI and replaces the human-readable status message.

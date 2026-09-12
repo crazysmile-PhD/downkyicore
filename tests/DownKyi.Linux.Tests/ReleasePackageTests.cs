@@ -4,68 +4,68 @@ using DownKyi.Architecture.Tests;
 namespace DownKyi.Linux.Tests;
 
 [SupportedOSPlatform("linux")]
-public sealed class V113ReleasePackageTests
+public sealed class ReleasePackageTests
 {
     [Fact]
     public void FinalPackageValidationRejectsMissingExecuteBits()
     {
-        V113ReleaseSafetyRegressionTests
+        ReleaseSafetyRegressionTests
             .LinuxReleasePackageValidationRejectsMissingExecuteBits();
     }
 
     [Fact]
     public void FinalPackageValidationRejectsArchitectureMismatch()
     {
-        V113ReleaseSafetyRegressionTests
+        ReleaseSafetyRegressionTests
             .LinuxReleasePackageValidationRejectsArchitectureMismatch();
     }
 
     [Fact]
     public void FinalPackageValidationRejectsOwnerOnlyExecuteBits()
     {
-        V113ReleaseSafetyRegressionTests
+        ReleaseSafetyRegressionTests
             .LinuxReleasePackageValidationRejectsOwnerOnlyExecuteBits();
     }
 
     [Fact]
     public void FinalPackageValidationRejectsCrossFormatBinary()
     {
-        V113ReleaseSafetyRegressionTests
+        ReleaseSafetyRegressionTests
             .LinuxReleasePackageValidationRejectsCrossFormatBinary();
     }
 
     [Fact]
     public void FinalPackageValidationRejectsMixedElfArchitectures()
     {
-        V113ReleaseSafetyRegressionTests
+        ReleaseSafetyRegressionTests
             .LinuxReleasePackageValidationRejectsMixedElfArchitectures();
     }
 
     [Fact]
     public void FinalPackageValidationRejectsMissingAppImageEntrypoint()
     {
-        V113ReleaseSafetyRegressionTests
+        ReleaseSafetyRegressionTests
             .LinuxReleasePackageValidationRejectsMissingAppImageEntrypoint();
     }
 
     [Fact]
     public void FinalPackageValidationRejectsPackageManagerVersionMismatch()
     {
-        V113ReleaseSafetyRegressionTests
+        ReleaseSafetyRegressionTests
             .LinuxReleasePackageValidationRejectsPackageManagerVersionMismatch();
     }
 
     [Fact]
     public void FinalPackageValidationRejectsPackageManagerIdentityMismatch()
     {
-        V113ReleaseSafetyRegressionTests
+        ReleaseSafetyRegressionTests
             .LinuxReleasePackageValidationRejectsPackageManagerIdentityMismatch();
     }
 
     [Fact]
     public void FinalPackageValidationRejectsRpmEvrMismatch()
     {
-        V113ReleaseSafetyRegressionTests
+        ReleaseSafetyRegressionTests
             .LinuxReleasePackageValidationRejectsRpmEvrMismatch();
     }
 }

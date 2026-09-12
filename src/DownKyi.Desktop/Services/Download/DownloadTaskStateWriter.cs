@@ -51,11 +51,36 @@ internal sealed class DownloadTaskStateWriter
         CancellationToken cancellationToken = default) =>
         RequireAsync(_tasks.RecoverInterruptedAsync(taskId, cancellationToken));
 
+    public Task<DownloadTask> ReconcileInterruptedAsync(
+        DownloadTaskId taskId,
+        long snapshotVersion,
+        CancellationToken cancellationToken = default) =>
+        RequireAsync(_tasks.ReconcileInterruptedAsync(
+            taskId,
+            snapshotVersion,
+            cancellationToken));
+
     public Task<DownloadTask> FailAsync(
         DownloadTaskId taskId,
         DownloadFailure failure,
         CancellationToken cancellationToken = default) =>
         RequireAsync(_tasks.FailAsync(taskId, failure, cancellationToken));
+
+    public Task<DownloadTask> FailRuntimeUnavailableAsync(
+        DownloadTaskId taskId,
+        CancellationToken cancellationToken = default) =>
+        FailAsync(
+            taskId,
+            CreateRuntimeUnavailableFailure(),
+            cancellationToken);
+
+    public Task<DownloadTask> FailRuntimeUnavailableIfDispatchableAsync(
+        DownloadTaskId taskId,
+        CancellationToken cancellationToken = default) =>
+        RequireAsync(_tasks.FailIfDispatchableAsync(
+            taskId,
+            CreateRuntimeUnavailableFailure(),
+            cancellationToken));
 
     public Task<DownloadTask> CompleteAsync(
         DownloadTaskId taskId,
@@ -94,6 +119,24 @@ internal sealed class DownloadTaskStateWriter
         string key,
         CancellationToken cancellationToken = default) =>
         RequireAsync(_tasks.CompleteTransferFileAsync(taskId, key, cancellationToken));
+
+    public Task<DownloadTask> RecordPublishedArtifactAsync(
+        DownloadTaskId taskId,
+        DownloadPublishingArtifact publishing,
+        string path,
+        CancellationToken cancellationToken = default) =>
+        RequireAsync(_tasks.RecordPublishedArtifactAsync(taskId, publishing, path, cancellationToken));
+
+    public Task<DownloadTask> BeginPublishingArtifactAsync(
+        DownloadTaskId taskId,
+        DownloadPublishingArtifact publishing,
+        CancellationToken cancellationToken = default) =>
+        RequireAsync(_tasks.BeginPublishingArtifactAsync(taskId, publishing, cancellationToken));
+
+    public Task<DownloadTask> ClearPublishingArtifactAsync(
+        DownloadTaskId taskId,
+        CancellationToken cancellationToken = default) =>
+        RequireAsync(_tasks.ClearPublishingArtifactAsync(taskId, cancellationToken));
 
     public Task<DownloadTask> SetBackendIdentityAsync(
         DownloadTaskId taskId,
@@ -141,6 +184,12 @@ internal sealed class DownloadTaskStateWriter
         return await _tasks.FindAsync(taskId, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"Download task '{taskId.Value}' was not found.");
     }
+
+    private static DownloadFailure CreateRuntimeUnavailableFailure() =>
+        new(
+            "download.runtime.unavailable",
+            "Download runtime is unavailable.",
+            true);
 
     private static async Task<DownloadTask> RequireAsync(
         Task<OperationResult<DownloadTask>> operation)

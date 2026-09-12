@@ -69,8 +69,8 @@ placement without contacting aria2.
 3. Add or update the corresponding case in `AriaClientRpcContractTests`.
 4. Run `AriaClientIsolationTests`, the RPC contract tests, architecture tests,
    strict Release build and the full solution test gate.
-5. Update this document and `docs/ai-knowledge-graph.md` if ownership, retry,
-   authentication or transport behavior changes.
+5. Update this document for design rationale and root `ARCHITECTURE.md` for
+   non-derived current ownership when those facts change.
 
 There is no generated-source refresh command. A future move to generated code
 must first introduce a checked-in schema/source version, deterministic generator

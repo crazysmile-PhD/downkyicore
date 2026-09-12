@@ -11,6 +11,9 @@ public interface IDownloadTaskApplicationService
         DownloadTask task,
         CancellationToken cancellationToken);
 
+    Task<OperationResult> CheckNewDownloadAdmissionAsync(
+        CancellationToken cancellationToken);
+
     Task<DownloadTask?> FindAsync(
         DownloadTaskId taskId,
         CancellationToken cancellationToken);
@@ -20,6 +23,11 @@ public interface IDownloadTaskApplicationService
     Task<bool> IsOutputPathReservedAsync(
         string basePath,
         bool ignoreCase,
+        CancellationToken cancellationToken);
+
+    Task<bool> IsLegacyUpgradeAdmissionBlockedAsync(CancellationToken cancellationToken);
+
+    Task<OperationResult> ConfirmLegacyRemoteTasksStoppedAsync(
         CancellationToken cancellationToken);
 
     Task<DownloadHistoryPage> GetHistoryPageAsync(
@@ -51,7 +59,17 @@ public interface IDownloadTaskApplicationService
         DownloadTaskId taskId,
         CancellationToken cancellationToken);
 
+    Task<OperationResult<DownloadTask>> ReconcileInterruptedAsync(
+        DownloadTaskId taskId,
+        long snapshotVersion,
+        CancellationToken cancellationToken);
+
     Task<OperationResult<DownloadTask>> FailAsync(
+        DownloadTaskId taskId,
+        DownloadFailure failure,
+        CancellationToken cancellationToken);
+
+    Task<OperationResult<DownloadTask>> FailIfDispatchableAsync(
         DownloadTaskId taskId,
         DownloadFailure failure,
         CancellationToken cancellationToken);
@@ -86,6 +104,21 @@ public interface IDownloadTaskApplicationService
     Task<OperationResult<DownloadTask>> CompleteTransferFileAsync(
         DownloadTaskId taskId,
         string key,
+        CancellationToken cancellationToken);
+
+    Task<OperationResult<DownloadTask>> RecordPublishedArtifactAsync(
+        DownloadTaskId taskId,
+        DownloadPublishingArtifact publishing,
+        string path,
+        CancellationToken cancellationToken);
+
+    Task<OperationResult<DownloadTask>> BeginPublishingArtifactAsync(
+        DownloadTaskId taskId,
+        DownloadPublishingArtifact publishing,
+        CancellationToken cancellationToken);
+
+    Task<OperationResult<DownloadTask>> ClearPublishingArtifactAsync(
+        DownloadTaskId taskId,
         CancellationToken cancellationToken);
 
     Task<OperationResult<DownloadTask>> SetBackendIdentityAsync(

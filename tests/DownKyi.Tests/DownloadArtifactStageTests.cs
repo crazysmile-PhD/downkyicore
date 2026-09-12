@@ -2,17 +2,175 @@ using Bilibili.Community.Service.Dm.V1;
 using DownKyi.Application.Downloads;
 using DownKyi.Domain.Downloads;
 using DownKyi.Domain.Results;
+using DownKyi.Infrastructure.Downloads;
 using DownKyi.Infrastructure.Time;
 using DownKyi.Models;
 using DownKyi.Services.Download;
 using DownKyi.ViewModels.DownloadManager;
 using Google.Protobuf;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DownKyi.Tests;
 
 public sealed class DownloadArtifactStageTests
 {
+    [Fact]
+    public async Task RecordedDanmakuDoesNotCompleteRetryAfterPublishedFileDisappears()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "downkyi-artifact-retry",
+            Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            using var settings = new DownKyi.Core.Settings.SettingsStore(
+                Path.Combine(directory, "settings.json"));
+            var downloadBase = new DownloadBase
+            {
+                Id = "missing-published-danmaku",
+                FilePath = Path.Combine(directory, "output"),
+                NeedDownloadContent = DownloadContentSelection.None with { Danmaku = true }
+            };
+            var item = new DownloadingItem
+            {
+                DownloadBase = downloadBase,
+                Downloading = new Downloading
+                {
+                    Id = downloadBase.Id,
+                    DownloadBase = downloadBase,
+                    DownloadStatus = DownloadStatus.WaitForDownload
+                }
+            };
+            var context = DownloadExecutionContextTestFactory.Create(item, settings.Current);
+            var published = Path.Combine(directory, "output.xml");
+            context.PublishedArtifacts["danmaku"] = published;
+            await File.WriteAllBytesAsync(published, [1], TestContext.Current.CancellationToken);
+            var stage = new ValidateStage();
+
+            var beforeRemoval = await stage.ExecuteAsync(context, TestContext.Current.CancellationToken);
+            Assert.True(beforeRemoval.IsSuccess);
+
+            File.Delete(published);
+            var afterRemoval = await stage.ExecuteAsync(context, TestContext.Current.CancellationToken);
+            Assert.False(afterRemoval.IsSuccess);
+            Assert.Equal("download.validate.danmaku", afterRemoval.Error?.Code);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task ReopenedTaskGeneratesPersistedNfoAfterCurrentSettingIsDisabled()
+    {
+        var directory = Path.Combine(
+            Path.GetTempPath(),
+            "downkyi-reopened-nfo-tests",
+            Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        var databasePath = Path.Combine(directory, "download.db");
+        var settingsPath = Path.Combine(directory, "settings.json");
+        var taskId = new DownloadTaskId("persisted-nfo");
+        try
+        {
+            using var settings = new DownKyi.Core.Settings.SettingsStore(settingsPath);
+            settings.Update(current => current with
+            {
+                Video = current.Video with
+                {
+                    Content = current.Video.Content with { GenerateMovieMetadata = true }
+                }
+            });
+            var downloadBase = new DownloadBase
+            {
+                Id = taskId.Value,
+                FilePath = Path.Combine(directory, "persisted-output")
+            };
+            downloadBase.NeedDownloadContent = DownloadContentSelection.None;
+
+            var admitted = new DownloadingItem
+            {
+                DownloadBase = downloadBase,
+                Downloading = new Downloading
+                {
+                    Id = taskId.Value,
+                    DownloadBase = downloadBase,
+                    DownloadStatus = DownloadStatus.WaitForDownload
+                },
+                Metadata = new MovieMetadata
+                {
+                    Title = "Persisted title",
+                    Plot = "Persisted plot",
+                    Year = "2026",
+                    Premiered = "2026-09-09",
+                    BilibiliId = new UniqueId("bilibili", "BV1PERSISTED")
+                }
+            };
+            admitted.Metadata.Genres.Add("Persisted genre");
+
+            using (var firstStore = CreateSqliteStore(databasePath))
+            {
+                await firstStore.InitializeAsync(TestContext.Current.CancellationToken);
+                using var firstTasks = new DownloadTaskApplicationService(firstStore, new SystemClock());
+                using var firstProjections = new DownloadTaskProjectionStore(firstTasks, new SystemClock());
+                await firstProjections.AddDownloadingAsync(
+                    admitted,
+                    TestContext.Current.CancellationToken);
+                var firstWriter = new DownloadTaskStateWriter(firstTasks);
+                await firstWriter.StartAsync(taskId, TestContext.Current.CancellationToken);
+                await firstWriter.PauseAsync(taskId, TestContext.Current.CancellationToken);
+                await firstWriter.ConfirmPausedAsync(taskId, TestContext.Current.CancellationToken);
+            }
+
+            settings.Update(current => current with
+            {
+                Video = current.Video with
+                {
+                    Content = current.Video.Content with { GenerateMovieMetadata = false }
+                }
+            });
+            using var reopenedStore = CreateSqliteStore(databasePath);
+            await reopenedStore.InitializeAsync(TestContext.Current.CancellationToken);
+            using var reopenedTasks = new DownloadTaskApplicationService(reopenedStore, new SystemClock());
+            using var reopenedProjections = new DownloadTaskProjectionStore(reopenedTasks, new SystemClock());
+            var startup = await reopenedProjections.GetDownloadingStateAsync(
+                TestContext.Current.CancellationToken);
+            var reopenedItem = Assert.Single(startup.Projections);
+            var stateWriter = new DownloadTaskStateWriter(reopenedTasks);
+            await stateWriter.ResumeAsync(taskId, TestContext.Current.CancellationToken);
+            var execution = DownloadExecutionContextTestFactory.Create(
+                reopenedItem,
+                settings.Current);
+            await stateWriter.StartAsync(taskId, TestContext.Current.CancellationToken);
+            var stage = new DownloadArtifactsStage(
+                new DownloadArtifactWriter(
+                    new TestWbiKeyProvider(),
+                    stateWriter,
+                    NullLogger<DownloadArtifactWriter>.Instance,
+                    new TestBilibiliApiClient()),
+                new DownloadActivityPresenter(reopenedProjections, stateWriter));
+
+            var result = await stage.ExecuteAsync(execution, TestContext.Current.CancellationToken);
+
+            Assert.True(result.IsSuccess, result.Error?.Message);
+            Assert.False(settings.Current.Video.Content.GenerateMovieMetadata);
+            var nfo = await File.ReadAllTextAsync(
+                $"{downloadBase.FilePath}.nfo",
+                TestContext.Current.CancellationToken);
+            Assert.Contains("Persisted title", nfo, StringComparison.Ordinal);
+            Assert.Contains("Persisted genre", nfo, StringComparison.Ordinal);
+        }
+        finally
+        {
+            ClearSqlitePool(databasePath);
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+    }
+
     [Fact]
     public async Task CoverHttpFailureStopsBeforeFinalize()
     {
@@ -21,9 +179,10 @@ public sealed class DownloadArtifactStageTests
             DownloadFileAsyncHandler = (_, _, _) =>
                 Task.FromException(new HttpRequestException("unavailable"))
         };
-        using var context = await ArtifactTestContext.CreateAsync(client, cover: true)
-            .ConfigureAwait(true);
-        context.Downloading.DownloadBase.CoverUrl = "https://example.test/cover.jpg";
+        using var context = await ArtifactTestContext.CreateAsync(
+            client,
+            cover: true,
+            coverUrl: "https://example.test/cover.jpg").ConfigureAwait(true);
         var finalized = false;
 
         var run = await DownloadPipeline.ExecuteStagesAsync(
@@ -47,9 +206,10 @@ public sealed class DownloadArtifactStageTests
                 return Task.CompletedTask;
             }
         };
-        using var context = await ArtifactTestContext.CreateAsync(client, cover: true)
-            .ConfigureAwait(true);
-        context.Downloading.DownloadBase.CoverUrl = "https://example.test/cover.bin";
+        using var context = await ArtifactTestContext.CreateAsync(
+            client,
+            cover: true,
+            coverUrl: "https://example.test/cover.bin").ConfigureAwait(true);
 
         var result = await context.Stage.ExecuteAsync(
             context.Execution,
@@ -73,9 +233,10 @@ public sealed class DownloadArtifactStageTests
     {
         var failureMode = Enum.Parse<CoverFailureMode>(failureModeName);
         var client = CreateCoverFailureClient(failureMode);
-        using var context = await ArtifactTestContext.CreateAsync(client, cover: true)
-            .ConfigureAwait(true);
-        context.Downloading.DownloadBase.CoverUrl = "https://example.test/cover.bin";
+        using var context = await ArtifactTestContext.CreateAsync(
+            client,
+            cover: true,
+            coverUrl: "https://example.test/cover.bin").ConfigureAwait(true);
 
         if (failureMode == CoverFailureMode.CancellationAfterWrite)
         {
@@ -119,16 +280,10 @@ public sealed class DownloadArtifactStageTests
             cover: kind is ArtifactKind.MainCover or ArtifactKind.PageCover,
             subtitle: kind == ArtifactKind.Subtitle,
             danmaku: kind == ArtifactKind.Danmaku,
-            generateMetadata: kind == ArtifactKind.Nfo).ConfigureAwait(true);
-
-        if (kind == ArtifactKind.MainCover)
-        {
-            context.Downloading.DownloadBase.CoverUrl = "https://example.test/main.bin";
-        }
-        else if (kind == ArtifactKind.PageCover)
-        {
-            context.Downloading.DownloadBase.PageCoverUrl = "https://example.test/page.bin";
-        }
+            generateMetadata: kind == ArtifactKind.Nfo,
+            coverUrl: kind == ArtifactKind.MainCover ? "https://example.test/main.bin" : null,
+            pageCoverUrl: kind == ArtifactKind.PageCover ? "https://example.test/page.bin" : null)
+            .ConfigureAwait(true);
 
         var result = await context.Stage.ExecuteAsync(
             context.Execution,
@@ -151,9 +306,10 @@ public sealed class DownloadArtifactStageTests
     public async Task OwnershipOracleRejectsSyntheticMissingOwnerMutation()
     {
         var client = CreateSuccessfulArtifactClient(ArtifactKind.MainCover);
-        using var context = await ArtifactTestContext.CreateAsync(client, cover: true)
-            .ConfigureAwait(true);
-        context.Downloading.DownloadBase.CoverUrl = "https://example.test/main.bin";
+        using var context = await ArtifactTestContext.CreateAsync(
+            client,
+            cover: true,
+            coverUrl: "https://example.test/main.bin").ConfigureAwait(true);
         var result = await context.Stage.ExecuteAsync(
             context.Execution,
             TestContext.Current.CancellationToken).ConfigureAwait(true);
@@ -182,10 +338,11 @@ public sealed class DownloadArtifactStageTests
             DownloadFileAsyncHandler = (_, destination, token) =>
                 File.WriteAllTextAsync(destination, "image", token)
         };
-        using var context = await ArtifactTestContext.CreateAsync(client, cover: true)
-            .ConfigureAwait(true);
-        context.Downloading.DownloadBase.PageCoverUrl = "https://example.test/page.jpg";
-        context.Downloading.DownloadBase.CoverUrl = "https://example.test/main.png";
+        using var context = await ArtifactTestContext.CreateAsync(
+            client,
+            cover: true,
+            coverUrl: "https://example.test/main.png",
+            pageCoverUrl: "https://example.test/page.jpg").ConfigureAwait(true);
 
         var result = await context.Stage.ExecuteAsync(
             context.Execution,
@@ -366,9 +523,10 @@ public sealed class DownloadArtifactStageTests
             DownloadFileAsyncHandler = (_, _, token) =>
                 Task.FromException(new OperationCanceledException(token))
         };
-        using var context = await ArtifactTestContext.CreateAsync(client, cover: true)
-            .ConfigureAwait(true);
-        context.Downloading.DownloadBase.CoverUrl = "https://example.test/cover.jpg";
+        using var context = await ArtifactTestContext.CreateAsync(
+            client,
+            cover: true,
+            coverUrl: "https://example.test/cover.jpg").ConfigureAwait(true);
         await cancellation.CancelAsync().ConfigureAwait(true);
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
@@ -383,9 +541,10 @@ public sealed class DownloadArtifactStageTests
             DownloadFileAsyncHandler = (_, destination, token) =>
                 File.WriteAllTextAsync(destination, "image", token)
         };
-        using var context = await ArtifactTestContext.CreateAsync(client, cover: true)
-            .ConfigureAwait(true);
-        context.Downloading.DownloadBase.CoverUrl = "https://example.test/cover.jpg";
+        using var context = await ArtifactTestContext.CreateAsync(
+            client,
+            cover: true,
+            coverUrl: "https://example.test/cover.jpg").ConfigureAwait(true);
         var finalized = false;
 
         var run = await DownloadPipeline.ExecuteStagesAsync(
@@ -552,6 +711,25 @@ public sealed class DownloadArtifactStageTests
         }
     }
 
+    private static SqliteDownloadTaskStore CreateSqliteStore(string databasePath)
+    {
+        return new SqliteDownloadTaskStore(
+            new SqliteDownloadTaskStoreOptions(databasePath),
+            new SystemClock());
+    }
+
+    private static void ClearSqlitePool(string databasePath)
+    {
+        using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = databasePath,
+            Mode = SqliteOpenMode.ReadWriteCreate,
+            Pooling = true,
+            DefaultTimeout = 5
+        }.ToString());
+        SqliteConnection.ClearPool(connection);
+    }
+
     private enum CoverFailureMode
     {
         HtmlError,
@@ -575,11 +753,13 @@ public sealed class DownloadArtifactStageTests
         private readonly string _directory;
         private readonly DownKyi.Core.Settings.SettingsStore _settings;
         private readonly DownloadTaskApplicationService _tasks;
+        private readonly DownloadTaskProjectionStore _projections;
 
         private ArtifactTestContext(
             string directory,
             DownKyi.Core.Settings.SettingsStore settings,
             DownloadTaskApplicationService tasks,
+            DownloadTaskProjectionStore projections,
             DownloadingItem downloading,
             DownloadExecutionContext execution,
             DownloadArtifactsStage stage)
@@ -587,6 +767,7 @@ public sealed class DownloadArtifactStageTests
             _directory = directory;
             _settings = settings;
             _tasks = tasks;
+            _projections = projections;
             Downloading = downloading;
             Execution = execution;
             Stage = stage;
@@ -620,7 +801,9 @@ public sealed class DownloadArtifactStageTests
             bool subtitle = false,
             bool danmaku = false,
             bool generateMetadata = false,
-            bool useMissingOutputDirectory = false)
+            bool useMissingOutputDirectory = false,
+            string? coverUrl = null,
+            string? pageCoverUrl = null)
         {
             var directory = Path.Combine(
                 Path.GetTempPath(),
@@ -653,16 +836,16 @@ public sealed class DownloadArtifactStageTests
                 Avid = 1,
                 Bvid = "BV1test",
                 Cid = 2,
-                FilePath = Path.Combine(outputDirectory, "output")
+                FilePath = Path.Combine(outputDirectory, "output"),
+                CoverUrl = coverUrl ?? string.Empty,
+                PageCoverUrl = pageCoverUrl ?? string.Empty
             };
-            foreach (var key in downloadBase.NeedDownloadContent.Keys.ToArray())
+            downloadBase.NeedDownloadContent = DownloadContentSelection.None with
             {
-                downloadBase.NeedDownloadContent[key] = false;
-            }
-
-            downloadBase.NeedDownloadContent["downloadCover"] = cover;
-            downloadBase.NeedDownloadContent["downloadSubtitle"] = subtitle;
-            downloadBase.NeedDownloadContent["downloadDanmaku"] = danmaku;
+                Cover = cover,
+                Subtitle = subtitle,
+                Danmaku = danmaku
+            };
             var downloading = new DownloadingItem
             {
                 DownloadBase = downloadBase,
@@ -683,13 +866,14 @@ public sealed class DownloadArtifactStageTests
             }
             var store = new SingleTaskStore();
             var tasks = new DownloadTaskApplicationService(store, new SystemClock());
+            var projections = new DownloadTaskProjectionStore(tasks, new SystemClock());
             var stateWriter = new DownloadTaskStateWriter(tasks);
-            var task = DownloadTaskProjectionMapper.CreateNewTask(
+            await projections.AddDownloadingAsync(
                 downloading,
-                DateTimeOffset.UnixEpoch);
-            Assert.True((await tasks.AddAsync(
-                task,
-                TestContext.Current.CancellationToken).ConfigureAwait(true)).IsSuccess);
+                TestContext.Current.CancellationToken).ConfigureAwait(true);
+            var execution = DownloadExecutionContextTestFactory.Create(
+                downloading,
+                settings.Current);
             await stateWriter.StartAsync(taskId, TestContext.Current.CancellationToken)
                 .ConfigureAwait(true);
             downloading.Downloading.DownloadStatus = DownloadStatus.Downloading;
@@ -698,22 +882,21 @@ public sealed class DownloadArtifactStageTests
                 stateWriter,
                 NullLogger<DownloadArtifactWriter>.Instance,
                 client);
-            var execution = new DownloadExecutionContext(
-                taskId,
-                downloading,
-                settings.Current,
-                static (_, token) => token.ThrowIfCancellationRequested());
             return new ArtifactTestContext(
                 directory,
                 settings,
                 tasks,
+                projections,
                 downloading,
                 execution,
-                new DownloadArtifactsStage(writer));
+                new DownloadArtifactsStage(
+                    writer,
+                    new DownloadActivityPresenter(projections, stateWriter)));
         }
 
         public void Dispose()
         {
+            _projections.Dispose();
             _tasks.Dispose();
             _settings.Dispose();
             if (Directory.Exists(_directory))

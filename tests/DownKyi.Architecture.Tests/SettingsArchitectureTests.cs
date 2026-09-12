@@ -160,7 +160,8 @@ public sealed class SettingsArchitectureTests
     public void FfmpegProcessorIsOneInjectedCompositionOwner()
     {
         var processorSource = ReadSource("DownKyi.Core", "FFmpeg", "FfmpegProcessor.cs");
-        var compositionSource = ReadSource("src", "DownKyi.Desktop", "Composition", "DesktopComposition.cs");
+        var compositionSource = ReadSource(
+            "src", "DownKyi.Desktop", "Services", "Download", "DownloadComposition.cs");
 
         Assert.DoesNotContain("FfmpegProcessor.Instance", processorSource, StringComparison.Ordinal);
         Assert.Contains("AddSingleton<FfmpegProcessor>()", compositionSource, StringComparison.Ordinal);

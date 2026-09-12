@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace DownKyi.MacOS.Tests;
@@ -71,7 +72,7 @@ public sealed class MacBundleLayoutTests
             var legacySigning = RunSigningScript(legacyApp);
             Assert.NotEqual(0, legacySigning.ExitCode);
             var legacyOutput = legacySigning.StandardOutput + legacySigning.StandardError;
-            Assert.Contains("code object is not signed at all", legacyOutput, StringComparison.Ordinal);
+            Assert.Contains("runtime checksum path must remain a symlink", legacyOutput, StringComparison.Ordinal);
 
             CreateAppBundle(correctedApp, publishDirectory);
             AssertSuccess(Run(
@@ -100,6 +101,17 @@ public sealed class MacBundleLayoutTests
                 "BundleProbe.runtimeconfig.json")));
 
             AssertSuccess(RunSigningScript(correctedApp));
+            AssertAdHocSignatureDoesNotEnableHardenedRuntime(correctedApp);
+            AssertAdHocSignatureDoesNotEnableHardenedRuntime(Path.Combine(
+                correctedApp,
+                "Contents",
+                "MacOS",
+                "BundleProbe"));
+            AssertAdHocSignatureDoesNotEnableHardenedRuntime(Path.Combine(
+                correctedApp,
+                "Contents",
+                "MacOS",
+                "libhostfxr.dylib"));
             AssertSuccess(Run(
                 "/bin/bash",
                 RepositoryRoot,
@@ -110,6 +122,46 @@ public sealed class MacBundleLayoutTests
                 Path.Combine(correctedApp, "Contents", "MacOS", "BundleProbe"),
                 fixtureRoot);
             AssertSuccess(launch);
+        }
+        finally
+        {
+            Directory.Delete(fixtureRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void LaunchVerificationReportsRuntimeLoaderExit130()
+    {
+        var fixtureRoot = Path.Combine(Path.GetTempPath(), $"downkyi-launch-failure-{Guid.NewGuid():N}");
+        var appPath = Path.Combine(fixtureRoot, "Test.app");
+        var executableDirectory = Path.Combine(appPath, "Contents", "MacOS");
+        var executablePath = Path.Combine(executableDirectory, "TestApp");
+        Directory.CreateDirectory(executableDirectory);
+
+        try
+        {
+            File.WriteAllText(
+                executablePath,
+                "#!/bin/bash\necho 'Failed to load libhostfxr.dylib' >&2\necho 'mapping process and mapped file (non-platform) have different Team IDs' >&2\nexit 130\n",
+                new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+            AssertSuccess(Run("/bin/chmod", fixtureRoot, "+x", executablePath));
+
+            var result = Run(
+                "/bin/bash",
+                RepositoryRoot,
+                new Dictionary<string, string?>
+                {
+                    ["MACOS_EXECUTABLE_NAME"] = "TestApp",
+                    ["MACOS_LAUNCH_SECONDS"] = "1"
+                },
+                Path.Combine(RepositoryRoot, "script", "macos", "verify-app-launch.sh"),
+                appPath);
+
+            Assert.NotEqual(0, result.ExitCode);
+            var output = result.StandardOutput + result.StandardError;
+            Assert.Contains("status 130", output, StringComparison.Ordinal);
+            Assert.Contains("libhostfxr.dylib", output, StringComparison.Ordinal);
+            Assert.Contains("different Team IDs", output, StringComparison.Ordinal);
         }
         finally
         {
@@ -171,6 +223,19 @@ public sealed class MacBundleLayoutTests
             appPath);
     }
 
+    private static void AssertAdHocSignatureDoesNotEnableHardenedRuntime(string path)
+    {
+        var result = Run("/usr/bin/codesign", RepositoryRoot, "-dv", "--verbose=4", path);
+        AssertSuccess(result);
+
+        var codeDirectory = (result.StandardOutput + result.StandardError)
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Split('\n')
+            .Single(line => line.StartsWith("CodeDirectory ", StringComparison.Ordinal));
+        Assert.Contains("adhoc", codeDirectory, StringComparison.Ordinal);
+        Assert.DoesNotContain("runtime", codeDirectory, StringComparison.Ordinal);
+    }
+
     private static void CreateAppBundle(string appPath, string publishDirectory)
     {
         var contentsDirectory = Path.Combine(appPath, "Contents");
@@ -179,6 +244,14 @@ public sealed class MacBundleLayoutTests
         Directory.CreateDirectory(Path.Combine(contentsDirectory, "Resources"));
 
         AssertSuccess(Run("/bin/cp", RepositoryRoot, "-a", $"{publishDirectory}/.", macOsDirectory));
+        var ariaDirectory = Path.Combine(macOsDirectory, "aria2");
+        var ariaExecutable = Path.Combine(ariaDirectory, "aria2c");
+        Directory.CreateDirectory(ariaDirectory);
+        File.Copy(Path.Combine(macOsDirectory, "BundleProbe"), ariaExecutable);
+        AssertSuccess(Run("/bin/chmod", RepositoryRoot, "+x", ariaExecutable));
+        File.WriteAllText(
+            $"{ariaExecutable}.sha256",
+            Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(ariaExecutable))));
         File.WriteAllText(
             Path.Combine(contentsDirectory, "Info.plist"),
             """

@@ -10,6 +10,7 @@ public sealed class DownloadAddCoordinatorTests
         var addWasCalled = false;
 
         var result = await DownloadAddCoordinator.AddToDownloadIfDirectorySelectedAsync(
+            () => Task.FromResult(true),
             () => Task.FromResult<string?>(null),
             _ =>
             {
@@ -28,6 +29,7 @@ public sealed class DownloadAddCoordinatorTests
         string? receivedDirectory = null;
 
         var result = await DownloadAddCoordinator.AddToDownloadIfDirectorySelectedAsync(
+            () => Task.FromResult(true),
             () => Task.FromResult<string?>("D:\\Downloads"),
             directory =>
             {
@@ -38,5 +40,30 @@ public sealed class DownloadAddCoordinatorTests
 
         Assert.Equal(2, result);
         Assert.Equal("D:\\Downloads", receivedDirectory);
+    }
+
+    [Fact]
+    public async Task BlockedAdmissionStopsBeforeDirectorySelectionAndBatchAdd()
+    {
+        var directorySelectionCount = 0;
+        var addCount = 0;
+
+        var result = await DownloadAddCoordinator.AddToDownloadIfDirectorySelectedAsync(
+            () => Task.FromResult(false),
+            () =>
+            {
+                directorySelectionCount++;
+                return Task.FromResult<string?>("D:\\Downloads");
+            },
+            _ =>
+            {
+                addCount++;
+                return Task.FromResult(2);
+            },
+            TestContext.Current.CancellationToken);
+
+        Assert.Null(result);
+        Assert.Equal(0, directorySelectionCount);
+        Assert.Equal(0, addCount);
     }
 }
