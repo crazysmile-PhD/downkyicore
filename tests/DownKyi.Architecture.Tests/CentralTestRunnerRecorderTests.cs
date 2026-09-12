@@ -190,6 +190,51 @@ public sealed class CentralTestRunnerRecorderTests
     }
 
     [Fact]
+    public async Task BlockedStderrForwardingCannotDelayMandatoryTermination()
+    {
+        var evidenceDirectory = CreateEvidenceDirectory();
+        using var blockedError = new BlockingTextWriter();
+        try
+        {
+            using var cancellation = new CancellationTokenSource();
+            var run = FlightRecorderExecution.RunAsync(
+                new ProcessExecutionRequest(
+                    "fixture.stderr-backpressure.slice",
+                    "fixture.stderr-backpressure.test",
+                    CreateFixtureStartInfo("fixture-stderr-hold"),
+                    TimeSpan.FromSeconds(10),
+                    TimeSpan.FromSeconds(1),
+                    evidenceDirectory,
+                    ErrorDestination: blockedError),
+                cancellation.Token);
+            await blockedError.Entered.WaitAsync(TimeSpan.FromSeconds(5),
+                TestContext.Current.CancellationToken);
+
+            var cleanupClock = Stopwatch.StartNew();
+            await cancellation.CancelAsync();
+            var result = await run.WaitAsync(TimeSpan.FromSeconds(4),
+                TestContext.Current.CancellationToken);
+            cleanupClock.Stop();
+
+            Assert.Equal(2, result.ExitCode);
+            Assert.True(cleanupClock.Elapsed < TimeSpan.FromSeconds(3));
+            Assert.False(IsProcessAlive(result.RootPid));
+            using var document = JsonDocument.Parse(await File.ReadAllTextAsync(
+                result.EvidencePath, TestContext.Current.CancellationToken));
+            var events = document.RootElement.GetProperty("Events").EnumerateArray()
+                .Select(item => item.GetProperty("Event").GetString()).ToArray();
+            Assert.Contains("bounded_stop_requested", events);
+            Assert.Contains("cleanup_completed", events);
+            Assert.Contains("cleanup_failed", events);
+        }
+        finally
+        {
+            blockedError.Release();
+            Directory.Delete(evidenceDirectory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task OutputPipeHeldByDescendantDoesNotHangRunner()
     {
         var evidenceDirectory = CreateEvidenceDirectory();
@@ -604,5 +649,35 @@ public sealed class CentralTestRunnerRecorderTests
             $"downkyi-flight-recorder-{Guid.NewGuid():N}");
         Directory.CreateDirectory(path);
         return path;
+    }
+
+    private sealed class BlockingTextWriter : TextWriter
+    {
+        private readonly TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly ManualResetEventSlim release = new(false);
+
+        public Task Entered => entered.Task;
+
+        public override System.Text.Encoding Encoding => System.Text.Encoding.UTF8;
+
+        public override Task WriteLineAsync(string? value)
+        {
+            entered.TrySetResult();
+            release.Wait();
+            return Task.CompletedTask;
+        }
+
+        public void Release() => release.Set();
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                release.Set();
+                release.Dispose();
+            }
+
+            base.Dispose(disposing);
+        }
     }
 }

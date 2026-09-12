@@ -12,6 +12,7 @@
     <InternalsVisibleTo Include="DownKyi.Architecture.Tests" />
     <InternalsVisibleTo Include="DownKyi.Windows.Tests" />
     <InternalsVisibleTo Include="DownKyi.MacOS.Tests" />
+    <InternalsVisibleTo Include="DownKyi.Linux.Tests" />
   </ItemGroup>
 
 </Project>

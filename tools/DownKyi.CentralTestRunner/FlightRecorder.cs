@@ -42,7 +42,6 @@ internal sealed class FlightRecorder
 
     internal SensitiveEvidenceRedactor Redactor { get; }
 
-    internal IReadOnlyList<ObservedProcess>? CapturedProcesses => report.FinalSnapshot?.Processes;
 
     public static async Task<FlightRecorder> CreateAsync(ProcessExecutionRequest request)
     {
@@ -71,6 +70,7 @@ internal sealed class FlightRecorder
             request.SnapshotCapture ?? ProcessTreeSnapshot.CaptureAsync,
             redactor);
         await recorder.RecordAsync("recorder_start").ConfigureAwait(false);
+        await recorder.RecordAsync("scope_launch_begin").ConfigureAwait(false);
         return recorder;
     }
 
@@ -168,9 +168,10 @@ internal sealed class FlightRecorder
     public async Task FinalizeFailureAsync(
         string outcome,
         TailBuffer standardOutput,
-        TailBuffer standardError)
+        TailBuffer standardError,
+        CleanupDeadline? deadline = null)
     {
-        await CaptureFinalSnapshotOnceAsync().ConfigureAwait(false);
+        await CaptureFinalSnapshotOnceAsync(deadline).ConfigureAwait(false);
 
         report.Outcome = outcome;
         if (standardOutput.Value.Length > 0 || report.StdoutTail is null)
@@ -183,7 +184,14 @@ internal sealed class FlightRecorder
         }
 
         report.DiagnosticGuidance = DiagnosticGuidance;
-        await PersistAsync().ConfigureAwait(false);
+        if (deadline is null)
+        {
+            await PersistAsync().ConfigureAwait(false);
+        }
+        else
+        {
+            await PersistAsync().WaitAsync(deadline.Remaining).ConfigureAwait(false);
+        }
     }
 
     private Task PersistAsync()

@@ -9,6 +9,11 @@ internal static class Program
 {
     public static async Task<int> Main(string[] args)
     {
+        if (args.Length == 3 && string.Equals(args[0], "owned-scope-host", StringComparison.Ordinal))
+        {
+            return await OwnedProcessScope.RunHostAsync(args[1], args[2]).ConfigureAwait(false);
+        }
+
         if (args.Length > 0 && string.Equals(args[0], "fixture-hold", StringComparison.Ordinal))
         {
             using var currentProcess = System.Diagnostics.Process.GetCurrentProcess();
@@ -88,6 +93,37 @@ internal static class Program
             return 0;
         }
 
+        if (args.Length > 0 && string.Equals(args[0], "fixture-stderr-hold", StringComparison.Ordinal))
+        {
+            await Console.Error.WriteLineAsync("fixture-stderr-ready").ConfigureAwait(false);
+            await Console.Error.FlushAsync().ConfigureAwait(false);
+            await Task.Delay(Timeout.InfiniteTimeSpan).ConfigureAwait(false);
+            return 0;
+        }
+
+        if (args.Length > 2 && string.Equals(args[0], "fixture-tree-root", StringComparison.Ordinal))
+        {
+            await File.WriteAllTextAsync(Path.Combine(args[2], "root.pid"),
+                Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture)).ConfigureAwait(false);
+            var childInfo = CreateFixtureChild(args[1], "fixture-tree-child", args[1], args[2]);
+            using var child = Process.Start(childInfo)
+                ?? throw new InvalidOperationException("The tree child did not start.");
+            await Task.Delay(Timeout.InfiniteTimeSpan).ConfigureAwait(false);
+            return 0;
+        }
+
+        if (args.Length > 2 && string.Equals(args[0], "fixture-tree-child", StringComparison.Ordinal))
+        {
+            var grandchildInfo = CreateFixtureChild(
+                args[1], "fixture-hold-marker", Path.Combine(args[2], "grandchild.pid"));
+            using var grandchild = Process.Start(grandchildInfo)
+                ?? throw new InvalidOperationException("The tree grandchild did not start.");
+            await File.WriteAllTextAsync(Path.Combine(args[2], "child.pid"),
+                Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture)).ConfigureAwait(false);
+            await Task.Delay(Timeout.InfiniteTimeSpan).ConfigureAwait(false);
+            return 0;
+        }
+
         if (args.Length > 2 && string.Equals(args[0], "fixture-legacy-tree-kill", StringComparison.Ordinal))
         {
             var treeInfo = new ProcessStartInfo("/bin/sh")
@@ -153,6 +189,22 @@ internal static class Program
         return await RunCommandAsync(args, cancellation.Token).ConfigureAwait(false);
     }
 
+    private static ProcessStartInfo CreateFixtureChild(string runtimeConfig, string mode, params string[] arguments)
+    {
+        var startInfo = new ProcessStartInfo("dotnet") { UseShellExecute = false };
+        startInfo.ArgumentList.Add("exec");
+        startInfo.ArgumentList.Add("--runtimeconfig");
+        startInfo.ArgumentList.Add(runtimeConfig);
+        startInfo.ArgumentList.Add(typeof(Program).Assembly.Location);
+        startInfo.ArgumentList.Add(mode);
+        foreach (var argument in arguments)
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        return startInfo;
+    }
+
     internal static async Task<int> RunCommandAsync(
         string[] args,
         CancellationToken cancellationToken)
@@ -172,12 +224,36 @@ internal static class Program
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            await Console.Error.WriteLineAsync(exception.Message).ConfigureAwait(false);
+            await WriteDiagnosticBestEffortAsync(exception.Message).ConfigureAwait(false);
             return 2;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             return 130;
+        }
+    }
+
+    internal static async Task WriteDiagnosticBestEffortAsync(string message)
+    {
+        // Diagnostics have no authority over process cleanup or runner exit.
+        var write = Task.Run(() =>
+        {
+            try
+            {
+                Console.Error.WriteLine(message);
+            }
+            catch (Exception exception) when (exception is IOException or ObjectDisposedException)
+            {
+                // The recorder artifact remains the durable diagnostic source.
+            }
+        }, CancellationToken.None);
+        try
+        {
+            await write.WaitAsync(TimeSpan.FromMilliseconds(100)).ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            // An unavailable stderr sink cannot extend the bounded cleanup path.
         }
     }
 

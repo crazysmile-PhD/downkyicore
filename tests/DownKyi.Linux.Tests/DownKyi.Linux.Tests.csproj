@@ -18,11 +18,13 @@
 
   <ItemGroup>
     <ProjectReference Include="..\DownKyi.Architecture.Tests\DownKyi.Architecture.Tests.csproj" />
+    <ProjectReference Include="..\..\tools\DownKyi.CentralTestRunner\DownKyi.CentralTestRunner.csproj" />
     <ProjectReference Include="..\..\src\DownKyi.Infrastructure\DownKyi.Infrastructure.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <Compile Include="..\PlatformShared\FileSystemPhysicalOutputPathResolverUnixTests.cs" Link="FileSystemPhysicalOutputPathResolverUnixTests.cs" />
+    <Compile Include="..\PlatformShared\OwnedProcessScopePlatformTests.cs" Link="OwnedProcessScopePlatformTests.cs" />
   </ItemGroup>
 
   <ItemGroup>

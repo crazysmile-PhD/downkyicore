@@ -142,19 +142,6 @@ internal static class CentralTestCommand
             ? string.Join(",", options.Classes.Order(StringComparer.Ordinal))
             : string.IsNullOrWhiteSpace(options.Filter) ? "all" : options.Filter;
 
-        if (OperatingSystem.IsMacOS())
-        {
-            try
-            {
-                await Console.Error.WriteLineAsync($"CentralTestRunner project={relativeProject} phase=launch")
-                    .WaitAsync(TimeSpan.FromMilliseconds(250)).ConfigureAwait(false);
-            }
-            catch (Exception exception) when (exception is IOException or ObjectDisposedException or TimeoutException)
-            {
-                // Progress logging must not prevent the test project from starting.
-            }
-        }
-
         var result = await FlightRecorderExecution.RunAsync(
             new ProcessExecutionRequest(
                 relativeProject,
@@ -168,7 +155,7 @@ internal static class CentralTestCommand
         {
             var evidenceIdentity = Path.GetRelativePath(repositoryRoot, result.EvidencePath)
                 .Replace('\\', '/');
-            await Console.Error.WriteLineAsync(
+            await Program.WriteDiagnosticBestEffortAsync(
                 $"Test flight recorder preserved: {evidenceIdentity}").ConfigureAwait(false);
             return result.ExitCode;
         }
@@ -185,7 +172,7 @@ internal static class CentralTestCommand
                 exception.Message).ConfigureAwait(false);
             var evidenceIdentity = Path.GetRelativePath(repositoryRoot, result.EvidencePath)
                 .Replace('\\', '/');
-            await Console.Error.WriteLineAsync(
+            await Program.WriteDiagnosticBestEffortAsync(
                 $"Test flight recorder preserved: {evidenceIdentity}").ConfigureAwait(false);
             return 1;
         }
@@ -193,4 +180,5 @@ internal static class CentralTestCommand
         await FlightRecorderExecution.DiscardAsync(result).ConfigureAwait(false);
         return 0;
     }
+
 }
