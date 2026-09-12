@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
 
@@ -64,6 +65,26 @@ internal static class Program
             await File.WriteAllTextAsync(args[1], Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture))
                 .ConfigureAwait(false);
             await Task.Delay(Timeout.InfiniteTimeSpan).ConfigureAwait(false);
+            return 0;
+        }
+
+        if (args.Length > 2 && string.Equals(args[0], "fixture-exit-with-pipe-holder", StringComparison.Ordinal))
+        {
+            var childInfo = new ProcessStartInfo("dotnet")
+            {
+                UseShellExecute = false,
+                RedirectStandardOutput = false,
+                RedirectStandardError = false
+            };
+            childInfo.ArgumentList.Add("exec");
+            childInfo.ArgumentList.Add("--runtimeconfig");
+            childInfo.ArgumentList.Add(args[1]);
+            childInfo.ArgumentList.Add(typeof(Program).Assembly.Location);
+            childInfo.ArgumentList.Add("fixture-hold");
+            using var child = Process.Start(childInfo)
+                ?? throw new InvalidOperationException("The pipe-holder fixture did not start.");
+            await File.WriteAllTextAsync(args[2], child.Id.ToString(System.Globalization.CultureInfo.InvariantCulture))
+                .ConfigureAwait(false);
             return 0;
         }
 

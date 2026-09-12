@@ -73,19 +73,31 @@ internal static class ProcessTreeSnapshot
         ProcessStartInfo startInfo,
         TimeSpan timeout)
     {
+        var deadline = new CleanupDeadline(timeout);
         using var process = new Process { StartInfo = startInfo };
         process.Start();
         var outputTask = process.StandardOutput.ReadToEndAsync();
         var errorTask = process.StandardError.ReadToEndAsync();
         try
         {
-            await process.WaitForExitAsync().WaitAsync(timeout).ConfigureAwait(false);
+            await process.WaitForExitAsync().WaitAsync(deadline.Remaining).ConfigureAwait(false);
+            var output = await outputTask.WaitAsync(deadline.Remaining).ConfigureAwait(false);
+            var error = await errorTask.WaitAsync(deadline.Remaining).ConfigureAwait(false);
+            if (process.ExitCode != 0)
+            {
+                throw new InvalidOperationException($"Process relationship snapshot failed: {error.Trim()}");
+            }
+
+            return ParseParentIds(output);
         }
         catch (TimeoutException)
         {
             try
             {
-                process.Kill(entireProcessTree: true);
+                if (!process.HasExited)
+                {
+                    process.Kill();
+                }
             }
             catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception)
             {
@@ -93,14 +105,6 @@ internal static class ProcessTreeSnapshot
             }
             throw new TimeoutException("Process relationship snapshot exceeded the bounded cleanup window.");
         }
-        var output = await outputTask.ConfigureAwait(false);
-        var error = await errorTask.ConfigureAwait(false);
-        if (process.ExitCode != 0)
-        {
-            throw new InvalidOperationException($"Process relationship snapshot failed: {error.Trim()}");
-        }
-
-        return ParseParentIds(output);
     }
 
     internal static Dictionary<int, int> ParseParentIds(string output)

@@ -278,6 +278,29 @@ public sealed class CentralTestRunnerCancellationComponentTests
     }
 
     [Fact]
+    public async Task BuildSnapshotNeverReturnsDoesNotBlockTermination()
+    {
+        Process? fixture = null;
+        await FailurePreservingTestCleanup.RunAsync(
+            async () =>
+            {
+                fixture = await StartHoldingFixtureAsync().ConfigureAwait(true);
+                var clock = Stopwatch.StartNew();
+                await Assert.ThrowsAsync<TimeoutException>(
+                    () => BuildProcessRunner.CleanupAfterCancellationAsync(
+                        fixture,
+                        TimeSpan.FromSeconds(2),
+                        (_, _) => new TaskCompletionSource<FinalProcessSnapshot>().Task))
+                    .ConfigureAwait(true);
+                clock.Stop();
+
+                Assert.True(clock.Elapsed < TimeSpan.FromMilliseconds(2500));
+                Assert.True(fixture.HasExited);
+            },
+            () => StopFixtureAsync(fixture)).ConfigureAwait(true);
+    }
+
+    [Fact]
     public async Task KillOwnedProcessTreeStopsTheRoot()
     {
         Process? fixture = null;

@@ -67,17 +67,15 @@ internal static class FlightRecorderExecution
         }
         catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception)
         {
-            await recorder.RecordAsync(
-                "root_identity_failed",
-                pid: rootPid,
-                detail: exception.Message).ConfigureAwait(false);
-            await recorder.CaptureFinalSnapshotOnceAsync().ConfigureAwait(false);
-            await StopAsync(process, request.CleanupTimeout, recorder).ConfigureAwait(false);
+            var cleanup = new CleanupDeadline(request.CleanupTimeout);
+            recorder.RecordInMemory("root_identity_failed", pid: rootPid, detail: exception.Message);
+            await recorder.CaptureFinalSnapshotOnceAsync(cleanup).ConfigureAwait(false);
+            await StopAsync(process, cleanup, recorder).ConfigureAwait(false);
             await DrainOutputAsync(
                 outputTask,
                 errorTask,
                 outputCapture,
-                request.CleanupTimeout,
+                cleanup,
                 recorder,
                 rootPid).ConfigureAwait(false);
             await recorder.FinalizeFailureAsync("root_identity_failed", standardOutput, standardError)
@@ -102,20 +100,23 @@ internal static class FlightRecorderExecution
         }
         catch (OperationCanceledException)
         {
+            var cleanup = new CleanupDeadline(request.CleanupTimeout);
             var eventName = cancellationToken.IsCancellationRequested ? "cancellation" : "timeout";
-            await recorder.RecordAsync(eventName, pid: rootPid).ConfigureAwait(false);
-            await recorder.CaptureFinalSnapshotOnceAsync().ConfigureAwait(false);
-            await StopAsync(process, request.CleanupTimeout, recorder).ConfigureAwait(false);
-            await DrainOutputAsync(
+            recorder.RecordInMemory(eventName, pid: rootPid);
+            await recorder.CaptureFinalSnapshotOnceAsync(cleanup).ConfigureAwait(false);
+            var stopped = await StopAsync(process, cleanup, recorder).ConfigureAwait(false);
+            var drained = await DrainOutputAsync(
                 outputTask,
                 errorTask,
                 outputCapture,
-                request.CleanupTimeout,
+                cleanup,
                 recorder,
                 rootPid).ConfigureAwait(false);
             await recorder.FinalizeFailureAsync(eventName, standardOutput, standardError)
                 .ConfigureAwait(false);
-            var exitCode = string.Equals(eventName, "timeout", StringComparison.Ordinal) ? 124 : 130;
+            var exitCode = string.Equals(eventName, "timeout", StringComparison.Ordinal)
+                ? 124
+                : stopped && drained ? 130 : 2;
             return new ProcessExecutionResult(
                 exitCode,
                 rootPid,
@@ -125,25 +126,26 @@ internal static class FlightRecorderExecution
         }
 
         var processExitCode = process.ExitCode;
+        var postExitCleanup = new CleanupDeadline(request.CleanupTimeout);
         await recorder.RecordAsync(
             "process_exit",
             pid: rootPid,
             exitCode: processExitCode).ConfigureAwait(false);
         if (processExitCode != 0)
         {
-            await recorder.CaptureFinalSnapshotOnceAsync().ConfigureAwait(false);
+            await recorder.CaptureFinalSnapshotOnceAsync(postExitCleanup).ConfigureAwait(false);
         }
 
         var streamsDrained = await DrainOutputAsync(
             outputTask,
             errorTask,
             outputCapture,
-            request.CleanupTimeout,
+            postExitCleanup,
             recorder,
             rootPid).ConfigureAwait(false);
         if (!streamsDrained)
         {
-            await recorder.CaptureFinalSnapshotOnceAsync().ConfigureAwait(false);
+            await recorder.CaptureFinalSnapshotOnceAsync(postExitCleanup).ConfigureAwait(false);
             await recorder.FinalizeFailureAsync("stream_drain_failed", standardOutput, standardError)
                 .ConfigureAwait(false);
             processExitCode = 2;
@@ -199,33 +201,42 @@ internal static class FlightRecorderExecution
         return Task.CompletedTask;
     }
 
-    private static async Task StopAsync(
+    private static async Task<bool> StopAsync(
         Process process,
-        TimeSpan cleanupTimeout,
+        CleanupDeadline deadline,
         FlightRecorder recorder)
     {
-        await recorder.RecordAsync("bounded_stop_requested", pid: process.Id).ConfigureAwait(false);
         try
         {
-            if (!process.HasExited)
+            var terminationFailures = await OwnedProcessTerminator.TerminateAsync(
+                process, recorder.CapturedProcesses, deadline).ConfigureAwait(false);
+            await recorder.RecordAsync("bounded_stop_requested", pid: process.Id).ConfigureAwait(false);
+            await process.WaitForExitAsync().WaitAsync(deadline.Remaining).ConfigureAwait(false);
+            if (recorder.CapturedProcesses is { } captured)
             {
-                process.Kill(entireProcessTree: true);
+                await BuildProcessRunner.WaitForOwnedProcessesToExitAsync(
+                    captured, deadline.Remaining).ConfigureAwait(false);
             }
 
-            using var cleanup = new CancellationTokenSource(cleanupTimeout);
-            await process.WaitForExitAsync(cleanup.Token).ConfigureAwait(false);
+            if (terminationFailures.Count > 0)
+            {
+                throw new InvalidOperationException(string.Join("; ", terminationFailures));
+            }
+
             await recorder.RecordAsync(
                 "process_exit",
                 pid: process.Id,
                 exitCode: process.ExitCode).ConfigureAwait(false);
             await recorder.RecordAsync("cleanup_completed", pid: process.Id).ConfigureAwait(false);
+            return true;
         }
-        catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception or OperationCanceledException)
+        catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception or OperationCanceledException or TimeoutException)
         {
             await recorder.RecordAsync(
                 "cleanup_failed",
                 pid: process.Id,
                 detail: exception.Message).ConfigureAwait(false);
+            return false;
         }
     }
 
@@ -233,19 +244,26 @@ internal static class FlightRecorderExecution
         Task outputTask,
         Task errorTask,
         CancellationTokenSource outputCapture,
-        TimeSpan cleanupTimeout,
+        CleanupDeadline deadline,
         FlightRecorder recorder,
         int rootPid)
     {
         var drain = Task.WhenAll(outputTask, errorTask);
         try
         {
-            await drain.WaitAsync(cleanupTimeout).ConfigureAwait(false);
+            await drain.WaitAsync(deadline.Remaining).ConfigureAwait(false);
             return true;
         }
         catch (TimeoutException)
         {
-            await outputCapture.CancelAsync().ConfigureAwait(false);
+            try
+            {
+                await outputCapture.CancelAsync().WaitAsync(deadline.Remaining).ConfigureAwait(false);
+            }
+            catch (TimeoutException)
+            {
+                // Disposing the process also closes its redirected streams.
+            }
             await recorder.RecordAsync(
                 "cleanup_failed",
                 pid: rootPid,

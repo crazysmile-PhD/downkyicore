@@ -42,6 +42,8 @@ internal sealed class FlightRecorder
 
     internal SensitiveEvidenceRedactor Redactor { get; }
 
+    internal IReadOnlyList<ObservedProcess>? CapturedProcesses => report.FinalSnapshot?.Processes;
+
     public static async Task<FlightRecorder> CreateAsync(ProcessExecutionRequest request)
     {
         Directory.CreateDirectory(request.EvidenceDirectory);
@@ -94,6 +96,17 @@ internal sealed class FlightRecorder
         int? exitCode = null,
         string? detail = null)
     {
+        RecordInMemory(eventName, pid, startTimeUtc, exitCode, detail);
+        await PersistAsync().ConfigureAwait(false);
+    }
+
+    internal void RecordInMemory(
+        string eventName,
+        int? pid = null,
+        DateTimeOffset? startTimeUtc = null,
+        int? exitCode = null,
+        string? detail = null)
+    {
         report.Events.Add(new RecorderEvent
         {
             TimestampUtc = DateTimeOffset.UtcNow,
@@ -103,10 +116,9 @@ internal sealed class FlightRecorder
             ExitCode = exitCode,
             Detail = detail is null ? null : Redactor.Redact(detail)
         });
-        await PersistAsync().ConfigureAwait(false);
     }
 
-    public async Task CaptureFinalSnapshotOnceAsync()
+    public async Task CaptureFinalSnapshotOnceAsync(CleanupDeadline? deadline = null)
     {
         if (report.FinalSnapshot is not null)
         {
@@ -116,8 +128,19 @@ internal sealed class FlightRecorder
         var rootPid = report.RootProcess?.Pid ?? 0;
         try
         {
-            report.FinalSnapshot = await snapshotCapture(rootPid, snapshotTimeout).ConfigureAwait(false);
-            await RecordAsync("final_snapshot", pid: rootPid).ConfigureAwait(false);
+            var window = deadline?.SnapshotWindow ?? (snapshotTimeout < TimeSpan.FromSeconds(1)
+                ? snapshotTimeout
+                : TimeSpan.FromSeconds(1));
+            report.FinalSnapshot = await Task.Run(() => snapshotCapture(rootPid, window))
+                .WaitAsync(window).ConfigureAwait(false);
+            if (deadline is null)
+            {
+                await RecordAsync("final_snapshot", pid: rootPid).ConfigureAwait(false);
+            }
+            else
+            {
+                RecordInMemory("final_snapshot", pid: rootPid);
+            }
         }
         catch (Exception exception) when (exception is IOException or InvalidOperationException or
                                           System.ComponentModel.Win32Exception or TimeoutException or
@@ -131,10 +154,14 @@ internal sealed class FlightRecorder
                 Processes = [],
                 Error = error
             };
-            await RecordAsync(
-                "final_snapshot_failed",
-                pid: rootPid,
-                detail: error).ConfigureAwait(false);
+            if (deadline is null)
+            {
+                await RecordAsync("final_snapshot_failed", pid: rootPid, detail: error).ConfigureAwait(false);
+            }
+            else
+            {
+                RecordInMemory("final_snapshot_failed", pid: rootPid, detail: error);
+            }
         }
     }
 

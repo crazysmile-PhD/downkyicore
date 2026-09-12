@@ -79,12 +79,14 @@ internal static class BuildProcessRunner
         Func<int, TimeSpan, Task<FinalProcessSnapshot>>? captureSnapshotAsync = null,
         string? cleanupResourceDirectory = null)
     {
+        var deadline = new CleanupDeadline(cleanupWindow);
         var captureSnapshot = captureSnapshotAsync ?? ProcessTreeSnapshot.CaptureAsync;
         FinalProcessSnapshot? ownedProcesses = null;
         ExceptionDispatchInfo? snapshotFailure = null;
         try
         {
-            ownedProcesses = await captureSnapshot(process.Id, cleanupWindow).ConfigureAwait(false);
+            ownedProcesses = await Task.Run(() => captureSnapshot(process.Id, deadline.SnapshotWindow))
+                .WaitAsync(deadline.SnapshotWindow).ConfigureAwait(false);
         }
         catch (Exception exception)
         {
@@ -93,11 +95,12 @@ internal static class BuildProcessRunner
 
         try
         {
-            KillOwnedProcessTree(process);
-            await WaitForRootExitAsync(process, cleanupWindow).ConfigureAwait(false);
+            var terminationFailures = await OwnedProcessTerminator.TerminateAsync(
+                process, ownedProcesses?.Processes, deadline).ConfigureAwait(false);
+            await WaitForRootExitAsync(process, deadline.Remaining).ConfigureAwait(false);
             if (ownedProcesses is not null)
             {
-                await WaitForOwnedProcessesToExitAsync(ownedProcesses.Processes, cleanupWindow)
+                await WaitForOwnedProcessesToExitAsync(ownedProcesses.Processes, deadline.Remaining)
                     .ConfigureAwait(false);
             }
 
@@ -105,7 +108,12 @@ internal static class BuildProcessRunner
             {
                 await WindowsDirectoryResourceRundown.WaitForDeleteAccessAsync(
                     cleanupResourceDirectory,
-                    cleanupWindow).ConfigureAwait(false);
+                    deadline.Remaining).ConfigureAwait(false);
+            }
+
+            if (terminationFailures.Count > 0)
+            {
+                throw new InvalidOperationException(string.Join("; ", terminationFailures));
             }
         }
         catch (Exception cleanupFailure) when (snapshotFailure is not null)
@@ -126,7 +134,14 @@ internal static class BuildProcessRunner
         {
             if (!process.HasExited)
             {
-                process.Kill(entireProcessTree: true);
+                if (OperatingSystem.IsWindows())
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+                else
+                {
+                    process.Kill();
+                }
             }
         }
         catch (Exception exception) when (
