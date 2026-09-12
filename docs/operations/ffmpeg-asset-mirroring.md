@@ -141,12 +141,14 @@ The workflow uses two narrowly scoped credentials:
   with **Contents: read/write** only on
   `crazysmile-PhD/downkyi-runtime-assets`. It creates releases and uploads
   assets, but has no DownKyi source-repository permission.
-- `DOWNKYI_AUTOMATION_TOKEN`: fine-grained token or GitHub App installation
-  token with **Contents: read/write** and **Pull requests: read/write** only on
-  `crazysmile-PhD/downkyicore`. It creates the manifest PR, updates an eligible
-  branch with current `main`, and enables GitHub auto-merge. A separate token
-  is required because a PR opened or updated by `GITHUB_TOKEN` does not
-  reliably trigger the repository's package CI without approval.
+- `DOWNKYI_AUTOMATION_TOKEN`: a fine-grained personal access token owned by the
+  repository owner, with **Contents: read/write**, **Pull requests: read/write**,
+  and **Administration: read** only on `crazysmile-PhD/downkyicore`. It creates
+  the manifest PR as the repository owner, reads the required branch-protection
+  policy, updates an eligible branch with current `main`, and enables GitHub
+  auto-merge. A separate token is required because a PR opened or updated by
+  `GITHUB_TOKEN` does not reliably trigger the repository's package CI without
+  approval.
 
 No token is needed by normal builds or package downloaders.
 

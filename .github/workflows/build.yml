@@ -12,6 +12,12 @@ on:
     branches:
       - main
       - release/v1.1.1-integration
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - edited
+      - ready_for_review
   workflow_dispatch:
     inputs:
       update_ffmpeg_assets:

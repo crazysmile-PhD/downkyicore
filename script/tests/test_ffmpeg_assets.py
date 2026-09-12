@@ -436,12 +436,14 @@ class FfmpegAssetsTests(unittest.TestCase):
         self.assertIn("enablePullRequestAutoMerge", workflow)
         self.assertIn("disablePullRequestAutoMerge", workflow)
         self.assertIn("getBranchProtection", workflow)
+        self.assertIn("      - edited", workflow)
         self.assertNotIn("actions/checkout", workflow)
 
     def test_build_exposes_an_always_present_ffmpeg_manifest_gate(self) -> None:
         workflow = (SCRIPT.parents[1] / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
         pull_request_section = workflow.split("  pull_request:\n", 1)[1].split("  workflow_dispatch:\n", 1)[0]
         self.assertNotIn("paths:", pull_request_section)
+        self.assertIn("      - edited", pull_request_section)
         self.assertIn("name: FFmpeg manifest gate", workflow)
         self.assertIn("validate-auto-merge-change", workflow)
         self.assertIn("validate-mirror-releases", workflow)

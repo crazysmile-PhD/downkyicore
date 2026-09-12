@@ -8,6 +8,7 @@ on:
       - opened
       - reopened
       - synchronize
+      - edited
       - ready_for_review
   push:
     branches:
