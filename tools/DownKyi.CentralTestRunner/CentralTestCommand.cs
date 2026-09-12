@@ -155,7 +155,7 @@ internal static class CentralTestCommand
         {
             var evidenceIdentity = Path.GetRelativePath(repositoryRoot, result.EvidencePath)
                 .Replace('\\', '/');
-            await Console.Error.WriteLineAsync(
+            await Program.WriteDiagnosticBestEffortAsync(
                 $"Test flight recorder preserved: {evidenceIdentity}").ConfigureAwait(false);
             return result.ExitCode;
         }
@@ -172,7 +172,7 @@ internal static class CentralTestCommand
                 exception.Message).ConfigureAwait(false);
             var evidenceIdentity = Path.GetRelativePath(repositoryRoot, result.EvidencePath)
                 .Replace('\\', '/');
-            await Console.Error.WriteLineAsync(
+            await Program.WriteDiagnosticBestEffortAsync(
                 $"Test flight recorder preserved: {evidenceIdentity}").ConfigureAwait(false);
             return 1;
         }
@@ -180,4 +180,5 @@ internal static class CentralTestCommand
         await FlightRecorderExecution.DiscardAsync(result).ConfigureAwait(false);
         return 0;
     }
+
 }

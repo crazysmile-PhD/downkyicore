@@ -28,4 +28,8 @@
     <Using Include="Xunit" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="..\PlatformShared\OwnedProcessScopePlatformTests.cs" Link="OwnedProcessScopePlatformTests.cs" />
+  </ItemGroup>
+
 </Project>
