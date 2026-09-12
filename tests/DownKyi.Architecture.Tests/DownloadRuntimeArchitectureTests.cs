@@ -182,7 +182,7 @@ public sealed class DownloadRuntimeArchitectureTests
         Assert.DoesNotContain("DownloadingItem", stateSource, StringComparison.Ordinal);
         Assert.Contains("new DownloadArtifactWriter(", factorySource, StringComparison.Ordinal);
         Assert.Contains(
-            "new DownloadArtifactsStage(artifactWriter, presenter)",
+            "new DownloadArtifactsStage(artifactWriter, presenter, _fileService)",
             factorySource,
             StringComparison.Ordinal);
     }
@@ -726,7 +726,8 @@ public sealed class DownloadRuntimeArchitectureTests
         Assert.DoesNotContain("DeleteSourceSegments", concatSource, StringComparison.Ordinal);
         Assert.True(
             finalizeSource.IndexOf("_stateWriter.CompleteAsync", StringComparison.Ordinal) <
-            finalizeSource.IndexOf("DeleteTransferFilesAsync", StringComparison.Ordinal));
+            finalizeSource.IndexOf("_fileService.CleanupStaging", StringComparison.Ordinal));
+        Assert.DoesNotContain("DeleteTransferFilesAsync", finalizeSource, StringComparison.Ordinal);
     }
 
     private static string FindRepositoryRoot()

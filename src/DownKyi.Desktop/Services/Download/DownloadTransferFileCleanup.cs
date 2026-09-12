@@ -12,12 +12,25 @@ internal static class DownloadTransferFileCleanup
 
     public static DownloadTransferFileCleanupResult DeleteInvalidArtifacts(
         string? file,
+        string? stagingDirectory,
         ILogger logger)
     {
         ArgumentNullException.ThrowIfNull(logger);
         if (string.IsNullOrWhiteSpace(file))
         {
             return new DownloadTransferFileCleanupResult(0, 0);
+        }
+
+        var comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        if (string.IsNullOrWhiteSpace(stagingDirectory) ||
+            !string.Equals(
+                Path.GetDirectoryName(Path.GetFullPath(file)),
+                Path.TrimEndingDirectorySeparator(Path.GetFullPath(stagingDirectory)),
+                comparison))
+        {
+            logger.LogDebugMessage("Invalid transfer artifact is outside task-private staging.");
+            return new DownloadTransferFileCleanupResult(0, 1);
         }
 
         var attemptedCount = 0;
@@ -65,6 +78,7 @@ internal static class DownloadTransferFileCleanup
 
     public static async Task<DownloadTransferFileCleanupResult> DeleteInvalidArtifactsAsync(
         string? file,
+        string? stagingDirectory,
         ILogger logger,
         TimeProvider timeProvider,
         CancellationToken cancellationToken)
@@ -75,7 +89,7 @@ internal static class DownloadTransferFileCleanup
         for (var attempt = 1; attempt <= DeleteAttempts; attempt++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            result = DeleteInvalidArtifacts(file, logger);
+            result = DeleteInvalidArtifacts(file, stagingDirectory, logger);
             if (result.Succeeded)
             {
                 return result;

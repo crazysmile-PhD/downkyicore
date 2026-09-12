@@ -206,6 +206,7 @@ jobs:
             --previous-version "$previous_version" \
             --output .ffmpeg-update/pr-body.md
       - name: Create manifest pull request
+        id: cpr
         uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ secrets.DOWNKYI_AUTOMATION_TOKEN }}
@@ -216,3 +217,9 @@ jobs:
           delete-branch: true
           title: "build(deps): update mirrored FFmpeg to ${{ needs.discover.outputs.mirror_tag }}"
           body-path: .ffmpeg-update/pr-body.md
+      - name: Enable auto-merge
+        if: ${{ steps.cpr.outputs.pull-request-number }}
+        env:
+          GH_TOKEN: ${{ secrets.DOWNKYI_AUTOMATION_TOKEN }}
+          PR_NUMBER: ${{ steps.cpr.outputs.pull-request-number }}
+        run: gh pr merge "$PR_NUMBER" --auto --merge --repo "$GITHUB_REPOSITORY"

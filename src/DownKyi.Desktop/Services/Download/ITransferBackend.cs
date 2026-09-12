@@ -20,7 +20,8 @@ internal sealed record DownloadTransferRequest(
     Func<DownloadProgress, CancellationToken, Task> PersistProgressAsync,
     Func<string?, CancellationToken, Task> SetBackendIdentityAsync,
     Action<DownloadService?> SetBuiltinDownloadService,
-    CancellationToken CancellationToken);
+    CancellationToken CancellationToken,
+    string? StagingDirectory = null);
 
 internal interface ITransferBackend : IDisposable
 {

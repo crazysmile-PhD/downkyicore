@@ -84,6 +84,21 @@ public sealed class DownloadPipelineStageTests
     }
 
     [Fact]
+    public async Task ValidateStageRejectsMissingRecordedPublishedMediaOnRetry()
+    {
+        using var settings = new TestSettingsStore();
+        var context = CreateContext(settings.Store.Current);
+        context.PublishedArtifacts.Add("media", Path.Combine(
+            Path.GetTempPath(), $"missing-published-{Guid.NewGuid():N}.mp4"));
+
+        var result = await new ValidateStage().ExecuteAsync(
+            context, TestContext.Current.CancellationToken);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("download.validate.media", result.Error?.Code);
+    }
+
+    [Fact]
     public async Task ValidateStageAllowsOptionalSubtitleResponseWithoutFiles()
     {
         using var settings = new TestSettingsStore();
@@ -97,6 +112,27 @@ public sealed class DownloadPipelineStageTests
             TestContext.Current.CancellationToken);
 
         Assert.True(result.IsSuccess);
+    }
+
+    [Theory]
+    [InlineData("subtitle:missing.srt")]
+    [InlineData("cover")]
+    [InlineData("nfo")]
+    public async Task ValidateStageRejectsMissingRecordedArtifactEvenWhenNewResponseIsEmpty(string key)
+    {
+        using var settings = new TestSettingsStore();
+        var context = CreateContext(
+            settings.Store.Current,
+            requestedContent: DownloadContentSelection.None with { Subtitle = true });
+        context.PublishedArtifacts[key] = Path.Combine(
+            Path.GetTempPath(), $"missing-published-{Guid.NewGuid():N}.srt");
+        context.SubtitleFiles = null;
+
+        var result = await new ValidateStage().ExecuteAsync(
+            context, TestContext.Current.CancellationToken);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("download.validate.published-missing", result.Error?.Code);
     }
 
     [Fact]
@@ -175,6 +211,27 @@ public sealed class DownloadPipelineStageTests
         Assert.NotNull(fixture.Context.VideoFile);
         var request = Assert.Single(fixture.Backend.Requests);
         Assert.Equal("https://example.invalid/video", Assert.Single(request.Urls));
+    }
+
+    [Fact]
+    public async Task MediaStageReusesCompletedStagingInsteadOfTransferringAgain()
+    {
+        using var fixture = await MediaStageFixture.CreateAsync(
+            CreateVideoOnlyPlayUrl(), downloadAudio: false, downloadVideo: true);
+        var staging = Path.Combine(Path.GetDirectoryName(fixture.Context.Input.OutputBasePath)!,
+            ".downkyi", "staging", "test-session", "test-task");
+        Directory.CreateDirectory(staging);
+        fixture.Context.StagingDirectory = staging;
+        var completedMedia = fixture.Context.WorkingBasePath + ".mp4";
+        await File.WriteAllBytesAsync(completedMedia, [7, 8, 9], TestContext.Current.CancellationToken);
+        fixture.Context.PlayUrl = null;
+
+        var result = await fixture.Stage.ExecuteAsync(
+            fixture.Context, TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(completedMedia, fixture.Context.OutputMedia);
+        Assert.Empty(fixture.Backend.Requests);
     }
 
     [Fact]

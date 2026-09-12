@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using DownKyi.Application.Desktop;
 using DownKyi.Application.Downloads;
 using DownKyi.Core.BiliApi.VideoStream.Models;
@@ -113,7 +114,7 @@ public sealed class DownloadManagerCoordinatorTests
 
         await context.Coordinator.DeleteAsync(item, TestContext.Current.CancellationToken);
 
-        Assert.False(File.Exists(media));
+        Assert.True(File.Exists(media));
         Assert.DoesNotContain(item, context.State.Downloading);
         Assert.Equal(
             item.DownloadBase.Id,
@@ -137,12 +138,45 @@ public sealed class DownloadManagerCoordinatorTests
 
         await context.Coordinator.DeleteAsync(item, TestContext.Current.CancellationToken);
 
-        Assert.False(File.Exists(media));
-        Assert.False(File.Exists(sidecar));
+        Assert.True(File.Exists(media));
+        Assert.True(File.Exists(sidecar));
         Assert.DoesNotContain(item, context.State.Downloading);
         Assert.Null(await context.Store.FindAsync(
             new DownloadTaskId(item.DownloadBase.Id),
             TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task DeleteAfterPublishCollisionRemovesOnlyStagingAndTask()
+    {
+        using var context = new CoordinatorContext(useStaging: true);
+        var item = context.CreateDownloadingItem("delete-publish-collision", DownloadStatus.WaitForDownload);
+        context.State.AddDownloading(item);
+        await context.Storage.AddDownloadingAsync(item, TestContext.Current.CancellationToken);
+        var taskId = new DownloadTaskId(item.DownloadBase.Id);
+        var task = await context.StateWriter.StartAsync(taskId, TestContext.Current.CancellationToken);
+        var staged = Path.Combine(context.Staging!.GetDirectory(
+            taskId, task.Output.BasePath, task.Output.StagingToken), "delete-publish-collision.mp4");
+        var stagedBytes = new byte[] { 1, 2, 3 };
+        await File.WriteAllBytesAsync(staged, stagedBytes, TestContext.Current.CancellationToken);
+        var destination = context.CreateFile("delete-publish-collision.mp4", "foreign output");
+        var foreignBytes = await File.ReadAllBytesAsync(
+            destination, TestContext.Current.CancellationToken);
+        await context.StateWriter.BeginPublishingArtifactAsync(taskId,
+            new DownloadPublishingArtifact("media", Path.GetFileName(staged), stagedBytes.Length,
+                Convert.ToHexString(SHA256.HashData(stagedBytes))),
+            TestContext.Current.CancellationToken);
+        await context.StateWriter.FailAsync(taskId,
+            new DownloadFailure("download.publish.collision", "Destination exists.", true),
+            TestContext.Current.CancellationToken);
+
+        await context.Coordinator.DeleteAsync(item, TestContext.Current.CancellationToken);
+
+        Assert.Equal(foreignBytes, await File.ReadAllBytesAsync(
+            destination, TestContext.Current.CancellationToken));
+        Assert.False(File.Exists(staged));
+        Assert.Null(await context.Store.FindAsync(taskId, TestContext.Current.CancellationToken));
+        Assert.DoesNotContain(item, context.State.Downloading);
     }
 
     [Fact]
@@ -168,10 +202,10 @@ public sealed class DownloadManagerCoordinatorTests
     }
 
     [Fact]
-    public async Task OpenVideoFallsBackToExistingFlvWithoutExposingPathToViewModel()
+    public async Task OpenVideoUsesRecordedPathWithoutGuessingOtherFiles()
     {
         using var context = new CoordinatorContext();
-        var item = context.CreateDownloadedItem("open-flv");
+        var item = await context.CreateCompletedItemAsync("open-flv", "media", "open-flv.flv");
         var flv = context.CreateFile("open-flv.flv", "completed media");
 
         var result = await context.Coordinator.OpenVideoAsync(
@@ -183,15 +217,17 @@ public sealed class DownloadManagerCoordinatorTests
     }
 
     [Fact]
-    public async Task OpenFolderUsesTypedRequestedContentWithoutGuessingFromOtherFiles()
+    public async Task OpenFolderUsesPublishedPathWithoutGuessingFromOtherFiles()
     {
         using var context = new CoordinatorContext();
-        var item = context.CreateDownloadedItem("open-subtitle");
-        item.DownloadBase.NeedDownloadContent =
-            DownloadContentSelection.None with { Subtitle = true };
+        var item = await context.CreateCompletedItemAsync(
+            "open-subtitle", "subtitle:open-subtitle.srt", "open-subtitle.srt");
         context.CreateFile("open-subtitle.mp4", "unrequested media");
 
         var withoutSubtitle = await context.Coordinator.OpenFolderAsync(
+            item,
+            TestContext.Current.CancellationToken);
+        var withoutMedia = await context.Coordinator.OpenVideoAsync(
             item,
             TestContext.Current.CancellationToken);
         var subtitle = context.CreateFile("open-subtitle.srt", "requested subtitle");
@@ -200,8 +236,62 @@ public sealed class DownloadManagerCoordinatorTests
             TestContext.Current.CancellationToken);
 
         Assert.Equal(DownloadArtifactOpenResult.NotFound, withoutSubtitle);
+        Assert.Equal(DownloadArtifactOpenResult.NotFound, withoutMedia);
         Assert.Equal(DownloadArtifactOpenResult.Opened, withSubtitle);
         Assert.Equal(Path.GetDirectoryName(Path.GetFullPath(subtitle)), context.Launcher.OpenedFolder);
+    }
+
+    [Fact]
+    public async Task ReopenedCompletedItemOpensPersistedPublishedPathNotBasePathGuess()
+    {
+        using var context = new CoordinatorContext();
+        Directory.CreateDirectory(Path.Combine(context.DirectoryPath, "published"));
+        var item = await context.CreateCompletedItemAsync(
+            "reopen-open", "media", Path.Combine("published", "actual.flv"));
+        var published = context.CreateFile(Path.Combine("published", "actual.flv"), "completed media");
+        context.CreateFile("reopen-open.mp4", "decoy");
+        context.ReopenStorage();
+        var reopenedItem = Assert.Single(await context.Storage.GetRecentDownloadedAsync(
+            10, TestContext.Current.CancellationToken));
+
+        var fileResult = await context.Coordinator.OpenVideoAsync(
+            reopenedItem, TestContext.Current.CancellationToken);
+        var folderResult = await context.Coordinator.OpenFolderAsync(
+            reopenedItem, TestContext.Current.CancellationToken);
+
+        Assert.Equal(DownloadArtifactOpenResult.Opened, fileResult);
+        Assert.Equal(DownloadArtifactOpenResult.Opened, folderResult);
+        Assert.Equal(Path.GetFullPath(published), context.Launcher.OpenedFile);
+        Assert.Equal(Path.GetDirectoryName(Path.GetFullPath(published)), context.Launcher.OpenedFolder);
+        Assert.NotEqual(item.DownloadBase?.FilePath + ".mp4", context.Launcher.OpenedFile);
+    }
+
+    [Fact]
+    public async Task LegacyCompletedItemWithoutPublishedMapReportsMissingRecordWithoutGuessing()
+    {
+        using var context = new CoordinatorContext();
+        var downloading = context.CreateDownloadingItem("legacy-no-map", DownloadStatus.WaitForDownload);
+        await context.Storage.AddDownloadingAsync(downloading, TestContext.Current.CancellationToken);
+        var taskId = new DownloadTaskId(downloading.DownloadBase!.Id);
+        await context.StateWriter.StartAsync(taskId, TestContext.Current.CancellationToken);
+        await context.StateWriter.CompleteAsync(
+            taskId, new DownloadCompletion(1, "completed", null), TestContext.Current.CancellationToken);
+        var legacy = Assert.Single(await context.Storage.GetRecentDownloadedAsync(
+            10, TestContext.Current.CancellationToken));
+        context.CreateFile("legacy-no-map.mp4", "unowned decoy");
+        context.CreateFile("legacy-no-map.flv", "unowned decoy");
+        context.ReopenStorage();
+        var reopened = Assert.Single(await context.Storage.GetRecentDownloadedAsync(
+            10, TestContext.Current.CancellationToken));
+
+        var file = await context.Coordinator.OpenVideoAsync(reopened, TestContext.Current.CancellationToken);
+        var folder = await context.Coordinator.OpenFolderAsync(reopened, TestContext.Current.CancellationToken);
+
+        Assert.Equal(legacy.DownloadBase?.Id, reopened.DownloadBase?.Id);
+        Assert.Equal(DownloadArtifactOpenResult.NoPublishedArtifactRecord, file);
+        Assert.Equal(DownloadArtifactOpenResult.NoPublishedArtifactRecord, folder);
+        Assert.Null(context.Launcher.OpenedFile);
+        Assert.Null(context.Launcher.OpenedFolder);
     }
 
     private sealed class CoordinatorContext : IDisposable
@@ -214,7 +304,8 @@ public sealed class DownloadManagerCoordinatorTests
 
         public CoordinatorContext(
             IDownloadTaskQueue? taskQueue = null,
-            IDownloadRuntimeAvailability? runtimeAvailability = null)
+            IDownloadRuntimeAvailability? runtimeAvailability = null,
+            bool useStaging = false)
         {
             Directory.CreateDirectory(_directory);
             _databasePath = Path.Combine(_directory, "download.db");
@@ -228,9 +319,12 @@ public sealed class DownloadManagerCoordinatorTests
             Queue = new RecordingDownloadTaskQueue();
             State = new DownloadListState();
             Launcher = new RecordingPlatformLauncher();
+            Staging = useStaging
+                ? new DownloadTaskStaging(NullLogger<DownloadTaskStaging>.Instance)
+                : null;
             var fileService = new DownloadTaskFileService(
                 new AriaRuntimeClientRegistry(),
-                NullLogger<DownloadTaskFileService>.Instance);
+                NullLogger<DownloadTaskFileService>.Instance, Staging, StateWriter);
             Coordinator = new DownloadManagerCoordinator(
                 Storage,
                 StateWriter,
@@ -241,13 +335,15 @@ public sealed class DownloadManagerCoordinatorTests
                 Launcher);
         }
 
-        public SqliteDownloadTaskStore Store { get; }
+        public SqliteDownloadTaskStore Store { get; private set; }
 
-        public DownloadTaskProjectionStore Storage { get; }
+        public DownloadTaskProjectionStore Storage { get; private set; }
 
-        public DownloadTaskApplicationService TaskService { get; }
+        public DownloadTaskApplicationService TaskService { get; private set; }
 
-        public DownloadTaskStateWriter StateWriter { get; }
+        public DownloadTaskStateWriter StateWriter { get; private set; }
+
+        public DownloadTaskStaging? Staging { get; }
 
         public RecordingDownloadTaskQueue Queue { get; }
 
@@ -255,7 +351,27 @@ public sealed class DownloadManagerCoordinatorTests
 
         public RecordingPlatformLauncher Launcher { get; }
 
-        public DownloadManagerCoordinator Coordinator { get; }
+        public DownloadManagerCoordinator Coordinator { get; private set; }
+
+        public string DirectoryPath => _directory;
+
+        public void ReopenStorage()
+        {
+            Storage.Dispose();
+            TaskService.Dispose();
+            Store.Dispose();
+            Store = new SqliteDownloadTaskStore(
+                new SqliteDownloadTaskStoreOptions(_databasePath), new SystemClock());
+            var clock = new SystemClock();
+            TaskService = new DownloadTaskApplicationService(Store, clock);
+            Storage = new DownloadTaskProjectionStore(TaskService, clock);
+            StateWriter = new DownloadTaskStateWriter(TaskService);
+            Coordinator = new DownloadManagerCoordinator(
+                Storage, StateWriter, Queue, new ReadyDownloadRuntimeAvailability(),
+                new DownloadTaskFileService(
+                    new AriaRuntimeClientRegistry(), NullLogger<DownloadTaskFileService>.Instance),
+                State, Launcher);
+        }
 
         public DownloadingItem CreateDownloadingItem(string id, DownloadStatus status)
         {
@@ -276,18 +392,27 @@ public sealed class DownloadManagerCoordinatorTests
             };
         }
 
-        public DownloadedItem CreateDownloadedItem(string id)
+        public async Task<DownloadedItem> CreateCompletedItemAsync(string id, string key, string fileName)
         {
-            return new DownloadedItem
-            {
-                DownloadBase = new DownloadBase
-                {
-                    Id = id,
-                    Name = id,
-                    FilePath = Path.Combine(_directory, id)
-                },
-                Downloaded = new Downloaded { Id = id }
-            };
+            var downloading = CreateDownloadingItem(id, DownloadStatus.WaitForDownload);
+            await Storage.AddDownloadingAsync(downloading, TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+            var taskId = new DownloadTaskId(id);
+            await StateWriter.StartAsync(taskId, TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+            var publishing = new DownloadPublishingArtifact(key, Path.GetFileName(fileName), 0,
+                new string('A', 64));
+            await StateWriter.BeginPublishingArtifactAsync(taskId, publishing,
+                TestContext.Current.CancellationToken).ConfigureAwait(true);
+            await StateWriter.RecordPublishedArtifactAsync(
+                taskId, publishing, Path.Combine(_directory, fileName),
+                TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+            await StateWriter.CompleteAsync(taskId,
+                new DownloadCompletion(1, "completed", null), TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+            return Assert.Single(await Storage.GetRecentDownloadedAsync(
+                10, TestContext.Current.CancellationToken).ConfigureAwait(true));
         }
 
         public string CreateFile(string name, string contents)

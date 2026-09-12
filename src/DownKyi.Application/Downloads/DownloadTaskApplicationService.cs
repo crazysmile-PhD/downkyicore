@@ -5,7 +5,7 @@ using DownKyi.Domain.Results;
 
 namespace DownKyi.Application.Downloads;
 
-public sealed class DownloadTaskApplicationService : IDownloadTaskApplicationService, IDisposable
+public sealed partial class DownloadTaskApplicationService : IDownloadTaskApplicationService, IDisposable
 {
     private const int MaximumUpdateAttempts = 2;
     private readonly IDownloadTaskStore _store;
@@ -192,11 +192,7 @@ public sealed class DownloadTaskApplicationService : IDownloadTaskApplicationSer
         return MutateAsync(taskId, (task, now) =>
         {
             var files = task.Plan.TransferFiles.SetItem(key, filePath);
-            var plan = new DownloadPlan(
-                task.Plan.RequestedContent,
-                files,
-                task.Plan.StreamType,
-                task.Plan.NfoRequest);
+            var plan = task.Plan.WithTransferFiles(files);
             var transfer = CopyTransfer(task.Transfer, backendIdentity: null, replaceBackendIdentity: true);
             return task.UpdatePlan(plan, transfer, now);
         }, cancellationToken);
@@ -233,11 +229,7 @@ public sealed class DownloadTaskApplicationService : IDownloadTaskApplicationSer
             }
 
             var claimedFiles = files.Add(claimKey, filePath);
-            var plan = new DownloadPlan(
-                task.Plan.RequestedContent,
-                claimedFiles,
-                task.Plan.StreamType,
-                task.Plan.NfoRequest);
+            var plan = task.Plan.WithTransferFiles(claimedFiles);
             return task.UpdatePlan(plan, task.Transfer, now);
         }, cancellationToken);
     }
@@ -300,6 +292,13 @@ public sealed class DownloadTaskApplicationService : IDownloadTaskApplicationSer
         }, cancellationToken);
     }
 
+    public Task<OperationResult<DownloadTask>> RecordPublishedArtifactAsync(
+        DownloadTaskId taskId,
+        DownloadPublishingArtifact publishing,
+        string path,
+        CancellationToken cancellationToken) =>
+        MutateAsync(taskId, (task, now) => task.RecordPublishedArtifact(publishing, path, now), cancellationToken);
+
     public Task<OperationResult<DownloadTask>> SetBackendIdentityAsync(
         DownloadTaskId taskId,
         string? backendIdentity,
@@ -343,7 +342,8 @@ public sealed class DownloadTaskApplicationService : IDownloadTaskApplicationSer
         string? fileSizeText,
         CancellationToken cancellationToken) =>
         MutateAsync(taskId, (task, now) => task.UpdateOutput(
-            new DownloadOutput(task.Output.BasePath, fileSizeText),
+            new DownloadOutput(task.Output.BasePath, fileSizeText, task.Output.PublishedArtifacts,
+                task.Output.StagingToken, task.Output.PublishingArtifact),
             now), cancellationToken);
 
     public Task<OperationResult<DownloadTask>> CancelAsync(

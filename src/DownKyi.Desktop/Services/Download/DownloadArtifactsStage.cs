@@ -11,13 +11,16 @@ internal sealed class DownloadArtifactsStage : IDownloadPipelineStage
 {
     private readonly DownloadArtifactWriter _artifactWriter;
     private readonly DownloadActivityPresenter _presenter;
+    private readonly DownloadTaskFileService? _fileService;
 
     public DownloadArtifactsStage(
         DownloadArtifactWriter artifactWriter,
-        DownloadActivityPresenter presenter)
+        DownloadActivityPresenter presenter,
+        DownloadTaskFileService? fileService = null)
     {
         _artifactWriter = artifactWriter ?? throw new ArgumentNullException(nameof(artifactWriter));
         _presenter = presenter ?? throw new ArgumentNullException(nameof(presenter));
+        _fileService = fileService;
     }
 
     public string Name => nameof(DownloadArtifactsStage);
@@ -30,10 +33,11 @@ internal sealed class DownloadArtifactsStage : IDownloadPipelineStage
         var input = context.Input;
         if (input.NfoRequest != null)
         {
-            var nfoResult = await _artifactWriter.GenerateNfoFileAsync(
-                context.TaskId,
-                input.OutputBasePath,
-                input.NfoRequest,
+            var nfoFile = $"{context.WorkingBasePath}.nfo";
+            var nfoResult = await ProduceAndPublishAsync(
+                context, "nfo", nfoFile,
+                () => _artifactWriter.GenerateNfoFileAsync(
+                    context.TaskId, context.WorkingBasePath, input.NfoRequest, cancellationToken),
                 cancellationToken).ConfigureAwait(true);
             if (!nfoResult.IsSuccess)
             {
@@ -47,11 +51,12 @@ internal sealed class DownloadArtifactsStage : IDownloadPipelineStage
                 context,
                 "DownloadingDanmaku",
                 cancellationToken).ConfigureAwait(true);
-            var danmakuResult = await _artifactWriter.DownloadDanmakuAsync(
-                context.TaskId,
-                input.Metadata,
-                input.OutputBasePath,
-                input.DanmakuSettings,
+            var danmakuFile = $"{context.WorkingBasePath}.ass";
+            var danmakuResult = await ProduceAndPublishAsync(
+                context, "danmaku", danmakuFile,
+                () => _artifactWriter.DownloadDanmakuAsync(
+                    context.TaskId, input.Metadata, context.WorkingBasePath,
+                    input.DanmakuSettings, cancellationToken),
                 cancellationToken).ConfigureAwait(true);
             if (!danmakuResult.TryGetValue(out var danmaku))
             {
@@ -68,14 +73,29 @@ internal sealed class DownloadArtifactsStage : IDownloadPipelineStage
                 context,
                 "DownloadingSubtitle",
                 cancellationToken).ConfigureAwait(true);
-            var subtitleResult = await _artifactWriter.DownloadSubtitleAsync(
-                context.TaskId,
-                input.Metadata,
-                input.OutputBasePath,
-                cancellationToken).ConfigureAwait(true);
+            var defaultSubtitle = $"{context.WorkingBasePath}.srt";
+            var subtitleResult = context.StagingDirectory != null &&
+                                 DownloadFileIntegrity.Check(defaultSubtitle).IsUsable
+                ? OperationResult.Success(DownloadArtifactWriteResult.Created(
+                    Directory.EnumerateFiles(Path.GetDirectoryName(context.WorkingBasePath)!,
+                        Path.GetFileName(context.WorkingBasePath) + "*.srt").ToArray()))
+                : await _artifactWriter.DownloadSubtitleAsync(
+                    context.TaskId, input.Metadata, context.WorkingBasePath,
+                    cancellationToken).ConfigureAwait(true);
             if (!subtitleResult.TryGetValue(out var subtitles))
             {
                 return StageFailure(subtitleResult.Error);
+            }
+
+            foreach (var subtitle in subtitles.Files)
+            {
+                var published = await PublishAsync(
+                    context, "subtitle:" + Path.GetFileName(subtitle), subtitle,
+                    cancellationToken).ConfigureAwait(true);
+                if (!published.IsSuccess)
+                {
+                    return StageFailure(published.Error);
+                }
             }
 
             context.SubtitleFiles = subtitles.Files;
@@ -89,12 +109,12 @@ internal sealed class DownloadArtifactsStage : IDownloadPipelineStage
                 "DownloadingCover",
                 cancellationToken).ConfigureAwait(true);
             var pageCoverFileName =
-                $"{input.OutputBasePath}.{GetImageExtension(input.Metadata.PageCoverAddress)}";
-            var pageCoverResult = await _artifactWriter.DownloadCoverAsync(
-                context.TaskId,
-                input.Metadata.PageCoverAddress,
-                pageCoverFileName,
-                DownloadArtifactWriter.PageCoverTransferKey,
+                $"{context.WorkingBasePath}.{GetImageExtension(input.Metadata.PageCoverAddress)}";
+            var pageCoverResult = await ProduceAndPublishAsync(
+                context, "page-cover", pageCoverFileName,
+                () => _artifactWriter.DownloadCoverAsync(
+                    context.TaskId, input.Metadata.PageCoverAddress, pageCoverFileName,
+                    DownloadArtifactWriter.PageCoverTransferKey, cancellationToken),
                 cancellationToken).ConfigureAwait(true);
             if (!pageCoverResult.TryGetValue(out var pageCover))
             {
@@ -108,12 +128,12 @@ internal sealed class DownloadArtifactsStage : IDownloadPipelineStage
                 "DownloadingCover",
                 cancellationToken).ConfigureAwait(true);
             var coverFileName =
-                $"{input.OutputBasePath}.Cover.{GetImageExtension(input.Metadata.CoverAddress)}";
-            var coverResult = await _artifactWriter.DownloadCoverAsync(
-                context.TaskId,
-                input.Metadata.CoverAddress,
-                coverFileName,
-                DownloadArtifactWriter.MainCoverTransferKey,
+                $"{context.WorkingBasePath}.Cover.{GetImageExtension(input.Metadata.CoverAddress)}";
+            var coverResult = await ProduceAndPublishAsync(
+                context, "cover", coverFileName,
+                () => _artifactWriter.DownloadCoverAsync(
+                    context.TaskId, input.Metadata.CoverAddress, coverFileName,
+                    DownloadArtifactWriter.MainCoverTransferKey, cancellationToken),
                 cancellationToken).ConfigureAwait(true);
             if (!coverResult.TryGetValue(out var cover))
             {
@@ -126,6 +146,47 @@ internal sealed class DownloadArtifactsStage : IDownloadPipelineStage
         context.EnsureActive(cancellationToken);
         return DownloadStageResult.Success(Name);
     }
+
+    private async Task<OperationResult<DownloadArtifactWriteResult>> ProduceAndPublishAsync(
+        DownloadExecutionContext context,
+        string key,
+        string stagedFile,
+        Func<Task<OperationResult<DownloadArtifactWriteResult>>> produce,
+        CancellationToken cancellationToken)
+    {
+        if (context.HasPublished(key))
+        {
+            return OperationResult.Success(DownloadArtifactWriteResult.NotAvailable());
+        }
+
+        var result = context.StagingDirectory != null && DownloadFileIntegrity.Check(stagedFile).IsUsable
+            ? OperationResult.Success(DownloadArtifactWriteResult.Created(stagedFile))
+            : await produce().ConfigureAwait(true);
+        if (!result.TryGetValue(out var artifact))
+        {
+            return result;
+        }
+
+        foreach (var file in artifact.Files)
+        {
+            var published = await PublishAsync(context, key, file, cancellationToken).ConfigureAwait(true);
+            if (!published.IsSuccess)
+            {
+                return OperationResult.Failure<DownloadArtifactWriteResult>(published.Error!);
+            }
+        }
+
+        return result;
+    }
+
+    private Task<OperationResult> PublishAsync(
+        DownloadExecutionContext context,
+        string key,
+        string file,
+        CancellationToken cancellationToken) =>
+        context.HasPublished(key) || _fileService == null
+            ? Task.FromResult(OperationResult.Success())
+            : _fileService.PublishAsync(context, key, file, cancellationToken);
 
     private static OperationResult<DownloadStageResult> StageFailure(OperationError? error)
     {

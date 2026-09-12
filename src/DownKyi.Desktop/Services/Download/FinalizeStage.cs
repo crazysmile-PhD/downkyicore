@@ -45,6 +45,19 @@ internal sealed class FinalizeStage : IDownloadPipelineStage
     {
         ArgumentNullException.ThrowIfNull(context);
         context.EnsureActive(cancellationToken);
+        if (context.NeedsMedia && !context.HasPublished("media"))
+        {
+            var published = await _fileService.PublishAsync(
+                context,
+                "media",
+                context.OutputMedia ?? throw new InvalidOperationException("Validated media is unavailable."),
+                cancellationToken).ConfigureAwait(true);
+            if (!published.IsSuccess)
+            {
+                return OperationResult.Failure<DownloadStageResult>(published.Error!);
+            }
+        }
+
         var downloaded = CreateDownloadedSummary(
             _projectionStore
                 .GetRequiredSnapshot(context.TaskId)
@@ -65,14 +78,7 @@ internal sealed class FinalizeStage : IDownloadPipelineStage
         }
         finally
         {
-            var cleanup = await _fileService.DeleteTransferFilesAsync(
-                context.GetMediaInputFiles(),
-                CancellationToken.None).ConfigureAwait(true);
-            if (!cleanup.Succeeded)
-            {
-                _logger.LogWarningMessage(
-                    $"Committed download input cleanup was incomplete. failedCount={cleanup.FailedCount}.");
-            }
+            _fileService.CleanupStaging(context.TaskId);
         }
 
         return DownloadStageResult.Success(Name);

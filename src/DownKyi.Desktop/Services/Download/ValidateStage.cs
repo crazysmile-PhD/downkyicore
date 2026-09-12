@@ -18,14 +18,18 @@ internal sealed class ValidateStage : IDownloadPipelineStage
         ArgumentNullException.ThrowIfNull(context);
         context.EnsureActive(cancellationToken);
         if (context.NeedsMedia &&
-            (!context.MediaSucceeded || !File.Exists(context.OutputMedia)))
+            (!context.MediaSucceeded ||
+             (context.HasPublished("media")
+                 ? !context.HasUsablePublishedMedia()
+                 : !File.Exists(context.OutputMedia))))
         {
             return Task.FromResult(DownloadStageResult.Failure(
                 "download.validate.media",
                 "The finalized media file is missing or invalid."));
         }
 
-        if (context.NeedsDanmaku && !File.Exists(context.DanmakuFile))
+        if (context.NeedsDanmaku && !context.HasPublished("danmaku") &&
+            !File.Exists(context.DanmakuFile))
         {
             return Task.FromResult(DownloadStageResult.Failure(
                 "download.validate.danmaku",
@@ -34,7 +38,8 @@ internal sealed class ValidateStage : IDownloadPipelineStage
 
         if (context.NeedsSubtitle &&
             context.SubtitleFiles != null &&
-            context.SubtitleFiles.Any(subtitle => !File.Exists(subtitle)))
+            context.SubtitleFiles.Any(subtitle =>
+                !context.HasPublished("subtitle:" + Path.GetFileName(subtitle)) && !File.Exists(subtitle)))
         {
             return Task.FromResult(DownloadStageResult.Failure(
                 "download.validate.subtitle",
@@ -42,12 +47,19 @@ internal sealed class ValidateStage : IDownloadPipelineStage
         }
 
         if (context.NeedsCover &&
-            !File.Exists(context.CoverFile) &&
-            !File.Exists(context.PageCoverFile))
+            !context.HasPublished("cover") && !context.HasPublished("page-cover") &&
+            !File.Exists(context.CoverFile) && !File.Exists(context.PageCoverFile))
         {
             return Task.FromResult(DownloadStageResult.Failure(
                 "download.validate.cover",
                 "The requested cover files were not created."));
+        }
+
+        if (context.PublishedArtifacts.Values.Any(path => !File.Exists(path)))
+        {
+            return Task.FromResult(DownloadStageResult.Failure(
+                "download.validate.published-missing",
+                "A recorded published artifact is missing."));
         }
 
         return Task.FromResult(DownloadStageResult.Success(Name));
