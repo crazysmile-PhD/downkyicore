@@ -88,6 +88,7 @@ internal static class FlightRecorderExecution
             "process_start",
             pid: rootPid,
             startTimeUtc: rootStartTime).ConfigureAwait(false);
+        await TraceMacOsPhaseAsync(rootPid, "process_wait_begin").ConfigureAwait(false);
 
         using var timeout = new CancellationTokenSource(request.Timeout);
         using var waitCancellation = CancellationTokenSource.CreateLinkedTokenSource(
@@ -103,8 +104,12 @@ internal static class FlightRecorderExecution
             var cleanup = new CleanupDeadline(request.CleanupTimeout);
             var eventName = cancellationToken.IsCancellationRequested ? "cancellation" : "timeout";
             recorder.RecordInMemory(eventName, pid: rootPid);
+            await TraceMacOsPhaseAsync(rootPid, eventName, cleanup).ConfigureAwait(false);
+            await TraceMacOsPhaseAsync(rootPid, "snapshot_begin", cleanup).ConfigureAwait(false);
             await recorder.CaptureFinalSnapshotOnceAsync(cleanup).ConfigureAwait(false);
+            await TraceMacOsPhaseAsync(rootPid, "snapshot_returned", cleanup).ConfigureAwait(false);
             var stopped = await StopAsync(process, cleanup, recorder).ConfigureAwait(false);
+            await TraceMacOsPhaseAsync(rootPid, "drain_begin", cleanup).ConfigureAwait(false);
             var drained = await DrainOutputAsync(
                 outputTask,
                 errorTask,
@@ -112,8 +117,11 @@ internal static class FlightRecorderExecution
                 cleanup,
                 recorder,
                 rootPid).ConfigureAwait(false);
+            await TraceMacOsPhaseAsync(rootPid, "drain_returned", cleanup).ConfigureAwait(false);
+            await TraceMacOsPhaseAsync(rootPid, "report_begin", cleanup).ConfigureAwait(false);
             await recorder.FinalizeFailureAsync(eventName, standardOutput, standardError)
                 .ConfigureAwait(false);
+            await TraceMacOsPhaseAsync(rootPid, "report_returned", cleanup).ConfigureAwait(false);
             var exitCode = string.Equals(eventName, "timeout", StringComparison.Ordinal)
                 ? 124
                 : stopped && drained ? 130 : 2;
@@ -126,6 +134,7 @@ internal static class FlightRecorderExecution
         }
 
         var processExitCode = process.ExitCode;
+        await TraceMacOsPhaseAsync(rootPid, "process_exited").ConfigureAwait(false);
         var postExitCleanup = new CleanupDeadline(request.CleanupTimeout);
         await recorder.RecordAsync(
             "process_exit",
@@ -136,6 +145,7 @@ internal static class FlightRecorderExecution
             await recorder.CaptureFinalSnapshotOnceAsync(postExitCleanup).ConfigureAwait(false);
         }
 
+        await TraceMacOsPhaseAsync(rootPid, "post_exit_drain_begin", postExitCleanup).ConfigureAwait(false);
         var streamsDrained = await DrainOutputAsync(
             outputTask,
             errorTask,
@@ -143,6 +153,7 @@ internal static class FlightRecorderExecution
             postExitCleanup,
             recorder,
             rootPid).ConfigureAwait(false);
+        await TraceMacOsPhaseAsync(rootPid, "post_exit_drain_returned", postExitCleanup).ConfigureAwait(false);
         if (!streamsDrained)
         {
             await recorder.CaptureFinalSnapshotOnceAsync(postExitCleanup).ConfigureAwait(false);
@@ -179,6 +190,31 @@ internal static class FlightRecorderExecution
         return process.StartTime.ToUniversalTime();
     }
 
+    private static async Task TraceMacOsPhaseAsync(int rootPid, string phase, CleanupDeadline? deadline = null)
+    {
+        if (OperatingSystem.IsMacOS())
+        {
+            var maximumWindow = TimeSpan.FromMilliseconds(250);
+            var window = deadline is null || deadline.Remaining > maximumWindow
+                ? maximumWindow
+                : deadline.Remaining;
+            if (window == TimeSpan.Zero)
+            {
+                return;
+            }
+
+            try
+            {
+                await Console.Error.WriteLineAsync($"CentralTestRunner pid={rootPid} phase={phase}")
+                    .WaitAsync(window).ConfigureAwait(false);
+            }
+            catch (Exception exception) when (exception is IOException or ObjectDisposedException or TimeoutException)
+            {
+                // Progress logging must not prevent mandatory process cleanup.
+            }
+        }
+    }
+
     public static async Task PreservePostExitFailureAsync(
         ProcessExecutionResult result,
         string eventName,
@@ -208,15 +244,21 @@ internal static class FlightRecorderExecution
     {
         try
         {
+            await TraceMacOsPhaseAsync(process.Id, "terminate_begin", deadline).ConfigureAwait(false);
             var terminationFailures = await OwnedProcessTerminator.TerminateAsync(
                 process, recorder.CapturedProcesses, deadline).ConfigureAwait(false);
+            await TraceMacOsPhaseAsync(process.Id, "terminate_returned", deadline).ConfigureAwait(false);
             await recorder.RecordAsync("bounded_stop_requested", pid: process.Id).ConfigureAwait(false);
+            await TraceMacOsPhaseAsync(process.Id, "root_wait_begin", deadline).ConfigureAwait(false);
             await process.WaitForExitAsync().WaitAsync(deadline.Remaining).ConfigureAwait(false);
             if (recorder.CapturedProcesses is { } captured)
             {
+                await TraceMacOsPhaseAsync(process.Id, "descendant_wait_begin", deadline).ConfigureAwait(false);
                 await BuildProcessRunner.WaitForOwnedProcessesToExitAsync(
                     captured, deadline.Remaining).ConfigureAwait(false);
             }
+
+            await TraceMacOsPhaseAsync(process.Id, "wait_returned", deadline).ConfigureAwait(false);
 
             if (terminationFailures.Count > 0)
             {
@@ -232,6 +274,7 @@ internal static class FlightRecorderExecution
         }
         catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception or OperationCanceledException or TimeoutException)
         {
+            await TraceMacOsPhaseAsync(process.Id, "cleanup_failed", deadline).ConfigureAwait(false);
             await recorder.RecordAsync(
                 "cleanup_failed",
                 pid: process.Id,

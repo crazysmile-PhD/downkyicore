@@ -142,6 +142,19 @@ internal static class CentralTestCommand
             ? string.Join(",", options.Classes.Order(StringComparer.Ordinal))
             : string.IsNullOrWhiteSpace(options.Filter) ? "all" : options.Filter;
 
+        if (OperatingSystem.IsMacOS())
+        {
+            try
+            {
+                await Console.Error.WriteLineAsync($"CentralTestRunner project={relativeProject} phase=launch")
+                    .WaitAsync(TimeSpan.FromMilliseconds(250)).ConfigureAwait(false);
+            }
+            catch (Exception exception) when (exception is IOException or ObjectDisposedException or TimeoutException)
+            {
+                // Progress logging must not prevent the test project from starting.
+            }
+        }
+
         var result = await FlightRecorderExecution.RunAsync(
             new ProcessExecutionRequest(
                 relativeProject,
