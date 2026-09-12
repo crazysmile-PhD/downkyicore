@@ -214,26 +214,7 @@ public sealed class OwnedProcessScopePlatformTests
 
         if (OperatingSystem.IsMacOS())
         {
-            using var ps = new Process
-            {
-                StartInfo = new ProcessStartInfo("ps")
-                {
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true
-                }
-            };
-            ps.StartInfo.ArgumentList.Add("-p");
-            ps.StartInfo.ArgumentList.Add(pid.ToString(CultureInfo.InvariantCulture));
-            ps.StartInfo.ArgumentList.Add("-o");
-            ps.StartInfo.ArgumentList.Add("stat=");
-            ps.Start();
-            if (!ps.WaitForExit(2000))
-            {
-                ps.Kill();
-                return $"pid={pid}, ps timed out";
-            }
-
-            return $"pid={pid}, ps status={ps.StandardOutput.ReadToEnd().Trim()}";
+            return $"pid={pid}, ps status={ReadMacState(pid) ?? "gone"}";
         }
 
         return $"pid={pid}";
@@ -311,6 +292,38 @@ public sealed class OwnedProcessScopePlatformTests
         }
     }
 
+    private static string? ReadMacState(int pid)
+    {
+        using var ps = new Process
+        {
+            StartInfo = new ProcessStartInfo("ps")
+            {
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            }
+        };
+        ps.StartInfo.ArgumentList.Add("-p");
+        ps.StartInfo.ArgumentList.Add(pid.ToString(CultureInfo.InvariantCulture));
+        ps.StartInfo.ArgumentList.Add("-o");
+        ps.StartInfo.ArgumentList.Add("stat=");
+        ps.Start();
+        if (!ps.WaitForExit(2000))
+        {
+            ps.Kill();
+            throw new TimeoutException($"ps did not return the state for pid {pid}.");
+        }
+
+        var state = ps.StandardOutput.ReadToEnd().Trim();
+        var error = ps.StandardError.ReadToEnd().Trim();
+        if (ps.ExitCode is not (0 or 1) || error.Length > 0)
+        {
+            throw new InvalidOperationException($"ps could not inspect pid {pid}: {error}");
+        }
+
+        return state.Length == 0 ? null : state;
+    }
+
     private static bool IsInJob(int pid, SafeFileHandle job)
     {
         using var process = Process.GetProcessById(pid);
@@ -358,6 +371,12 @@ public sealed class OwnedProcessScopePlatformTests
 
     private static bool IsAlive(int pid)
     {
+        if (OperatingSystem.IsMacOS())
+        {
+            var state = ReadMacState(pid);
+            return state is not null && state[0] is not ('Z' or 'X');
+        }
+
         if (OperatingSystem.IsLinux())
         {
             var state = ReadLinuxStateCode(pid);
