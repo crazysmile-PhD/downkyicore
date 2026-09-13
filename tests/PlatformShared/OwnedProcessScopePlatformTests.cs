@@ -310,14 +310,20 @@ public sealed class OwnedProcessScopePlatformTests
         }
         finally
         {
-            if (scope is not null)
+            try
             {
-                await scope.TerminateAsync(new CleanupDeadline(TimeSpan.FromSeconds(5))).ConfigureAwait(true);
-                scope.Dispose();
+                if (scope is not null)
+                {
+                    await scope.TerminateAsync(new CleanupDeadline(TimeSpan.FromSeconds(5))).ConfigureAwait(true);
+                }
             }
-            StopIfAlive(grandchildPid);
-            StopIfAlive(childPid);
-            Directory.Delete(directory, recursive: true);
+            finally
+            {
+                scope?.Dispose();
+                StopIfAlive(grandchildPid);
+                StopIfAlive(childPid);
+                Directory.Delete(directory, recursive: true);
+            }
         }
     }
 
@@ -379,6 +385,24 @@ public sealed class OwnedProcessScopePlatformTests
         DateTimeOffset? expectedStartTimeUtc = null,
         Func<int, string?>? readMacState = null)
     {
+        string? state = null;
+        if (OperatingSystem.IsMacOS())
+        {
+            state = (readMacState ?? ReadMacState)(pid);
+            if (!IsLiveMacState(state))
+            {
+                return;
+            }
+        }
+        else if (OperatingSystem.IsLinux())
+        {
+            state = ReadLinuxStateCode(pid);
+            if (state is null or "Z" or "X")
+            {
+                return;
+            }
+        }
+
         if (!OperatingSystem.IsWindows() && expectedStartTimeUtc is { } expected)
         {
             try
@@ -391,25 +415,17 @@ public sealed class OwnedProcessScopePlatformTests
             }
             catch (ArgumentException)
             {
-                return;
+                // The first state observation was live; a later exit cannot make it a pass.
             }
         }
 
         if (OperatingSystem.IsMacOS())
         {
-            var state = (readMacState ?? ReadMacState)(pid);
-            if (IsLiveMacState(state))
-            {
-                Assert.Fail($"pid={pid}, ps status={state}, original start={expectedStartTimeUtc:O}");
-            }
+            Assert.Fail($"pid={pid}, ps status={state}, original start={expectedStartTimeUtc:O}");
         }
         else if (OperatingSystem.IsLinux())
         {
-            var state = ReadLinuxStateCode(pid);
-            if (state is not null && state is not ("Z" or "X"))
-            {
-                Assert.Fail($"pid={pid}, state={state}, original start={expectedStartTimeUtc:O}");
-            }
+            Assert.Fail($"pid={pid}, state={state}, original start={expectedStartTimeUtc:O}");
         }
         else if (IsAlive(pid))
         {
