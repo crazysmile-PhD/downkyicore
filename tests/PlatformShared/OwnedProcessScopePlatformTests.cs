@@ -83,6 +83,8 @@ public sealed class OwnedProcessScopePlatformTests
         var grandchildMarker = Path.Combine(directory, "grandchild.pid");
         int? childPid = null;
         int? grandchildPid = null;
+        DateTimeOffset? childStartTimeUtc = null;
+        DateTimeOffset? grandchildStartTimeUtc = null;
         try
         {
             var runtimeConfig = Path.Combine(AppContext.BaseDirectory,
@@ -111,6 +113,11 @@ public sealed class OwnedProcessScopePlatformTests
 
             childPid = await ReadMarkerAsync(childMarker).ConfigureAwait(true);
             grandchildPid = await ReadMarkerAsync(grandchildMarker).ConfigureAwait(true);
+            if (OperatingSystem.IsMacOS())
+            {
+                childStartTimeUtc = ReadStartTimeUtc(childPid.Value);
+                grandchildStartTimeUtc = ReadStartTimeUtc(grandchildPid.Value);
+            }
             if (!OperatingSystem.IsWindows())
             {
                 var rootGroup = GetProcessGroup(await ReadMarkerAsync(Path.Combine(directory, "root.pid")));
@@ -123,9 +130,9 @@ public sealed class OwnedProcessScopePlatformTests
             var result = await run.WaitAsync(TimeSpan.FromSeconds(8),
                 TestContext.Current.CancellationToken).ConfigureAwait(true);
             Assert.Equal(130, result.ExitCode);
-            AssertStopped(result.RootPid);
-            AssertStopped(childPid.Value);
-            AssertStopped(grandchildPid.Value);
+            AssertStopped(result.RootPid, result.RootStartTimeUtc);
+            AssertStopped(childPid.Value, childStartTimeUtc);
+            AssertStopped(grandchildPid.Value, grandchildStartTimeUtc);
             using var report = JsonDocument.Parse(await File.ReadAllTextAsync(
                 result.EvidencePath, TestContext.Current.CancellationToken).ConfigureAwait(true));
             Assert.Contains(report.RootElement.GetProperty("Events").EnumerateArray(),
@@ -142,6 +149,111 @@ public sealed class OwnedProcessScopePlatformTests
             }
             Directory.Delete(directory, recursive: true);
         }
+    }
+
+    [Fact]
+    public async Task MacStoppedAssertionRejectsPersistentChild()
+    {
+        if (!OperatingSystem.IsMacOS())
+        {
+            return;
+        }
+
+        var directory = Path.Combine(Path.GetTempPath(), $"downkyi-scope-leak-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        Process? root = null;
+        int? childPid = null;
+        int? grandchildPid = null;
+        try
+        {
+            var runtimeConfig = Path.Combine(AppContext.BaseDirectory,
+                $"{Path.GetFileNameWithoutExtension(typeof(OwnedProcessScopePlatformTests).Assembly.Location)}.runtimeconfig.json");
+            var startInfo = new ProcessStartInfo("dotnet") { UseShellExecute = false };
+            startInfo.ArgumentList.Add("exec");
+            startInfo.ArgumentList.Add("--runtimeconfig");
+            startInfo.ArgumentList.Add(runtimeConfig);
+            startInfo.ArgumentList.Add(typeof(FlightRecorderExecution).Assembly.Location);
+            startInfo.ArgumentList.Add("fixture-tree-root");
+            startInfo.ArgumentList.Add(runtimeConfig);
+            startInfo.ArgumentList.Add(directory);
+            root = Process.Start(startInfo)
+                ?? throw new InvalidOperationException("The persistent-tree fixture did not start.");
+            childPid = await ReadMarkerAsync(Path.Combine(directory, "child.pid")).ConfigureAwait(true);
+            grandchildPid = await ReadMarkerAsync(Path.Combine(directory, "grandchild.pid")).ConfigureAwait(true);
+            var childStartTimeUtc = ReadStartTimeUtc(childPid.Value);
+
+            var failure = Record.Exception(() => AssertStopped(childPid.Value, childStartTimeUtc));
+            Assert.NotNull(failure);
+            Assert.Contains($"pid={childPid.Value}, ps status=", failure.Message, StringComparison.Ordinal);
+            Assert.True(IsAlive(childPid.Value));
+            Assert.True(IsAlive(grandchildPid.Value));
+        }
+        finally
+        {
+            StopIfAlive(grandchildPid);
+            StopIfAlive(childPid);
+            if (root is { HasExited: false })
+            {
+                root.Kill();
+            }
+            if (root is not null)
+            {
+                await root.WaitForExitAsync(TestContext.Current.CancellationToken)
+                    .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken).ConfigureAwait(true);
+            }
+            root?.Dispose();
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task MacStoppedAssertionAcceptsExitBetweenObservations()
+    {
+        if (!OperatingSystem.IsMacOS())
+        {
+            return;
+        }
+
+        var startInfo = new ProcessStartInfo("/bin/sleep") { UseShellExecute = false };
+        startInfo.ArgumentList.Add("60");
+        using var process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("The teardown fixture did not start.");
+        try
+        {
+            var expectedStartTimeUtc = process.StartTime.ToUniversalTime();
+            var observations = 0;
+            AssertStopped(process.Id, expectedStartTimeUtc, pid =>
+            {
+                var state = ReadMacState(pid);
+                if (++observations == 1 && IsLiveMacState(state))
+                {
+                    process.Kill();
+                    Assert.True(process.WaitForExit(5000));
+                }
+                return state;
+            });
+            Assert.Equal(2, observations);
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                process.Kill();
+            }
+            await process.WaitForExitAsync(TestContext.Current.CancellationToken)
+                .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken).ConfigureAwait(true);
+        }
+    }
+
+    [Fact]
+    public void MacZombieStateIsStopped()
+    {
+        Assert.False(IsLiveMacState(null));
+        Assert.False(IsLiveMacState("Z"));
+        Assert.False(IsLiveMacState("Z+"));
+        Assert.False(IsLiveMacState("X"));
+        Assert.True(IsLiveMacState("R+"));
+        Assert.True(IsLiveMacState("S"));
     }
 
     [Fact]
@@ -197,13 +309,57 @@ public sealed class OwnedProcessScopePlatformTests
 
     private static int GetProcessGroup(int pid) => NativeMethods.GetProcessGroup(pid);
 
-    private static void AssertStopped(int pid)
+    private static void AssertStopped(
+        int pid,
+        DateTimeOffset? expectedStartTimeUtc = null,
+        Func<int, string?>? readMacState = null)
     {
+        if (OperatingSystem.IsMacOS() && expectedStartTimeUtc is { } expected)
+        {
+            var read = readMacState ?? ReadMacState;
+            if (!IsLiveMacState(read(pid)))
+            {
+                return;
+            }
+
+            // A process may disappear between the original observation and the failure message.
+            var lastState = read(pid);
+            if (!IsLiveMacState(lastState))
+            {
+                return;
+            }
+
+            try
+            {
+                using var process = Process.GetProcessById(pid);
+                if (process.StartTime.ToUniversalTime() != expected || process.HasExited)
+                {
+                    return;
+                }
+            }
+            catch (ArgumentException)
+            {
+                return;
+            }
+            catch (Exception exception) when (
+                exception is InvalidOperationException or System.ComponentModel.Win32Exception &&
+                !IsLiveMacState(read(pid)))
+            {
+                return;
+            }
+
+            Assert.Fail($"pid={pid}, ps status={lastState}, original start={expected:O}");
+            return;
+        }
+
         if (IsAlive(pid))
         {
             Assert.Fail(DescribeProcessState(pid));
         }
     }
+
+    private static bool IsLiveMacState(string? state) =>
+        state is not null && state[0] is not ('Z' or 'X');
 
     private static string DescribeProcessState(int pid)
     {
@@ -369,12 +525,18 @@ public sealed class OwnedProcessScopePlatformTests
         throw new TimeoutException($"The fixture did not publish {Path.GetFileName(path)}.");
     }
 
+    private static DateTimeOffset ReadStartTimeUtc(int pid)
+    {
+        using var process = Process.GetProcessById(pid);
+        return process.StartTime.ToUniversalTime();
+    }
+
     private static bool IsAlive(int pid)
     {
         if (OperatingSystem.IsMacOS())
         {
             var state = ReadMacState(pid);
-            return state is not null && state[0] is not ('Z' or 'X');
+            return IsLiveMacState(state);
         }
 
         if (OperatingSystem.IsLinux())
