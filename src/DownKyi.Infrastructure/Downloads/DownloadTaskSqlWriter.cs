@@ -1,4 +1,3 @@
-using DownKyi.Application.Downloads;
 using DownKyi.Domain.Downloads;
 using Microsoft.Data.Sqlite;
 
@@ -49,11 +48,7 @@ internal static class DownloadTaskSqlWriter
                 zone_id = @zone_id, [order] = @order, main_title = @main_title, name = @name,
                 duration = @duration, video_codec_name = @video_codec_name, resolution = @resolution,
                 audio_codec = @audio_codec, file_path = @file_path,
-                output_reservation_key = CASE
-                    WHEN @output_reservation_key IS NULL THEN NULL
-                    WHEN output_reservation_key IS NULL THEN NULL
-                    ELSE @output_reservation_key
-                END,
+                output_reservation_key = @output_reservation_key,
                  file_size = @file_size, published_artifacts = @published_artifacts,
                  staging_token = @staging_token,
                  publishing_key = @publishing_key, publishing_file_name = @publishing_file_name,
@@ -136,9 +131,7 @@ internal static class DownloadTaskSqlWriter
             "@output_reservation_key",
             task.Phase is DownloadPhase.Completed or DownloadPhase.Deleted
                 ? DBNull.Value
-                : DownloadOutputPathKey.Create(
-                    task.Output.BasePath,
-                    DownloadOutputPathKey.UsesCaseInsensitiveComparison));
+                : DownloadStoreReservationKeyCompatibility.CreateCurrentKey(task.Output.BasePath));
         command.Parameters.AddWithValue("@file_size", task.Output.FileSizeText ?? (object)DBNull.Value);
         command.Parameters.AddWithValue(
             "@published_artifacts",

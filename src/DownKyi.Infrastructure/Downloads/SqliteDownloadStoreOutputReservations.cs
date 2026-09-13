@@ -61,13 +61,98 @@ internal sealed class SqliteDownloadStoreOutputReservations(SqliteDownloadStoreD
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(basePath);
+        if (ignoreCase != DownloadOutputPathKey.UsesCaseInsensitiveComparison)
+        {
+            // Persisted keys only index the policy of this store's platform.
+            // An explicit alternate-policy query must derive identities from paths.
+            var requestedKey = DownloadOutputPathKey.Create(basePath, ignoreCase);
+            var keys = await GetActiveOutputReservationKeysAsync(ignoreCase, cancellationToken)
+                .ConfigureAwait(false);
+            return keys.Contains(requestedKey, StringComparer.Ordinal);
+        }
+
         using var connection = await _database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        return await IsOutputPathReservedCoreAsync(
-            connection,
-            transaction: null,
-            basePath,
-            ignoreCase,
-            cancellationToken).ConfigureAwait(false);
+        using var command = connection.CreateCommand();
+        if (ignoreCase)
+        {
+            command.CommandText = """
+                SELECT 1, NULL
+                FROM download_base db
+                INNER JOIN downloading dl ON dl.id = db.id
+                WHERE (db.output_reservation_key = @key
+                       OR db.file_path = @file_path COLLATE NOCASE)
+                  AND NOT EXISTS (
+                      SELECT 1 FROM download_quarantine q
+                      WHERE q.source_table = 'downloading' AND q.record_id = db.id)
+                UNION ALL
+                SELECT 0, db.file_path
+                FROM download_base db
+                INNER JOIN downloading dl ON dl.id = db.id
+                WHERE db.output_reservation_key IS NULL
+                  AND NOT EXISTS (
+                      SELECT 1 FROM download_quarantine q
+                      WHERE q.source_table = 'downloading' AND q.record_id = db.id)
+                """;
+        }
+        else
+        {
+            command.CommandText = """
+                SELECT 1, NULL
+                FROM download_base db
+                INNER JOIN downloading dl ON dl.id = db.id
+                WHERE (db.output_reservation_key = @key OR db.file_path = @file_path)
+                  AND NOT EXISTS (
+                      SELECT 1 FROM download_quarantine q
+                      WHERE q.source_table = 'downloading' AND q.record_id = db.id)
+                UNION ALL
+                SELECT 0, db.file_path
+                FROM download_base db
+                INNER JOIN downloading dl ON dl.id = db.id
+                WHERE db.output_reservation_key IS NULL
+                  AND NOT EXISTS (
+                      SELECT 1 FROM download_quarantine q
+                      WHERE q.source_table = 'downloading' AND q.record_id = db.id)
+                """;
+        }
+        var key = DownloadOutputPathKey.Create(basePath, ignoreCase);
+        command.Parameters.AddWithValue("@key", key);
+        command.Parameters.AddWithValue("@file_path", basePath);
+        using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            if (reader.GetInt32(0) == 1 ||
+                StringComparer.Ordinal.Equals(
+                    DownloadOutputPathKey.Create(reader.GetString(1), ignoreCase), key))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public async Task<IReadOnlyList<string>> GetActiveOutputReservationKeysAsync(
+        bool ignoreCase,
+        CancellationToken cancellationToken)
+    {
+        using var connection = await _database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT db.file_path
+            FROM download_base db
+            INNER JOIN downloading dl ON dl.id = db.id
+            WHERE NOT EXISTS (
+                SELECT 1 FROM download_quarantine q
+                WHERE q.source_table = 'downloading' AND q.record_id = db.id)
+            """;
+        using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var keys = new HashSet<string>(StringComparer.Ordinal);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            keys.Add(DownloadOutputPathKey.Create(reader.GetString(0), ignoreCase));
+        }
+
+        return [.. keys];
     }
 
     private static async Task<bool> IsOutputPathReservedCoreAsync(

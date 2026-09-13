@@ -178,6 +178,11 @@ public sealed class DownloadProgressWriteBehindTests
             bool ignoreCase,
             CancellationToken cancellationToken) => throw new NotSupportedException();
 
+        public Task<IReadOnlyList<string>> GetActiveOutputReservationKeysAsync(
+            bool ignoreCase,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
         public Task<DownloadHistoryPage> GetHistoryPageAsync(
             DownloadHistoryCursor? cursor,
             int pageSize,

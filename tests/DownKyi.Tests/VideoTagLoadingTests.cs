@@ -583,6 +583,11 @@ public sealed class VideoTagLoadingTests : IDisposable
             DownloadTaskId taskId,
             CancellationToken cancellationToken) => Task.FromResult<DownloadTask?>(null);
 
+        public Task<IReadOnlyList<string>> GetActiveOutputReservationKeysAsync(
+            bool ignoreCase,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<string>>([]);
+
         public Task<DownloadHistoryPage> GetHistoryPageAsync(
             DownloadHistoryCursor? cursor,
             int pageSize,

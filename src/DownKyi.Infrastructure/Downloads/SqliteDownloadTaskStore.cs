@@ -100,6 +100,13 @@ public sealed class SqliteDownloadTaskStore : IDownloadTaskStore, IDisposable
             .IsOutputPathReservedAsync(basePath, ignoreCase, cancellationToken)
             .ConfigureAwait(false);
 
+    public async Task<IReadOnlyList<string>> GetActiveOutputReservationKeysAsync(
+        bool ignoreCase,
+        CancellationToken cancellationToken) =>
+        await _outputReservations
+            .GetActiveOutputReservationKeysAsync(ignoreCase, cancellationToken)
+            .ConfigureAwait(false);
+
     public async Task<DownloadHistoryPage> GetHistoryPageAsync(
         DownloadHistoryCursor? cursor,
         int pageSize,

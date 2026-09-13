@@ -14,22 +14,39 @@ internal static class DownloadOutputPathResolver
         string basePath,
         bool autoAddNumberSuffix,
         Func<string, CancellationToken, Task<bool>> isReservedAsync,
+        Func<CancellationToken, Task<IReadOnlyList<string>>> getReservationKeysAsync,
         CancellationToken cancellationToken,
         StringComparer? comparer = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(basePath);
         ArgumentNullException.ThrowIfNull(isReservedAsync);
+        ArgumentNullException.ThrowIfNull(getReservationKeysAsync);
+        cancellationToken.ThrowIfCancellationRequested();
         comparer ??= PlatformComparer;
         var occupiedPaths = GetExistingBasePaths(basePath)
             .Select(CreateComparisonKey)
             .ToHashSet(comparer);
+        var baseKey = CreateComparisonKey(basePath);
+        if (!occupiedPaths.Contains(baseKey) &&
+            !await isReservedAsync(basePath, cancellationToken).ConfigureAwait(false))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return basePath;
+        }
+
+        if (!autoAddNumberSuffix)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            throw new IOException("The selected output path is already in use.");
+        }
+
+        occupiedPaths.UnionWith(await getReservationKeysAsync(cancellationToken).ConfigureAwait(false));
         for (var suffix = 0; ; suffix++)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var candidate = suffix == 0 ? basePath : $"{basePath}({suffix})";
             var comparisonKey = CreateComparisonKey(candidate);
-            if (!occupiedPaths.Contains(comparisonKey) &&
-                !await isReservedAsync(candidate, cancellationToken).ConfigureAwait(false))
+            if (!occupiedPaths.Contains(comparisonKey))
             {
                 return candidate;
             }

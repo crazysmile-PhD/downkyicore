@@ -438,6 +438,11 @@ public sealed class DownloadTaskApplicationServiceTests
             return Task.FromResult(OperationResult.Success());
         }
 
+        public Task<IReadOnlyList<string>> GetActiveOutputReservationKeysAsync(
+            bool ignoreCase,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<string>>(Current == null ? [] : [DownloadOutputPathKey.Create(Current.Output.BasePath, ignoreCase)]);
+
         public Task<DownloadHistoryPage> GetHistoryPageAsync(
             DownloadHistoryCursor? cursor,
             int pageSize,

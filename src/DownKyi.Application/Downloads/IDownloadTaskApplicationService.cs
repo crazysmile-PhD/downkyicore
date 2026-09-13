@@ -25,6 +25,10 @@ public interface IDownloadTaskApplicationService
         bool ignoreCase,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyList<string>> GetActiveOutputReservationKeysAsync(
+        bool ignoreCase,
+        CancellationToken cancellationToken);
+
     Task<bool> IsLegacyUpgradeAdmissionBlockedAsync(CancellationToken cancellationToken);
 
     Task<OperationResult> ConfirmLegacyRemoteTasksStoppedAsync(

@@ -55,8 +55,11 @@ internal sealed class DownloadTaskAdmissionService : IDisposable
             var admittedBasePath = await DownloadOutputPathResolver.ResolveAdmissionCollisionAsync(
                 physicalBasePath,
                 autoAddNumberSuffix,
-                (candidate, token) => _tasks.IsOutputPathReservedAsync(
-                    candidate,
+                (path, token) => _tasks.IsOutputPathReservedAsync(
+                    path,
+                    DownloadOutputPathKey.UsesCaseInsensitiveComparison,
+                    token),
+                token => _tasks.GetActiveOutputReservationKeysAsync(
                     DownloadOutputPathKey.UsesCaseInsensitiveComparison,
                     token),
                 cancellationToken).ConfigureAwait(true);

@@ -15,6 +15,91 @@ namespace DownKyi.Tests;
 
 public sealed class DownloadBootstrapHostedServiceTests
 {
+    [Fact]
+    public async Task CanonicalReservationCollisionStopsRecoveryBeforePublicationOrRuntimeStarts()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "downkyi-rekey-startup",
+            Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        var databasePath = Path.Combine(directory, "download.db");
+        var firstPath = Path.Combine(directory, "caf\u00e9-conflict");
+        var secondPath = Path.Combine(directory, "cafe\u0301-conflict");
+        var destination = firstPath + ".mp4";
+        var bytes = new byte[] { 4, 5, 6 };
+        try
+        {
+            using (var firstStore = new SqliteDownloadTaskStore(
+                       new SqliteDownloadTaskStoreOptions(databasePath), new SystemClock()))
+            {
+                using var firstTasks = new DownloadTaskApplicationService(firstStore,
+                    new SystemClock());
+                var firstId = new DownloadTaskId("rekey-startup-a");
+                Assert.True((await firstTasks.AddAsync(CreateTask(firstId.Value, firstPath),
+                    TestContext.Current.CancellationToken)).IsSuccess);
+                Assert.True((await firstTasks.StartAsync(firstId,
+                    TestContext.Current.CancellationToken)).IsSuccess);
+                Assert.True((await firstTasks.BeginPublishingArtifactAsync(firstId,
+                    new DownloadPublishingArtifact("media", "output.mp4", bytes.Length,
+                        Convert.ToHexString(SHA256.HashData(bytes))),
+                    TestContext.Current.CancellationToken)).IsSuccess);
+                Assert.True((await firstTasks.AddAsync(CreateTask("rekey-startup-b",
+                    Path.Combine(directory, "other")), TestContext.Current.CancellationToken)).IsSuccess);
+            }
+            await File.WriteAllBytesAsync(destination, bytes, TestContext.Current.CancellationToken);
+            using (var connection = new SqliteConnection($"Data Source={databasePath};Pooling=False"))
+            {
+                await connection.OpenAsync(TestContext.Current.CancellationToken);
+                using var command = connection.CreateCommand();
+                command.CommandText = """
+                    UPDATE download_base SET file_path = @path, output_reservation_key = @key
+                    WHERE id = 'rekey-startup-b'
+                    """;
+                command.Parameters.AddWithValue("@path", secondPath);
+                command.Parameters.AddWithValue("@key", DownloadOutputPathKey.Create(secondPath,
+                    !DownloadOutputPathKey.UsesCaseInsensitiveComparison));
+                Assert.Equal(1, await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken));
+            }
+
+            using var reopenedStore = new SqliteDownloadTaskStore(
+                new SqliteDownloadTaskStoreOptions(databasePath), new SystemClock());
+            using var tasks = new DownloadTaskApplicationService(reopenedStore, new SystemClock());
+            using var projections = new DownloadTaskProjectionStore(tasks, new SystemClock());
+            var writer = new DownloadTaskStateWriter(tasks);
+            var staging = new DownloadTaskStaging(NullLogger<DownloadTaskStaging>.Instance);
+            var fileService = new DownloadTaskFileService(new AriaRuntimeClientRegistry(),
+                NullLogger<DownloadTaskFileService>.Instance, staging, writer);
+            using var runtime = new RecordingDownloadRuntime();
+            var gateway = new DownloadTaskQueueGateway();
+            using var bootstrap = new DownloadBootstrapHostedService(
+                new DownloadListState(), projections, writer,
+                new RecordingRuntimeFactory(runtime), gateway,
+                new ImmediateUiDispatcher(), NullLogger<DownloadBootstrapHostedService>.Instance,
+                staging, fileService);
+
+            await bootstrap.StartAsync(TestContext.Current.CancellationToken);
+
+            Assert.False(runtime.Started);
+            Assert.Empty(runtime.Enqueued);
+            await Assert.ThrowsAsync<DownloadRuntimeUnavailableException>(() =>
+                gateway.EnqueueAsync(new DownloadTaskId("after-block"),
+                    TestContext.Current.CancellationToken));
+            Assert.Equal(bytes, await File.ReadAllBytesAsync(destination,
+                TestContext.Current.CancellationToken));
+            using var check = new SqliteConnection($"Data Source={databasePath};Mode=ReadOnly;Pooling=False");
+            await check.OpenAsync(TestContext.Current.CancellationToken);
+            using var query = check.CreateCommand();
+            query.CommandText = """
+                SELECT publishing_key FROM download_base WHERE id = 'rekey-startup-a'
+                """;
+            Assert.Equal("media", await query.ExecuteScalarAsync(TestContext.Current.CancellationToken));
+        }
+        finally
+        {
+            ClearOwnedSqlitePool(databasePath);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -780,6 +865,11 @@ public sealed class DownloadBootstrapHostedServiceTests
             string basePath,
             bool ignoreCase,
             CancellationToken cancellationToken) => Task.FromResult(false);
+
+        public Task<IReadOnlyList<string>> GetActiveOutputReservationKeysAsync(
+            bool ignoreCase,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<string>>([]);
 
         public Task<DownloadHistoryPage> GetHistoryPageAsync(
             DownloadHistoryCursor? cursor,

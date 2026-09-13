@@ -74,16 +74,6 @@ public sealed partial class DownloadTaskApplicationService : IDownloadTaskApplic
         return _store.GetUnfinishedAsync(cancellationToken);
     }
 
-    public Task<bool> IsOutputPathReservedAsync(
-        string basePath,
-        bool ignoreCase,
-        CancellationToken cancellationToken)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(basePath);
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        return _store.IsOutputPathReservedAsync(basePath, ignoreCase, cancellationToken);
-    }
-
     public Task<bool> IsLegacyUpgradeAdmissionBlockedAsync(CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);

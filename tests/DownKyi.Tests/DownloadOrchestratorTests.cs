@@ -434,6 +434,20 @@ public sealed class DownloadOrchestratorTests
             }
         }
 
+        public Task<IReadOnlyList<string>> GetActiveOutputReservationKeysAsync(
+            bool ignoreCase,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            lock (_sync)
+            {
+                return Task.FromResult<IReadOnlyList<string>>(_tasks.Values
+                    .Where(task => task.Phase != DownloadPhase.Completed)
+                    .Select(task => DownloadOutputPathKey.Create(task.Output.BasePath, ignoreCase))
+                    .ToArray());
+            }
+        }
+
         public Task<DownloadHistoryPage> GetHistoryPageAsync(
             DownloadHistoryCursor? cursor,
             int pageSize,

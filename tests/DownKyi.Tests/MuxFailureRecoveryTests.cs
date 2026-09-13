@@ -439,6 +439,11 @@ public sealed class MuxFailureRecoveryTests
             bool ignoreCase,
             CancellationToken cancellationToken) => Task.FromResult(false);
 
+        public Task<IReadOnlyList<string>> GetActiveOutputReservationKeysAsync(
+            bool ignoreCase,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<string>>([]);
+
         public Task<DownloadHistoryPage> GetHistoryPageAsync(
             DownloadHistoryCursor? cursor,
             int pageSize,

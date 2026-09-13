@@ -403,6 +403,11 @@ public sealed class DownloadAddOwnerTests : IDisposable
             return Task.FromResult(Current?.Id == taskId ? Current : null);
         }
 
+        public Task<IReadOnlyList<string>> GetActiveOutputReservationKeysAsync(
+            bool ignoreCase,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<string>>([]);
+
         public Task<DownloadHistoryPage> GetHistoryPageAsync(
             DownloadHistoryCursor? cursor,
             int pageSize,

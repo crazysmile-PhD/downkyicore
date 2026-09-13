@@ -132,6 +132,11 @@ internal sealed class SqliteDownloadStoreDatabase : IDisposable
                 _clock,
                 _physicalOutputPathResolver,
                 cancellationToken).ConfigureAwait(false);
+            await DownloadStoreReservationKeyCompatibility.EnsureAsync(
+                connection,
+                _options.DatabasePath,
+                _clock,
+                cancellationToken).ConfigureAwait(false);
             await RemoveOrphanedDownloadingRecordsAsync(connection, cancellationToken).ConfigureAwait(false);
             _initialized = true;
         }
@@ -196,6 +201,6 @@ internal sealed class SqliteDownloadStoreDatabase : IDisposable
         }
     }
 
-    private static SqliteTransaction BeginImmediateTransaction(SqliteConnection connection) =>
+    internal static SqliteTransaction BeginImmediateTransaction(SqliteConnection connection) =>
         connection.BeginTransaction(deferred: false);
 }

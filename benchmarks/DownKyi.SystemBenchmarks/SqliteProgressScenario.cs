@@ -207,6 +207,11 @@ internal static class SqliteProgressScenario
             CancellationToken cancellationToken) =>
             _inner.IsOutputPathReservedAsync(basePath, ignoreCase, cancellationToken);
 
+        public Task<IReadOnlyList<string>> GetActiveOutputReservationKeysAsync(
+            bool ignoreCase,
+            CancellationToken cancellationToken) =>
+            _inner.GetActiveOutputReservationKeysAsync(ignoreCase, cancellationToken);
+
         public Task<DownloadHistoryPage> GetHistoryPageAsync(
             DownloadHistoryCursor? cursor,
             int pageSize,
