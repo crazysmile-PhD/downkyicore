@@ -61,6 +61,16 @@ internal sealed class SqliteDownloadStoreOutputReservations(SqliteDownloadStoreD
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(basePath);
+        if (ignoreCase != DownloadOutputPathKey.UsesCaseInsensitiveComparison)
+        {
+            // Persisted keys only index the policy of this store's platform.
+            // An explicit alternate-policy query must derive identities from paths.
+            var requestedKey = DownloadOutputPathKey.Create(basePath, ignoreCase);
+            var keys = await GetActiveOutputReservationKeysAsync(ignoreCase, cancellationToken)
+                .ConfigureAwait(false);
+            return keys.Contains(requestedKey, StringComparer.Ordinal);
+        }
+
         using var connection = await _database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         using var command = connection.CreateCommand();
         if (ignoreCase)
@@ -128,7 +138,7 @@ internal sealed class SqliteDownloadStoreOutputReservations(SqliteDownloadStoreD
         using var connection = await _database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT db.output_reservation_key, db.file_path
+            SELECT db.file_path
             FROM download_base db
             INNER JOIN downloading dl ON dl.id = db.id
             WHERE NOT EXISTS (
@@ -139,13 +149,7 @@ internal sealed class SqliteDownloadStoreOutputReservations(SqliteDownloadStoreD
         var keys = new HashSet<string>(StringComparer.Ordinal);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            if (!await reader.IsDBNullAsync(0, cancellationToken).ConfigureAwait(false))
-            {
-                keys.Add(reader.GetString(0));
-            }
-
-            // The file path also covers legacy rows with a null reservation key.
-            keys.Add(DownloadOutputPathKey.Create(reader.GetString(1), ignoreCase));
+            keys.Add(DownloadOutputPathKey.Create(reader.GetString(0), ignoreCase));
         }
 
         return [.. keys];

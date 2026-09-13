@@ -899,6 +899,477 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task ReopenedForeignPolicyReservationAgreesAcrossPointSnapshotAndAdd()
+    {
+        var ignoreCase = DownloadOutputPathKey.UsesCaseInsensitiveComparison;
+        var original = Path.Combine(_directory, "cafe\u0301-foreign");
+        var equivalent = Path.Combine(
+            _directory,
+            ignoreCase ? "CAF\u00c9-FOREIGN" : "caf\u00e9-foreign");
+        using (var first = CreateStore())
+        {
+            Assert.True((await first.AddAsync(
+                CreateQueuedTask("foreign-policy-original", original),
+                TestContext.Current.CancellationToken)).IsSuccess);
+        }
+
+        using (var connection = await OpenConnectionAsync(readOnly: false))
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                UPDATE download_base SET output_reservation_key = @foreign_key
+                WHERE id = 'foreign-policy-original'
+                """;
+            command.Parameters.AddWithValue(
+                "@foreign_key",
+                DownloadOutputPathKey.Create(original, !ignoreCase));
+            await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        }
+
+        using var reopened = CreateStore();
+        await reopened.InitializeAsync(TestContext.Current.CancellationToken);
+        var key = DownloadOutputPathKey.Create(equivalent, ignoreCase);
+        Assert.Contains(key, await reopened.GetActiveOutputReservationKeysAsync(
+            ignoreCase, TestContext.Current.CancellationToken));
+        Assert.True(await reopened.IsOutputPathReservedAsync(
+            equivalent, ignoreCase, TestContext.Current.CancellationToken));
+        Assert.False((await reopened.AddAsync(
+            CreateQueuedTask("foreign-policy-second", equivalent),
+            TestContext.Current.CancellationToken)).IsSuccess);
+        var alternatePolicy = !ignoreCase;
+        var alternateEquivalent = Path.Combine(_directory,
+            ignoreCase ? "caf\u00e9-foreign" : "CAF\u00c9-FOREIGN");
+        var alternateKey = DownloadOutputPathKey.Create(alternateEquivalent, alternatePolicy);
+        Assert.Contains(alternateKey, await reopened.GetActiveOutputReservationKeysAsync(
+            alternatePolicy, TestContext.Current.CancellationToken));
+        Assert.True(await reopened.IsOutputPathReservedAsync(alternateEquivalent,
+            alternatePolicy, TestContext.Current.CancellationToken));
+        if (ignoreCase)
+        {
+            var distinctUnderAlternatePolicy = Path.Combine(_directory, "CAF\u00c9-FOREIGN");
+            Assert.False(await reopened.IsOutputPathReservedAsync(distinctUnderAlternatePolicy,
+                alternatePolicy, TestContext.Current.CancellationToken));
+        }
+        Assert.Equal(DownloadOutputPathKey.Create(original, ignoreCase),
+            await ReadReservationKeyAsync("foreign-policy-original"));
+        var backupPath = Assert.Single(Directory.GetFiles(Path.Combine(_directory, "Backup"),
+            "download.db.reservation-keys-*.bak"));
+        using var backup = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = backupPath,
+            Mode = SqliteOpenMode.ReadOnly,
+            Pooling = false
+        }.ToString());
+        await backup.OpenAsync(TestContext.Current.CancellationToken);
+        using var backupKey = backup.CreateCommand();
+        backupKey.CommandText = """
+            SELECT output_reservation_key FROM download_base
+            WHERE id = 'foreign-policy-original'
+            """;
+        Assert.Equal(DownloadOutputPathKey.Create(original, !ignoreCase),
+            await backupKey.ExecuteScalarAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task ReservationRekeyRepairsLegacyNullAndIsIdempotentAcrossReopenAndPolicyChanges()
+    {
+        var ignoreCase = DownloadOutputPathKey.UsesCaseInsensitiveComparison;
+        var original = Path.Combine(_directory, "foreign-cafe\u0301");
+        var legacy = Path.Combine(_directory, "legacy");
+        using (var first = CreateStore())
+        {
+            var pending = CreatePausedTask("rekey-original", original);
+            pending = pending.UpdateOutput(new DownloadOutput(original, "1 GB",
+                new Dictionary<string, string> { ["cover"] = "cover.jpg" },
+                pending.Output.StagingToken,
+                new DownloadPublishingArtifact("media", "video.mp4", 3,
+                    new string('A', 64))), _clock.UtcNow.AddSeconds(6)).RequireValue();
+            Assert.True((await first.AddAsync(pending,
+                TestContext.Current.CancellationToken)).IsSuccess);
+            Assert.True((await first.AddAsync(CreatePausedTask("rekey-legacy", legacy),
+                TestContext.Current.CancellationToken)).IsSuccess);
+            Assert.True((await first.AddAsync(CreateCompletedTask("rekey-history", 123),
+                TestContext.Current.CancellationToken)).IsSuccess);
+        }
+
+        var originalBefore = await ReadStoredStateAsync("rekey-original");
+        var legacyBefore = await ReadStoredStateAsync("rekey-legacy");
+        var historyBefore = await ReadStoredStateAsync("rekey-history");
+        var publicationBefore = await ReadPublicationPayloadAsync("rekey-original");
+        await SetReservationKeyAsync("rekey-original",
+            DownloadOutputPathKey.Create(original, !ignoreCase));
+        await SetReservationKeyAsync("rekey-legacy", null);
+        using (var reopened = CreateStore())
+        {
+            await reopened.InitializeAsync(TestContext.Current.CancellationToken);
+        }
+
+        Assert.Equal(DownloadOutputPathKey.Create(original, ignoreCase),
+            await ReadReservationKeyAsync("rekey-original"));
+        Assert.Equal(DownloadOutputPathKey.Create(legacy, ignoreCase),
+            await ReadReservationKeyAsync("rekey-legacy"));
+        Assert.Null(await ReadReservationKeyAsync("rekey-history"));
+        Assert.Equal(originalBefore, await ReadStoredStateAsync("rekey-original"));
+        Assert.Equal(legacyBefore, await ReadStoredStateAsync("rekey-legacy"));
+        Assert.Equal(historyBefore, await ReadStoredStateAsync("rekey-history"));
+        Assert.Equal(publicationBefore, await ReadPublicationPayloadAsync("rekey-original"));
+        using (var repeated = CreateStore())
+        {
+            await repeated.InitializeAsync(TestContext.Current.CancellationToken);
+        }
+        Assert.Single(Directory.GetFiles(Path.Combine(_directory, "Backup"),
+            "download.db.reservation-keys-*.bak"));
+
+        await SetReservationKeyAsync("rekey-original",
+            DownloadOutputPathKey.Create(original, !ignoreCase));
+        using (var switched = CreateStore())
+        {
+            await switched.InitializeAsync(TestContext.Current.CancellationToken);
+        }
+        Assert.Equal(2, Directory.GetFiles(Path.Combine(_directory, "Backup"),
+            "download.db.reservation-keys-*.bak").Length);
+    }
+
+    [Fact]
+    public async Task CanonicalCollisionBlocksStoreAndDirectAddWithoutChangingAnyTask()
+    {
+        var composed = Path.Combine(_directory, "caf\u00e9-conflict");
+        var decomposed = Path.Combine(_directory, "cafe\u0301-conflict");
+        using (var first = CreateStore())
+        {
+            Assert.True((await first.AddAsync(CreatePausedTask("collision-a", composed),
+                TestContext.Current.CancellationToken)).IsSuccess);
+            Assert.True((await first.AddAsync(CreatePausedTask("collision-b"),
+                TestContext.Current.CancellationToken)).IsSuccess);
+        }
+
+        await SetPathAndReservationKeyAsync("collision-b", decomposed,
+            DownloadOutputPathKey.Create(decomposed,
+                !DownloadOutputPathKey.UsesCaseInsensitiveComparison));
+        var firstBefore = await ReadStoredStateAsync("collision-a");
+        var secondBefore = await ReadStoredStateAsync("collision-b");
+        var firstKey = await ReadReservationKeyAsync("collision-a");
+        var secondKey = await ReadReservationKeyAsync("collision-b");
+        using var reopened = CreateStore();
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            reopened.InitializeAsync(TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            reopened.AddAsync(CreateQueuedTask("collision-third",
+                Path.Combine(_directory, "unrelated")), TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            reopened.GetUnfinishedAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(firstBefore, await ReadStoredStateAsync("collision-a"));
+        Assert.Equal(secondBefore, await ReadStoredStateAsync("collision-b"));
+        Assert.Equal(firstKey, await ReadReservationKeyAsync("collision-a"));
+        Assert.Equal(secondKey, await ReadReservationKeyAsync("collision-b"));
+        Assert.False(Directory.Exists(Path.Combine(_directory, "Backup")));
+    }
+
+    [Fact]
+    public async Task ReservationRekeyPreflightsQuarantineAndCompletedUniqueOccupants()
+    {
+        var target = Path.Combine(_directory, "reserved-target");
+        using (var first = CreateStore())
+        {
+            Assert.True((await first.AddAsync(CreatePausedTask("occupied-quarantine", target),
+                TestContext.Current.CancellationToken)).IsSuccess);
+            Assert.True((await first.AddAsync(CreatePausedTask("moving", Path.Combine(_directory, "old")),
+                TestContext.Current.CancellationToken)).IsSuccess);
+        }
+        await InsertPreexistingQuarantineAsync("occupied-quarantine");
+        await SetPathAndReservationKeyAsync("moving", target,
+            DownloadOutputPathKey.Create(Path.Combine(_directory, "old"),
+                DownloadOutputPathKey.UsesCaseInsensitiveComparison));
+        using (var reopened = CreateStore())
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                reopened.InitializeAsync(TestContext.Current.CancellationToken));
+        }
+
+        // A completed row is not an active reservation, but a non-NULL key
+        // still occupies the actual SQLite UNIQUE index.
+        await SetPathAndReservationKeyAsync("moving", Path.Combine(_directory, "old"),
+            DownloadOutputPathKey.Create(Path.Combine(_directory, "old"),
+                DownloadOutputPathKey.UsesCaseInsensitiveComparison));
+        var safeQuarantinePath = Path.Combine(_directory, "quarantine-safe");
+        await SetPathAndReservationKeyAsync("occupied-quarantine", safeQuarantinePath,
+            DownloadOutputPathKey.Create(safeQuarantinePath,
+                DownloadOutputPathKey.UsesCaseInsensitiveComparison));
+        using (var store = CreateStore())
+        {
+            Assert.True((await store.AddAsync(CreateCompletedTask("occupied-history", 123),
+                TestContext.Current.CancellationToken)).IsSuccess);
+        }
+        await SetReservationKeyAsync("occupied-history",
+            DownloadOutputPathKey.Create(target,
+                DownloadOutputPathKey.UsesCaseInsensitiveComparison));
+        await SetPathAndReservationKeyAsync("moving", target,
+            DownloadOutputPathKey.Create(Path.Combine(_directory, "old"),
+                DownloadOutputPathKey.UsesCaseInsensitiveComparison));
+        using var completedCollision = CreateStore();
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            completedCollision.InitializeAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task QuarantinedRowsRetainNullOrForeignKeysWithoutBlockingUnrelatedRecovery()
+    {
+        var foreignPath = OperatingSystem.IsWindows() ? "/foreign/quarantined" : @"C:\foreign\quarantined";
+        var quarantinedPath = Path.Combine(_directory, "quarantined-foreign-key");
+        using (var first = CreateStore())
+        {
+            Assert.True((await first.AddAsync(CreatePausedTask("quarantined-null"),
+                TestContext.Current.CancellationToken)).IsSuccess);
+            Assert.True((await first.AddAsync(CreatePausedTask("quarantined-foreign",
+                quarantinedPath), TestContext.Current.CancellationToken)).IsSuccess);
+            Assert.True((await first.AddAsync(CreatePausedTask("safe-unfinished"),
+                TestContext.Current.CancellationToken)).IsSuccess);
+        }
+        await InsertPreexistingQuarantineAsync("quarantined-null");
+        await InsertPreexistingQuarantineAsync("quarantined-foreign");
+        await SetPathAndReservationKeyAsync("quarantined-null", foreignPath, null);
+        var foreignKey = DownloadOutputPathKey.Create(quarantinedPath,
+            !DownloadOutputPathKey.UsesCaseInsensitiveComparison);
+        await SetReservationKeyAsync("quarantined-foreign", foreignKey);
+
+        using var reopened = CreateStore();
+        await reopened.InitializeAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal("safe-unfinished", Assert.Single(await reopened.GetUnfinishedAsync(
+            TestContext.Current.CancellationToken)).Id.Value);
+        Assert.Equal(2, (await reopened.GetQuarantinedRecordsAsync(
+            TestContext.Current.CancellationToken)).Count);
+        Assert.Null(await ReadReservationKeyAsync("quarantined-null"));
+        Assert.Equal(foreignKey, await ReadReservationKeyAsync("quarantined-foreign"));
+        Assert.Equal(foreignPath, (await ReadStoredStateAsync("quarantined-null")).Path);
+        Assert.True((await reopened.AddAsync(CreateQueuedTask("safe-new",
+            Path.Combine(_directory, "safe-new")), TestContext.Current.CancellationToken)).IsSuccess);
+        Assert.False(Directory.Exists(Path.Combine(_directory, "Backup")));
+    }
+
+    [Fact]
+    public async Task ReservationRekeySqlFailureRollsBackAllKeysAndKeepsPrechangeBackup()
+    {
+        var firstPath = Path.Combine(_directory, "rollback-a");
+        var secondPath = Path.Combine(_directory, "rollback-b");
+        using (var first = CreateStore())
+        {
+            Assert.True((await first.AddAsync(CreatePausedTask("rollback-a", firstPath),
+                TestContext.Current.CancellationToken)).IsSuccess);
+            Assert.True((await first.AddAsync(CreatePausedTask("rollback-b", secondPath),
+                TestContext.Current.CancellationToken)).IsSuccess);
+        }
+        var firstForeign = DownloadOutputPathKey.Create(firstPath,
+            !DownloadOutputPathKey.UsesCaseInsensitiveComparison);
+        var secondForeign = DownloadOutputPathKey.Create(secondPath,
+            !DownloadOutputPathKey.UsesCaseInsensitiveComparison);
+        await SetReservationKeyAsync("rollback-a", firstForeign);
+        await SetReservationKeyAsync("rollback-b", secondForeign);
+        using (var connection = await OpenConnectionAsync(readOnly: false))
+        using (var trigger = connection.CreateCommand())
+        {
+            trigger.CommandText = """
+                CREATE TRIGGER reject_second_rekey BEFORE UPDATE OF output_reservation_key
+                ON download_base WHEN NEW.id = 'rollback-b' AND NEW.output_reservation_key IS NOT NULL
+                BEGIN SELECT RAISE(ABORT, 'synthetic rekey failure'); END;
+                """;
+            await trigger.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        }
+        using var reopened = CreateStore();
+        await Assert.ThrowsAsync<SqliteException>(() =>
+            reopened.InitializeAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(firstForeign, await ReadReservationKeyAsync("rollback-a"));
+        Assert.Equal(secondForeign, await ReadReservationKeyAsync("rollback-b"));
+        Assert.Single(Directory.GetFiles(Path.Combine(_directory, "Backup"),
+            "download.db.reservation-keys-*.bak"));
+    }
+
+    [Fact]
+    public async Task ReservationRekeyHandlesKeySwapWithoutDroppingUniqueIndex()
+    {
+        var firstPath = Path.Combine(_directory, "swap-a");
+        var secondPath = Path.Combine(_directory, "swap-b");
+        using (var store = CreateStore())
+        {
+            Assert.True((await store.AddAsync(CreateQueuedTask("swap-a", firstPath),
+                TestContext.Current.CancellationToken)).IsSuccess);
+            Assert.True((await store.AddAsync(CreateQueuedTask("swap-b", secondPath),
+                TestContext.Current.CancellationToken)).IsSuccess);
+        }
+        var firstKey = DownloadOutputPathKey.Create(firstPath,
+            DownloadOutputPathKey.UsesCaseInsensitiveComparison);
+        var secondKey = DownloadOutputPathKey.Create(secondPath,
+            DownloadOutputPathKey.UsesCaseInsensitiveComparison);
+        await SetReservationKeyAsync("swap-a", null);
+        await SetReservationKeyAsync("swap-b", null);
+        await SetReservationKeyAsync("swap-a", secondKey);
+        await SetReservationKeyAsync("swap-b", firstKey);
+
+        using var reopened = CreateStore();
+        await reopened.InitializeAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(firstKey, await ReadReservationKeyAsync("swap-a"));
+        Assert.Equal(secondKey, await ReadReservationKeyAsync("swap-b"));
+        using var connection = await OpenReadOnlyConnectionAsync();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(*) FROM sqlite_master
+            WHERE type = 'index' AND name = 'ux_download_base_output_reservation'
+            """;
+        Assert.Equal(1L, await command.ExecuteScalarAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task ReservationRekeyCancellationAndBackupFailureLeaveOriginalKeyUntouched()
+    {
+        var path = Path.Combine(_directory, "backup-failure");
+        using (var first = CreateStore())
+        {
+            Assert.True((await first.AddAsync(CreatePausedTask("backup-failure", path),
+                TestContext.Current.CancellationToken)).IsSuccess);
+        }
+        var foreign = DownloadOutputPathKey.Create(path,
+            !DownloadOutputPathKey.UsesCaseInsensitiveComparison);
+        await SetReservationKeyAsync("backup-failure", foreign);
+
+        using var cancellation = new CancellationTokenSource();
+        using (var canceled = CreateStore(clock: new CancelOnReadClock(_clock.UtcNow, cancellation)))
+        {
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+                canceled.InitializeAsync(cancellation.Token));
+        }
+        Assert.Equal(foreign, await ReadReservationKeyAsync("backup-failure"));
+
+        var backupDirectory = Path.Combine(_directory, "Backup");
+        Directory.Delete(backupDirectory);
+        await File.WriteAllTextAsync(backupDirectory, "prevent backup directory creation",
+            TestContext.Current.CancellationToken);
+        using (var failedBackup = CreateStore())
+        {
+            await Assert.ThrowsAnyAsync<IOException>(() =>
+                failedBackup.InitializeAsync(TestContext.Current.CancellationToken));
+        }
+        Assert.Equal(foreign, await ReadReservationKeyAsync("backup-failure"));
+        File.Delete(backupDirectory);
+
+        using var reopened = CreateStore();
+        await reopened.InitializeAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(DownloadOutputPathKey.Create(path,
+            DownloadOutputPathKey.UsesCaseInsensitiveComparison),
+            await ReadReservationKeyAsync("backup-failure"));
+    }
+
+    [Fact]
+    public async Task UninterpretableForeignPathBlocksBeforeChangingExistingTask()
+    {
+        var original = Path.Combine(_directory, "native-path");
+        using (var first = CreateStore())
+        {
+            Assert.True((await first.AddAsync(CreatePausedTask("foreign-path", original),
+                TestContext.Current.CancellationToken)).IsSuccess);
+        }
+        var foreignPath = OperatingSystem.IsWindows() ? "/foreign/path" : @"C:\foreign\path";
+        var originalKey = await ReadReservationKeyAsync("foreign-path");
+        await SetPathAndReservationKeyAsync("foreign-path", foreignPath, originalKey);
+        using var reopened = CreateStore();
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            reopened.InitializeAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(foreignPath, (await ReadStoredStateAsync("foreign-path")).Path);
+        Assert.Equal(originalKey, await ReadReservationKeyAsync("foreign-path"));
+    }
+
+    [Fact]
+    public async Task NewUninterpretablePathIsRejectedBeforeItCanPoisonReopen()
+    {
+        var foreignPath = OperatingSystem.IsWindows() ? "/foreign/path" : @"C:\foreign\path";
+        using var store = CreateStore();
+        await store.InitializeAsync(TestContext.Current.CancellationToken);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            store.AddAsync(CreateQueuedTask("new-foreign-path", foreignPath),
+                TestContext.Current.CancellationToken));
+
+        Assert.Equal(0, await CountDownloadBaseRecordAsync("new-foreign-path"));
+        var existing = CreateQueuedTask("update-foreign-path",
+            Path.Combine(_directory, "safe-existing"));
+        Assert.True((await store.AddAsync(existing,
+            TestContext.Current.CancellationToken)).IsSuccess);
+        var changed = existing.UpdateOutput(new DownloadOutput(foreignPath, null),
+            _clock.UtcNow.AddSeconds(1)).RequireValue();
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            store.UpdateAsync(changed, existing.Version,
+                TestContext.Current.CancellationToken));
+        Assert.Equal(existing.Output.BasePath,
+            (await ReadStoredStateAsync(existing.Id.Value)).Path);
+    }
+
+    [Fact]
+    public async Task ForwardSlashUncPathFollowsCurrentPlatformPolicyAcrossReopen()
+    {
+        const string path = "//server/share/downkyi-output";
+        using (var first = CreateStore())
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                Assert.True((await first.AddAsync(CreateQueuedTask("slash-unc", path),
+                    TestContext.Current.CancellationToken)).IsSuccess);
+            }
+            else
+            {
+                await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                    first.AddAsync(CreateQueuedTask("slash-unc", path),
+                        TestContext.Current.CancellationToken));
+                Assert.True((await first.AddAsync(CreatePausedTask("legacy-slash-unc",
+                    Path.Combine(_directory, "safe-unc")),
+                    TestContext.Current.CancellationToken)).IsSuccess);
+            }
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            using var reopened = CreateStore();
+            await reopened.InitializeAsync(TestContext.Current.CancellationToken);
+            Assert.Equal(DownloadOutputPathKey.Create(path,
+                DownloadOutputPathKey.UsesCaseInsensitiveComparison),
+                await ReadReservationKeyAsync("slash-unc"));
+            Assert.True(await reopened.IsOutputPathReservedAsync(path,
+                DownloadOutputPathKey.UsesCaseInsensitiveComparison,
+                TestContext.Current.CancellationToken));
+        }
+        else
+        {
+            var originalKey = await ReadReservationKeyAsync("legacy-slash-unc");
+            await SetPathAndReservationKeyAsync("legacy-slash-unc", path, originalKey);
+            using var reopened = CreateStore();
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                reopened.InitializeAsync(TestContext.Current.CancellationToken));
+            Assert.Equal(originalKey, await ReadReservationKeyAsync("legacy-slash-unc"));
+            Assert.Equal(0, await CountDownloadBaseRecordAsync("slash-unc"));
+        }
+    }
+
+    [Fact]
+    public async Task ActiveUpdateRecomputesKeyAndUniqueRejectsEquivalentNewAdmission()
+    {
+        var original = Path.Combine(_directory, "update-original");
+        var next = Path.Combine(_directory, "update-cafe\u0301");
+        var equivalent = Path.Combine(_directory, "update-caf\u00e9");
+        using var store = CreateStore();
+        var task = CreateQueuedTask("update-path", original);
+        Assert.True((await store.AddAsync(task, TestContext.Current.CancellationToken)).IsSuccess);
+        await SetReservationKeyAsync(task.Id.Value, null);
+        var updated = task.UpdateOutput(new DownloadOutput(next, null),
+            _clock.UtcNow.AddSeconds(1)).RequireValue();
+        Assert.True((await store.UpdateAsync(updated, task.Version,
+            TestContext.Current.CancellationToken)).IsSuccess);
+        Assert.Equal(DownloadOutputPathKey.Create(next,
+            DownloadOutputPathKey.UsesCaseInsensitiveComparison),
+            await ReadReservationKeyAsync(task.Id.Value));
+        Assert.False((await store.AddAsync(CreateQueuedTask("update-duplicate", equivalent),
+            TestContext.Current.CancellationToken)).IsSuccess);
+    }
+
+    [Fact]
     public async Task CoalescedProgressWriteAdvancesVersionAndPayloadAtomically()
     {
         var original = DownloadTask.Create(
@@ -1078,12 +1549,14 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
         SqliteConnection.ClearPool(connection);
     }
 
-    private SqliteDownloadTaskStore CreateStore(IPhysicalOutputPathResolver? resolver = null)
+    private SqliteDownloadTaskStore CreateStore(
+        IPhysicalOutputPathResolver? resolver = null,
+        IClock? clock = null)
     {
         Directory.CreateDirectory(_directory);
         return new SqliteDownloadTaskStore(
             new SqliteDownloadTaskStoreOptions(Path.Combine(_directory, "download.db")),
-            _clock,
+            clock ?? _clock,
             resolver ?? new StubPhysicalOutputPathResolver(static path => path));
     }
 
@@ -1267,6 +1740,62 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
         command.Parameters.AddWithValue("@id", id);
         command.Parameters.AddWithValue("@now", _clock.UtcNow.ToUnixTimeMilliseconds());
         await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task SetReservationKeyAsync(string id, string? key)
+    {
+        using var connection = await OpenConnectionAsync(readOnly: false).ConfigureAwait(false);
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE download_base SET output_reservation_key = @key WHERE id = @id
+            """;
+        command.Parameters.AddWithValue("@key", key ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("@id", id);
+        Assert.Equal(1, await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken)
+            .ConfigureAwait(false));
+    }
+
+    private async Task SetPathAndReservationKeyAsync(string id, string path, string? key)
+    {
+        using var connection = await OpenConnectionAsync(readOnly: false).ConfigureAwait(false);
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE download_base SET file_path = @path, output_reservation_key = @key
+            WHERE id = @id
+            """;
+        command.Parameters.AddWithValue("@path", path);
+        command.Parameters.AddWithValue("@key", key ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("@id", id);
+        Assert.Equal(1, await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken)
+            .ConfigureAwait(false));
+    }
+
+    private async Task<string?> ReadReservationKeyAsync(string id)
+    {
+        using var connection = await OpenReadOnlyConnectionAsync().ConfigureAwait(false);
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT output_reservation_key FROM download_base WHERE id = @id";
+        command.Parameters.AddWithValue("@id", id);
+        return await command.ExecuteScalarAsync(TestContext.Current.CancellationToken)
+            .ConfigureAwait(false) as string;
+    }
+
+    private async Task<(string StagingToken, string PublishingKey, string PublishedArtifacts,
+        double Progress)> ReadPublicationPayloadAsync(string id)
+    {
+        using var connection = await OpenReadOnlyConnectionAsync().ConfigureAwait(false);
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT db.staging_token, db.publishing_key, db.published_artifacts, dl.progress
+            FROM download_base db INNER JOIN downloading dl ON dl.id = db.id
+            WHERE db.id = @id
+            """;
+        command.Parameters.AddWithValue("@id", id);
+        using var reader = await command.ExecuteReaderAsync(TestContext.Current.CancellationToken)
+            .ConfigureAwait(false);
+        Assert.True(await reader.ReadAsync(TestContext.Current.CancellationToken)
+            .ConfigureAwait(false));
+        return (reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetDouble(3));
     }
 
     private async Task CreateQuarantineFailureTriggerAsync()
@@ -1541,6 +2070,23 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
         {
             return Task.Delay(delay, cancellationToken);
         }
+    }
+
+    private sealed class CancelOnReadClock(
+        DateTimeOffset utcNow,
+        CancellationTokenSource cancellation) : IClock
+    {
+        public DateTimeOffset UtcNow
+        {
+            get
+            {
+                cancellation.Cancel();
+                return utcNow;
+            }
+        }
+
+        public Task DelayAsync(TimeSpan delay, CancellationToken cancellationToken) =>
+            Task.Delay(delay, cancellationToken);
     }
 
     private sealed class StubPhysicalOutputPathResolver(Func<string, string> resolve)
