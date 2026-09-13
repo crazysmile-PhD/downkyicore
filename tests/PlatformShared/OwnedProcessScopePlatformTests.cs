@@ -190,17 +190,17 @@ public sealed class OwnedProcessScopePlatformTests
         }
         finally
         {
-            StopIfAlive(grandchildPid);
-            StopIfAlive(childPid);
             if (root is { HasExited: false })
             {
-                root.Kill();
+                root.Kill(entireProcessTree: true);
             }
             if (root is not null)
             {
                 await root.WaitForExitAsync(TestContext.Current.CancellationToken)
                     .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken).ConfigureAwait(true);
             }
+            StopIfAlive(grandchildPid);
+            StopIfAlive(childPid);
             root?.Dispose();
             Directory.Delete(directory, recursive: true);
         }
@@ -384,6 +384,9 @@ public sealed class OwnedProcessScopePlatformTests
         Process? root = null;
         int? childPid = null;
         int? grandchildPid = null;
+        DateTimeOffset? rootStartTimeUtc = null;
+        DateTimeOffset? childStartTimeUtc = null;
+        DateTimeOffset? grandchildStartTimeUtc = null;
         try
         {
             var runtimeConfig = Path.Combine(AppContext.BaseDirectory,
@@ -400,6 +403,12 @@ public sealed class OwnedProcessScopePlatformTests
                 ?? throw new InvalidOperationException("The build-tree fixture did not start.");
             childPid = await ReadMarkerAsync(Path.Combine(directory, "child.pid")).ConfigureAwait(true);
             grandchildPid = await ReadMarkerAsync(Path.Combine(directory, "grandchild.pid")).ConfigureAwait(true);
+            if (OperatingSystem.IsMacOS())
+            {
+                rootStartTimeUtc = ReadStartTimeUtc(root.Id);
+                childStartTimeUtc = ReadStartTimeUtc(childPid.Value);
+                grandchildStartTimeUtc = ReadStartTimeUtc(grandchildPid.Value);
+            }
 
             var snapshotFailure = new IOException("snapshot unavailable");
             var clock = Stopwatch.StartNew();
@@ -410,9 +419,9 @@ public sealed class OwnedProcessScopePlatformTests
 
             Assert.Same(snapshotFailure, failure);
             Assert.True(clock.Elapsed < TimeSpan.FromSeconds(5));
-            AssertStopped(root.Id);
-            AssertStopped(childPid.Value);
-            AssertStopped(grandchildPid.Value);
+            AssertStopped(root.Id, rootStartTimeUtc);
+            AssertStopped(childPid.Value, childStartTimeUtc);
+            AssertStopped(grandchildPid.Value, grandchildStartTimeUtc);
         }
         finally
         {
