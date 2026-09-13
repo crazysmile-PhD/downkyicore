@@ -11,4 +11,8 @@
     <Compile Remove="TestDataIsolationRegistration.cs" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="DownKyi.Windows.Tests" />
+  </ItemGroup>
+
 </Project>
