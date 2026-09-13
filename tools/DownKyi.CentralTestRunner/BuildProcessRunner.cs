@@ -99,8 +99,14 @@ internal static class BuildProcessRunner
             // A failed diagnostic capture must not leave tree-kill with only the root to await.
             try
             {
-                ownedProcesses = await ProcessTreeSnapshot.CaptureAsync(
-                    process.Id, deadline.SnapshotWindow).ConfigureAwait(false);
+                var window = deadline.SnapshotWindow;
+                if (window == TimeSpan.Zero)
+                {
+                    throw new TimeoutException("No cleanup window remains for owned process inventory.");
+                }
+
+                ownedProcesses = await Task.Run(() => ProcessTreeSnapshot.CaptureAsync(process.Id, window))
+                    .WaitAsync(window).ConfigureAwait(false);
             }
             catch (Exception exception)
             {
