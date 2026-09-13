@@ -15,9 +15,29 @@ public sealed record LoopbackTlsRequest(
     long? RangeStart,
     long? RangeEnd);
 
+public enum LoopbackTlsCleanupOperation
+{
+    CancelShutdown,
+    StopListener,
+    DisposeConnection,
+    AwaitServerCompletion,
+    DisposeListener,
+    DisposeCancellationSource
+}
+
+public sealed record LoopbackTlsCleanupFailure(
+    LoopbackTlsCleanupOperation Operation,
+    int? ConnectionNumber,
+    Exception Exception);
+
 public sealed class LoopbackTlsFileServer : IAsyncDisposable
 {
-    private readonly CancellationTokenSource _shutdown = new();
+    private static readonly TimeSpan DefaultShutdownTimeout = TimeSpan.FromSeconds(5);
+    private readonly ConcurrentDictionary<int, TcpClient> _clients = new();
+    private readonly ConcurrentQueue<LoopbackTlsCleanupFailure> _cleanupFailures = new();
+    private readonly ConcurrentQueue<LoopbackTlsCleanupFailure>? _cleanupFailureSink;
+    private readonly object _disposeGate = new();
+    private readonly LoopbackTlsCancellation _shutdown;
     private readonly Func<int, X509Certificate2> _certificateFactory;
     private readonly Func<int, LoopbackTlsRequest, Uri?>? _redirectFactory;
     private readonly byte[] _payload;
@@ -25,9 +45,11 @@ public sealed class LoopbackTlsFileServer : IAsyncDisposable
     private readonly TimeSpan _chunkDelay;
     private readonly ConcurrentQueue<LoopbackTlsRequest> _requests = new();
     private readonly ConcurrentQueue<Exception> _failures = new();
-    private readonly TcpListener _listener;
+    private readonly LoopbackTlsListener _listener;
+    private readonly TimeSpan _shutdownTimeout;
     private readonly Task _serverTask;
     private int _connectionCount;
+    private Task? _disposeTask;
 
     public LoopbackTlsFileServer(
         Func<int, X509Certificate2> certificateFactory,
@@ -35,11 +57,21 @@ public sealed class LoopbackTlsFileServer : IAsyncDisposable
         Uri? redirectTarget = null,
         bool truncateFirstResponse = false,
         TimeSpan chunkDelay = default,
-        Func<int, LoopbackTlsRequest, Uri?>? redirectFactory = null)
+        Func<int, LoopbackTlsRequest, Uri?>? redirectFactory = null,
+        TimeSpan shutdownTimeout = default,
+        ConcurrentQueue<LoopbackTlsCleanupFailure>? cleanupFailureSink = null)
     {
         _certificateFactory = certificateFactory
             ?? throw new ArgumentNullException(nameof(certificateFactory));
         _payload = payload ?? throw new ArgumentNullException(nameof(payload));
+        _shutdownTimeout = shutdownTimeout == default
+            ? DefaultShutdownTimeout
+            : shutdownTimeout > TimeSpan.Zero
+                ? shutdownTimeout
+                : throw new ArgumentOutOfRangeException(
+                    nameof(shutdownTimeout),
+                    shutdownTimeout,
+                    "The TLS loopback shutdown timeout must be positive.");
         _redirectFactory = redirectFactory;
         if (_redirectFactory == null && redirectTarget != null)
         {
@@ -47,7 +79,9 @@ public sealed class LoopbackTlsFileServer : IAsyncDisposable
         }
         _truncateFirstResponse = truncateFirstResponse;
         _chunkDelay = chunkDelay;
-        _listener = new TcpListener(IPAddress.Loopback, 0);
+        _cleanupFailureSink = cleanupFailureSink;
+        _shutdown = new LoopbackTlsCancellation(_cleanupFailures, cleanupFailureSink);
+        _listener = new LoopbackTlsListener(_cleanupFailures, cleanupFailureSink);
         _listener.Start();
         var endpoint = (IPEndPoint)_listener.LocalEndpoint;
         Url = new Uri($"https://localhost:{endpoint.Port}/media.bin");
@@ -58,9 +92,14 @@ public sealed class LoopbackTlsFileServer : IAsyncDisposable
 
     public int ConnectionCount => Volatile.Read(ref _connectionCount);
 
+    public Task Completion => _serverTask;
+
     public IReadOnlyList<LoopbackTlsRequest> Requests => _requests.ToArray();
 
     public IReadOnlyList<Exception> Failures => _failures.ToArray();
+
+    public IReadOnlyList<LoopbackTlsCleanupFailure> CleanupFailures =>
+        _cleanupFailures.ToArray();
 
     private async Task RunAsync(CancellationToken cancellationToken)
     {
@@ -72,7 +111,8 @@ public sealed class LoopbackTlsFileServer : IAsyncDisposable
                 var client = await _listener.AcceptTcpClientAsync(cancellationToken)
                     .ConfigureAwait(false);
                 var connectionNumber = Interlocked.Increment(ref _connectionCount);
-                connections.Add(HandleClientAsync(
+                _clients[connectionNumber] = client;
+                connections.Add(ObserveClientAsync(
                     client,
                     connectionNumber,
                     cancellationToken));
@@ -88,6 +128,20 @@ public sealed class LoopbackTlsFileServer : IAsyncDisposable
         {
             await Task.WhenAll(connections).ConfigureAwait(false);
         }
+    }
+
+    private async Task ObserveClientAsync(
+        TcpClient client,
+        int connectionNumber,
+        CancellationToken cancellationToken)
+    {
+        var handler = HandleClientAsync(client, connectionNumber, cancellationToken);
+        await handler.ContinueWith(
+            completed => RecordHandlerCompletion(completed, _failures),
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default).ConfigureAwait(false);
+        _clients.TryRemove(connectionNumber, out _);
     }
 
     private async Task HandleClientAsync(
@@ -307,18 +361,246 @@ public sealed class LoopbackTlsFileServer : IAsyncDisposable
             : (start, null);
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
-        await _shutdown.CancelAsync().ConfigureAwait(false);
-        _listener.Stop();
-        try
+        Task disposeTask;
+        lock (_disposeGate)
         {
-            await _serverTask.ConfigureAwait(false);
+            disposeTask = _disposeTask ??= DisposeCoreAsync();
         }
-        finally
+
+        return new ValueTask(disposeTask);
+    }
+
+    private async Task DisposeCoreAsync()
+    {
+        using var cleanupDeadline = new CancellationTokenSource(_shutdownTimeout);
+        await RunBoundedCleanupAsync(
+            LoopbackTlsCleanupOperation.CancelShutdown,
+            connectionNumber: null,
+            () => _shutdown.CancelAsync(),
+            cleanupDeadline.Token).ConfigureAwait(false);
+        await RunCleanupAsync(
+            LoopbackTlsCleanupOperation.StopListener,
+            connectionNumber: null,
+            _listener.Stop,
+            cleanupDeadline.Token).ConfigureAwait(false);
+
+        foreach (var connection in _clients.ToArray())
         {
-            _listener.Dispose();
-            _shutdown.Dispose();
+            await RunCleanupAsync(
+                LoopbackTlsCleanupOperation.DisposeConnection,
+                connection.Key,
+                connection.Value.Dispose,
+                cleanupDeadline.Token).ConfigureAwait(false);
+        }
+
+        await RunBoundedCleanupAsync(
+            LoopbackTlsCleanupOperation.AwaitServerCompletion,
+            connectionNumber: null,
+            () => _serverTask,
+            cleanupDeadline.Token).ConfigureAwait(false);
+        _listener.Dispose();
+        _shutdown.Dispose();
+    }
+
+    private async Task RunBoundedCleanupAsync(
+        LoopbackTlsCleanupOperation operation,
+        int? connectionNumber,
+        Func<Task> cleanup,
+        CancellationToken cleanupDeadline)
+    {
+        var cleanupTask = Task.Factory.StartNew(
+            cleanup,
+            CancellationToken.None,
+            TaskCreationOptions.DenyChildAttach,
+            TaskScheduler.Default).Unwrap();
+        var completed = await Task.WhenAny(
+            cleanupTask,
+            Task.Delay(Timeout.InfiniteTimeSpan, cleanupDeadline)).ConfigureAwait(false);
+        if (!ReferenceEquals(completed, cleanupTask))
+        {
+            RecordCleanupFailure(new LoopbackTlsCleanupFailure(
+                operation,
+                connectionNumber,
+                new TimeoutException(
+                    $"Loopback TLS cleanup stage '{operation}' exceeded its deadline.")));
+            _ = cleanupTask.ContinueWith(
+                lateCompletion => RecordCleanupCompletion(
+                    lateCompletion,
+                    operation,
+                    connectionNumber),
+                CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
+            return;
+        }
+
+        RecordCleanupCompletion(cleanupTask, operation, connectionNumber);
+    }
+
+    private Task RunCleanupAsync(
+        LoopbackTlsCleanupOperation operation,
+        int? connectionNumber,
+        Action cleanup,
+        CancellationToken cleanupDeadline)
+    {
+        return RunBoundedCleanupAsync(
+            operation,
+            connectionNumber,
+            () =>
+            {
+                cleanup();
+                return Task.CompletedTask;
+            },
+            cleanupDeadline);
+    }
+
+    private static void RecordHandlerCompletion(
+        Task handler,
+        ConcurrentQueue<Exception> failures)
+    {
+        if (handler.IsFaulted)
+        {
+            foreach (var error in handler.Exception.Flatten().InnerExceptions)
+            {
+                failures.Enqueue(error);
+            }
+        }
+        else if (handler.IsCanceled)
+        {
+            failures.Enqueue(new TaskCanceledException(handler));
+        }
+    }
+
+    private void RecordCleanupCompletion(
+        Task cleanup,
+        LoopbackTlsCleanupOperation operation,
+        int? connectionNumber)
+    {
+        if (cleanup.IsFaulted)
+        {
+            foreach (var error in cleanup.Exception.Flatten().InnerExceptions)
+            {
+                RecordCleanupFailure(new LoopbackTlsCleanupFailure(
+                    operation,
+                    connectionNumber,
+                    error));
+            }
+        }
+        else if (cleanup.IsCanceled)
+        {
+            RecordCleanupFailure(new LoopbackTlsCleanupFailure(
+                operation,
+                connectionNumber,
+                new TaskCanceledException(cleanup)));
+        }
+    }
+
+    private void RecordCleanupFailure(LoopbackTlsCleanupFailure failure)
+    {
+        _cleanupFailures.Enqueue(failure);
+        if (_cleanupFailureSink != null
+            && !ReferenceEquals(_cleanupFailureSink, _cleanupFailures))
+        {
+            _cleanupFailureSink.Enqueue(failure);
+        }
+    }
+
+    private sealed class LoopbackTlsCancellation(
+        ConcurrentQueue<LoopbackTlsCleanupFailure> cleanupFailures,
+        ConcurrentQueue<LoopbackTlsCleanupFailure>? cleanupFailureSink) : IDisposable
+    {
+        private readonly CancellationTokenSource _source = new();
+
+        public CancellationToken Token => _source.Token;
+
+        public Task CancelAsync()
+        {
+            return _source.CancelAsync();
+        }
+
+        public void Dispose()
+        {
+            try
+            {
+                _source.Dispose();
+            }
+            catch (ObjectDisposedException error)
+            {
+                RecordCleanupFailure(
+                    cleanupFailures,
+                    cleanupFailureSink,
+                    new LoopbackTlsCleanupFailure(
+                    LoopbackTlsCleanupOperation.DisposeCancellationSource,
+                    ConnectionNumber: null,
+                    error));
+            }
+        }
+    }
+
+    private sealed class LoopbackTlsListener(
+        ConcurrentQueue<LoopbackTlsCleanupFailure> cleanupFailures,
+        ConcurrentQueue<LoopbackTlsCleanupFailure>? cleanupFailureSink) : IDisposable
+    {
+        private readonly TcpListener _listener = new(IPAddress.Loopback, 0);
+
+        public EndPoint LocalEndpoint => _listener.LocalEndpoint;
+
+        public ValueTask<TcpClient> AcceptTcpClientAsync(CancellationToken cancellationToken)
+        {
+            return _listener.AcceptTcpClientAsync(cancellationToken);
+        }
+
+        public void Dispose()
+        {
+            try
+            {
+                _listener.Dispose();
+            }
+            catch (SocketException error)
+            {
+                RecordCleanupFailure(
+                    cleanupFailures,
+                    cleanupFailureSink,
+                    new LoopbackTlsCleanupFailure(
+                    LoopbackTlsCleanupOperation.DisposeListener,
+                    ConnectionNumber: null,
+                    error));
+            }
+            catch (ObjectDisposedException error)
+            {
+                RecordCleanupFailure(
+                    cleanupFailures,
+                    cleanupFailureSink,
+                    new LoopbackTlsCleanupFailure(
+                    LoopbackTlsCleanupOperation.DisposeListener,
+                    ConnectionNumber: null,
+                    error));
+            }
+        }
+
+        public void Start()
+        {
+            _listener.Start();
+        }
+
+        public void Stop()
+        {
+            _listener.Stop();
+        }
+    }
+
+    private static void RecordCleanupFailure(
+        ConcurrentQueue<LoopbackTlsCleanupFailure> cleanupFailures,
+        ConcurrentQueue<LoopbackTlsCleanupFailure>? cleanupFailureSink,
+        LoopbackTlsCleanupFailure failure)
+    {
+        cleanupFailures.Enqueue(failure);
+        if (cleanupFailureSink != null
+            && !ReferenceEquals(cleanupFailureSink, cleanupFailures))
+        {
+            cleanupFailureSink.Enqueue(failure);
         }
     }
 }
