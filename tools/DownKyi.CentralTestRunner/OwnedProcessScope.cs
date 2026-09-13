@@ -171,13 +171,15 @@ internal sealed class OwnedProcessScope : IDisposable
         startInfo.ArgumentList.Add("pid=,pgid=,stat=");
         using var ps = new Process { StartInfo = startInfo };
         ps.Start();
-        var outputTask = ps.StandardOutput.ReadToEndAsync();
-        var errorTask = ps.StandardError.ReadToEndAsync();
+        using var inspectionCancellation = new CancellationTokenSource();
+        var outputTask = ps.StandardOutput.ReadToEndAsync(inspectionCancellation.Token);
+        var errorTask = ps.StandardError.ReadToEndAsync(inspectionCancellation.Token);
+        var exitTask = ps.WaitForExitAsync(inspectionCancellation.Token);
         try
         {
             try
             {
-                await ps.WaitForExitAsync().WaitAsync(deadline.WorkWindow).ConfigureAwait(false);
+                await exitTask.WaitAsync(deadline.WorkWindow).ConfigureAwait(false);
                 var output = await outputTask.WaitAsync(deadline.WorkWindow).ConfigureAwait(false);
                 var error = await errorTask.WaitAsync(deadline.WorkWindow).ConfigureAwait(false);
                 if (ps.ExitCode != 0 || error.Length > 0)
@@ -189,6 +191,9 @@ internal sealed class OwnedProcessScope : IDisposable
             }
             finally
             {
+                await inspectionCancellation.CancelAsync().ConfigureAwait(false);
+                ps.StandardOutput.Dispose();
+                ps.StandardError.Dispose();
                 if (!ps.HasExited)
                 {
                     try
@@ -202,8 +207,25 @@ internal sealed class OwnedProcessScope : IDisposable
                     }
                 }
 
-                await ps.WaitForExitAsync().WaitAsync(deadline.Remaining).ConfigureAwait(false);
-                await Task.WhenAll(outputTask, errorTask).WaitAsync(deadline.Remaining).ConfigureAwait(false);
+                using var reapCancellation = new CancellationTokenSource(deadline.Remaining);
+                try
+                {
+                    await ps.WaitForExitAsync(reapCancellation.Token).ConfigureAwait(false);
+                }
+                finally
+                {
+                    try
+                    {
+                        await Task.WhenAll(outputTask, errorTask, exitTask)
+                            .WaitAsync(deadline.Remaining).ConfigureAwait(false);
+                    }
+                    catch (Exception exception) when (
+                        inspectionCancellation.IsCancellationRequested &&
+                        exception is OperationCanceledException or IOException or ObjectDisposedException)
+                    {
+                        // The inspector streams were closed after the bounded observation.
+                    }
+                }
             }
         }
         catch (TimeoutException exception)

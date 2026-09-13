@@ -118,6 +118,13 @@ internal static class BuildProcessRunner
         {
             await Task.Run(() => KillOwnedProcessTree(process))
                 .WaitAsync(deadline.Remaining).ConfigureAwait(false);
+            IReadOnlyList<string> terminationFailures = [];
+            if (!OperatingSystem.IsWindows() && ownedProcesses is not null)
+            {
+                terminationFailures = await OwnedProcessTerminator.TerminateAsync(
+                    process, ownedProcesses.Processes, deadline).ConfigureAwait(false);
+            }
+
             await WaitForRootExitAsync(process, deadline.Remaining).ConfigureAwait(false);
             if (ownedProcesses is not null)
             {
@@ -129,6 +136,12 @@ internal static class BuildProcessRunner
                 throw new InvalidOperationException(
                     "The owned process tree could not be confirmed stopped after snapshot failure.",
                     cleanupSnapshotFailure);
+            }
+
+            if (terminationFailures.Count > 0)
+            {
+                throw new InvalidOperationException(
+                    $"Owned process termination failed: {string.Join("; ", terminationFailures)}");
             }
 
             if (OperatingSystem.IsWindows() && cleanupResourceDirectory is not null)
