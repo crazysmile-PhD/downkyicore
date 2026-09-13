@@ -262,7 +262,7 @@ public sealed class OwnedProcessScopePlatformTests
     public void UnixGroupStateTreatsOnlyZombieDeadAndGoneAsStopped()
     {
         const int group = 1234;
-        Assert.Null(OwnedProcessScope.FindLiveGroupMember(" 12 1234 Z+\n 13 1234 X\n 14 5678 R\n", group));
+        Assert.Null(OwnedProcessScope.FindLiveGroupMember(" 2 0 S\n 12 1234 Z+\n 13 1234 X\n 14 5678 R\n", group));
         Assert.Null(OwnedProcessScope.FindLiveGroupMember(" 14 5678 R\n", group));
         Assert.Equal("pid=15, state=S+", OwnedProcessScope.FindLiveGroupMember(" 12 1234 Z\n 15 1234 S+\n", group));
         Assert.Equal("pid=16, state=R", OwnedProcessScope.FindLiveGroupMember(" 16 1234 R\n", group));

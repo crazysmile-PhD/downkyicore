@@ -135,7 +135,16 @@ internal sealed class OwnedProcessScope : IDisposable
         string? liveMember = null;
         while (deadline.WorkWindow > TimeSpan.Zero)
         {
-            liveMember = await ReadLiveGroupMemberAsync(Host.Id, deadline).ConfigureAwait(false);
+            try
+            {
+                liveMember = await ReadLiveGroupMemberAsync(Host.Id, deadline).ConfigureAwait(false);
+            }
+            catch (TimeoutException exception) when (liveMember is not null)
+            {
+                throw new TimeoutException(
+                    $"Owned process group {Host.Id} could not be confirmed stopped; last observed {liveMember}.",
+                    exception);
+            }
             if (liveMember is null)
             {
                 return;
@@ -146,7 +155,7 @@ internal sealed class OwnedProcessScope : IDisposable
         }
 
         throw new TimeoutException(
-            $"Owned process group {Host.Id} still has executable members at the cleanup deadline: {liveMember}.");
+            $"Owned process group {Host.Id} could not be confirmed stopped by the cleanup deadline; last observed {liveMember}.");
     }
 
     private static async Task<string?> ReadLiveGroupMemberAsync(int groupId, CleanupDeadline deadline)
@@ -195,7 +204,7 @@ internal sealed class OwnedProcessScope : IDisposable
             if (fields.Length != 3 ||
                 !int.TryParse(fields[0], NumberStyles.None, CultureInfo.InvariantCulture, out var pid) ||
                 !int.TryParse(fields[1], NumberStyles.None, CultureInfo.InvariantCulture, out var processGroup) ||
-                pid <= 0 || processGroup <= 0)
+                pid <= 0 || processGroup < 0)
             {
                 throw new InvalidOperationException($"Invalid owned process group inspection row: {line}");
             }
