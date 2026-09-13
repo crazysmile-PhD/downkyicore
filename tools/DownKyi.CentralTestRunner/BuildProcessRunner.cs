@@ -83,6 +83,7 @@ internal static class BuildProcessRunner
         var captureSnapshot = captureSnapshotAsync ?? ProcessTreeSnapshot.CaptureAsync;
         FinalProcessSnapshot? ownedProcesses = null;
         ExceptionDispatchInfo? snapshotFailure = null;
+        Exception? cleanupSnapshotFailure = null;
         try
         {
             ownedProcesses = await Task.Run(() => captureSnapshot(process.Id, deadline.SnapshotWindow))
@@ -91,6 +92,20 @@ internal static class BuildProcessRunner
         catch (Exception exception)
         {
             snapshotFailure = ExceptionDispatchInfo.Capture(exception);
+        }
+
+        if (ownedProcesses is null && !OperatingSystem.IsWindows())
+        {
+            // A failed diagnostic capture must not leave tree-kill with only the root to await.
+            try
+            {
+                ownedProcesses = await ProcessTreeSnapshot.CaptureAsync(
+                    process.Id, deadline.SnapshotWindow).ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                cleanupSnapshotFailure = exception;
+            }
         }
 
         try
@@ -102,6 +117,12 @@ internal static class BuildProcessRunner
             {
                 await WaitForOwnedProcessesToExitAsync(ownedProcesses.Processes, deadline.Remaining)
                     .ConfigureAwait(false);
+            }
+            else if (cleanupSnapshotFailure is not null)
+            {
+                throw new InvalidOperationException(
+                    "The owned process tree could not be confirmed stopped after snapshot failure.",
+                    cleanupSnapshotFailure);
             }
 
             if (OperatingSystem.IsWindows() && cleanupResourceDirectory is not null)

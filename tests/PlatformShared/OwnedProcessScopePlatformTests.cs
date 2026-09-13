@@ -113,7 +113,7 @@ public sealed class OwnedProcessScopePlatformTests
 
             childPid = await ReadMarkerAsync(childMarker).ConfigureAwait(true);
             grandchildPid = await ReadMarkerAsync(grandchildMarker).ConfigureAwait(true);
-            if (OperatingSystem.IsMacOS())
+            if (!OperatingSystem.IsWindows())
             {
                 childStartTimeUtc = ReadStartTimeUtc(childPid.Value);
                 grandchildStartTimeUtc = ReadStartTimeUtc(grandchildPid.Value);
@@ -207,7 +207,7 @@ public sealed class OwnedProcessScopePlatformTests
     }
 
     [Fact]
-    public async Task MacStoppedAssertionAcceptsExitBetweenObservations()
+    public async Task MacStoppedAssertionRejectsFirstLiveObservation()
     {
         if (!OperatingSystem.IsMacOS())
         {
@@ -222,7 +222,7 @@ public sealed class OwnedProcessScopePlatformTests
         {
             var expectedStartTimeUtc = process.StartTime.ToUniversalTime();
             var observations = 0;
-            AssertStopped(process.Id, expectedStartTimeUtc, pid =>
+            var failure = Record.Exception(() => AssertStopped(process.Id, expectedStartTimeUtc, pid =>
             {
                 var state = ReadMacState(pid);
                 if (++observations == 1 && IsLiveMacState(state))
@@ -231,8 +231,10 @@ public sealed class OwnedProcessScopePlatformTests
                     Assert.True(process.WaitForExit(5000));
                 }
                 return state;
-            });
-            Assert.Equal(2, observations);
+            }));
+            Assert.NotNull(failure);
+            Assert.Contains($"pid={process.Id}, ps status=", failure.Message, StringComparison.Ordinal);
+            Assert.Equal(1, observations);
         }
         finally
         {
@@ -254,6 +256,69 @@ public sealed class OwnedProcessScopePlatformTests
         Assert.False(IsLiveMacState("X"));
         Assert.True(IsLiveMacState("R+"));
         Assert.True(IsLiveMacState("S"));
+    }
+
+    [Fact]
+    public void UnixGroupStateTreatsOnlyZombieDeadAndGoneAsStopped()
+    {
+        const int group = 1234;
+        Assert.Null(OwnedProcessScope.FindLiveGroupMember(" 12 1234 Z+\n 13 1234 X\n 14 5678 R\n", group));
+        Assert.Null(OwnedProcessScope.FindLiveGroupMember(" 14 5678 R\n", group));
+        Assert.Equal("pid=15, state=S+", OwnedProcessScope.FindLiveGroupMember(" 12 1234 Z\n 15 1234 S+\n", group));
+        Assert.Equal("pid=16, state=R", OwnedProcessScope.FindLiveGroupMember(" 16 1234 R\n", group));
+    }
+
+    [Fact]
+    public async Task UnixGroupWaitRejectsPersistentGrandchildAfterHostAndParentsExit()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var directory = Path.Combine(Path.GetTempPath(), $"downkyi-scope-leak-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        OwnedProcessScope? scope = null;
+        int? childPid = null;
+        int? grandchildPid = null;
+        try
+        {
+            var runtimeConfig = Path.Combine(AppContext.BaseDirectory,
+                $"{Path.GetFileNameWithoutExtension(typeof(OwnedProcessScopePlatformTests).Assembly.Location)}.runtimeconfig.json");
+            var startInfo = new ProcessStartInfo("dotnet") { UseShellExecute = false };
+            startInfo.ArgumentList.Add("exec");
+            startInfo.ArgumentList.Add("--runtimeconfig");
+            startInfo.ArgumentList.Add(runtimeConfig);
+            startInfo.ArgumentList.Add(typeof(FlightRecorderExecution).Assembly.Location);
+            startInfo.ArgumentList.Add("fixture-tree-root");
+            startInfo.ArgumentList.Add(runtimeConfig);
+            startInfo.ArgumentList.Add(directory);
+            scope = await OwnedProcessScope.StartAsync(startInfo, TimeSpan.FromSeconds(5)).ConfigureAwait(true);
+            childPid = await ReadMarkerAsync(Path.Combine(directory, "child.pid")).ConfigureAwait(true);
+            grandchildPid = await ReadMarkerAsync(Path.Combine(directory, "grandchild.pid")).ConfigureAwait(true);
+
+            StopIfAlive(scope.Host.Id);
+            StopIfAlive(scope.RootPid);
+            StopIfAlive(childPid);
+            Assert.True(IsAlive(grandchildPid.Value));
+
+            var failure = await Record.ExceptionAsync(() => scope.WaitForGroupStoppedAsync(
+                new CleanupDeadline(TimeSpan.FromSeconds(1)))).ConfigureAwait(true);
+            var timeout = Assert.IsType<TimeoutException>(failure);
+            Assert.Contains($"pid={grandchildPid.Value}", timeout.Message, StringComparison.Ordinal);
+            Assert.True(IsAlive(grandchildPid.Value));
+        }
+        finally
+        {
+            if (scope is not null)
+            {
+                await scope.TerminateAsync(new CleanupDeadline(TimeSpan.FromSeconds(5))).ConfigureAwait(true);
+                scope.Dispose();
+            }
+            StopIfAlive(grandchildPid);
+            StopIfAlive(childPid);
+            Directory.Delete(directory, recursive: true);
+        }
     }
 
     [Fact]
@@ -314,25 +379,12 @@ public sealed class OwnedProcessScopePlatformTests
         DateTimeOffset? expectedStartTimeUtc = null,
         Func<int, string?>? readMacState = null)
     {
-        if (OperatingSystem.IsMacOS() && expectedStartTimeUtc is { } expected)
+        if (!OperatingSystem.IsWindows() && expectedStartTimeUtc is { } expected)
         {
-            var read = readMacState ?? ReadMacState;
-            if (!IsLiveMacState(read(pid)))
-            {
-                return;
-            }
-
-            // A process may disappear between the original observation and the failure message.
-            var lastState = read(pid);
-            if (!IsLiveMacState(lastState))
-            {
-                return;
-            }
-
             try
             {
                 using var process = Process.GetProcessById(pid);
-                if (process.StartTime.ToUniversalTime() != expected || process.HasExited)
+                if (process.StartTime.ToUniversalTime() != expected)
                 {
                     return;
                 }
@@ -341,18 +393,25 @@ public sealed class OwnedProcessScopePlatformTests
             {
                 return;
             }
-            catch (Exception exception) when (
-                exception is InvalidOperationException or System.ComponentModel.Win32Exception &&
-                !IsLiveMacState(read(pid)))
-            {
-                return;
-            }
-
-            Assert.Fail($"pid={pid}, ps status={lastState}, original start={expected:O}");
-            return;
         }
 
-        if (IsAlive(pid))
+        if (OperatingSystem.IsMacOS())
+        {
+            var state = (readMacState ?? ReadMacState)(pid);
+            if (IsLiveMacState(state))
+            {
+                Assert.Fail($"pid={pid}, ps status={state}, original start={expectedStartTimeUtc:O}");
+            }
+        }
+        else if (OperatingSystem.IsLinux())
+        {
+            var state = ReadLinuxStateCode(pid);
+            if (state is not null && state is not ("Z" or "X"))
+            {
+                Assert.Fail($"pid={pid}, state={state}, original start={expectedStartTimeUtc:O}");
+            }
+        }
+        else if (IsAlive(pid))
         {
             Assert.Fail(DescribeProcessState(pid));
         }
@@ -403,7 +462,7 @@ public sealed class OwnedProcessScopePlatformTests
                 ?? throw new InvalidOperationException("The build-tree fixture did not start.");
             childPid = await ReadMarkerAsync(Path.Combine(directory, "child.pid")).ConfigureAwait(true);
             grandchildPid = await ReadMarkerAsync(Path.Combine(directory, "grandchild.pid")).ConfigureAwait(true);
-            if (OperatingSystem.IsMacOS())
+            if (!OperatingSystem.IsWindows())
             {
                 rootStartTimeUtc = ReadStartTimeUtc(root.Id);
                 childStartTimeUtc = ReadStartTimeUtc(childPid.Value);
@@ -451,7 +510,7 @@ public sealed class OwnedProcessScopePlatformTests
             var fields = stateLine?.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
             return fields is { Length: > 1 } ? fields[1] : null;
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
         {
             return null;
         }

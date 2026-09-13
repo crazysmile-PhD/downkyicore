@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO.Pipes;
 using System.Runtime.InteropServices;
 using System.Text.Json;
@@ -125,6 +126,87 @@ internal sealed class OwnedProcessScope : IDisposable
         {
             throw new Win32Exception(Marshal.GetLastPInvokeError());
         }
+
+        await WaitForGroupStoppedAsync(deadline).ConfigureAwait(false);
+    }
+
+    internal async Task WaitForGroupStoppedAsync(CleanupDeadline deadline)
+    {
+        string? liveMember = null;
+        while (deadline.WorkWindow > TimeSpan.Zero)
+        {
+            liveMember = await ReadLiveGroupMemberAsync(Host.Id, deadline).ConfigureAwait(false);
+            if (liveMember is null)
+            {
+                return;
+            }
+
+            await Task.Delay(TimeSpan.FromTicks(Math.Min(
+                TimeSpan.FromMilliseconds(10).Ticks, deadline.WorkWindow.Ticks))).ConfigureAwait(false);
+        }
+
+        throw new TimeoutException(
+            $"Owned process group {Host.Id} still has executable members at the cleanup deadline: {liveMember}.");
+    }
+
+    private static async Task<string?> ReadLiveGroupMemberAsync(int groupId, CleanupDeadline deadline)
+    {
+        var startInfo = new ProcessStartInfo("/bin/ps")
+        {
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true
+        };
+        startInfo.ArgumentList.Add("-axo");
+        startInfo.ArgumentList.Add("pid=,pgid=,stat=");
+        using var ps = new Process { StartInfo = startInfo };
+        ps.Start();
+        var outputTask = ps.StandardOutput.ReadToEndAsync();
+        var errorTask = ps.StandardError.ReadToEndAsync();
+        try
+        {
+            await ps.WaitForExitAsync().WaitAsync(deadline.WorkWindow).ConfigureAwait(false);
+            var output = await outputTask.WaitAsync(deadline.WorkWindow).ConfigureAwait(false);
+            var error = await errorTask.WaitAsync(deadline.WorkWindow).ConfigureAwait(false);
+            if (ps.ExitCode != 0 || error.Length > 0)
+            {
+                throw new InvalidOperationException($"Owned process group inspection failed: {error.Trim()}");
+            }
+
+            return FindLiveGroupMember(output, groupId);
+        }
+        catch (TimeoutException)
+        {
+            if (!ps.HasExited)
+            {
+                ps.Kill();
+            }
+
+            throw new TimeoutException("Owned process group inspection exceeded the bounded cleanup window.");
+        }
+    }
+
+    internal static string? FindLiveGroupMember(string output, int groupId)
+    {
+        foreach (var line in output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            var fields = line.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
+            if (fields.Length != 3 ||
+                !int.TryParse(fields[0], NumberStyles.None, CultureInfo.InvariantCulture, out var pid) ||
+                !int.TryParse(fields[1], NumberStyles.None, CultureInfo.InvariantCulture, out var processGroup) ||
+                pid <= 0 || processGroup <= 0)
+            {
+                throw new InvalidOperationException($"Invalid owned process group inspection row: {line}");
+            }
+
+            if (processGroup == groupId && fields[2][0] is not ('Z' or 'X'))
+            {
+                return $"pid={pid}, state={fields[2]}";
+            }
+        }
+
+        return null;
     }
 
     public void Dispose()
