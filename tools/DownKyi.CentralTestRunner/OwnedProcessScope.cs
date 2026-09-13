@@ -175,24 +175,44 @@ internal sealed class OwnedProcessScope : IDisposable
         var errorTask = ps.StandardError.ReadToEndAsync();
         try
         {
-            await ps.WaitForExitAsync().WaitAsync(deadline.WorkWindow).ConfigureAwait(false);
-            var output = await outputTask.WaitAsync(deadline.WorkWindow).ConfigureAwait(false);
-            var error = await errorTask.WaitAsync(deadline.WorkWindow).ConfigureAwait(false);
-            if (ps.ExitCode != 0 || error.Length > 0)
+            try
             {
-                throw new InvalidOperationException($"Owned process group inspection failed: {error.Trim()}");
-            }
+                await ps.WaitForExitAsync().WaitAsync(deadline.WorkWindow).ConfigureAwait(false);
+                var output = await outputTask.WaitAsync(deadline.WorkWindow).ConfigureAwait(false);
+                var error = await errorTask.WaitAsync(deadline.WorkWindow).ConfigureAwait(false);
+                if (ps.ExitCode != 0 || error.Length > 0)
+                {
+                    throw new InvalidOperationException($"Owned process group inspection failed: {error.Trim()}");
+                }
 
-            return FindLiveGroupMember(output, groupId);
+                return FindLiveGroupMember(output, groupId);
+            }
+            finally
+            {
+                if (!ps.HasExited)
+                {
+                    try
+                    {
+                        ps.Kill();
+                    }
+                    catch (Exception exception) when (
+                        exception is InvalidOperationException or Win32Exception && ps.HasExited)
+                    {
+                        // The inspection process exited between the liveness check and signal.
+                    }
+                }
+
+                await ps.WaitForExitAsync().WaitAsync(deadline.Remaining).ConfigureAwait(false);
+                await Task.WhenAll(outputTask, errorTask).WaitAsync(deadline.Remaining).ConfigureAwait(false);
+            }
         }
-        catch (TimeoutException)
+        catch (TimeoutException exception)
         {
-            if (!ps.HasExited)
-            {
-                ps.Kill();
-            }
-
-            throw new TimeoutException("Owned process group inspection exceeded the bounded cleanup window.");
+            throw new TimeoutException("Owned process group inspection exceeded the bounded cleanup window.", exception);
+        }
+        catch (IOException exception)
+        {
+            throw new InvalidOperationException("Owned process group inspection I/O failed.", exception);
         }
     }
 
