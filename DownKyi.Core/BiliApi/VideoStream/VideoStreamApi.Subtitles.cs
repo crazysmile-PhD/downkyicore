@@ -112,6 +112,7 @@ public static partial class VideoStreamApi
                 referer,
                 nameof(GetSubtitleAsync),
                 "GetSubtitle()",
+                includeCredentials: false,
                 cancellationToken: cancellationToken).ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(response))
             {
@@ -159,13 +160,30 @@ public static partial class VideoStreamApi
             return null;
         }
 
-        if (Uri.TryCreate(subtitleUrl, UriKind.Absolute, out var absoluteUri))
+        var normalizedUrl = subtitleUrl.Trim();
+        if (normalizedUrl.StartsWith("//", StringComparison.Ordinal))
         {
-            return absoluteUri.ToString();
+            normalizedUrl = $"https:{normalizedUrl}";
         }
 
-        return subtitleUrl.StartsWith("//", StringComparison.Ordinal)
-            ? $"https:{subtitleUrl}"
-            : $"https://{subtitleUrl.TrimStart('/')}";
+        if (Uri.TryCreate(normalizedUrl, UriKind.Absolute, out var absoluteUri))
+        {
+            return IsSupportedSubtitleUri(absoluteUri)
+                ? normalizedUrl
+                : null;
+        }
+
+        var httpsUrl = $"https://{normalizedUrl.TrimStart('/')}";
+        return Uri.TryCreate(httpsUrl, UriKind.Absolute, out var httpsUri)
+               && IsSupportedSubtitleUri(httpsUri)
+            ? httpsUrl
+            : null;
+    }
+
+    private static bool IsSupportedSubtitleUri(Uri uri)
+    {
+        return !string.IsNullOrEmpty(uri.Host)
+               && (uri.Scheme.Equals(Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
+                   || uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase));
     }
 }

@@ -3,6 +3,7 @@ using DownKyi.Application.Lifetime;
 using DownKyi.Core.Settings;
 using DownKyi.Desktop.Composition;
 using DownKyi.Platform;
+using DownKyi.Services.Download;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -12,13 +13,21 @@ namespace DownKyi.Tests;
 public sealed class AvaloniaApplicationLifecycleTests
 {
     [Fact]
+    public void DownloadWorkerDeadlinePrecedesApplicationCleanupDeadline()
+    {
+        Assert.True(
+            DownloadOrchestrator.WorkerShutdownTimeout <
+            AvaloniaApplicationLifecycle.DefaultCleanupTimeout);
+    }
+
+    [Fact]
     public async Task RequestShutdownIsIdempotentAndFlushesOwnedState()
     {
         var directory = CreateTemporaryDirectory();
         var settingsStore = new SettingsStore(Path.Combine(directory, "settings.json"));
         using var host = DownKyiHost.Create();
         var logService = new RecordingLogService();
-        var lifecycle = CreateLifecycle(settingsStore, logService, new StubRestartLauncher(false));
+        var lifecycle = CreateLifecycle(host, settingsStore, logService, new StubRestartLauncher(false));
         lifecycle.AttachHost(host);
 
         try
@@ -44,6 +53,83 @@ public sealed class AvaloniaApplicationLifecycleTests
     }
 
     [Fact]
+    public async Task RequestShutdownWaitsForHostedServiceQuiescence()
+    {
+        var directory = CreateTemporaryDirectory();
+        var settingsStore = new SettingsStore(Path.Combine(directory, "settings.json"));
+        var hostedService = new BlockingStopHostedService();
+        using var host = DownKyiHost.Create(services =>
+            services.AddSingleton<IHostedService>(hostedService));
+        var lifecycle = CreateLifecycle(
+            host,
+            settingsStore,
+            new RecordingLogService(),
+            new StubRestartLauncher(false));
+        lifecycle.AttachHost(host);
+
+        try
+        {
+            await lifecycle.StartHostAsync().ConfigureAwait(true);
+            var shutdownTask = lifecycle.RequestShutdownAsync(TestContext.Current.CancellationToken);
+            await hostedService.StopEntered.Task.WaitAsync(
+                TimeSpan.FromSeconds(5),
+                TestContext.Current.CancellationToken);
+
+            Assert.False(shutdownTask.IsCompleted);
+            Assert.False(hostedService.IsQuiescent);
+
+            hostedService.AllowStop.TrySetResult();
+            await shutdownTask.WaitAsync(
+                TimeSpan.FromSeconds(5),
+                TestContext.Current.CancellationToken);
+
+            Assert.True(hostedService.IsQuiescent);
+        }
+        finally
+        {
+            hostedService.AllowStop.TrySetResult();
+            await settingsStore.DisposeAsync().ConfigureAwait(true);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task RequestShutdownFailsClosedWhenHostedServiceDoesNotBecomeQuiescent()
+    {
+        var directory = CreateTemporaryDirectory();
+        var settingsStore = new SettingsStore(Path.Combine(directory, "settings.json"));
+        var hostedService = new BlockingStopHostedService();
+        using var host = DownKyiHost.Create(services =>
+            services.AddSingleton<IHostedService>(hostedService));
+        var logService = new RecordingLogService();
+        var lifecycle = CreateLifecycle(
+            host,
+            settingsStore,
+            logService,
+            new StubRestartLauncher(false),
+            TimeSpan.Zero);
+        lifecycle.AttachHost(host);
+
+        try
+        {
+            await lifecycle.StartHostAsync().ConfigureAwait(true);
+
+            await Assert.ThrowsAsync<TimeoutException>(() =>
+                lifecycle.RequestShutdownAsync(TestContext.Current.CancellationToken));
+
+            Assert.False(hostedService.IsQuiescent);
+            Assert.Equal(1, logService.FlushCount);
+        }
+        finally
+        {
+            hostedService.AllowStop.TrySetResult();
+            await host.StopAsync(CancellationToken.None).ConfigureAwait(true);
+            await settingsStore.DisposeAsync().ConfigureAwait(true);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task RestartHelperFailureKeepsRunningApplicationAlive()
     {
         var directory = CreateTemporaryDirectory();
@@ -51,7 +137,7 @@ public sealed class AvaloniaApplicationLifecycleTests
         using var host = DownKyiHost.Create();
         var logService = new RecordingLogService();
         var restartLauncher = new StubRestartLauncher(false);
-        var lifecycle = CreateLifecycle(settingsStore, logService, restartLauncher);
+        var lifecycle = CreateLifecycle(host, settingsStore, logService, restartLauncher);
         lifecycle.AttachHost(host);
 
         try
@@ -86,7 +172,7 @@ public sealed class AvaloniaApplicationLifecycleTests
         using var host = DownKyiHost.Create(services =>
             services.AddSingleton<IHostedService>(new FailingStopHostedService()));
         var logService = new RecordingLogService();
-        var lifecycle = CreateLifecycle(settingsStore, logService, new StubRestartLauncher(false));
+        var lifecycle = CreateLifecycle(host, settingsStore, logService, new StubRestartLauncher(false));
         lifecycle.AttachHost(host);
 
         try
@@ -111,16 +197,30 @@ public sealed class AvaloniaApplicationLifecycleTests
     }
 
     private static AvaloniaApplicationLifecycle CreateLifecycle(
+        IHost host,
         ISettingsStore settingsStore,
         IApplicationLogService logService,
-        IProcessRestartLauncher restartLauncher)
+        IProcessRestartLauncher restartLauncher,
+        TimeSpan? cleanupTimeout = null)
     {
-        return new AvaloniaApplicationLifecycle(
-            new AvaloniaDesktopContext(),
-            restartLauncher,
-            settingsStore,
-            logService,
-            NullLogger<AvaloniaApplicationLifecycle>.Instance);
+        return cleanupTimeout is { } timeout
+            ? new AvaloniaApplicationLifecycle(
+                new AvaloniaDesktopContext(),
+                restartLauncher,
+                settingsStore,
+                logService,
+                host.Services.GetRequiredService<ApplicationCancellation>(),
+                new NoOpDownloadEmergencyCleanup(),
+                NullLogger<AvaloniaApplicationLifecycle>.Instance,
+                timeout)
+            : new AvaloniaApplicationLifecycle(
+                new AvaloniaDesktopContext(),
+                restartLauncher,
+                settingsStore,
+                logService,
+                host.Services.GetRequiredService<ApplicationCancellation>(),
+                new NoOpDownloadEmergencyCleanup(),
+                NullLogger<AvaloniaApplicationLifecycle>.Instance);
     }
 
     private static string CreateTemporaryDirectory()
@@ -142,6 +242,13 @@ public sealed class AvaloniaApplicationLifecycleTests
         }
     }
 
+    private sealed class NoOpDownloadEmergencyCleanup : IDownloadEmergencyCleanup
+    {
+        public void KillTrackedRuntime(string reason)
+        {
+        }
+    }
+
     private sealed class RecordingLogService : IApplicationLogService
     {
         public int FlushCount { get; private set; }
@@ -157,6 +264,8 @@ public sealed class AvaloniaApplicationLifecycleTests
         {
             return new ApplicationLogMetrics(0, 0, 0, 0, 0, 0, 0, 0, null);
         }
+
+        public string RedactDiagnosticText(string? text) => text ?? string.Empty;
 
         public Task FlushAsync(CancellationToken cancellationToken = default)
         {
@@ -181,6 +290,29 @@ public sealed class AvaloniaApplicationLifecycleTests
         public Task StopAsync(CancellationToken cancellationToken)
         {
             return Task.FromException(new InvalidOperationException("stop failed"));
+        }
+    }
+
+    private sealed class BlockingStopHostedService : IHostedService
+    {
+        public TaskCompletionSource StopEntered { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource AllowStop { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public bool IsQuiescent { get; private set; }
+
+        public Task StartAsync(CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+
+        public async Task StopAsync(CancellationToken cancellationToken)
+        {
+            StopEntered.TrySetResult();
+            await AllowStop.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            IsQuiescent = true;
         }
     }
 }

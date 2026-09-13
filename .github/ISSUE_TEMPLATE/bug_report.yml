@@ -1,7 +1,7 @@
 name: "🐛 Bug Report"
 description: "回報 downkyiCore 的功能異常、錯誤、崩潰或下載問題"
 title: "[Bug] "
-labels: ["bug", "needs-triage"]
+labels: ["bug", "user-bug", "needs-triage"]
 
 body:
   - type: markdown

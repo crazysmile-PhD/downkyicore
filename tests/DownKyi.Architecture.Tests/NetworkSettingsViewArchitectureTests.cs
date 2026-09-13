@@ -58,7 +58,7 @@ public sealed class NetworkSettingsViewArchitectureTests
 
         Assert.Equal(89, Count(source, @"\{Binding\s+([^},]+)"));
         Assert.Equal(38, Count(source, @"(?:x:Name|Name)=""([^""]+)"""));
-        Assert.Equal(68, Count(source, @"\{DynamicResource\s+([^}]+)\}"));
+        Assert.Equal(70, Count(source, @"\{DynamicResource\s+([^}]+)\}"));
         Assert.Equal(4, Count(source, @"\{StaticResource\s+([^}]+)\}"));
         Assert.Equal(25, Count(source, @"CommandParameter=""([^""]+)"""));
     }

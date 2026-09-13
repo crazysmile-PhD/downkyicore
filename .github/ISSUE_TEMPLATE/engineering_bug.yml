@@ -1,0 +1,211 @@
+name: "🛠 Engineering Bug"
+description: "回報由測試、CI、程式審查、fuzz、架構分析或內部驗證發現的工程缺陷"
+title: "[Bug] "
+labels: ["bug", "engineering-bug", "needs-triage"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Engineering Bug
+
+        此模板適用於：
+
+        - Domain / Application / Infrastructure 缺陷
+        - SQLite / persistence / migration 問題
+        - concurrency / race condition
+        - crash consistency
+        - CI / lifecycle / build invariant
+        - fuzz / property-based testing finding
+        - architecture / ownership / contract violation
+        - 其他不依賴特定 B 站影片即可重現的工程問題
+
+        如果是一般使用者遇到的解析、下載、登入、影片或 UI 問題，
+        請改用一般 Bug Report。
+
+  - type: dropdown
+    id: source
+    attributes:
+      label: "🧭 問題來源"
+      description: "這個問題是怎麼被發現的？"
+      options:
+        - "自動化測試"
+        - "Fuzz / Property-based testing"
+        - "CI / GitHub Actions"
+        - "程式碼審查"
+        - "本機工程驗證"
+        - "Crash / Fault injection"
+        - "Production behavior"
+        - "其他"
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: "📦 受影響版本 / Commit"
+      description: "填寫版本、branch、commit SHA；不知道可填「未知」。"
+      placeholder: "例如：v1.1.1 / main @ 481a0eb"
+    validations:
+      required: true
+
+  - type: input
+    id: component
+    attributes:
+      label: "🧱 受影響元件"
+      description: "指出最接近的模組、class、service、workflow 或 subsystem。"
+      placeholder: "例如：SqliteDownloadTaskStore / DownloadTask / quality.yml"
+    validations:
+      required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: "🚨 問題摘要"
+      description: "用幾句話說明實際違反了什麼 contract / invariant。"
+      placeholder: |
+        例如：
+        Completed DownloadTask 經 SQLite persistence/reopen 後，
+        Progress 與 transfer state 無法完整 round-trip。
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: "🔁 重現步驟"
+      description: "提供 deterministic reproduction。"
+      placeholder: |
+        1. 建立 DownloadTask
+        2. 更新 progress / transfer state
+        3. transition 到 Completed
+        4. persist 到 SQLite
+        5. dispose store
+        6. reopen
+        7. reload task
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: "✅ 預期行為"
+      description: "應該維持什麼 contract / invariant？"
+      placeholder: |
+        Load(Save(task)) 應符合定義的 persistence contract。
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: "❌ 實際行為"
+      description: "實際觀察到什麼差異？"
+      placeholder: |
+        Progress 從 populated state 變為 None，
+        BackendIdentity 從 GID 變為 null。
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: "🧪 驗證 / 證據"
+      description: "測試輸出、seed、failure、CI run、SQL observation、stack trace 等。"
+      placeholder: |
+        Deterministic persistence fuzz:
+        16 seeds × 100 operations.
+
+        Expected: gid-8-52
+        Actual: null
+    validations:
+      required: true
+
+  - type: textarea
+    id: root_cause
+    attributes:
+      label: "🔬 Root cause / 初步分析"
+      description: "若尚未確定，可填「未知」。不要為了填欄位硬猜 root cause。"
+      placeholder: |
+        Completed transition deletes the downloading row,
+        while transfer state is persisted only in that row.
+    validations:
+      required: true
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: "🎯 影響 / 風險"
+      description: "說明使用者影響、資料完整性、架構風險或未來踩雷範圍。"
+      placeholder: |
+        不影響目前已下載檔案本身，
+        但 completed aggregate 無法完整 round-trip，
+        與 persistence contract 可能不一致。
+    validations:
+      required: true
+
+  - type: dropdown
+    id: frequency
+    attributes:
+      label: "📊 發生頻率"
+      options:
+        - "Deterministic / 每次都會發生"
+        - "高機率"
+        - "偶發"
+        - "只在特定環境"
+        - "尚未確定"
+    validations:
+      required: true
+
+  - type: textarea
+    id: regression
+    attributes:
+      label: "🔄 Regression 狀態"
+      description: "如果知道何時開始出現請填寫；否則填「未知」。"
+      placeholder: "未知 / 從 PR #70 後存在 / v1.1.0 正常、main 異常"
+    validations:
+      required: true
+
+  - type: textarea
+    id: attempted
+    attributes:
+      label: "🛠️ 已完成的排查"
+      description: "列出已排除的假設與做過的驗證。"
+      placeholder: |
+        - Domain deterministic fuzz passed
+        - competing SQLite writer test passed
+        - crash consistency test passed
+        - persistence fuzz isolated this difference
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: "🎯 建議 Acceptance Criteria"
+      description: "如果目前還不能決定修法，可以定義需要先釐清的 contract。"
+      placeholder: |
+        明確決定 Completed DownloadTask 是完整 persistent aggregate，
+        或 intentionally lossy history projection，
+        並讓 implementation / tests / docs 一致。
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: "📌 補充資訊"
+      description: "相關 PR、Issue、文件或其他背景。沒有可填「無」。"
+      placeholder: "例如：PR #70 persistence compatibility contract"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: final_confirm
+    attributes:
+      label: "🧾 最終確認"
+      options:
+        - label: "此問題不是單純缺少一般使用者操作資訊即可解決的 User Bug"
+          required: true
+        - label: "已提供可驗證的 reproduction 或 evidence"
+          required: true

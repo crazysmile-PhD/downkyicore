@@ -160,7 +160,8 @@ public sealed class SettingsArchitectureTests
     public void FfmpegProcessorIsOneInjectedCompositionOwner()
     {
         var processorSource = ReadSource("DownKyi.Core", "FFmpeg", "FfmpegProcessor.cs");
-        var compositionSource = ReadSource("src", "DownKyi.Desktop", "Composition", "DesktopComposition.cs");
+        var compositionSource = ReadSource(
+            "src", "DownKyi.Desktop", "Services", "Download", "DownloadComposition.cs");
 
         Assert.DoesNotContain("FfmpegProcessor.Instance", processorSource, StringComparison.Ordinal);
         Assert.Contains("AddSingleton<FfmpegProcessor>()", compositionSource, StringComparison.Ordinal);
@@ -255,8 +256,8 @@ public sealed class SettingsArchitectureTests
         Assert.Equal(1, CountOccurrences(contextFactorySource, "_settingsStore.Current"));
         Assert.DoesNotContain("ISettingsStore", artifactSource, StringComparison.Ordinal);
         Assert.DoesNotContain("ISettingsStore", diagnosticSource, StringComparison.Ordinal);
-        Assert.Equal(2, CountOccurrences(ffmpegSource, "_settingsStore.Current.Video.FfmpegMaxParallelJobs"));
-        Assert.Equal(2, CountOccurrences(ffmpegSource, "_settingsStore.Current"));
+        Assert.Equal(1, CountOccurrences(ffmpegSource, "_settingsStore.Current.Video.FfmpegMaxParallelJobs"));
+        Assert.Equal(1, CountOccurrences(ffmpegSource, "_settingsStore.Current"));
     }
 
     [Fact]

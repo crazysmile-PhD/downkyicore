@@ -9,4 +9,19 @@
       Link="TestInfrastructure\TestDataIsolationRegistration.cs" />
   </ItemGroup>
 
+  <Target
+    Name="ValidateDownKyiTestPlatformOwnership"
+    BeforeTargets="PrepareForBuild"
+    Condition="'$(MSBuildProjectName)' != 'DownKyi.TestInfrastructure'">
+    <ItemGroup>
+      <_DownKyiDeclaredTestPlatform Include="$(DownKyiTestPlatforms)" />
+    </ItemGroup>
+    <Error
+      Condition="'$(DownKyiTestPlatforms)' == ''"
+      Text="Test project $(MSBuildProjectName) must declare DownKyiTestPlatforms." />
+    <Error
+      Condition="'%(_DownKyiDeclaredTestPlatform.Identity)' != '' and '%(_DownKyiDeclaredTestPlatform.Identity)' != 'Windows' and '%(_DownKyiDeclaredTestPlatform.Identity)' != 'Linux' and '%(_DownKyiDeclaredTestPlatform.Identity)' != 'macOS'"
+      Text="Test project $(MSBuildProjectName) has unsupported DownKyiTestPlatforms value '%(_DownKyiDeclaredTestPlatform.Identity)'." />
+  </Target>
+
 </Project>

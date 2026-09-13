@@ -62,6 +62,56 @@ public sealed class AsyncDelegateCommandTests
         Assert.IsType<OperationCanceledException>(entry.Exception);
     }
 
+    [Fact]
+    public void ExternalDependencyInvalidationRaisesCanExecuteChanged()
+    {
+        var isEnabled = false;
+        var command = new DownKyiAsyncDelegateCommand(
+            () => Task.CompletedTask,
+            new RecordingLogger(),
+            () => isEnabled);
+        var invalidationCount = 0;
+        command.CanExecuteChanged += (_, _) => invalidationCount++;
+
+        Assert.False(command.CanExecute(null));
+
+        isEnabled = true;
+        command.NotifyCanExecuteChanged();
+
+        Assert.Equal(1, invalidationCount);
+        Assert.True(command.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task ExternalInvalidationDoesNotPermitConcurrentExecution()
+    {
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var executionCount = 0;
+        var command = new DownKyiAsyncDelegateCommand(
+            async () =>
+            {
+                Interlocked.Increment(ref executionCount);
+                started.TrySetResult();
+                await release.Task.ConfigureAwait(true);
+            },
+            new RecordingLogger());
+        var completion = ObserveCompletion(command);
+
+        command.Execute(null);
+        await started.Task.WaitAsync(TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        command.NotifyCanExecuteChanged();
+        Assert.False(command.CanExecute(null));
+        command.Execute(null);
+        Assert.Equal(1, Volatile.Read(ref executionCount));
+
+        release.TrySetResult();
+        await completion.WaitAsync(TestContext.Current.CancellationToken).ConfigureAwait(true);
+        Assert.True(command.CanExecute(null));
+        Assert.Equal(1, Volatile.Read(ref executionCount));
+    }
+
     private static Task ObserveCompletion(DownKyiAsyncDelegateCommand command)
     {
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);

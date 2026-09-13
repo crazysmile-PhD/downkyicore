@@ -147,6 +147,21 @@ internal static class BiliApiRequest
                 includeCredentials,
                 includeBuvid: includeCredentials),
             cancellationToken).ConfigureAwait(false);
+        return ParseJson<T>(
+            response,
+            operationName,
+            serializerSettings,
+            allowedNonSuccessCode);
+    }
+
+    public static T ParseJson<T>(
+        string response,
+        string operationName,
+        JsonSerializerSettings? serializerSettings = null,
+        int? allowedNonSuccessCode = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(response);
+        ArgumentException.ThrowIfNullOrWhiteSpace(operationName);
         try
         {
             var metadata = System.Text.Json.JsonSerializer.Deserialize(

@@ -131,13 +131,13 @@ internal class ViewIndexViewModel : ViewModelBase
     }
 
     // 输入确认事件
-    private RelayCommand<object>? _inputCommand;
-    public RelayCommand<object> InputCommand => _inputCommand ??= RequiredParameterCommand.Create<object>(ExecuteInput);
+    private RelayCommand? _inputCommand;
+    public RelayCommand InputCommand => _inputCommand ??= new RelayCommand(ExecuteInput);
 
     /// <summary>
     /// 处理输入事件
     /// </summary>
-    private void ExecuteInput(object param)
+    private void ExecuteInput()
     {
         EnterBili();
     }

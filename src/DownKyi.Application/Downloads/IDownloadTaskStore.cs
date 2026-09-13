@@ -22,6 +22,22 @@ public interface IDownloadTaskStore
 
     Task<IReadOnlyList<DownloadTask>> GetUnfinishedAsync(CancellationToken cancellationToken);
 
+    Task<bool> IsOutputPathReservedAsync(
+        string basePath,
+        bool ignoreCase,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<string>> GetActiveOutputReservationKeysAsync(
+        bool ignoreCase,
+        CancellationToken cancellationToken);
+
+    Task<bool> IsLegacyUpgradeAdmissionBlockedAsync(CancellationToken cancellationToken) =>
+        Task.FromResult(false);
+
+    Task<OperationResult> ConfirmLegacyRemoteTasksStoppedAsync(
+        CancellationToken cancellationToken) =>
+        Task.FromResult(OperationResult.Success());
+
     Task<DownloadHistoryPage> GetHistoryPageAsync(
         DownloadHistoryCursor? cursor,
         int pageSize,

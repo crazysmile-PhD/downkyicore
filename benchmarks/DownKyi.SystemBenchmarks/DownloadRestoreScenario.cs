@@ -90,8 +90,20 @@ internal static class DownloadRestoreScenario
             projection.Dispose();
             tasks.Dispose();
             store.Dispose();
-            SqliteConnection.ClearAllPools();
+            ClearOwnedSqlitePool(databasePath);
         }
+    }
+
+    private static void ClearOwnedSqlitePool(string databasePath)
+    {
+        using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = databasePath,
+            Mode = SqliteOpenMode.ReadWriteCreate,
+            Pooling = true,
+            DefaultTimeout = 5
+        }.ToString());
+        SqliteConnection.ClearPool(connection);
     }
 
     private static long GetDatabaseBytes(string databasePath)

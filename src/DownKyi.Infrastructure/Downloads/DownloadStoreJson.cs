@@ -64,6 +64,40 @@ internal static class DownloadStoreJson
         });
     }
 
+    public static string WriteNfoRequest(DownloadNfoRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return JsonSerializer.Serialize(new NfoRequestPayload
+        {
+            Version = 1,
+            Title = request.Title,
+            Plot = request.Plot,
+            Year = request.Year,
+            Genres = request.Genres.ToArray(),
+            Tags = request.Tags.ToArray(),
+            Actors = request.Actors.Select(actor => new NfoActorPayload
+            {
+                Name = actor.Name,
+                Role = actor.Role
+            }).ToArray(),
+            BilibiliId = request.BilibiliId == null
+                ? null
+                : new NfoUniqueIdPayload
+                {
+                    Type = request.BilibiliId.Type,
+                    Value = request.BilibiliId.Value
+                },
+            Premiered = request.Premiered,
+            Ratings = request.Ratings.Select(rating => new NfoRatingPayload
+            {
+                Name = rating.Name,
+                Value = rating.Value,
+                Max = rating.Max,
+                IsDefault = rating.IsDefault
+            }).ToArray()
+        });
+    }
+
     public static ImmutableDictionary<string, bool> ReadBooleanMap(string json, string fieldName)
     {
         return Read(json, fieldName, root =>
@@ -160,6 +194,50 @@ internal static class DownloadStoreJson
         });
     }
 
+    public static DownloadNfoRequest ReadNfoRequest(string json, string fieldName)
+    {
+        return Read(json, fieldName, root =>
+        {
+            var payload = root.Deserialize<NfoRequestPayload>()
+                          ?? throw Corrupt(fieldName, "Stored NFO request is null.");
+            if (payload.Version != 1)
+            {
+                throw Corrupt(fieldName, $"Unsupported NFO request version {payload.Version}.");
+            }
+
+            if (payload.Title == null || payload.Plot == null || payload.Year == null
+                || payload.Genres == null || payload.Genres.Any(value => value == null)
+                || payload.Tags == null || payload.Tags.Any(value => value == null)
+                || payload.Actors == null || payload.Actors.Any(actor =>
+                    actor == null || actor.Name == null || actor.Role == null)
+                || payload.BilibiliId is { Type: null } or { Value: null }
+                || payload.Premiered == null
+                || payload.Ratings == null || payload.Ratings.Any(rating =>
+                    rating == null || rating.Name == null))
+            {
+                throw Corrupt(fieldName, "Stored NFO request has a null required value.");
+            }
+
+            return new DownloadNfoRequest(
+                payload.Title!,
+                payload.Plot!,
+                payload.Year!,
+                payload.Genres!.Select(value => value!).ToImmutableArray(),
+                payload.Tags!.Select(value => value!).ToImmutableArray(),
+                payload.Actors.Select(actor => new DownloadNfoActor(actor!.Name!, actor.Role!))
+                    .ToImmutableArray(),
+                payload.BilibiliId == null
+                    ? null
+                    : new DownloadNfoUniqueId(payload.BilibiliId.Type!, payload.BilibiliId.Value!),
+                payload.Premiered!,
+                payload.Ratings.Select(rating => new DownloadNfoRating(
+                    rating!.Name!,
+                    rating.Value,
+                    rating.Max,
+                    rating.IsDefault)).ToImmutableArray());
+        });
+    }
+
     private static T Read<T>(string json, string fieldName, Func<JsonElement, T> read)
     {
         try
@@ -207,5 +285,53 @@ internal static class DownloadStoreJson
         Exception? innerException = null)
     {
         return new DownloadRecordCorruptException(fieldName, reason, innerException);
+    }
+
+    private sealed class NfoRequestPayload
+    {
+        public required int Version { get; init; }
+
+        public required string? Title { get; init; }
+
+        public required string? Plot { get; init; }
+
+        public required string? Year { get; init; }
+
+        public required string?[]? Genres { get; init; }
+
+        public required string?[]? Tags { get; init; }
+
+        public required NfoActorPayload?[]? Actors { get; init; }
+
+        public NfoUniqueIdPayload? BilibiliId { get; init; }
+
+        public required string? Premiered { get; init; }
+
+        public required NfoRatingPayload?[]? Ratings { get; init; }
+    }
+
+    private sealed class NfoActorPayload
+    {
+        public required string? Name { get; init; }
+
+        public required string? Role { get; init; }
+    }
+
+    private sealed class NfoUniqueIdPayload
+    {
+        public required string? Type { get; init; }
+
+        public required string? Value { get; init; }
+    }
+
+    private sealed class NfoRatingPayload
+    {
+        public required string? Name { get; init; }
+
+        public required float Value { get; init; }
+
+        public required int Max { get; init; }
+
+        public required bool IsDefault { get; init; }
     }
 }

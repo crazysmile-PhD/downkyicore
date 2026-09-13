@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -10,21 +11,35 @@ public sealed record LoopbackResponse(
     TimeSpan DelayBeforeResponse = default,
     long? ContentLength = null,
     int? BytesToSend = null,
-    IReadOnlyDictionary<string, string>? Headers = null);
+    IReadOnlyDictionary<string, string>? Headers = null,
+    ReadOnlyMemory<byte>? BodyBytes = null);
+
+public sealed record LoopbackHttpRequest(
+    int RequestNumber,
+    string Method,
+    string PathAndQuery,
+    long? RangeStart);
 
 public sealed class LoopbackHttpServer : IAsyncDisposable
 {
     private readonly TaskCompletionSource _firstRequestReceived =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly CancellationTokenSource _shutdown = new();
-    private readonly Func<int, LoopbackResponse> _responseFactory;
+    private readonly Func<LoopbackHttpRequest, LoopbackResponse> _responseFactory;
+    private readonly ConcurrentQueue<LoopbackHttpRequest> _requests = new();
     private readonly TcpListener _listener;
     private readonly Task _serverTask;
     private int _requestCount;
 
     public LoopbackHttpServer(Func<int, LoopbackResponse> responseFactory)
+        : this(request => responseFactory(request.RequestNumber))
     {
-        _responseFactory = responseFactory;
+        ArgumentNullException.ThrowIfNull(responseFactory);
+    }
+
+    private LoopbackHttpServer(Func<LoopbackHttpRequest, LoopbackResponse> responseFactory)
+    {
+        _responseFactory = responseFactory ?? throw new ArgumentNullException(nameof(responseFactory));
         _listener = new TcpListener(IPAddress.Loopback, 0);
         _listener.Start();
 
@@ -36,6 +51,14 @@ public sealed class LoopbackHttpServer : IAsyncDisposable
     public Uri Url { get; }
 
     public int RequestCount => Volatile.Read(ref _requestCount);
+
+    public IReadOnlyCollection<LoopbackHttpRequest> Requests => _requests.ToArray();
+
+    public static LoopbackHttpServer CreateRequestAware(
+        Func<LoopbackHttpRequest, LoopbackResponse> responseFactory)
+    {
+        return new LoopbackHttpServer(responseFactory);
+    }
 
     public Task WaitForFirstRequestAsync(CancellationToken cancellationToken)
     {
@@ -74,25 +97,48 @@ public sealed class LoopbackHttpServer : IAsyncDisposable
             bufferSize: 1024,
             leaveOpen: true);
 
-        while (await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false)
-               is { Length: > 0 })
+        var requestLine = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false)
+            ?? string.Empty;
+        var requestParts = requestLine.Split(' ', 3, StringSplitOptions.RemoveEmptyEntries);
+        var method = requestParts.Length > 0 ? requestParts[0] : string.Empty;
+        var pathAndQuery = requestParts.Length > 1 ? requestParts[1] : string.Empty;
+        long? rangeStart = null;
+        while (await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false) is { Length: > 0 } line)
         {
+            const string rangePrefix = "Range: bytes=";
+            if (line.StartsWith(rangePrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                var rangeValue = line[rangePrefix.Length..];
+                var separator = rangeValue.IndexOf('-', StringComparison.Ordinal);
+                var startText = separator >= 0 ? rangeValue[..separator] : rangeValue;
+                if (long.TryParse(startText, out var parsedRangeStart))
+                {
+                    rangeStart = parsedRangeStart;
+                }
+            }
         }
 
         var requestNumber = Interlocked.Increment(ref _requestCount);
+        var request = new LoopbackHttpRequest(
+            requestNumber,
+            method,
+            pathAndQuery,
+            rangeStart);
+        _requests.Enqueue(request);
         _firstRequestReceived.TrySetResult();
-        var response = _responseFactory(requestNumber);
+        var response = _responseFactory(request);
         if (response.DelayBeforeResponse > TimeSpan.Zero)
         {
             await Task.Delay(response.DelayBeforeResponse, cancellationToken)
                 .ConfigureAwait(false);
         }
 
-        var body = Encoding.UTF8.GetBytes(response.Body);
+        var body = response.BodyBytes ?? new ReadOnlyMemory<byte>(Encoding.UTF8.GetBytes(response.Body));
         var contentLength = response.ContentLength ?? body.Length;
         var reason = response.StatusCode switch
         {
             HttpStatusCode.OK => "OK",
+            HttpStatusCode.PartialContent => "Partial Content",
             HttpStatusCode.Forbidden => "Forbidden",
             HttpStatusCode.TooManyRequests => "Too Many Requests",
             HttpStatusCode.InternalServerError => "Internal Server Error",
@@ -125,7 +171,7 @@ public sealed class LoopbackHttpServer : IAsyncDisposable
         if (bytesToSend > 0)
         {
             await stream.WriteAsync(
-                body.AsMemory(0, bytesToSend),
+                body[..bytesToSend],
                 cancellationToken).ConfigureAwait(false);
         }
 

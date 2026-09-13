@@ -96,6 +96,27 @@ public sealed class AppLifecycleArchitectureTests
     }
 
     [Fact]
+    public void ProductionSingleInstanceGuardPrecedesHostAndStorageInitialization()
+    {
+        var appSource = ReadSource("src", "DownKyi.Desktop", "App.axaml.cs");
+        var initializeStart = appSource.IndexOf("public override void Initialize()", StringComparison.Ordinal);
+        var initializeEnd = appSource.IndexOf(
+            "public override void OnFrameworkInitializationCompleted()", StringComparison.Ordinal);
+        Assert.True(initializeStart >= 0 && initializeEnd > initializeStart);
+
+        var initialize = appSource[initializeStart..initializeEnd];
+        var productionGuard = initialize.IndexOf("#if !DEBUG", StringComparison.Ordinal);
+        var acquire = initialize.IndexOf("SingleInstanceGuard.TryAcquire", StringComparison.Ordinal);
+        var exit = initialize.IndexOf("Environment.Exit(0)", StringComparison.Ordinal);
+        var loadXaml = initialize.IndexOf("AvaloniaXamlLoader.Load", StringComparison.Ordinal);
+        var createHost = initialize.IndexOf("CreateHost()", StringComparison.Ordinal);
+
+        Assert.True(productionGuard >= 0 && productionGuard < acquire);
+        Assert.True(acquire < exit && exit < loadXaml && loadXaml < createHost);
+        Assert.DoesNotContain("AppContext.BaseDirectory", initialize, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void AppDoesNotOwnGlobalDownloadCollections()
     {
         var source = ReadSource("src", "DownKyi.Desktop", "App.axaml.cs");
@@ -110,17 +131,17 @@ public sealed class AppLifecycleArchitectureTests
     public void HostOwnsDownloadBootstrapAndRuntimeLifecycle()
     {
         var appSource = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "DownKyi.Desktop", "App.axaml.cs"));
-        var compositionSource = File.ReadAllText(Path.Combine(
+        var downloadCompositionSource = File.ReadAllText(Path.Combine(
             RepositoryRoot,
             "src", "DownKyi.Desktop",
-            "Composition",
-            "DesktopComposition.cs"));
+            "Services", "Download",
+            "DownloadComposition.cs"));
 
         Assert.Contains("DownKyiHost.Create", appSource, StringComparison.Ordinal);
         Assert.Contains("AddDownKyiDesktop", appSource, StringComparison.Ordinal);
         Assert.DoesNotContain("host.StopAsync", appSource, StringComparison.Ordinal);
-        Assert.Contains("DownloadBootstrapHostedService", compositionSource, StringComparison.Ordinal);
-        Assert.Contains("IDownloadRuntimeFactory", compositionSource, StringComparison.Ordinal);
+        Assert.Contains("DownloadBootstrapHostedService", downloadCompositionSource, StringComparison.Ordinal);
+        Assert.Contains("IDownloadRuntimeFactory", downloadCompositionSource, StringComparison.Ordinal);
         Assert.DoesNotContain("LoadDownloadStateAsync", appSource, StringComparison.Ordinal);
         Assert.DoesNotContain("LoadRemainingHistoryAsync", appSource, StringComparison.Ordinal);
         Assert.DoesNotContain("LoadRemainingDownloadHistoryAsync", appSource, StringComparison.Ordinal);
@@ -137,8 +158,8 @@ public sealed class AppLifecycleArchitectureTests
         var compositionSource = File.ReadAllText(Path.Combine(
             RepositoryRoot,
             "src", "DownKyi.Desktop",
-            "Composition",
-            "DesktopComposition.cs"));
+            "Platform",
+            "DesktopInteractionComposition.cs"));
 
         Assert.Contains("services.AddDownKyiDesktop", appSource, StringComparison.Ordinal);
         Assert.DoesNotContain("RegisterForNavigation", appSource, StringComparison.Ordinal);

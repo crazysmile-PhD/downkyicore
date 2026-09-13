@@ -130,11 +130,16 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
             .ToArray();
         var processorSource = File.ReadAllText(Path.Combine(runtimeDirectory, "FfmpegProcessor.cs"));
         var concatSource = File.ReadAllText(Path.Combine(runtimeDirectory, "FfmpegConcatRuntime.cs"));
+        var diagnosticSource = File.ReadAllText(Path.Combine(runtimeDirectory, "FfmpegInputDiagnostic.cs"));
         var detectorSource = File.ReadAllText(Path.Combine(runtimeDirectory, "FfmpegHardwareEncoderDetector.cs"));
 
         Assert.True(violations.Length == 0, string.Join(Environment.NewLine, violations));
         Assert.Contains("ILoggerFactory loggerFactory", processorSource, StringComparison.Ordinal);
         Assert.Contains("ILogger<FfmpegConcatRuntime> logger", concatSource, StringComparison.Ordinal);
+        Assert.Contains("_operationGate", processorSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("new AsyncConcurrencyGate", concatSource, StringComparison.Ordinal);
+        Assert.Contains("IsConfirmedDecodeCorruption", diagnosticSource, StringComparison.Ordinal);
+        Assert.Contains("concurrencyGate.EnterAsync", diagnosticSource, StringComparison.Ordinal);
         Assert.Contains("ILogger<FfmpegHardwareEncoderDetector> logger", detectorSource, StringComparison.Ordinal);
         Assert.DoesNotContain("static class FfmpegHardwareEncoderDetector", detectorSource, StringComparison.Ordinal);
     }
@@ -755,15 +760,31 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
             "Services",
             "Migration",
             "LegacyUpgradeCoordinator.cs"));
+        var dialogServiceSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "src", "DownKyi.Desktop",
+            "Platform",
+            "AvaloniaDialogService.cs"));
 
         Assert.Contains("ILegacyUpgradeCoordinator", viewModelSource, StringComparison.Ordinal);
         Assert.Contains("CancellationTokenSource", viewModelSource, StringComparison.Ordinal);
-        Assert.Contains("CancelUpgrade();", viewModelSource, StringComparison.Ordinal);
+        Assert.Contains("_upgradeTask = UpgradeAsync", viewModelSource, StringComparison.Ordinal);
+        Assert.Contains("Task.WhenAll", viewModelSource, StringComparison.Ordinal);
+        Assert.Contains("cancellation.CancelAsync()", viewModelSource, StringComparison.Ordinal);
+        Assert.Contains("override async Task OnDialogClosedAsync()", viewModelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("_ = UpgradeAsync", viewModelSource, StringComparison.Ordinal);
         Assert.DoesNotContain("Task.Run", viewModelSource, StringComparison.Ordinal);
         Assert.DoesNotContain("NrbfDecoder", viewModelSource, StringComparison.Ordinal);
         Assert.DoesNotContain("SqliteDatabase", viewModelSource, StringComparison.Ordinal);
         Assert.DoesNotContain("ApplicationStorage", viewModelSource, StringComparison.Ordinal);
         Assert.DoesNotContain("Dispatcher.UIThread", viewModelSource, StringComparison.Ordinal);
+
+        Assert.Contains("await CompleteViewModelLifecycleAsync(viewModel)", dialogServiceSource,
+            StringComparison.Ordinal);
+        Assert.Contains("await viewModel.OnDialogClosedAsync()", dialogServiceSource,
+            StringComparison.Ordinal);
+        Assert.Contains("await asyncDisposable.DisposeAsync()", dialogServiceSource,
+            StringComparison.Ordinal);
 
         Assert.Contains("Task.Run", coordinatorSource, StringComparison.Ordinal);
         Assert.Contains("CancellationToken", coordinatorSource, StringComparison.Ordinal);

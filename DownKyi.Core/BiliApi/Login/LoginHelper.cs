@@ -20,7 +20,11 @@ public static class LoginHelper
 
     private static DownKyiCookie CloneCookie(DownKyiCookie cookie)
     {
-        return new DownKyiCookie(cookie.Name, cookie.Value, cookie.Domain);
+        return new DownKyiCookie(
+            cookie.Name,
+            cookie.Value,
+            cookie.Domain,
+            cookie.IsWireValue);
     }
 
     private static List<DownKyiCookie> CloneCookies(IEnumerable<DownKyiCookie> cookies)
@@ -48,13 +52,20 @@ public static class LoginHelper
                 order.Add(name);
             }
 
-            deduplicated[name] = new DownKyiCookie(name, cookie.Value, cookie.Domain);
+            deduplicated[name] = new DownKyiCookie(
+                name,
+                cookie.Value,
+                cookie.Domain,
+                cookie.IsWireValue);
         }
 
         return string.Join("; ", order.Select(name =>
         {
             var cookie = deduplicated[name];
-            return $"{cookie.Name}={cookie.Value}";
+            var value = cookie.IsWireValue
+                ? cookie.Value
+                : HttpUtility.UrlEncode(cookie.Value);
+            return $"{cookie.Name}={value}";
         }));
     }
 
@@ -102,7 +113,7 @@ public static class LoginHelper
         {
             try
             {
-                File.Copy(tempFile, LocalLoginInfo, true);
+                File.Move(tempFile, LocalLoginInfo, overwrite: true);
             }
             catch (IOException)
             {
@@ -175,8 +186,11 @@ public static class LoginHelper
                     .Where(cookie => !string.IsNullOrWhiteSpace(cookie.Name))
                     .Select(cookie => new DownKyiCookie(
                         cookie.Name.Trim(),
-                        HttpUtility.UrlEncode(cookie.Value),
-                        cookie.Domain))
+                        cookie.IsWireValue
+                            ? cookie.Value
+                            : HttpUtility.UrlEncode(cookie.Value),
+                        cookie.Domain,
+                        isWireValue: true))
                     .ToList();
             }
             catch (IOException)
@@ -234,6 +248,24 @@ public static class LoginHelper
         finally
         {
             CacheLock.ExitReadLock();
+        }
+    }
+
+    public static bool DeleteLoginInfoCookies()
+    {
+        try
+        {
+            File.Delete(LocalLoginInfo);
+            InvalidateCache();
+            return true;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
         }
     }
 

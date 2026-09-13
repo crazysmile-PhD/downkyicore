@@ -29,11 +29,13 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
     private readonly IUserNotificationService _notificationService;
     private readonly DownloadDiagnosticLogger _diagnosticLogger;
     private readonly FfmpegProcessor _ffmpegProcessor;
+    private readonly DownloadTaskFileService _fileService;
     private readonly ISettingsStore _settingsStore;
     private readonly IWbiKeyProvider _wbiKeyProvider;
     private readonly IUiDispatcher _uiDispatcher;
     private readonly ILoggerFactory _loggerFactory;
     private readonly IBilibiliApiClient _client;
+    private readonly DownloadTaskStaging? _staging;
 
     public DownloadRuntimeFactory(
         DownloadListState downloadLists,
@@ -46,10 +48,12 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
         IWbiKeyProvider wbiKeyProvider,
         DownloadDiagnosticLogger diagnosticLogger,
         FfmpegProcessor ffmpegProcessor,
+        DownloadTaskFileService fileService,
         AriaRuntimeClientRegistry ariaClientRegistry,
         AriaServer ariaServer,
         ILoggerFactory loggerFactory,
-        IBilibiliApiClient client)
+        IBilibiliApiClient client,
+        DownloadTaskStaging? staging = null)
     {
         _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
         _projectionStore = projectionStore
@@ -62,11 +66,13 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
         _wbiKeyProvider = wbiKeyProvider ?? throw new ArgumentNullException(nameof(wbiKeyProvider));
         _diagnosticLogger = diagnosticLogger ?? throw new ArgumentNullException(nameof(diagnosticLogger));
         _ffmpegProcessor = ffmpegProcessor ?? throw new ArgumentNullException(nameof(ffmpegProcessor));
+        _fileService = fileService ?? throw new ArgumentNullException(nameof(fileService));
         _ariaClientRegistry = ariaClientRegistry
             ?? throw new ArgumentNullException(nameof(ariaClientRegistry));
         _ariaServer = ariaServer ?? throw new ArgumentNullException(nameof(ariaServer));
         _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
         _client = client ?? throw new ArgumentNullException(nameof(client));
+        _staging = staging;
     }
 
     public IDownloadRuntime? Create()
@@ -107,12 +113,14 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
         var shutdownRecovery = new DownloadTaskShutdownRecovery(
             _tasks,
             _stateWriter);
-        var presenter = new DownloadActivityPresenter(_stateWriter);
+        var presenter = new DownloadActivityPresenter(_projectionStore, _stateWriter);
         var contextFactory = new DownloadExecutionContextFactory(
             _projectionStore,
-            _settingsStore);
+            _settingsStore,
+            _staging);
         var completionProjector = new DownloadCompletionProjector(
             _downloadLists,
+            _projectionStore,
             _uiDispatcher);
         var playbackResolver = new DownloadPlaybackResolver(
             _wbiKeyProvider,
@@ -135,18 +143,22 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
                 _stateWriter,
                 transferCoordinator,
                 playbackResolver,
+                presenter,
                 _loggerFactory.CreateLogger<DownloadMediaStage>()),
-            new DownloadArtifactsStage(artifactWriter),
+            new DownloadArtifactsStage(artifactWriter, presenter, _fileService),
             new MuxStage(
                 presenter,
                 _ffmpegProcessor,
-                _stateWriter),
+                _stateWriter,
+                _loggerFactory.CreateLogger<MuxStage>()),
             new ValidateStage(),
             new FinalizeStage(
                 _projectionStore,
                 _stateWriter,
                 completionProjector,
-                TimeProvider.System)
+                _fileService,
+                TimeProvider.System,
+                _loggerFactory.CreateLogger<FinalizeStage>())
         ];
         var pipeline = new DownloadPipeline(
                 contextFactory,

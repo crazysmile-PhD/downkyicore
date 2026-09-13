@@ -14,6 +14,11 @@ public static class DownKyiHost
         {
             DisableDefaults = true
         });
+        builder.ConfigureContainer(new DefaultServiceProviderFactory(new ServiceProviderOptions
+        {
+            ValidateOnBuild = true,
+            ValidateScopes = true
+        }));
 
         builder.Services.AddLogging();
         builder.Services.AddSingleton<ApplicationCancellation>();

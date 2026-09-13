@@ -34,6 +34,10 @@ internal sealed class VideoTagProvider : IVideoTagProvider
         cancellationToken.ThrowIfCancellationRequested();
         var tags = await _client.GetBiliTagInfoAsync(bvid, cid, cancellationToken)
             .ConfigureAwait(false);
-        return tags?.Select(tag => tag.TagName).ToArray() ?? Array.Empty<string>();
+        return tags?
+            .Where(static tag => tag != null && !string.IsNullOrWhiteSpace(tag.TagName))
+            .Select(static tag => tag.TagName)
+            .ToArray()
+            ?? Array.Empty<string>();
     }
 }

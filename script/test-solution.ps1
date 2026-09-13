@@ -4,58 +4,22 @@ param(
     [string]$Configuration = "Release",
     [switch]$NoRestore,
     [switch]$NoBuild,
-    [string]$ResultsDirectory
+    [string]$ResultsDirectory,
+    [ValidateRange(1, 3600)]
+    [int]$ExecutionTimeoutSeconds = 300,
+    [string]$EvidenceDirectory
 )
 
 $ErrorActionPreference = "Stop"
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
-$testsRoot = Join-Path $repositoryRoot "tests"
-$testProjects = @(
-    Get-ChildItem -LiteralPath $testsRoot -Filter "*.Tests.csproj" -File -Recurse |
-        Sort-Object FullName
-)
+. (Join-Path $PSScriptRoot "test-project-runner.ps1")
 
-if ($testProjects.Count -eq 0) {
-    throw "No test projects were found under $testsRoot."
-}
-
-$resolvedResultsDirectory = $null
-if (-not [string]::IsNullOrWhiteSpace($ResultsDirectory)) {
-    $resolvedResultsDirectory = [System.IO.Path]::GetFullPath(
-        $ResultsDirectory,
-        (Get-Location).Path)
-    New-Item -ItemType Directory -Force -Path $resolvedResultsDirectory | Out-Null
-}
-
-foreach ($testProject in $testProjects) {
-    $arguments = @(
-        "test",
-        $testProject.FullName,
-        "-c",
-        $Configuration
-    )
-    if ($NoRestore) {
-        $arguments += "--no-restore"
-    }
-
-    if ($NoBuild) {
-        $arguments += "--no-build"
-    }
-
-    if ($resolvedResultsDirectory) {
-        $arguments += @(
-            "--logger",
-            "trx;LogFileName=$($testProject.BaseName).trx",
-            "--results-directory",
-            $resolvedResultsDirectory
-        )
-    }
-
-    Write-Host "Testing $($testProject.FullName)"
-    & dotnet @arguments
-    if ($LASTEXITCODE -ne 0) {
-        throw "Test project failed: $($testProject.FullName)"
-    }
-}
-
-Write-Host "Passed $($testProjects.Count) test projects."
+$result = Invoke-DownKyiTestSolution `
+    -RepositoryRoot $repositoryRoot `
+    -Configuration $Configuration `
+    -NoRestore:$NoRestore `
+    -NoBuild:$NoBuild `
+    -ResultsDirectory $ResultsDirectory `
+    -ExecutionTimeoutSeconds $ExecutionTimeoutSeconds `
+    -EvidenceDirectory $EvidenceDirectory
+exit $result.ExitCode

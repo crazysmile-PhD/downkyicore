@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <DownKyiTestPlatforms>macOS</DownKyiTestPlatforms>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\tools\DownKyi.CentralTestRunner\DownKyi.CentralTestRunner.csproj" />
+    <ProjectReference Include="..\..\src\DownKyi.Infrastructure\DownKyi.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\PlatformShared\FileSystemPhysicalOutputPathResolverUnixTests.cs" Link="FileSystemPhysicalOutputPathResolverUnixTests.cs" />
+    <Compile Include="..\PlatformShared\OwnedProcessScopePlatformTests.cs" Link="OwnedProcessScopePlatformTests.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="Fixtures/**/*.cs" />
+  </ItemGroup>
+
+</Project>

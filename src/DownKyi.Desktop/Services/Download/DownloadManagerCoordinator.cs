@@ -1,7 +1,5 @@
 using System;
-using System.Collections.Frozen;
 using System.Collections.Generic;
-using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -17,6 +15,7 @@ namespace DownKyi.Services.Download;
 internal enum DownloadArtifactOpenResult
 {
     Opened,
+    NoPublishedArtifactRecord,
     NotFound,
     OpenFailed
 }
@@ -54,19 +53,10 @@ internal interface IDownloadManagerCoordinator
 
 internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator
 {
-    private static readonly FrozenDictionary<string, ImmutableArray<string>> FileSuffixMap =
-        new Dictionary<string, ImmutableArray<string>>(StringComparer.Ordinal)
-        {
-            ["downloadVideo"] = [".mp4", ".flv"],
-            ["downloadAudio"] = [".aac", ".mp3"],
-            ["downloadCover"] = [".jpg", ".jpeg", ".png", ".webp"],
-            ["downloadDanmaku"] = [".ass"],
-            ["downloadSubtitle"] = [".srt"]
-        }.ToFrozenDictionary(StringComparer.Ordinal);
-
     private readonly DownloadTaskProjectionStore _storage;
     private readonly DownloadTaskStateWriter _stateWriter;
     private readonly IDownloadTaskQueue _taskQueue;
+    private readonly IDownloadRuntimeAvailability _runtimeAvailability;
     private readonly DownloadTaskFileService _fileService;
     private readonly DownloadListState _downloadLists;
     private readonly IPlatformLauncher _platformLauncher;
@@ -75,6 +65,7 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator
         DownloadTaskProjectionStore storage,
         DownloadTaskStateWriter stateWriter,
         IDownloadTaskQueue taskQueue,
+        IDownloadRuntimeAvailability runtimeAvailability,
         DownloadTaskFileService fileService,
         DownloadListState downloadLists,
         IPlatformLauncher platformLauncher)
@@ -82,6 +73,8 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator
         _storage = storage ?? throw new ArgumentNullException(nameof(storage));
         _stateWriter = stateWriter ?? throw new ArgumentNullException(nameof(stateWriter));
         _taskQueue = taskQueue ?? throw new ArgumentNullException(nameof(taskQueue));
+        _runtimeAvailability = runtimeAvailability
+            ?? throw new ArgumentNullException(nameof(runtimeAvailability));
         _fileService = fileService ?? throw new ArgumentNullException(nameof(fileService));
         _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
         _platformLauncher = platformLauncher ?? throw new ArgumentNullException(nameof(platformLauncher));
@@ -120,10 +113,7 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator
                 or DownloadStatus.Pause
                 or DownloadStatus.DownloadFailed)
             {
-                var resumed = await _stateWriter.ResumeAsync(
-                    GetTaskId(item),
-                    cancellationToken).ConfigureAwait(true);
-                await _taskQueue.EnqueueAsync(resumed.Id, CancellationToken.None).ConfigureAwait(true);
+                await ResumeAndEnqueueAsync(GetTaskId(item), cancellationToken).ConfigureAwait(true);
             }
         }
     }
@@ -138,8 +128,7 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator
             or DownloadStatus.Pause
             or DownloadStatus.DownloadFailed)
         {
-            var resumed = await _stateWriter.ResumeAsync(taskId, cancellationToken).ConfigureAwait(true);
-            await _taskQueue.EnqueueAsync(resumed.Id, CancellationToken.None).ConfigureAwait(true);
+            await ResumeAndEnqueueAsync(taskId, cancellationToken).ConfigureAwait(true);
             return;
         }
 
@@ -169,7 +158,7 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator
 
         // Once physical deletion starts, finish the database/list transaction even if app shutdown is requested.
         var deletion = await _fileService
-            .DeleteGeneratedFilesAsync(item, CancellationToken.None)
+            .DeleteGeneratedFilesAsync(item, _storage.GetRequiredSnapshot(taskId), CancellationToken.None)
             .ConfigureAwait(true);
         if (!deletion.Succeeded)
         {
@@ -207,12 +196,28 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator
         _downloadLists.RemoveDownloaded(item);
     }
 
-    public Task<DownloadArtifactOpenResult> OpenVideoAsync(
+    public async Task<DownloadArtifactOpenResult> OpenVideoAsync(
         DownloadedItem item,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(item);
-        return OpenFirstFileAsync(item.DownloadBase?.FilePath, [".mp4", ".flv"], cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (item.DownloadBase == null)
+        {
+            return DownloadArtifactOpenResult.NotFound;
+        }
+
+        var artifacts = _storage.GetRequiredSnapshot(new DownloadTaskId(item.DownloadBase.Id))
+            .Output.PublishedArtifacts;
+        if (artifacts.Count == 0)
+        {
+            return DownloadArtifactOpenResult.NoPublishedArtifactRecord;
+        }
+
+        return artifacts.TryGetValue("media", out var path) && File.Exists(path)
+            ? await _platformLauncher.OpenFileAsync(path, cancellationToken).ConfigureAwait(true)
+                ? DownloadArtifactOpenResult.Opened : DownloadArtifactOpenResult.OpenFailed
+            : DownloadArtifactOpenResult.NotFound;
     }
 
     public async Task<DownloadArtifactOpenResult> OpenFolderAsync(
@@ -221,15 +226,20 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator
     {
         ArgumentNullException.ThrowIfNull(item);
         cancellationToken.ThrowIfCancellationRequested();
-        var downloadBase = item.DownloadBase;
-        if (downloadBase == null || string.IsNullOrWhiteSpace(downloadBase.FilePath))
+        if (item.DownloadBase == null)
         {
             return DownloadArtifactOpenResult.NotFound;
         }
 
-        foreach (var suffix in GetSelectedSuffixes(downloadBase))
+        var artifacts = _storage.GetRequiredSnapshot(new DownloadTaskId(item.DownloadBase.Id))
+            .Output.PublishedArtifacts;
+        if (artifacts.Count == 0)
         {
-            var candidate = downloadBase.FilePath + suffix;
+            return DownloadArtifactOpenResult.NoPublishedArtifactRecord;
+        }
+
+        foreach (var candidate in artifacts.Values)
+        {
             if (!File.Exists(candidate))
             {
                 continue;
@@ -250,39 +260,23 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator
         return DownloadArtifactOpenResult.NotFound;
     }
 
-    private async Task<DownloadArtifactOpenResult> OpenFirstFileAsync(
-        string? basePath,
-        IEnumerable<string> suffixes,
+    private async Task ResumeAndEnqueueAsync(
+        DownloadTaskId taskId,
         CancellationToken cancellationToken)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        if (string.IsNullOrWhiteSpace(basePath))
+        _runtimeAvailability.EnsureAcceptingTasks();
+        var resumed = await _stateWriter.ResumeAsync(taskId, cancellationToken).ConfigureAwait(true);
+        try
         {
-            return DownloadArtifactOpenResult.NotFound;
+            await _taskQueue.EnqueueAsync(resumed.Id, CancellationToken.None).ConfigureAwait(true);
         }
-
-        foreach (var suffix in suffixes)
+        catch (DownloadRuntimeUnavailableException)
         {
-            var candidate = basePath + suffix;
-            if (!File.Exists(candidate))
-            {
-                continue;
-            }
-
-            return await _platformLauncher.OpenFileAsync(Path.GetFullPath(candidate), cancellationToken)
-                .ConfigureAwait(true)
-                ? DownloadArtifactOpenResult.Opened
-                : DownloadArtifactOpenResult.OpenFailed;
+            await _stateWriter.FailRuntimeUnavailableAsync(
+                resumed.Id,
+                CancellationToken.None).ConfigureAwait(true);
+            throw;
         }
-
-        return DownloadArtifactOpenResult.NotFound;
-    }
-
-    private static IEnumerable<string> GetSelectedSuffixes(DownloadBase downloadBase)
-    {
-        return downloadBase.NeedDownloadContent
-            .Where(item => item.Value && FileSuffixMap.ContainsKey(item.Key))
-            .SelectMany(item => FileSuffixMap[item.Key]);
     }
 
     private static DownloadTaskId GetTaskId(DownloadingItem item)

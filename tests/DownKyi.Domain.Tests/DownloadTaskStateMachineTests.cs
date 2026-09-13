@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using DownKyi.Domain.Downloads;
 using DownKyi.Domain.Results;
 
@@ -70,21 +71,70 @@ public sealed class DownloadTaskStateMachineTests
     }
 
     [Fact]
-    public void PlanAndTransferStateDefensivelyCopyCallerCollections()
+    public void PlanAndTransferStatePreserveImmutableContentAndCopyCallerCollections()
     {
-        var assets = new Dictionary<string, bool> { ["video"] = true };
+        var content = new DownloadContentSelection(
+            Audio: false,
+            Video: true,
+            Danmaku: false,
+            Subtitle: true,
+            Cover: false);
         var files = new Dictionary<string, string> { ["video"] = "video.m4s" };
         var completed = new List<string> { "cover" };
-        var plan = new DownloadPlan(assets, files, streamType: 2);
+        var plan = new DownloadPlan(content, files, streamType: 2, nfoRequest: null);
         var transfer = new DownloadTransferState("aria-gid", completed);
 
-        assets["audio"] = true;
         files["audio"] = "audio.m4s";
         completed.Add("subtitle");
 
-        Assert.Single(plan.RequestedAssets);
+        Assert.Equal(content, plan.RequestedContent);
         Assert.Single(plan.TransferFiles);
         Assert.Equal("cover", Assert.Single(transfer.CompletedFileKeys));
+    }
+
+    [Theory]
+    [InlineData(true, false, true, false, true)]
+    [InlineData(false, true, false, true, false)]
+    public void ContentSelectionLegacyMapRoundTripsEveryTypedField(
+        bool audio,
+        bool video,
+        bool danmaku,
+        bool subtitle,
+        bool cover)
+    {
+        var expected = new DownloadContentSelection(audio, video, danmaku, subtitle, cover);
+
+        var legacyMap = expected.ToLegacyMap();
+        var restored = DownloadContentSelection.FromLegacyMap(legacyMap);
+
+        Assert.Equal(expected, restored);
+        Assert.Equal(5, legacyMap.Count);
+    }
+
+    [Fact]
+    public void NfoRequestRejectsIncompleteRequiredValues()
+    {
+        Assert.Throws<ArgumentNullException>(() => CreateNfoRequest(title: null));
+        Assert.Throws<ArgumentException>(() =>
+            CreateNfoRequest(genres: default(ImmutableArray<string>)));
+        Assert.Throws<ArgumentException>(() =>
+            CreateNfoRequest(actors: [new DownloadNfoActor(null!, string.Empty)]));
+        Assert.Throws<ArgumentException>(() =>
+            CreateNfoRequest(bilibiliId: new DownloadNfoUniqueId(null!, string.Empty)));
+        Assert.Throws<ArgumentException>(() =>
+            CreateNfoRequest(ratings: [new DownloadNfoRating(null!, 0, 0, false)]));
+    }
+
+    [Fact]
+    public void NfoRequestAcceptsEmptyValuesAndAbsentOptionalId()
+    {
+        var request = CreateNfoRequest();
+
+        Assert.Empty(request.Genres);
+        Assert.Empty(request.Tags);
+        Assert.Empty(request.Actors);
+        Assert.Empty(request.Ratings);
+        Assert.Null(request.BilibiliId);
     }
 
     [Fact]
@@ -177,9 +227,10 @@ public sealed class DownloadTaskStateMachineTests
             "https://example.invalid/page.jpg",
             1);
         var plan = new DownloadPlan(
-            new Dictionary<string, bool> { ["video"] = true },
+            new DownloadContentSelection(false, true, false, false, false),
             new Dictionary<string, string> { ["video"] = "video.m4s" },
-            streamType: 1);
+            streamType: 1,
+            nfoRequest: null);
 
         return DownloadTask.Create(
             new DownloadTaskId("task-01"),
@@ -187,5 +238,24 @@ public sealed class DownloadTaskStateMachineTests
             plan,
             new DownloadOutput("episode-01", "100 MB"),
             Epoch);
+    }
+
+    private static DownloadNfoRequest CreateNfoRequest(
+        string? title = "",
+        ImmutableArray<string>? genres = null,
+        ImmutableArray<DownloadNfoActor>? actors = null,
+        DownloadNfoUniqueId? bilibiliId = null,
+        ImmutableArray<DownloadNfoRating>? ratings = null)
+    {
+        return new DownloadNfoRequest(
+            title!,
+            string.Empty,
+            string.Empty,
+            genres ?? [],
+            [],
+            actors ?? [],
+            bilibiliId,
+            string.Empty,
+            ratings ?? []);
     }
 }

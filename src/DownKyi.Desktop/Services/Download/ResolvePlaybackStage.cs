@@ -37,15 +37,20 @@ internal sealed class ResolvePlaybackStage : IDownloadPipelineStage
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
-        var downloading = context.Downloading;
-        downloading.DownloadBase.FilePath = downloading.DownloadBase.FilePath
+        var playbackBasePath = context.Input.OutputBasePath
             .Replace("\\", "/", StringComparison.Ordinal);
 
         string path;
         try
         {
-            path = GetDownloadDirectoryPath(downloading.DownloadBase.FilePath);
+            path = GetDownloadDirectoryPath(playbackBasePath);
             Directory.CreateDirectory(path);
+            if (context.StagingDirectory != null)
+            {
+                Directory.CreateDirectory(context.StagingDirectory);
+                await AdoptRecordedTransfersAsync(context, cancellationToken).ConfigureAwait(true);
+                path = context.StagingDirectory;
+            }
         }
         catch (Exception exception) when (exception is IOException
             or UnauthorizedAccessException
@@ -54,17 +59,22 @@ internal sealed class ResolvePlaybackStage : IDownloadPipelineStage
         {
             _logger.LogWarningMessage("Download directory could not be prepared.", exception);
             _notificationService.Show(DownloadActivityPresenter.CreateDirectoryError(
-                Path.GetDirectoryName(downloading.DownloadBase.FilePath) ?? string.Empty));
+                Path.GetDirectoryName(context.Input.OutputBasePath) ?? string.Empty));
             return DownloadStageResult.Failure(
                 "download.resolve.directory",
                 "Download directory could not be prepared.");
         }
 
         context.DownloadDirectory = path;
-        DownloadActivityPresenter.Reset(downloading);
+        _presenter.Reset(context);
         await _presenter.ShowParsingAsync(context, cancellationToken).ConfigureAwait(true);
 
-        if (downloading.PlayUrl != null)
+        if (context.NeedsMedia && context.TryReuseStagedMedia())
+        {
+            return DownloadStageResult.Success(Name);
+        }
+
+        if (context.PlayUrl != null)
         {
             return DownloadStageResult.Success(Name);
         }
@@ -79,7 +89,7 @@ internal sealed class ResolvePlaybackStage : IDownloadPipelineStage
                 "Playback data could not be resolved.");
         }
 
-        downloading.PlayUrl = playUrl;
+        context.PlayUrl = playUrl;
         return DownloadStageResult.Success(Name);
     }
 
@@ -90,6 +100,54 @@ internal sealed class ResolvePlaybackStage : IDownloadPipelineStage
                ?? throw new ArgumentException(
                    "Download file path must include a directory.",
                    nameof(filePath));
+    }
+
+    internal static async Task AdoptRecordedTransfersAsync(
+        DownloadExecutionContext context,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        var stagingDirectory = context.StagingDirectory
+            ?? throw new InvalidOperationException("Task staging is unavailable.");
+        var legacyDirectory = GetDownloadDirectoryPath(context.Input.OutputBasePath);
+        foreach (var fileName in context.Input.TransferFiles.Values)
+        {
+            if (string.IsNullOrWhiteSpace(fileName) ||
+                fileName != Path.GetFileName(fileName))
+            {
+                continue;
+            }
+
+            await CopyIfMissingAsync(fileName, legacyDirectory, stagingDirectory, cancellationToken)
+                .ConfigureAwait(false);
+            await CopyIfMissingAsync(fileName + ".aria2", legacyDirectory, stagingDirectory,
+                cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task CopyIfMissingAsync(
+        string fileName,
+        string sourceDirectory,
+        string stagingDirectory,
+        CancellationToken cancellationToken)
+    {
+        var source = Path.Combine(sourceDirectory, fileName);
+        var destination = Path.Combine(stagingDirectory, fileName);
+        if (!File.Exists(source) || File.Exists(destination))
+        {
+            return;
+        }
+
+        var temporary = Path.Combine(stagingDirectory, Guid.NewGuid().ToString("N") + ".adopting");
+        using (var input = new FileStream(source, FileMode.Open, FileAccess.Read,
+                   FileShare.Read, 81920, FileOptions.Asynchronous))
+        using (var output = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write,
+                   FileShare.None, 81920, FileOptions.Asynchronous))
+        {
+            await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
+        }
+
+        File.Move(temporary, destination, overwrite: false);
     }
 
 }

@@ -103,4 +103,13 @@ internal static class BilibiliTestResponses
             }
         });
     }
+
+    public static Task<HttpResponseMessage> CompletedJsonWithCookies(
+        string body,
+        params string[] setCookieHeaders)
+    {
+        var response = Json(body: body);
+        response.Headers.TryAddWithoutValidation("Set-Cookie", setCookieHeaders);
+        return Task.FromResult(response);
+    }
 }

@@ -212,6 +212,7 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
         var message = result switch
         {
             DownloadArtifactOpenResult.Opened => null,
+            DownloadArtifactOpenResult.NoPublishedArtifactRecord => "此旧任务没有精确的成品记录，无法定位文件。",
             DownloadArtifactOpenResult.NotFound => "没有找到视频文件，可能被删除或移动！",
             DownloadArtifactOpenResult.OpenFailed => failureMessage,
             _ => failureMessage

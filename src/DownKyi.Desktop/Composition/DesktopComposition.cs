@@ -4,17 +4,13 @@ using System.Net.Http;
 using DownKyi.Application.Bilibili;
 using DownKyi.Application.Desktop;
 using DownKyi.Application.Diagnostics;
-using DownKyi.Application.Downloads;
 using DownKyi.Application.Lifetime;
-using DownKyi.Core.Aria2cNet.Server;
 using DownKyi.Core.BiliApi.Sign;
-using DownKyi.Core.FFmpeg;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Storage;
 using DownKyi.CustomControl.AsyncImageLoader;
 using DownKyi.CustomControl.AsyncImageLoader.Loaders;
 using DownKyi.Infrastructure.Bilibili;
-using DownKyi.Infrastructure.Downloads;
 using DownKyi.Platform;
 using DownKyi.Services;
 using DownKyi.Services.Account;
@@ -27,14 +23,7 @@ using DownKyi.Services.Toolbox;
 using DownKyi.Services.UserSpace;
 using DownKyi.Services.Video;
 using DownKyi.ViewModels;
-using DownKyi.ViewModels.Dialogs;
-using DownKyi.ViewModels.DownloadManager;
-using DownKyi.ViewModels.Friends;
-using DownKyi.ViewModels.Settings;
-using DownKyi.ViewModels.Toolbox;
-using DownKyi.ViewModels.UserSpace;
 using DownKyi.Views;
-using DownKyi.Views.Dialogs;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -54,7 +43,6 @@ internal static class DesktopComposition
 
         services.AddSingleton(loggerFactory);
         services.AddSingleton(logService);
-        services.AddSingleton(new SqliteDownloadTaskStoreOptions(ApplicationStorage.GetDbPath()));
         services.AddHttpClient("DownKyi.Images", client =>
             client.Timeout = TimeSpan.FromSeconds(15));
         services.AddHttpClient<VersionCheckerService>(client =>
@@ -90,23 +78,7 @@ internal static class DesktopComposition
             };
         });
         services.AddSingleton<IWbiKeyProvider, WbiKeyProvider>();
-        services.AddSingleton<FfmpegProcessor>();
-        services.AddSingleton<IDownloadTaskStore, SqliteDownloadTaskStore>();
-        services.AddSingleton<IDownloadTaskApplicationService, DownloadTaskApplicationService>();
-        services.AddSingleton<DownloadTaskProjectionStore>();
-        services.AddSingleton<DownloadTaskStateWriter>();
-        services.AddSingleton<DownloadTaskQueueGateway>();
-        services.AddSingleton<IDownloadTaskQueue>(provider =>
-            provider.GetRequiredService<DownloadTaskQueueGateway>());
-        services.AddSingleton<DownloadTaskAdmissionService>();
-        services.AddSingleton<DownloadListState>();
-        services.AddSingleton<DownloadTaskFileService>();
-        services.AddSingleton<AriaRuntimeClientRegistry>();
-        services.AddSingleton<IDownloadManagerCoordinator, DownloadManagerCoordinator>();
         services.AddSingleton<IVideoTagProvider, VideoTagProvider>();
-        services.AddSingleton<DownloadDuplicatePolicy>();
-        services.AddSingleton<DownloadMovieMetadataBuilder>();
-        services.AddSingleton<IAddToDownloadServiceFactory, AddToDownloadServiceFactory>();
         services.AddTransient<IVideoDetailWorkflowCoordinator, VideoDetailWorkflowCoordinator>();
         services.AddSingleton<IVideoDetailDownloadCoordinator, VideoDetailDownloadCoordinator>();
         services.AddSingleton<IContentDownloadCoordinator, ContentDownloadCoordinator>();
@@ -134,77 +106,14 @@ internal static class DesktopComposition
         services.AddSingleton<IFilePickerService, AvaloniaFilePickerService>();
         services.AddSingleton<IPlatformLauncher, AvaloniaPlatformLauncher>();
         services.AddSingleton<ILoginQrCodeRenderer, LoginQrCodeRenderer>();
-        services.AddSingleton<IUserNotificationService, DesktopNotificationService>();
-        services.AddSingleton<IAppNavigationService, AvaloniaNavigationService>();
-        services.AddSingleton<IAppDialogService, AvaloniaDialogService>();
-        services.AddSingleton<IDesktopInteractionContext, DesktopInteractionContext>();
+        services.AddDesktopInteractions();
         services.AddSingleton<SearchService>();
 
-        services.AddSingleton<AriaServer>();
-        services.AddSingleton<DownloadDiagnosticLogger>();
-        services.AddSingleton<IDownloadRuntimeFactory, DownloadRuntimeFactory>();
-        services.AddSingleton<IUiDispatcher, AvaloniaUiDispatcher>();
+        services.AddDownloadModule();
         services.AddSingleton<IHostedService, StorageMaintenanceHostedService>();
-        services.AddSingleton<DownloadBootstrapHostedService>();
-        services.AddSingleton<IHostedService>(provider =>
-            provider.GetRequiredService<DownloadBootstrapHostedService>());
-
-        AddRouteViewModels(services);
-        AddDialogViewModelsAndViews(services);
         services.AddSingleton<MainWindowViewModel>();
         services.AddSingleton<MainWindow>();
         return services;
     }
 
-    private static void AddRouteViewModels(IServiceCollection services)
-    {
-        services.AddTransient<ViewIndexViewModel>();
-        services.AddTransient<ViewLoginViewModel>();
-        services.AddTransient<ViewVideoDetailViewModel>();
-        services.AddTransient<ViewSettingsViewModel>();
-        services.AddTransient<ViewToolboxViewModel>();
-        services.AddTransient<ViewDownloadManagerViewModel>();
-        services.AddTransient<ViewPublicFavoritesViewModel>();
-        services.AddTransient<ViewUserSpaceViewModel>();
-        services.AddTransient<ViewPublicationViewModel>();
-        services.AddTransient<ViewSeasonsSeriesDetailViewModel>();
-        services.AddTransient<ViewFriendsViewModel>();
-        services.AddTransient<ViewMySpaceViewModel>();
-        services.AddTransient<ViewMyFavoritesViewModel>();
-        services.AddTransient<ViewMyBangumiFollowViewModel>();
-        services.AddTransient<ViewMyToViewVideoViewModel>();
-        services.AddTransient<ViewMyHistoryViewModel>();
-        services.AddTransient<ViewDownloadingViewModel>();
-        services.AddTransient<ViewDownloadFinishedViewModel>();
-        services.AddTransient<ViewFollowingViewModel>();
-        services.AddTransient<ViewFollowerViewModel>();
-        services.AddTransient<ViewBasicViewModel>();
-        services.AddTransient<ViewNetworkViewModel>();
-        services.AddTransient<ViewVideoViewModel>();
-        services.AddTransient<ViewDanmakuViewModel>();
-        services.AddTransient<ViewAboutViewModel>();
-        services.AddTransient<ViewBiliHelperViewModel>();
-        services.AddTransient<ViewDelogoViewModel>();
-        services.AddTransient<ViewExtractMediaViewModel>();
-        services.AddTransient<ViewArchiveViewModel>();
-        services.AddTransient<ViewChannelViewModel>();
-        services.AddTransient<ViewUserSpaceSeasonsSeriesViewModel>();
-        services.AddTransient<ViewFavoritesViewModel>();
-    }
-
-    private static void AddDialogViewModelsAndViews(IServiceCollection services)
-    {
-        services.AddTransient<ViewAlertDialogViewModel>();
-        services.AddTransient<ViewDownloadSetterViewModel>();
-        services.AddTransient<ViewParsingSelectorViewModel>();
-        services.AddTransient<ViewAlreadyDownloadedDialogViewModel>();
-        services.AddTransient<NewVersionAvailableDialogViewModel>();
-        services.AddTransient<ViewUpgradingDialogViewModel>();
-        services.AddTransient<ViewAlertDialog>();
-        services.AddTransient<ViewDownloadSetter>();
-        services.AddTransient<ViewParsingSelector>();
-        services.AddTransient<ViewAlreadyDownloadedDialog>();
-        services.AddTransient<NewVersionAvailableDialog>();
-        services.AddTransient<ViewUpgradingDialog>();
-    }
 }

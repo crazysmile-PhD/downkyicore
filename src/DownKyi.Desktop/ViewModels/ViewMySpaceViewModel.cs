@@ -20,8 +20,10 @@ namespace DownKyi.ViewModels;
 internal partial class ViewMySpaceViewModel : ViewModelBase
 {
     public const string Tag = "PageMySpace";
+    private static readonly Uri BilibiliDynamicsUri = new("https://t.bilibili.com/");
 
     private readonly IUserSpacePageCoordinator _userSpaceCoordinator;
+    private readonly IPlatformLauncher _platformLauncher;
     private readonly ILogger<ViewMySpaceViewModel> _logger;
     private readonly ISettingsStore _settingsStore;
     private CancellationTokenSource? _loadCancellation;
@@ -32,10 +34,12 @@ internal partial class ViewMySpaceViewModel : ViewModelBase
     public ViewMySpaceViewModel(
         IDesktopInteractionContext desktopInteractions,
         IUserSpacePageCoordinator userSpaceCoordinator,
+        IPlatformLauncher platformLauncher,
         ISettingsStore settingsStore,
         ILogger<ViewMySpaceViewModel> logger) : base(desktopInteractions)
     {
         _userSpaceCoordinator = userSpaceCoordinator ?? throw new ArgumentNullException(nameof(userSpaceCoordinator));
+        _platformLauncher = platformLauncher ?? throw new ArgumentNullException(nameof(platformLauncher));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         #region 属性初始化
@@ -156,51 +160,57 @@ internal partial class ViewMySpaceViewModel : ViewModelBase
     }
 
     // 页面选择事件
-    private RelayCommand? _packageListCommand;
+    private DownKyiAsyncDelegateCommand? _packageListCommand;
 
-    public RelayCommand PackageListCommand => _packageListCommand ??= new RelayCommand(ExecutePackageListCommand);
+    public DownKyiAsyncDelegateCommand PackageListCommand =>
+        _packageListCommand ??= new DownKyiAsyncDelegateCommand(
+            ExecutePackageListCommandAsync,
+            _logger);
 
     /// <summary>
     /// 页面选择事件
     /// </summary>
-    private void ExecutePackageListCommand()
+    private async Task ExecutePackageListCommandAsync()
     {
-        if (SelectedPackage == -1)
+        var selectedPackage = SelectedPackage;
+        SelectedPackage = -1;
+        if (TryGetPackageRoute(selectedPackage, out var route))
+        {
+            Navigation.Navigate(new AppNavigationRequest(route, AppRoute.MySpace, _mid));
+            return;
+        }
+
+        if (selectedPackage != 4)
         {
             return;
         }
 
-        switch (SelectedPackage)
+        if (!await _platformLauncher.OpenUriAsync(BilibiliDynamicsUri).ConfigureAwait(true))
+        {
+            _logger.LogWarningMessage("The official Bilibili dynamics page could not be opened.");
+        }
+    }
+
+    private static bool TryGetPackageRoute(int selectedPackage, out AppRoute route)
+    {
+        switch (selectedPackage)
         {
             case 0:
-                Navigation.Navigate(new AppNavigationRequest(
-                    AppRoute.MyFavorites,
-                    AppRoute.MySpace,
-                    _mid));
-                break;
+                route = AppRoute.MyFavorites;
+                return true;
             case 1:
-                Navigation.Navigate(new AppNavigationRequest(
-                    AppRoute.MyBangumiFollow,
-                    AppRoute.MySpace,
-                    _mid));
-                break;
+                route = AppRoute.MyBangumiFollow;
+                return true;
             case 2:
-                Navigation.Navigate(new AppNavigationRequest(
-                    AppRoute.MyToViewVideo,
-                    AppRoute.MySpace,
-                    _mid));
-                break;
+                route = AppRoute.MyToViewVideo;
+                return true;
             case 3:
-                Navigation.Navigate(new AppNavigationRequest(
-                    AppRoute.MyHistory,
-                    AppRoute.MySpace,
-                    _mid));
-                break;
+                route = AppRoute.MyHistory;
+                return true;
             default:
-                break;
+                route = default;
+                return false;
         }
-
-        SelectedPackage = -1;
     }
 
     #endregion
@@ -262,10 +272,17 @@ internal partial class ViewMySpaceViewModel : ViewModelBase
             Image = NormalIcon.Instance().History,
             Title = DictionaryResource.GetString("History")
         });
+        PackageList.Add(new SpaceItem
+        {
+            IsEnabled = true,
+            Image = NormalIcon.Instance().Channel,
+            Title = DictionaryResource.GetString("BilibiliDynamics")
+        });
         NormalIcon.Instance().FavoriteOutline.Fill = DictionaryResource.GetColor("ColorPrimary");
         NormalIcon.Instance().Subscription.Fill = DictionaryResource.GetColor("ColorPrimary");
         NormalIcon.Instance().ToView.Fill = DictionaryResource.GetColor("ColorPrimary");
         NormalIcon.Instance().History.Fill = DictionaryResource.GetColor("ColorPrimary");
+        NormalIcon.Instance().Channel.Fill = DictionaryResource.GetColor("ColorPrimary");
 
         SelectedStatus = -1;
         SelectedPackage = -1;

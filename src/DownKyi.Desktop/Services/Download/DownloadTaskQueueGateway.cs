@@ -7,13 +7,42 @@ using DownKyi.Domain.Downloads;
 
 namespace DownKyi.Services.Download;
 
-internal sealed class DownloadTaskQueueGateway : IDownloadTaskQueue
+internal sealed class DownloadTaskQueueGateway : IDownloadTaskQueue, IDownloadRuntimeAvailability
 {
     private readonly Lock _sync = new();
     private readonly HashSet<DownloadTaskId> _pending = [];
+    private readonly TaskCompletionSource<DownloadRuntimeStartupOutcome> _startupOutcome =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
     private IDownloadRuntime? _runtime;
+    private DownloadRuntimeState _state = DownloadRuntimeState.Initializing;
+    private Exception? _terminalFailure;
 
-    public async Task AttachAsync(
+    public Task AttachAsync(
+        IDownloadRuntime runtime,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(runtime);
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_sync)
+        {
+            if (_state == DownloadRuntimeState.Faulted)
+            {
+                throw CreateUnavailableException();
+            }
+
+            if (_runtime != null && !ReferenceEquals(_runtime, runtime))
+            {
+                throw new InvalidOperationException("A download runtime is already attached.");
+            }
+
+            _runtime = runtime;
+            _state = DownloadRuntimeState.Attaching;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public async Task MarkReadyAsync(
         IDownloadRuntime runtime,
         CancellationToken cancellationToken)
     {
@@ -21,21 +50,37 @@ internal sealed class DownloadTaskQueueGateway : IDownloadTaskQueue
         DownloadTaskId[] pending;
         lock (_sync)
         {
-            if (_runtime != null && !ReferenceEquals(_runtime, runtime))
+            if (!ReferenceEquals(_runtime, runtime)
+                || _state != DownloadRuntimeState.Attaching)
             {
-                throw new InvalidOperationException("A download runtime is already attached.");
+                throw new InvalidOperationException("The download runtime is not attached for startup.");
             }
 
-            _runtime = runtime;
             pending = [.. _pending];
             _pending.Clear();
         }
 
         try
         {
-            foreach (var taskId in pending)
+            while (true)
             {
-                await runtime.EnqueueAsync(taskId, cancellationToken).ConfigureAwait(false);
+                foreach (var taskId in pending)
+                {
+                    await runtime.EnqueueAsync(taskId, cancellationToken).ConfigureAwait(false);
+                }
+
+                lock (_sync)
+                {
+                    if (_pending.Count == 0)
+                    {
+                        _state = DownloadRuntimeState.Ready;
+                        _startupOutcome.TrySetResult(DownloadRuntimeStartupOutcome.Ready());
+                        return;
+                    }
+
+                    pending = [.. _pending];
+                    _pending.Clear();
+                }
             }
         }
         catch
@@ -44,7 +89,7 @@ internal sealed class DownloadTaskQueueGateway : IDownloadTaskQueue
             {
                 if (ReferenceEquals(_runtime, runtime))
                 {
-                    _runtime = null;
+                    _state = DownloadRuntimeState.Attaching;
                 }
 
                 foreach (var taskId in pending)
@@ -65,8 +110,45 @@ internal sealed class DownloadTaskQueueGateway : IDownloadTaskQueue
             if (ReferenceEquals(_runtime, runtime))
             {
                 _runtime = null;
+                if (_state != DownloadRuntimeState.Faulted)
+                {
+                    _state = DownloadRuntimeState.Initializing;
+                }
             }
         }
+    }
+
+    public IReadOnlyList<DownloadTaskId> MarkFaulted(Exception exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+        lock (_sync)
+        {
+            _runtime = null;
+            _state = DownloadRuntimeState.Faulted;
+            _terminalFailure ??= exception;
+            _startupOutcome.TrySetResult(
+                DownloadRuntimeStartupOutcome.Faulted(_terminalFailure));
+            var pending = _pending.ToArray();
+            _pending.Clear();
+            return pending;
+        }
+    }
+
+    public void EnsureAcceptingTasks()
+    {
+        lock (_sync)
+        {
+            if (_state == DownloadRuntimeState.Faulted)
+            {
+                throw CreateUnavailableException();
+            }
+        }
+    }
+
+    public Task<DownloadRuntimeStartupOutcome> WaitForStartupOutcomeAsync(
+        CancellationToken cancellationToken = default)
+    {
+        return _startupOutcome.Task.WaitAsync(cancellationToken);
     }
 
     public async Task EnqueueAsync(
@@ -78,8 +160,13 @@ internal sealed class DownloadTaskQueueGateway : IDownloadTaskQueue
         IDownloadRuntime? runtime;
         lock (_sync)
         {
+            if (_state == DownloadRuntimeState.Faulted)
+            {
+                throw CreateUnavailableException();
+            }
+
             runtime = _runtime;
-            if (runtime == null)
+            if (_state != DownloadRuntimeState.Ready || runtime == null)
             {
                 _pending.Add(taskId);
                 return;
@@ -97,10 +184,14 @@ internal sealed class DownloadTaskQueueGateway : IDownloadTaskQueue
                 if (ReferenceEquals(_runtime, runtime))
                 {
                     _runtime = null;
+                    _state = DownloadRuntimeState.Faulted;
+                    _terminalFailure ??= exception;
+                    _startupOutcome.TrySetResult(
+                        DownloadRuntimeStartupOutcome.Faulted(_terminalFailure));
                 }
-
-                _pending.Add(taskId);
             }
+
+            throw CreateUnavailableException();
         }
     }
 
@@ -117,6 +208,22 @@ internal sealed class DownloadTaskQueueGateway : IDownloadTaskQueue
         return runtime == null
             ? Task.FromResult(false)
             : runtime.CancelAsync(taskId);
+    }
+
+    private DownloadRuntimeUnavailableException CreateUnavailableException()
+    {
+        var message = _state == DownloadRuntimeState.Faulted
+            ? "The download runtime failed to start and is unavailable."
+            : "The download runtime is still initializing and is unavailable.";
+        return new DownloadRuntimeUnavailableException(message, _terminalFailure);
+    }
+
+    private enum DownloadRuntimeState
+    {
+        Initializing,
+        Attaching,
+        Ready,
+        Faulted
     }
 
 }

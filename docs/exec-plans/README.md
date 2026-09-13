@@ -1,9 +1,9 @@
 # Execution Plans
 
-目前即時狀態位於 `../refactoring-live-plan.md`。v1.1.1 的安全修補順序、
-範圍、驗證與回滾位於 `v1.1.1-security-patch.md`。
-Root-cause review remediation policy baseline 的獨立範圍與驗證位於
-`root-cause-review-policy-baseline.md`。
+Owner 指派工作的短書籤與中斷 checkpoint 位於 GitHub Issue #137；
+`../refactoring-live-plan.md` 只保存穩定 release 與 verification policy，不保存
+branch、SHA、CI 或目前／下一項工作狀態。此目錄只保留仍有獨立產品或架構
+價值的 task plan；完成狀態與 transient evidence 不在 repository 內重複保存。
 
 每個 work item 必須包含：
 
@@ -13,4 +13,5 @@ Root-cause review remediation policy baseline 的獨立範圍與驗證位於
 - 完成條件。
 - 回滾方式。
 
-完成項目在同一 PR 從即時任務書移除。設計背景保留在 `../design-docs/`，不把歷史完成清單塞回 live plan。
+設計背景保留在 `../design-docs/`；task plan 保存自己的範圍、驗證與回滾，
+不把 branch progress 或歷史完成清單塞回 live plan。

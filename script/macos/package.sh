@@ -1,7 +1,10 @@
 #!/bin/bash
+set -euo pipefail
+
 arch=$1
+version=${2:?Release version is required.}
 APP_NAME="./哔哩下载姬.app"
-PUBLISH_OUTPUT_DIRECTORY="../../DownKyi/bin/Release/net10.0/osx-$arch/publish/."
+PUBLISH_OUTPUT_DIRECTORY="${PUBLISH_OUTPUT_DIRECTORY:-../../DownKyi/bin/Release/net10.0/osx-$arch/publish/.}"
 
 INFO_PLIST="./Info.plist"
 ICON_FILE="./logo.icns"
@@ -17,11 +20,14 @@ mkdir "$APP_NAME/Contents/MacOS"
 mkdir "$APP_NAME/Contents/Resources"
 
 cp "$INFO_PLIST" "$APP_NAME/Contents/Info.plist"
+/bin/bash ./set-bundle-version.sh "$APP_NAME/Contents/Info.plist" "$version"
 cp "$ICON_FILE" "$APP_NAME/Contents/Resources/$ICON_FILE"
 cp -a "$PUBLISH_OUTPUT_DIRECTORY" "$APP_NAME/Contents/MacOS"
-if [ ! -x $APP_NAME/Contents/MacOS/aria2/aria2c ]; then
-  chmod +x $APP_NAME/Contents/MacOS/aria2/aria2c
+if [ ! -x "$APP_NAME/Contents/MacOS/aria2/aria2c" ]; then
+  chmod +x "$APP_NAME/Contents/MacOS/aria2/aria2c"
 fi
-if [ ! -x $APP_NAME/Contents/MacOS/ffmpeg/ffmpeg ]; then
-  chmod +x $APP_NAME/Contents/MacOS/ffmpeg/ffmpeg
+if [ ! -x "$APP_NAME/Contents/MacOS/ffmpeg/ffmpeg" ]; then
+  chmod +x "$APP_NAME/Contents/MacOS/ffmpeg/ffmpeg"
 fi
+
+/bin/bash ./prepare-app-layout.sh "$APP_NAME"

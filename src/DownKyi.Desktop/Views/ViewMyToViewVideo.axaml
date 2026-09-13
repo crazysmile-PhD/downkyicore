@@ -187,7 +187,7 @@
                 </Interaction.Behaviors>
                 <ListBox.ItemsPanel>
                     <ItemsPanelTemplate>
-                        <StackPanel />
+                        <VirtualizingStackPanel />
                     </ItemsPanelTemplate>
                 </ListBox.ItemsPanel>
                 <ListBox.Theme>

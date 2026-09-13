@@ -9,13 +9,17 @@ namespace DownKyi.Services.Download;
 internal sealed class DownloadCompletionProjector
 {
     private readonly DownloadListState _downloadLists;
+    private readonly DownloadTaskProjectionStore _projectionStore;
     private readonly IUiDispatcher _uiDispatcher;
 
     public DownloadCompletionProjector(
         DownloadListState downloadLists,
+        DownloadTaskProjectionStore projectionStore,
         IUiDispatcher uiDispatcher)
     {
         _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
+        _projectionStore = projectionStore
+            ?? throw new ArgumentNullException(nameof(projectionStore));
         _uiDispatcher = uiDispatcher ?? throw new ArgumentNullException(nameof(uiDispatcher));
     }
 
@@ -30,8 +34,9 @@ internal sealed class DownloadCompletionProjector
         return _uiDispatcher.InvokeAsync(() =>
         {
             _downloadLists.AddDownloaded(downloadedItem);
-            _downloadLists.RemoveDownloading(context.Downloading);
-            _downloadLists.SortDownloaded(context.Settings.Basic.DownloadFinishedSort);
+            _downloadLists.RemoveDownloading(
+                _projectionStore.GetRequiredDownloadingProjection(context.TaskId));
+            _downloadLists.SortDownloaded(context.Input.FinishedSort);
         });
     }
 }

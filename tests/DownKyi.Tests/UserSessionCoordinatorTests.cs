@@ -27,6 +27,35 @@ public sealed class UserSessionCoordinatorTests
     }
 
     [Fact]
+    public void IndexSearchCommandAcceptsNullParameterAndNavigatesBvInput()
+    {
+        using var settings = new TestSettingsStore();
+        var coordinator = new RecordingUserSessionCoordinator();
+        var navigation = new StubNavigationService();
+        var searchService = new SearchService(settings.Store, navigation);
+        using var viewModel = new ViewIndexViewModel(
+            new TestDesktopInteractionContext(navigation),
+            coordinator,
+            settings.Store,
+            searchService,
+            NullLogger<ViewIndexViewModel>.Instance)
+        {
+            InputText = "BV1G1421D7mL"
+        };
+
+        Assert.True(viewModel.InputCommand.CanExecute(null));
+        viewModel.InputCommand.Execute(null);
+
+        var request = Assert.Single(navigation.Requests);
+        Assert.Equal(AppRoute.VideoDetail, request.Route);
+        Assert.Equal(AppRoute.Index, request.Parent);
+        Assert.Equal(
+            "https://www.bilibili.com/video/BV1G1421D7mL",
+            request.Parameter);
+        Assert.Equal(string.Empty, viewModel.InputText);
+    }
+
+    [Fact]
     public async Task RefreshPreservesCancellationBeforeNetworkWork()
     {
         using var settings = new TestSettingsStore();
@@ -115,6 +144,8 @@ public sealed class UserSessionCoordinatorTests
 
     private sealed class StubNavigationService : IAppNavigationService
     {
+        public List<AppNavigationRequest> Requests { get; } = [];
+
         public event EventHandler<AppNavigationChangedEventArgs>? NavigationChanged
         {
             add { }
@@ -123,6 +154,7 @@ public sealed class UserSessionCoordinatorTests
 
         public void Navigate(AppNavigationRequest request)
         {
+            Requests.Add(request);
         }
 
         public void NavigateRegion(

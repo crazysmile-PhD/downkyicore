@@ -132,6 +132,7 @@ public sealed class TlsSecurityArchitectureTests
         Assert.Contains("LocalAriaRpcEndpoint.Create", factory, StringComparison.Ordinal);
         Assert.DoesNotContain("\"downkyi\"", factory, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("PasswordChar=\"*\"", customSettings, StringComparison.Ordinal);
+        Assert.Contains("CustomAriaCompatibilityRequirement", customSettings, StringComparison.Ordinal);
     }
 
     [Fact]

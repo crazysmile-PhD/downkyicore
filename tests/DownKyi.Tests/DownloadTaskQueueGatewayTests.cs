@@ -6,7 +6,7 @@ namespace DownKyi.Tests;
 public sealed class DownloadTaskQueueGatewayTests
 {
     [Fact]
-    public async Task TasksAdmittedBeforeRuntimeStartAreFlushedOnceOnAttach()
+    public async Task TasksAdmittedBeforeRuntimeStartAreFlushedOnceOnReady()
     {
         var gateway = new DownloadTaskQueueGateway();
         var taskId = new DownloadTaskId("early-task");
@@ -17,8 +17,14 @@ public sealed class DownloadTaskQueueGatewayTests
         Assert.Empty(runtime.Enqueued);
 
         await gateway.AttachAsync(runtime, TestContext.Current.CancellationToken);
+        Assert.Empty(runtime.Enqueued);
+        await gateway.MarkReadyAsync(runtime, TestContext.Current.CancellationToken);
 
         Assert.Equal(taskId, Assert.Single(runtime.Enqueued));
+        var outcome = await gateway.WaitForStartupOutcomeAsync(
+            TestContext.Current.CancellationToken);
+        Assert.Equal(DownloadRuntimeStartupState.Ready, outcome.State);
+        Assert.Null(outcome.Failure);
     }
 
     [Fact]
@@ -31,8 +37,30 @@ public sealed class DownloadTaskQueueGatewayTests
         await gateway.EnqueueAsync(taskId, TestContext.Current.CancellationToken);
         Assert.False(await gateway.CancelAsync(taskId));
         await gateway.AttachAsync(runtime, TestContext.Current.CancellationToken);
+        await gateway.MarkReadyAsync(runtime, TestContext.Current.CancellationToken);
 
         Assert.Empty(runtime.Enqueued);
+    }
+
+    [Fact]
+    public async Task TerminalFailureReturnsPendingTasksAndRejectsFurtherAdmission()
+    {
+        var gateway = new DownloadTaskQueueGateway();
+        var pendingTask = new DownloadTaskId("pending-before-failure");
+        await gateway.EnqueueAsync(pendingTask, TestContext.Current.CancellationToken);
+
+        var failure = new InvalidOperationException("Synthetic bootstrap failure.");
+        var returned = gateway.MarkFaulted(failure);
+
+        Assert.Equal(pendingTask, Assert.Single(returned));
+        Assert.Throws<DownloadRuntimeUnavailableException>(() => gateway.EnsureAcceptingTasks());
+        await Assert.ThrowsAsync<DownloadRuntimeUnavailableException>(() => gateway.EnqueueAsync(
+            new DownloadTaskId("after-failure"),
+            TestContext.Current.CancellationToken));
+        var outcome = await gateway.WaitForStartupOutcomeAsync(
+            TestContext.Current.CancellationToken);
+        Assert.Equal(DownloadRuntimeStartupState.Faulted, outcome.State);
+        Assert.Same(failure, outcome.Failure);
     }
 
     private sealed class RecordingRuntime : IDownloadRuntime

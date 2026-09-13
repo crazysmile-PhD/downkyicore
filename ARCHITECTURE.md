@@ -1,12 +1,14 @@
 # DownKyi Architecture
 
-本文件描述目前可執行的架構、已知邊界缺口與目標依賴方向。它不是理想化簡圖。若本文件、知識圖譜和程式碼不一致，以程式碼及可重現檢查結果為準，並在同一個 PR 修正文檔。
+本文件描述目前可執行的架構、已知邊界缺口與目標依賴方向。它不是理想化簡圖。若本文件和程式碼不一致，以程式碼及可重現檢查結果為準，並在同一個 PR 修正文檔。
 
 ## 閱讀入口
 
-- 模組、呼叫關係與穩定契約：`docs/ai-knowledge-graph.md`
-- 目前尚未完成的工作：`docs/refactoring-live-plan.md`
-- 模組邊界審查：`docs/design-docs/module-boundary-naming-audit.md`
+- Desktop 根組裝：`src/DownKyi.Desktop/Composition/DesktopComposition.cs`
+- Navigation/Dialog 局部組裝：`src/DownKyi.Desktop/Platform/DesktopInteractionComposition.cs`
+- Download 局部組裝：`src/DownKyi.Desktop/Services/Download/DownloadComposition.cs`
+- 穩定的 release 與驗證政策：`docs/refactoring-live-plan.md`
+- 歷史模組邊界 audit snapshot：`docs/design-docs/module-boundary-naming-audit.md`
 - 建置、測試、發布與外部 binary：`docs/maintenance.md`
 - 驗證及回滾：`docs/operations/verification-and-rollback.md`
 
@@ -39,8 +41,8 @@ flowchart TD
 - `DownKyi.exe` 只含 `Program.cs`，只引用 `DownKyi.Desktop`，不持有 UI、套件、資源或生命週期實作。
 - `DownKyi.Desktop` 是 Avalonia App、Views、ViewModels、`Presentation` projections、desktop adapters、Host composition 與 desktop runtime owner。Service contracts 不再引用 `DownKyi.ViewModels`。
 - `DownKyi.Core` 不含 `.axaml`、Avalonia 或 QRCoder；登入 API 留在 Core，QR bitmap renderer 與 Bilibili image dictionaries 位於 Desktop。
-- `DownKyi.Domain.DownloadTask` 已是持久化狀態轉換的權威；worker 與 pipeline 入口使用 `DownloadTaskId`，但 orchestrator channel 與部分 media stage 仍暫時持有 UI projection。
-- `DownKyi.Application` 已擁有 Bilibili HTTP/buvid/cookie ports 與 logging contracts；`DownKyi.Infrastructure` 已擁有 async `IHttpClientFactory` transport、single-flight buvid provider、SQLite、write-behind，以及私有 NLog logging sink、retention 與 diagnostic exporter。aria2、FFmpeg 與 file system 的最終 ownership 尚待後續切片。
+- `DownKyi.Domain.DownloadTask` 已是持久化狀態轉換的權威；orchestrator channels、workers 與 pipeline 入口都使用 `DownloadTaskId`。`DownloadExecutionContextFactory` 從 committed Domain snapshot 與目前 settings 建立單次 immutable `DownloadExecutionInput`，只另外擷取建立當下的 `PlayUrl` reference；media stages 不再持有 `DownloadingItem` UI projection。
+- `DownKyi.Application` 已擁有 Bilibili HTTP/buvid/cookie、logging 與 physical output path contracts；`DownKyi.Infrastructure` 已擁有 async `IHttpClientFactory` transport、single-flight buvid provider、SQLite、write-behind、filesystem physical output path resolver，以及私有 NLog logging sink、retention 與 diagnostic exporter。aria2 與 FFmpeg 實作目前仍主要位於 `DownKyi.Core`，其 runtime adapters 與其餘 file-system workflow 仍位於 Desktop/Core；將這些實作收斂至 Infrastructure 是目標 ownership，不是目前已實作的狀態。
 - Prism、DryIoc、EventAggregator、RegionManager 和 ContainerLocator 已從 production source 移除，不得重新引入。
 
 ## 目前啟動鏈
@@ -51,14 +53,16 @@ Program
   -> Avalonia App
   -> DownKyiHost.Create()
   -> DesktopComposition.AddDownKyiDesktop()
+  -> DesktopInteractionComposition.AddDesktopInteractions()
+  -> DownloadComposition.AddDownloadModule()
   -> Microsoft.Extensions.DependencyInjection
   -> MainWindow and MainWindowViewModel
   -> AvaloniaApplicationLifecycle.StartHostAsync()
 ```
 
-`DesktopApplication`、`DownKyiHost` 與 `DesktopComposition` 共同形成 Desktop composition root；executable 只做單次委派。
+`DesktopApplication`、`DownKyiHost` 與 `DesktopComposition` 共同形成 Desktop composition root；root 選擇模組，Navigation/Dialog 與 Download 的內部實作、生命週期和多介面 alias 則由各自的局部 composition 接合。executable 只做單次委派。`DownKyiHost` 在建立 Microsoft DI provider 時驗證必要依賴與 singleton/scoped lifetime；這不取代產品組裝與行為測試。
 
-Bilibili endpoint adapters 仍位於 `DownKyi.Core/BiliApi` 以保留 DTO 與外部協定相容性，但所有 production 呼叫都接收注入的 `IBilibiliApiClient` 並使用 async API。Host 是 client、cookie provider、buvid provider 與網路設定的唯一組合點；static client、全域 `Configure()` 和同步 HTTP compatibility path 已刪除。
+Bilibili endpoint adapters 仍位於 `DownKyi.Core/BiliApi` 以保留 DTO 與外部協定相容性，但所有 production 呼叫都接收注入的 async port。普通 API 使用 `IBilibiliApiClient`；QR 登入使用隔離的 `IBilibiliLoginSession`，由同一 session 貫穿 generate、poll 和受信任 callback，保留 response cookies。Host 是 client、login session factory、cookie provider、buvid provider 與網路設定的唯一組合點；static client、全域 `Configure()` 和同步 HTTP compatibility path 已刪除。
 
 ## 目前導航與 UserSpace 資料流
 
@@ -79,6 +83,8 @@ flowchart LR
 ```
 
 Main region 的返回操作必須先縮減 `AvaloniaNavigationService` 的既有歷史，並恢復原本的 View/ViewModel instance；只有沒有歷史時才建立 typed parent route。UserSpace 的公開收藏夾由注入的 coordinator 一次映射到 snapshot，返回同一個 MID 時保留原頁面與清單狀態。失效收藏項目保留在 UI 供辨識，但不能選取、開啟或加入下載。
+
+ViewModel 與其他呼叫者只依賴 Application 的 `IAppNavigationService`／`IAppDialogService`。只有 `NavigationViewModelFactory` 與 `DialogContentFactory` 能在局部組裝邊界使用 provider，依 typed enum 選擇已註冊的 transient ViewModel/View；Avalonia adapters 本身不持有容器。
 
 投稿路由只接受 `PublicationNavigationPayload`。裸 `bilibili.com/list/<MID>` 代表該使用者全部投稿；`x/series/archives` 契約已完成審查，但帶 `sid` 的 URL 在建立獨立 typed series payload 與產品測試前仍不得被猜成全部投稿。投稿搜尋採 WBI 回應的精確 `page.count`；收藏搜尋的 `media_count` 是未篩選總數，因此分頁只能依 `has_more` 逐頁擴展。兩頁返回時保留 query、頁碼與既有 media instances；被取消的未完成頁才會補載。
 
@@ -116,11 +122,15 @@ flowchart LR
     CompletionProjector --> UiList
 ```
 
-目前所有 durable command 都先載入 Domain aggregate、執行合法 transition、以 optimistic version 寫入 SQLite，再發布 committed snapshot。一般 runtime 不再從 mutable UI model 反向重建 Domain；`DownloadTask.Restore` 只允許出現在 SQLite materializer 與 legacy migration adapter。
+目前所有 durable command 都先載入 Domain aggregate、執行合法 transition、以 optimistic version 寫入 SQLite，再發布 committed snapshot。一般 runtime 不再從 mutable UI model 反向重建 Domain；`DownloadTask.Restore` 只允許出現在 SQLite materializer 與 legacy migration adapter。使用者要求的 audio、video、danmaku、subtitle 與 cover 由 Domain `DownloadContentSelection` 表達；舊字串 map 只存在於 dialog、SQLite 與 NRBF 相容邊界。
 
-佇列已不再掃描 UI collection；新增、續傳與一次性啟動恢復都直接傳遞 `DownloadTaskId`。啟動查詢在同一份結果中提供 Domain snapshots 與 UI projections，runtime 只使用前者。`DownloadPipeline` 只建立單次 execution context 並依序執行 typed stages；階段失敗會立即停止並經 typed state writer 標記失敗。Presenter、projector 與 projection models 已由 Desktop 擁有，`DownloadListState` 只公開穩定的 `ReadOnlyObservableCollection<T>`。剩餘過渡債是 media execution context 仍讀取 `DownloadingItem` 作為播放流與畫面上下文，後續需改為明確 execution input，而不是讓 UI projection 進入 runtime。
+佇列已不再掃描 UI collection；新增、續傳與一次性啟動恢復都直接傳遞 `DownloadTaskId`。啟動查詢在同一份結果中提供 Domain snapshots 與 UI projections，runtime decision inputs 取自前者。`DownloadPipeline` 只建立單次 execution context 並依序執行 typed stages；階段失敗會立即停止並經 typed state writer 標記失敗。`DownloadExecutionContextFactory` 是 immutable `DownloadExecutionInput` 的唯一建構 owner；初始 `PlayUrl` 只在建立 context 時從 UI projection 擷取一次，之後的 refresh 留在 execution context。Presenter、completion projector 與 projection models 由 Desktop 擁有，只透過 `DownloadTaskId` 更新 UI；`DownloadListState` 只公開穩定的 `ReadOnlyObservableCollection<T>`。
+
+`DownloadComposition.AddDownloadModule()` 是 Download 實作的註冊入口。`DownloadTaskQueueGateway` 以同一 singleton 同時提供 `IDownloadTaskQueue` 與 `IDownloadRuntimeAvailability`；`DownloadBootstrapHostedService` 也以同一 singleton 暴露為 `IHostedService`，避免重複 queue/runtime owner 或重複啟停與釋放。
 
 ## 目標拓樸
+
+本節以及後文的「目標」描述是未來 dependency/ownership 方向，不代表目前程式已搬移完成。現行 owner 以上方「目前拓樸」與「目前的正確事實」為準。
 
 ```text
 DownKyi.exe
@@ -186,13 +196,15 @@ command
 ```text
 ResolvePlaybackStage
 DownloadMediaStage
-DownloadArtifactsStage
 MuxStage
+DownloadArtifactsStage
 ValidateStage
 FinalizeStage
 ```
 
 每個 stage 接受 `DownloadExecutionContext` 與 `CancellationToken`，回傳 typed result。UI 文字由 Desktop presenter 依 domain/application phase 投影，不可由 pipeline 直接讀取資源字典。
+
+下載來源、續傳 sidecar 與 completed transfer key 在所有必要 stage 通過前都屬於可重試狀態。FFmpeg 只能發布已驗證輸出，不得刪除輸入；只有 `FinalizeStage` 成功提交 Domain `Completed` 後，才能透過既有 `DownloadTaskFileService` 清理該任務的精確來源與 sidecar。Artifact、mux、validation、取消或 SQLite completion 失敗都必須保留這些 retry checkpoint。
 
 下載重試只有一個預算 owner：
 
@@ -203,7 +215,9 @@ DownloadMediaStage
   -> ITransferBackend (exactly one URL, one backend attempt)
 ```
 
-`DownloadTransferResult` 區分 transient network、rate limit、expired address、resume rejected、invalid media、disk 與 permanent failure。403 可觸發一次播放地址重解；429 在 backend 能提供 `Retry-After` 時遵守最多 30 秒的 bounded delay；resume rejected 只允許清理該 transfer 的檔案與 sidecar 後重試一次；cancellation 不會轉成失敗或 retry。Built-in Downloader 與 aria2 的內部 retry 必須停用，每個 aria RPC client call 只能送出一次實體請求，避免和 coordinator 的 budget 相乘。網路失敗保留 partial/resume sidecar，只有確定無效的 media 或被拒絕的續傳狀態才清理。aria2 RPC 層失敗必須保留最新 GID；只有 terminal task failure 或明確的 task-not-found 才能清除。
+`DownloadTransferResult` 區分 transient network、rate limit、expired address、resume rejected、invalid media、disk 與 permanent failure。403 可觸發一次播放地址重解；429 在 backend 能提供 `Retry-After` 時遵守最多 30 秒的 bounded delay；resume rejected 只允許清理該 transfer 的檔案與 sidecar 後重試一次；cancellation 不會轉成失敗或 retry。Built-in Downloader 與 aria2 的內部 retry 必須停用，每個 aria RPC client call 只能送出一次實體請求，避免和 coordinator 的 budget 相乘。網路失敗只在重試完全相同的 URL 時保留 partial、resume sidecar 與 GID；切換 backup 或 refreshed URL 前，coordinator 必須先要求 backend 停止舊 transfer，再清除 identity、目標檔與 sidecar，任何 teardown/cleanup 失敗都 fail closed。aria2 RPC 層失敗必須保留最新 GID；只有 terminal task failure、明確的 task-not-found 或安全的來源切換 teardown 才能清除。
+
+Mux 失敗不等於來源損壞。`FfmpegProcessor` 只在 fail-on-error decode 的 stderr 含有明確媒體解碼損壞證據時回報 invalid input；單純已啟動且非零 exit code 不足以判定來源損壞。多段 DURL concat 失敗後必須逐段診斷，`MuxStage` 只能沿用既有 completed-key invalidation 與 sidecar cleanup 撤銷已確認損壞的那些段。正式 mux、concat 與失敗診斷共用同一個 `FfmpegMaxParallelJobs` gate。FFmpeg 缺失、逾時、runtime 或權限錯誤、目的檔衝突必須保留來源、completed key 與 resume identity。
 
 `AriaClient` 是專案內維護的 JSON-RPC compatibility adapter，不是生成檔。核心 partial 只擁有 immutable endpoint/token、序列化、response decoding 與單次 HTTP transport；下載控制、狀態/URI、選項、生命週期與 `system.*` methods 各自由責任 partial 擁有。所有 `aria2.*` method 的 token 位置與 RPC method name 由全公開方法合約測試固定。來源證據、owner 表和變更流程位於 `docs/design-docs/aria2-rpc-client-ownership.md`。
 
@@ -237,7 +251,7 @@ address failure rather than a reason to downgrade. The six-RID real-binary gate,
 legacy `UseSsl` migration and third-party binary evidence are documented in
 `docs/operations/aria2-security.md`.
 
-## 邊界規則
+## 邊界規則（現行限制與目標 ownership）
 
 ### Domain
 
@@ -254,8 +268,8 @@ legacy `UseSsl` migration and third-party binary evidence are documented in
 
 ### Infrastructure
 
-- 實作 Application ports。
-- 擁有 SQLite、HTTP、aria2、FFmpeg、file system 與 logging sink 的生命週期。
+- 目前實作 Application ports，並擁有 SQLite、Bilibili HTTP/buvid、physical output path resolver 與 logging sink 生命週期。
+- 目標是再接手 aria2、FFmpeg 與其餘 file-system implementation；在該搬移發生前，Core/Desktop 仍是這些實作的現行 owner。
 - 不依賴 Desktop types 或 UI collections。
 
 ### Desktop
@@ -275,6 +289,7 @@ legacy `UseSsl` migration and third-party binary evidence are documented in
 - SQLite 下載紀錄、未完成任務、partial files、aria2 GID 與續傳資料不可遺失。
 - 外部 Bilibili envelope、WBI、DURL 與 protobuf contract 必須由 fixture 測試保護。
 - 固定 Bilibili 端點必須登錄於 `docs/operations/bilibili-api-audit.md`；匿名或明確授權的登入態 live probe 只提供清理後時點證據，不可取代 deterministic contract tests，也不可保存 credential、raw response 或帳號值。
+- QR 登入 callback 只允許 HTTPS Bilibili host；只有父網域 Cookie 可離開隔離 session。`Set-Cookie` 與 callback 參數合併後必須原子寫入、從磁碟重載並通過 `/nav isLogin=true`，才可顯示成功或取代既有登入檔；舊 Cookie JSON 缺少 wire-value 標記時必須保留既有編碼語意。
 - XAML resource URI、compiled binding 和 typed route 改名必須有 UI smoke coverage。
 - 任何跨層搬移都先建立 adapter 或 migration，再移除舊 owner。
 
@@ -282,6 +297,7 @@ legacy `UseSsl` migration and third-party binary evidence are documented in
 
 - `tests/DownKyi.Architecture.Tests/ProjectDependencyTests.cs`
 - `tests/DownKyi.Architecture.Tests/ModuleBoundaryBaselineTests.cs`
+- `tests/DownKyi.Architecture.Tests/LocalModuleWiringArchitectureTests.cs`
 - `tests/DownKyi.Architecture.Tests/AgentEnvironmentArchitectureTests.cs`
 - `tests/DownKyi.Architecture.Tests/BilibiliApiInventoryArchitectureTests.cs`
 - `script/audit-module-boundaries.ps1`
@@ -289,5 +305,6 @@ legacy `UseSsl` migration and third-party binary evidence are documented in
 - `script/audit-bilibili-authenticated-api.ps1`
 - `script/scan-secrets.ps1`
 - `tests/DownKyi.Desktop.Tests/UiSmokeTests.cs`
+- `tests/DownKyi.Tests/LocalModuleCompositionTests.cs`
 
 基線測試採 ratchet 模式：現有違規可以減少或移除，新增違規或擴大巨檔會失敗。基線不是豁免，也不能成為長期目標。

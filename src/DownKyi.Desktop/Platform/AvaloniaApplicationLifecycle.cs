@@ -4,9 +4,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Diagnostics;
 using DownKyi.Application.Lifetime;
-using DownKyi.Core.Aria2cNet.Server;
 using DownKyi.Core.Settings;
-using Microsoft.Extensions.DependencyInjection;
+using DownKyi.Services.Download;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -14,14 +13,17 @@ namespace DownKyi.Platform;
 
 internal sealed class AvaloniaApplicationLifecycle : IApplicationLifecycle
 {
-    private static readonly TimeSpan CleanupTimeout = TimeSpan.FromSeconds(5);
+    internal static readonly TimeSpan DefaultCleanupTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan LogFlushTimeout = TimeSpan.FromSeconds(2);
     private readonly object _sync = new();
     private readonly AvaloniaDesktopContext _desktopContext;
     private readonly IProcessRestartLauncher _restartLauncher;
     private readonly ISettingsStore _settingsStore;
     private readonly IApplicationLogService _logService;
+    private readonly ApplicationCancellation _applicationCancellation;
+    private readonly IDownloadEmergencyCleanup _downloadEmergencyCleanup;
     private readonly ILogger<AvaloniaApplicationLifecycle> _logger;
+    private readonly TimeSpan _cleanupTimeout;
     private IHost? _host;
     private Task? _hostStartupTask;
     private Task? _shutdownTask;
@@ -31,19 +33,45 @@ internal sealed class AvaloniaApplicationLifecycle : IApplicationLifecycle
         IProcessRestartLauncher restartLauncher,
         ISettingsStore settingsStore,
         IApplicationLogService logService,
+        ApplicationCancellation applicationCancellation,
+        IDownloadEmergencyCleanup downloadEmergencyCleanup,
         ILogger<AvaloniaApplicationLifecycle> logger)
+        : this(
+            desktopContext,
+            restartLauncher,
+            settingsStore,
+            logService,
+            applicationCancellation,
+            downloadEmergencyCleanup,
+            logger,
+            DefaultCleanupTimeout)
+    {
+    }
+
+    internal AvaloniaApplicationLifecycle(
+        AvaloniaDesktopContext desktopContext,
+        IProcessRestartLauncher restartLauncher,
+        ISettingsStore settingsStore,
+        IApplicationLogService logService,
+        ApplicationCancellation applicationCancellation,
+        IDownloadEmergencyCleanup downloadEmergencyCleanup,
+        ILogger<AvaloniaApplicationLifecycle> logger,
+        TimeSpan cleanupTimeout)
     {
         _desktopContext = desktopContext ?? throw new ArgumentNullException(nameof(desktopContext));
         _restartLauncher = restartLauncher ?? throw new ArgumentNullException(nameof(restartLauncher));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         _logService = logService ?? throw new ArgumentNullException(nameof(logService));
+        _applicationCancellation = applicationCancellation
+            ?? throw new ArgumentNullException(nameof(applicationCancellation));
+        _downloadEmergencyCleanup = downloadEmergencyCleanup
+            ?? throw new ArgumentNullException(nameof(downloadEmergencyCleanup));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        ArgumentOutOfRangeException.ThrowIfLessThan(cleanupTimeout, TimeSpan.Zero);
+        _cleanupTimeout = cleanupTimeout;
     }
 
-    public CancellationToken ShutdownToken => GetHost()
-        .Services
-        .GetRequiredService<ApplicationCancellation>()
-        .ShutdownToken;
+    public CancellationToken ShutdownToken => _applicationCancellation.ShutdownToken;
 
     public void AttachHost(IHost host)
     {
@@ -113,8 +141,7 @@ internal sealed class AvaloniaApplicationLifecycle : IApplicationLifecycle
 
     private async Task ShutdownCoreAsync(IHost host)
     {
-        await host.Services
-            .GetRequiredService<ApplicationCancellation>()
+        await _applicationCancellation
             .RequestShutdownAsync()
             .ConfigureAwait(false);
 
@@ -135,7 +162,8 @@ internal sealed class AvaloniaApplicationLifecycle : IApplicationLifecycle
         }
 
         var cleanup = Task.WhenAll(cleanupTasks);
-        if (await Task.WhenAny(cleanup, Task.Delay(CleanupTimeout)).ConfigureAwait(false) == cleanup)
+        TimeoutException? cleanupTimeoutException = null;
+        if (await Task.WhenAny(cleanup, Task.Delay(_cleanupTimeout)).ConfigureAwait(false) == cleanup)
         {
             try
             {
@@ -155,9 +183,8 @@ internal sealed class AvaloniaApplicationLifecycle : IApplicationLifecycle
         else
         {
             _logger.LogWarningMessage("Application cleanup timed out; killing the tracked aria2 process.");
-            host.Services
-                .GetService<AriaServer>()?
-                .KillTrackedServer("application exit cleanup timed out.");
+            _downloadEmergencyCleanup.KillTrackedRuntime(
+                "application exit cleanup timed out.");
             _ = cleanup.ContinueWith(
                 task => _logger.LogErrorMessage(
                     "Application cleanup failed after the shutdown timeout.",
@@ -165,6 +192,8 @@ internal sealed class AvaloniaApplicationLifecycle : IApplicationLifecycle
                 CancellationToken.None,
                 TaskContinuationOptions.OnlyOnFaulted,
                 TaskScheduler.Default);
+            cleanupTimeoutException = new TimeoutException(
+                $"Application cleanup did not complete within {_cleanupTimeout}.");
         }
 
         using var flushCancellation = new CancellationTokenSource(LogFlushTimeout);
@@ -180,6 +209,11 @@ internal sealed class AvaloniaApplicationLifecycle : IApplicationLifecycle
             or InvalidOperationException)
         {
             _logger.LogErrorMessage("Application log flush failed during shutdown.", e);
+        }
+
+        if (cleanupTimeoutException != null)
+        {
+            throw cleanupTimeoutException;
         }
     }
 

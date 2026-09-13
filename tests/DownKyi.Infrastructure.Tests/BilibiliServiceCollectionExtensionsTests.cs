@@ -20,6 +20,8 @@ public sealed class BilibiliServiceCollectionExtensionsTests
 
         Assert.IsType<BilibiliApiClient>(provider.GetRequiredService<IBilibiliApiClient>());
         Assert.IsType<BilibiliBuvidProvider>(provider.GetRequiredService<IBuvidProvider>());
+        Assert.IsType<BilibiliLoginSessionFactory>(
+            provider.GetRequiredService<IBilibiliLoginSessionFactory>());
         var client = provider.GetRequiredService<IHttpClientFactory>()
             .CreateClient(BilibiliServiceCollectionExtensions.HttpClientName);
         Assert.Equal(BilibiliServiceCollectionExtensions.RequestTimeout, client.Timeout);

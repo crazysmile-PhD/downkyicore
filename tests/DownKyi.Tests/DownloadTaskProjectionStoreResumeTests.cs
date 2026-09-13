@@ -94,7 +94,12 @@ public sealed class DownloadTaskProjectionStoreResumeTests : IDisposable
             Assert.Equal("6 GB", restored.DownloadBase.FileSize);
         }
 
-        using var connection = new SqliteConnection($"Data Source={database};Mode=ReadOnly");
+        using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = database,
+            Mode = SqliteOpenMode.ReadOnly,
+            Pooling = false
+        }.ToString());
         await connection.OpenAsync(TestContext.Current.CancellationToken);
         using var command = connection.CreateCommand();
         command.CommandText = "SELECT gid, download_files, downloaded_files, download_status, progress FROM downloading WHERE id = @id";
@@ -226,9 +231,23 @@ public sealed class DownloadTaskProjectionStoreResumeTests : IDisposable
 
     public void Dispose()
     {
-        SqliteConnection.ClearAllPools();
         if (Directory.Exists(_directory))
         {
+            foreach (var databasePath in Directory.EnumerateFiles(
+                         _directory,
+                         "*.db",
+                         SearchOption.TopDirectoryOnly))
+            {
+                using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+                {
+                    DataSource = databasePath,
+                    Mode = SqliteOpenMode.ReadWriteCreate,
+                    Pooling = true,
+                    DefaultTimeout = 5
+                }.ToString());
+                SqliteConnection.ClearPool(connection);
+            }
+
             Directory.Delete(_directory, recursive: true);
         }
     }

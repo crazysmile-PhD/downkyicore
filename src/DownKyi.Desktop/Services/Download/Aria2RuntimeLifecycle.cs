@@ -170,7 +170,10 @@ internal sealed class Aria2RuntimeLifecycle : IDisposable
         if (!features.Contains(SecureRedirectFeature, StringComparer.Ordinal))
         {
             throw new InvalidOperationException(
-                "The aria2 endpoint does not enforce DownKyi secure redirects.");
+                "The aria2 endpoint is incompatible with DownKyi downloads: " +
+                "aria2.getVersion().enabledFeatures does not include the required " +
+                $"'{SecureRedirectFeature}' capability. Standard aria2 and Motrix do not " +
+                "provide this DownKyi-specific redirect protection.");
         }
     }
 

@@ -407,8 +407,9 @@ internal sealed class LegacyUpgradeCoordinator : ILegacyUpgradeCoordinator
             DownloadBase = new DownloadBase
             {
                 NeedDownloadContent = needDownloadContentRecord == null
-                    ? new Dictionary<string, bool>()
-                    : LegacyDownloadTaskMapper.ReadRequestedAssets(needDownloadContentRecord),
+                    ? DownloadContentSelection.None
+                    : DownloadContentSelection.FromLegacyMap(
+                        LegacyDownloadTaskMapper.ReadRequestedAssets(needDownloadContentRecord)),
                 Bvid = ReadString(record, nameof(DownloadBase.Bvid)),
                 Avid = record.GetInt64($"<{nameof(DownloadBase.Avid)}>k__BackingField"),
                 Cid = record.GetInt64($"<{nameof(DownloadBase.Cid)}>k__BackingField"),

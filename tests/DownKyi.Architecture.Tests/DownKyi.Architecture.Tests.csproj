@@ -6,6 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
+    <DownKyiTestPlatforms>Windows;Linux;macOS</DownKyiTestPlatforms>
   </PropertyGroup>
 
   <ItemGroup>
@@ -17,6 +18,12 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\DownKyi.Desktop\DownKyi.Desktop.csproj" />
+    <ProjectReference Include="..\..\src\DownKyi.Infrastructure\DownKyi.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\tools\DownKyi.CentralTestRunner\DownKyi.CentralTestRunner.csproj" />
   </ItemGroup>
 
 </Project>

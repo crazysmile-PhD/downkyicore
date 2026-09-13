@@ -156,7 +156,12 @@ public sealed class LoggingMigrationArchitectureTests
             "VersionCheckerService.cs"));
 
         Assert.Contains("ILogger<MainWindowViewModel>", mainWindowSource, StringComparison.Ordinal);
-        Assert.Contains("_lifetimeCancellation.Token", mainWindowSource, StringComparison.Ordinal);
+        Assert.Contains("_lifetimeToken", mainWindowSource, StringComparison.Ordinal);
+        Assert.Equal(
+            1,
+            mainWindowSource.Split(
+                "_lifetimeCancellation.Token",
+                StringSplitOptions.None).Length - 1);
         Assert.Contains("CancellationToken cancellationToken", versionCheckerSource, StringComparison.Ordinal);
         Assert.Contains("GetStringAsync(new Uri", versionCheckerSource, StringComparison.Ordinal);
     }

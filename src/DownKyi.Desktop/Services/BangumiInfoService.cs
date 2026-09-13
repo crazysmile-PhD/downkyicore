@@ -302,6 +302,7 @@ internal class BangumiInfoService : IInfoService
             page.Avid,
             page.Bvid,
             page.Cid,
+            page.EpisodeId,
             cancellationToken: cancellationToken);
     }
 

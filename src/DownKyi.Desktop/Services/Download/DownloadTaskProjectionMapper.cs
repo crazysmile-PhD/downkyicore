@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Immutable;
 using System.Linq;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.VideoStream;
@@ -33,7 +34,8 @@ internal static class DownloadTaskProjectionMapper
             new DownloadPlan(
                 downloadBase.NeedDownloadContent,
                 downloading.DownloadFiles,
-                (int)downloading.PlayStreamType),
+                (int)downloading.PlayStreamType,
+                ToNfoRequest(item.Metadata)),
             new DownloadOutput(downloadBase.FilePath, downloadBase.FileSize),
             createdAtUtc);
     }
@@ -72,6 +74,7 @@ internal static class DownloadTaskProjectionMapper
         ArgumentNullException.ThrowIfNull(item);
         var downloadBase = ToDownloadBase(task);
         item.DownloadBase = downloadBase;
+        item.Metadata = ToMovieMetadata(task.Plan.NfoRequest);
         item.Downloading = new Downloading
         {
             Id = task.Id.Value,
@@ -123,12 +126,78 @@ internal static class DownloadTaskProjectionMapper
             downloadBase.ZoneId);
     }
 
+    private static DownloadNfoRequest? ToNfoRequest(MovieMetadata? metadata)
+    {
+        return metadata == null
+            ? null
+            : new DownloadNfoRequest(
+                metadata.Title,
+                metadata.Plot,
+                metadata.Year,
+                metadata.Genres.ToImmutableArray(),
+                metadata.Tags.ToImmutableArray(),
+                metadata.Actors.Select(actor => new DownloadNfoActor(actor.Name, actor.Role)).ToImmutableArray(),
+                metadata.BilibiliId == null
+                    ? null
+                    : new DownloadNfoUniqueId(metadata.BilibiliId.Type, metadata.BilibiliId.Value),
+                metadata.Premiered,
+                metadata.Ratings.Select(rating => new DownloadNfoRating(
+                    rating.Name,
+                    rating.Value,
+                    rating.Max,
+                    rating.IsDefault)).ToImmutableArray());
+    }
+
+    private static MovieMetadata? ToMovieMetadata(DownloadNfoRequest? request)
+    {
+        if (request == null)
+        {
+            return null;
+        }
+
+        var metadata = new MovieMetadata
+        {
+            Title = request.Title,
+            Plot = request.Plot,
+            Year = request.Year,
+            BilibiliId = request.BilibiliId == null
+                ? null!
+                : new UniqueId(request.BilibiliId.Type, request.BilibiliId.Value),
+            Premiered = request.Premiered
+        };
+        foreach (var genre in request.Genres)
+        {
+            metadata.Genres.Add(genre);
+        }
+
+        foreach (var tag in request.Tags)
+        {
+            metadata.Tags.Add(tag);
+        }
+
+        foreach (var actor in request.Actors)
+        {
+            metadata.Actors.Add(new Actor(actor.Name, actor.Role));
+        }
+
+        foreach (var rating in request.Ratings)
+        {
+            metadata.Ratings.Add(new Rating(
+                rating.Name,
+                rating.Value,
+                rating.Max,
+                rating.IsDefault));
+        }
+
+        return metadata;
+    }
+
     private static DownloadBase ToDownloadBase(DownloadTask task)
     {
         return new DownloadBase
         {
             Id = task.Id.Value,
-            NeedDownloadContent = task.Plan.RequestedAssets.ToDictionary(entry => entry.Key, entry => entry.Value),
+            NeedDownloadContent = task.Plan.RequestedContent,
             Bvid = task.Metadata.Media.Bvid,
             Avid = task.Metadata.Media.Avid,
             Cid = task.Metadata.Media.Cid,

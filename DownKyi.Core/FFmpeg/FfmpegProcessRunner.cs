@@ -18,7 +18,13 @@ internal sealed class FfmpegProcessRunner : IFfmpegProcessRunner
         {
             if (!process.Start())
             {
-                return new FfmpegProcessResult(false, -1, string.Empty, "Process did not start.", false);
+                return new FfmpegProcessResult(
+                    false,
+                    -1,
+                    string.Empty,
+                    "Process did not start.",
+                    false,
+                    ProcessStarted: false);
             }
 
             var outputTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
@@ -52,11 +58,23 @@ internal sealed class FfmpegProcessRunner : IFfmpegProcessRunner
         }
         catch (Win32Exception e)
         {
-            return new FfmpegProcessResult(false, -1, string.Empty, e.Message, false);
+            return new FfmpegProcessResult(
+                false,
+                -1,
+                string.Empty,
+                e.Message,
+                false,
+                ProcessStarted: false);
         }
         catch (InvalidOperationException e)
         {
-            return new FfmpegProcessResult(false, -1, string.Empty, e.Message, false);
+            return new FfmpegProcessResult(
+                false,
+                -1,
+                string.Empty,
+                e.Message,
+                false,
+                ProcessStarted: false);
         }
     }
 

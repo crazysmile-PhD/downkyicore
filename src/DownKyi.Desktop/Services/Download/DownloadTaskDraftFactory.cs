@@ -7,6 +7,7 @@ using DownKyi.Core.BiliApi.Zone;
 using DownKyi.Core.FileName;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Utils;
+using DownKyi.Domain.Downloads;
 using DownKyi.Models;
 using DownKyi.Presentation;
 using DownKyi.Utils;
@@ -66,11 +67,7 @@ internal static class DownloadTaskDraftFactory
             AudioCodec = audioCodec,
             Page = page.Page
         };
-        downloadBase.NeedDownloadContent["downloadAudio"] = content.Audio;
-        downloadBase.NeedDownloadContent["downloadVideo"] = content.Video;
-        downloadBase.NeedDownloadContent["downloadDanmaku"] = content.Danmaku;
-        downloadBase.NeedDownloadContent["downloadSubtitle"] = content.Subtitle;
-        downloadBase.NeedDownloadContent["downloadCover"] = content.Cover;
+        downloadBase.NeedDownloadContent = content;
 
         return new DownloadingItem
         {
@@ -138,40 +135,7 @@ internal static class DownloadTaskDraftFactory
         }
 
         var filePath = Path.Combine(directory, fileName.RelativePath());
-        return settings.Basic.RepeatFileAutoAddNumberSuffix
-            ? AddCollisionSuffix(directory, fileName.RelativePath(), filePath)
-            : filePath;
-    }
-
-    private static string AddCollisionSuffix(
-        string directory,
-        string relativePath,
-        string filePath)
-    {
-        var directoryName = Path.GetDirectoryName(filePath);
-        if (!Directory.Exists(directoryName))
-        {
-            return filePath;
-        }
-
-        var files = Directory.GetFiles(directoryName)
-            .Select(Path.GetFileNameWithoutExtension)
-            .Distinct()
-            .ToList();
-        if (!files.Contains(Path.GetFileNameWithoutExtension(filePath)))
-        {
-            return filePath;
-        }
-
-        var count = 1;
-        var newFilePath = filePath;
-        while (files.Contains(Path.GetFileNameWithoutExtension(newFilePath)))
-        {
-            newFilePath = Path.Combine(directory, $"{relativePath}({count})");
-            count++;
-        }
-
-        return newFilePath;
+        return filePath;
     }
 
     private static string GetCodecLabel(string codec)

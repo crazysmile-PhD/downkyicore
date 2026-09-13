@@ -16,23 +16,10 @@ create_dir() {
   fi
 }
 
-sha256_file() {
-  if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum "$1" | awk '{ print $1 }'
-  else
-    shasum -a 256 "$1" | awk '{ print $1 }'
-  fi
-}
-
 verify_asset() {
   local file=$1
   local expected=$2
-  local actual
-  actual=$(sha256_file "$file")
-  if [ "$actual" != "$expected" ]; then
-    echo "Checksum mismatch for $file. Expected $expected, got $actual." >&2
-    exit 1
-  fi
+  python3 "$script_dir/ffmpeg-assets.py" verify-file --path "$file" --sha256 "$expected"
 }
 
 copy_license_files() {

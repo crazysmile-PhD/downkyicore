@@ -53,7 +53,7 @@ internal static class LegacyDownloadTaskMapper
                 downloadBase.CoverUrl,
                 downloadBase.PageCoverUrl,
                 downloadBase.ZoneId),
-            new DownloadPlan(downloadBase.NeedDownloadContent, [], 0),
+            new DownloadPlan(downloadBase.NeedDownloadContent, [], 0, nfoRequest: null),
             new DownloadOutput(downloadBase.FilePath, downloadBase.FileSize),
             DownloadPhase.Completed,
             DownloadProgress.None,

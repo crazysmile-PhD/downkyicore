@@ -5,7 +5,7 @@ using DownKyi.Domain.Results;
 
 namespace DownKyi.Application.Downloads;
 
-public sealed class DownloadTaskApplicationService : IDownloadTaskApplicationService, IDisposable
+public sealed partial class DownloadTaskApplicationService : IDownloadTaskApplicationService, IDisposable
 {
     private const int MaximumUpdateAttempts = 2;
     private readonly IDownloadTaskStore _store;
@@ -29,6 +29,16 @@ public sealed class DownloadTaskApplicationService : IDownloadTaskApplicationSer
     {
         ArgumentNullException.ThrowIfNull(task);
         ObjectDisposedException.ThrowIf(_disposed, this);
+        if (task.Phase == DownloadPhase.Queued)
+        {
+            var admission = await CheckNewDownloadAdmissionAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (!admission.IsSuccess)
+            {
+                return OperationResult.Failure<DownloadTask>(RequireError(admission));
+            }
+        }
+
         var result = await _store.AddAsync(task, cancellationToken).ConfigureAwait(false);
         if (!result.IsSuccess)
         {
@@ -37,6 +47,16 @@ public sealed class DownloadTaskApplicationService : IDownloadTaskApplicationSer
 
         Publish(task, DownloadTaskChangeKind.Added);
         return OperationResult.Success(task);
+    }
+
+    public async Task<OperationResult> CheckNewDownloadAdmissionAsync(
+        CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return await _store.IsLegacyUpgradeAdmissionBlockedAsync(cancellationToken)
+            .ConfigureAwait(false)
+            ? OperationResult.Failure(DownloadAdmissionErrors.LegacyUpgradeBlocked())
+            : OperationResult.Success();
     }
 
     public Task<DownloadTask?> FindAsync(
@@ -52,6 +72,19 @@ public sealed class DownloadTaskApplicationService : IDownloadTaskApplicationSer
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         return _store.GetUnfinishedAsync(cancellationToken);
+    }
+
+    public Task<bool> IsLegacyUpgradeAdmissionBlockedAsync(CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return _store.IsLegacyUpgradeAdmissionBlockedAsync(cancellationToken);
+    }
+
+    public Task<OperationResult> ConfirmLegacyRemoteTasksStoppedAsync(
+        CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return _store.ConfirmLegacyRemoteTasksStoppedAsync(cancellationToken);
     }
 
     public Task<DownloadHistoryPage> GetHistoryPageAsync(
@@ -93,6 +126,18 @@ public sealed class DownloadTaskApplicationService : IDownloadTaskApplicationSer
         CancellationToken cancellationToken) =>
         MutateAsync(taskId, static (task, now) => task.RecoverInterrupted(now), cancellationToken);
 
+    public Task<OperationResult<DownloadTask>> ReconcileInterruptedAsync(
+        DownloadTaskId taskId,
+        long snapshotVersion,
+        CancellationToken cancellationToken) =>
+        MutateAsync(
+            taskId,
+            static task => task.Phase is DownloadPhase.Downloading or DownloadPhase.Pausing,
+            (task, now) => task.Phase == DownloadPhase.Pausing && task.Version != snapshotVersion
+                ? task.ConfirmPaused(now)
+                : task.RecoverInterrupted(now),
+            cancellationToken);
+
     public Task<OperationResult<DownloadTask>> FailAsync(
         DownloadTaskId taskId,
         DownloadFailure failure,
@@ -100,6 +145,21 @@ public sealed class DownloadTaskApplicationService : IDownloadTaskApplicationSer
     {
         ArgumentNullException.ThrowIfNull(failure);
         return MutateAsync(taskId, (task, now) => task.Fail(failure, now), cancellationToken);
+    }
+
+    public Task<OperationResult<DownloadTask>> FailIfDispatchableAsync(
+        DownloadTaskId taskId,
+        DownloadFailure failure,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(failure);
+        return MutateAsync(
+            taskId,
+            static task => task.Phase is DownloadPhase.Queued
+                or DownloadPhase.Downloading
+                or DownloadPhase.Pausing,
+            (task, now) => task.Fail(failure, now),
+            cancellationToken);
     }
 
     public Task<OperationResult<DownloadTask>> CompleteAsync(
@@ -122,9 +182,45 @@ public sealed class DownloadTaskApplicationService : IDownloadTaskApplicationSer
         return MutateAsync(taskId, (task, now) =>
         {
             var files = task.Plan.TransferFiles.SetItem(key, filePath);
-            var plan = new DownloadPlan(task.Plan.RequestedAssets, files, task.Plan.StreamType);
+            var plan = task.Plan.WithTransferFiles(files);
             var transfer = CopyTransfer(task.Transfer, backendIdentity: null, replaceBackendIdentity: true);
             return task.UpdatePlan(plan, transfer, now);
+        }, cancellationToken);
+    }
+
+    public Task<OperationResult<DownloadTask>> ClaimTransferFileAsync(
+        DownloadTaskId taskId,
+        string key,
+        string filePath,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
+        return MutateAsync(taskId, (task, now) =>
+        {
+            var files = task.Plan.TransferFiles;
+            if (files.Values.Contains(filePath, StringComparer.Ordinal))
+            {
+                return task.UpdatePlan(task.Plan, task.Transfer, now);
+            }
+
+            var claimKey = key;
+            if (files.ContainsKey(claimKey))
+            {
+                for (var suffix = 1; suffix <= files.Count + 1; suffix++)
+                {
+                    var candidate = $"{key}-owner-{suffix:D4}";
+                    if (!files.ContainsKey(candidate))
+                    {
+                        claimKey = candidate;
+                        break;
+                    }
+                }
+            }
+
+            var claimedFiles = files.Add(claimKey, filePath);
+            var plan = task.Plan.WithTransferFiles(claimedFiles);
+            return task.UpdatePlan(plan, task.Transfer, now);
         }, cancellationToken);
     }
 
@@ -134,8 +230,34 @@ public sealed class DownloadTaskApplicationService : IDownloadTaskApplicationSer
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        return InvalidateCompletedFilesAsync(taskId, [key], cancellationToken);
+    }
+
+    public Task<OperationResult<DownloadTask>> InvalidateCompletedFilesAsync(
+        DownloadTaskId taskId,
+        IReadOnlyCollection<string> keys,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(keys);
+        if (keys.Count == 0)
+        {
+            throw new ArgumentException("At least one completed file key is required.", nameof(keys));
+        }
+
+        var distinctKeys = keys
+            .Select(key =>
+            {
+                ArgumentException.ThrowIfNullOrWhiteSpace(key);
+                return key;
+            })
+            .ToHashSet(StringComparer.Ordinal);
         return MutateAsync(taskId, (task, now) => task.UpdateTransferState(
-            CopyTransfer(task.Transfer, completedFileKeys: task.Transfer.CompletedFileKeys.Remove(key)),
+            CopyTransfer(
+                task.Transfer,
+                backendIdentity: null,
+                replaceBackendIdentity: true,
+                completedFileKeys: task.Transfer.CompletedFileKeys
+                    .Where(key => !distinctKeys.Contains(key))),
             now), cancellationToken);
     }
 
@@ -159,6 +281,13 @@ public sealed class DownloadTaskApplicationService : IDownloadTaskApplicationSer
                 now);
         }, cancellationToken);
     }
+
+    public Task<OperationResult<DownloadTask>> RecordPublishedArtifactAsync(
+        DownloadTaskId taskId,
+        DownloadPublishingArtifact publishing,
+        string path,
+        CancellationToken cancellationToken) =>
+        MutateAsync(taskId, (task, now) => task.RecordPublishedArtifact(publishing, path, now), cancellationToken);
 
     public Task<OperationResult<DownloadTask>> SetBackendIdentityAsync(
         DownloadTaskId taskId,
@@ -203,7 +332,8 @@ public sealed class DownloadTaskApplicationService : IDownloadTaskApplicationSer
         string? fileSizeText,
         CancellationToken cancellationToken) =>
         MutateAsync(taskId, (task, now) => task.UpdateOutput(
-            new DownloadOutput(task.Output.BasePath, fileSizeText),
+            new DownloadOutput(task.Output.BasePath, fileSizeText, task.Output.PublishedArtifacts,
+                task.Output.StagingToken, task.Output.PublishingArtifact),
             now), cancellationToken);
 
     public Task<OperationResult<DownloadTask>> CancelAsync(
@@ -247,12 +377,24 @@ public sealed class DownloadTaskApplicationService : IDownloadTaskApplicationSer
         _disposed = true;
     }
 
+    private Task<OperationResult<DownloadTask>> MutateAsync(
+        DownloadTaskId taskId,
+        Func<DownloadTask, DateTimeOffset, OperationResult<DownloadTask>> transition,
+        CancellationToken cancellationToken) =>
+        MutateAsync(
+            taskId,
+            static _ => true,
+            transition,
+            cancellationToken);
+
     private async Task<OperationResult<DownloadTask>> MutateAsync(
         DownloadTaskId taskId,
+        Func<DownloadTask, bool> shouldTransition,
         Func<DownloadTask, DateTimeOffset, OperationResult<DownloadTask>> transition,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(taskId);
+        ArgumentNullException.ThrowIfNull(shouldTransition);
         ArgumentNullException.ThrowIfNull(transition);
         ObjectDisposedException.ThrowIf(_disposed, this);
         var gate = _taskGates.GetOrAdd(taskId, static _ => new SemaphoreSlim(1, 1));
@@ -268,6 +410,11 @@ public sealed class DownloadTaskApplicationService : IDownloadTaskApplicationSer
                         "download.store.not_found",
                         $"Download task '{taskId.Value}' was not found.",
                         OperationErrorKind.NotFound));
+                }
+
+                if (!shouldTransition(current))
+                {
+                    return OperationResult.Success(current);
                 }
 
                 var now = LaterOf(_clock.UtcNow, current.UpdatedAtUtc);

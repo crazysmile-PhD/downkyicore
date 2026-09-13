@@ -6,21 +6,19 @@ using Avalonia.Controls;
 using Avalonia.Threading;
 using DownKyi.Application.Desktop;
 using DownKyi.ViewModels.Dialogs;
-using DownKyi.Views.Dialogs;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace DownKyi.Platform;
 
 internal sealed class AvaloniaDialogService : IAppDialogService
 {
-    private readonly IServiceProvider _services;
+    private readonly DialogContentFactory _contentFactory;
     private readonly AvaloniaDesktopContext _desktopContext;
 
     public AvaloniaDialogService(
-        IServiceProvider services,
+        DialogContentFactory contentFactory,
         AvaloniaDesktopContext desktopContext)
     {
-        _services = services ?? throw new ArgumentNullException(nameof(services));
+        _contentFactory = contentFactory ?? throw new ArgumentNullException(nameof(contentFactory));
         _desktopContext = desktopContext ?? throw new ArgumentNullException(nameof(desktopContext));
     }
 
@@ -45,12 +43,7 @@ internal sealed class AvaloniaDialogService : IAppDialogService
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var (viewType, viewModelType) = GetDialogTypes(request.Dialog);
-        var content = _services.GetRequiredService(viewType) as Control
-            ?? throw new InvalidOperationException($"Dialog view '{viewType.Name}' is not a Control.");
-        var viewModel = _services.GetRequiredService(viewModelType) as BaseDialogViewModel
-            ?? throw new InvalidOperationException(
-                $"Dialog ViewModel '{viewModelType.Name}' does not derive from BaseDialogViewModel.");
+        var (content, viewModel) = _contentFactory.Create(request.Dialog);
         var window = new DialogWindow
         {
             Content = content,
@@ -62,6 +55,7 @@ internal sealed class AvaloniaDialogService : IAppDialogService
             AppDialogOutcome.Canceled,
             new Dictionary<string, object?>(StringComparer.Ordinal));
         var closeRequested = false;
+        var forcedCloseRequested = false;
         void OnCloseRequested(object? sender, AppDialogResult requestedResult)
         {
             result = requestedResult;
@@ -71,7 +65,7 @@ internal sealed class AvaloniaDialogService : IAppDialogService
 
         void OnClosing(object? sender, WindowClosingEventArgs args)
         {
-            if (!closeRequested && !viewModel.CanCloseDialog())
+            if (ShouldCancelClose(closeRequested, forcedCloseRequested, viewModel))
             {
                 args.Cancel = true;
             }
@@ -80,7 +74,11 @@ internal sealed class AvaloniaDialogService : IAppDialogService
         viewModel.CloseRequested += OnCloseRequested;
         window.Closing += OnClosing;
         using var cancellationRegistration = cancellationToken.Register(() =>
-            Dispatcher.UIThread.Post(window.Close));
+            Dispatcher.UIThread.Post(() =>
+            {
+                forcedCloseRequested = true;
+                window.Close();
+            }));
         try
         {
             viewModel.OnDialogOpened(request);
@@ -92,29 +90,37 @@ internal sealed class AvaloniaDialogService : IAppDialogService
         {
             window.Closing -= OnClosing;
             viewModel.CloseRequested -= OnCloseRequested;
-            viewModel.OnDialogClosed();
-            if (viewModel is IDisposable disposable)
+            await CompleteViewModelLifecycleAsync(viewModel).ConfigureAwait(true);
+        }
+    }
+
+    internal static async Task CompleteViewModelLifecycleAsync(BaseDialogViewModel viewModel)
+    {
+        ArgumentNullException.ThrowIfNull(viewModel);
+        try
+        {
+            await viewModel.OnDialogClosedAsync().ConfigureAwait(true);
+        }
+        finally
+        {
+            if (viewModel is IAsyncDisposable asyncDisposable)
+            {
+                await asyncDisposable.DisposeAsync().ConfigureAwait(true);
+            }
+            else if (viewModel is IDisposable disposable)
             {
                 disposable.Dispose();
             }
         }
     }
 
-    internal static (Type View, Type ViewModel) GetDialogTypes(AppDialog dialog)
+    internal static bool ShouldCancelClose(
+        bool closeRequested,
+        bool forcedCloseRequested,
+        BaseDialogViewModel viewModel)
     {
-        return dialog switch
-        {
-            AppDialog.Alert => (typeof(ViewAlertDialog), typeof(ViewAlertDialogViewModel)),
-            AppDialog.DownloadSettings => (typeof(ViewDownloadSetter), typeof(ViewDownloadSetterViewModel)),
-            AppDialog.ParsingSelector => (typeof(ViewParsingSelector), typeof(ViewParsingSelectorViewModel)),
-            AppDialog.AlreadyDownloaded => (
-                typeof(ViewAlreadyDownloadedDialog),
-                typeof(ViewAlreadyDownloadedDialogViewModel)),
-            AppDialog.NewVersionAvailable => (
-                typeof(NewVersionAvailableDialog),
-                typeof(NewVersionAvailableDialogViewModel)),
-            AppDialog.LegacyUpgrade => (typeof(ViewUpgradingDialog), typeof(ViewUpgradingDialogViewModel)),
-            _ => throw new ArgumentOutOfRangeException(nameof(dialog), dialog, null)
-        };
+        ArgumentNullException.ThrowIfNull(viewModel);
+        return !closeRequested && !forcedCloseRequested && !viewModel.CanCloseDialog();
     }
+
 }

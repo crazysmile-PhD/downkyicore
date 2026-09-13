@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "projects": [
+    {
+      "project": "tests/DownKyi.Desktop.Tests/DownKyi.Desktop.Tests.csproj",
+      "runner": "xunit-in-process",
+      "targetFramework": "net10.0",
+      "parallel": "none",
+      "reason": "Avoid xunit/xunit#3576 VSTest assembly-info stdout protocol corruption while preserving canonical CentralTestRunner identity, TRX validation, exit status, and failure diagnostics."
+    },
+    {
+      "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj",
+      "runner": "xunit-in-process",
+      "targetFramework": "net10.0",
+      "parallel": "none",
+      "reason": "Avoid xunit/xunit#3576 VSTest assembly-info stdout protocol corruption while preserving canonical CentralTestRunner identity, TRX validation, exit status, and failure diagnostics."
+    }
+  ]
+}

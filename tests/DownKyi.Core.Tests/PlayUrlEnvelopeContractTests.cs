@@ -1,3 +1,4 @@
+using DownKyi.Application.Bilibili;
 using DownKyi.Core.BiliApi;
 using DownKyi.Core.BiliApi.Sign;
 using DownKyi.Core.BiliApi.VideoStream;
@@ -105,15 +106,50 @@ public sealed class PlayUrlEnvelopeContractTests
     [Fact]
     public async Task BangumiEndpointUsesResultVideoInfoEnvelope()
     {
-        var client = CreateClient("playurl-bangumi-v2-result.json");
+        BilibiliHttpRequest? capturedRequest = null;
+        var client = CreateClient(
+            "playurl-bangumi-v2-result.json",
+            request => capturedRequest = request);
 
         var payload = await client.GetBangumiPlayUrlAsync(
             1,
             "BV1fixture",
             2,
+            3489,
             cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(1, Assert.Single(payload?.Durl ?? []).Order);
+        var request = Assert.IsType<BilibiliHttpRequest>(capturedRequest);
+        var requestUri = new Uri(request.RequestAddress);
+        Assert.Equal("/pgc/player/web/v2/playurl", requestUri.AbsolutePath);
+        Assert.Contains("cid=2", requestUri.Query, StringComparison.Ordinal);
+        Assert.Contains("ep_id=3489", requestUri.Query, StringComparison.Ordinal);
+        Assert.Contains("qn=125", requestUri.Query, StringComparison.Ordinal);
+        Assert.Contains("fourk=1", requestUri.Query, StringComparison.Ordinal);
+        Assert.Contains("fnver=0", requestUri.Query, StringComparison.Ordinal);
+        Assert.Contains("fnval=4048", requestUri.Query, StringComparison.Ordinal);
+        Assert.Contains("bvid=BV1fixture", requestUri.Query, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(0L)]
+    [InlineData(-1L)]
+    public async Task BangumiEndpointRejectsInvalidEpisodeIdBeforeRequest(long episodeId)
+    {
+        var requestCount = 0;
+        var client = CreateClient(
+            "playurl-bangumi-v2-result.json",
+            _ => requestCount++);
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
+            client.GetBangumiPlayUrlAsync(
+                1,
+                "BV1fixture",
+                2,
+                episodeId,
+                cancellationToken: TestContext.Current.CancellationToken));
+
+        Assert.Equal(0, requestCount);
     }
 
     [Fact]
@@ -129,6 +165,65 @@ public sealed class PlayUrlEnvelopeContractTests
 
         Assert.Equal("bangumi-v2", exception.Operation);
         Assert.Contains("result.video_info", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [MemberData(nameof(MalformedBangumiPlaybackPayloads))]
+    public async Task BangumiV2NullPlaybackFieldThrowsTypedMalformedFailure(
+        string fieldName,
+        string responseBody)
+    {
+        var client = CreateClientFromBody(responseBody);
+
+        var exception = await Assert.ThrowsAsync<BilibiliApiResponseException>(() =>
+            client.GetBangumiPlayUrlAsync(
+                1,
+                "BV1fixture",
+                2,
+                3489,
+                cancellationToken: TestContext.Current.CancellationToken));
+
+        Assert.Equal(nameof(VideoStreamApi.GetBangumiPlayUrlAsync), exception.Operation);
+        Assert.Contains("malformed playback payload", exception.Message, StringComparison.Ordinal);
+        Assert.Contains(fieldName, exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task BangumiV2EmptyPlaybackCollectionsThrowTypedEmptyFailure()
+    {
+        var client = CreateClientFromBody(
+            """
+            {"code":0,"message":"success","result":{"video_info":{"durl":[],"dash":{"video":[],"audio":[]}}}}
+            """);
+
+        var exception = await Assert.ThrowsAsync<BilibiliApiResponseException>(() =>
+            client.GetBangumiPlayUrlAsync(
+                1,
+                "BV1fixture",
+                2,
+                3489,
+                cancellationToken: TestContext.Current.CancellationToken));
+
+        Assert.Contains("empty 'result.video_info'", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task BangumiV2DashOnlyPayloadRemainsValid()
+    {
+        var client = CreateClientFromBody(
+            """
+            {"code":0,"message":"success","result":{"video_info":{"dash":{"video":[{"id":80}],"audio":[{"id":30280}]}}}}
+            """);
+
+        var payload = await client.GetBangumiPlayUrlAsync(
+            1,
+            "BV1fixture",
+            2,
+            3489,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(80, Assert.Single(payload?.Dash.Video ?? []).Id);
+        Assert.Equal(30280, Assert.Single(payload?.Dash.Audio ?? []).Id);
     }
 
     [Fact]
@@ -170,11 +265,48 @@ public sealed class PlayUrlEnvelopeContractTests
                ?? throw new InvalidDataException($"Sample '{name}' did not deserialize.");
     }
 
-    private static StubBilibiliApiClient CreateClient(string sampleName)
+    public static TheoryData<string, string> MalformedBangumiPlaybackPayloads => new()
+    {
+        {
+            "result.video_info.durl",
+            """
+            {"code":0,"message":"success","result":{"video_info":{"durl":null,"dash":{"video":[{}],"audio":[{}]}}}}
+            """
+        },
+        {
+            "result.video_info.dash",
+            """
+            {"code":0,"message":"success","result":{"video_info":{"durl":[{}],"dash":null}}}
+            """
+        },
+        {
+            "result.video_info.dash.video",
+            """
+            {"code":0,"message":"success","result":{"video_info":{"durl":[],"dash":{"video":null,"audio":[{}]}}}}
+            """
+        },
+        {
+            "result.video_info.dash.audio",
+            """
+            {"code":0,"message":"success","result":{"video_info":{"durl":[],"dash":{"video":[{}],"audio":null}}}}
+            """
+        }
+    };
+
+    private static StubBilibiliApiClient CreateClient(
+        string sampleName,
+        Action<BilibiliHttpRequest>? observeRequest = null)
     {
         var body = File.ReadAllText(Path.Combine(SampleDirectory, sampleName));
-        return new StubBilibiliApiClient((_, _) => Task.FromResult(body));
+        return new StubBilibiliApiClient((request, _) =>
+        {
+            observeRequest?.Invoke(request);
+            return Task.FromResult(body);
+        });
     }
+
+    private static StubBilibiliApiClient CreateClientFromBody(string body) =>
+        new((_, _) => Task.FromResult(body));
 
     private static string FindRepositoryRoot()
     {

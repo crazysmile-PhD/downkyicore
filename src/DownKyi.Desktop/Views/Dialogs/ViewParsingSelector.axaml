@@ -9,7 +9,9 @@
 
             <Grid
                 Grid.Row="0"
-                Background="{DynamicResource BrushBackgroundGreyTranslucent3}" ColumnDefinitions="*,50,*,50">
+                Background="{DynamicResource BrushBackgroundGreyTranslucent3}"
+                WindowDecorationProperties.ElementRole="TitleBar"
+                ColumnDefinitions="*,50">
                 <TextBlock
                     Grid.Column="0"
                     Margin="10,0"
@@ -19,8 +21,9 @@
                     Text="{Binding Title}" />
 
                 <Button
-                    Grid.Column="4"
+                    Grid.Column="1"
                     Command="{Binding CloseCommand}"
+                    WindowDecorationProperties.ElementRole="User"
                     Theme="{StaticResource CloseBtnStyle}"
                     ToolTip.Tip="{DynamicResource Close}">
                     <Path

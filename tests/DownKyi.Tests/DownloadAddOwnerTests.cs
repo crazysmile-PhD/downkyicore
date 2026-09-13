@@ -171,17 +171,13 @@ public sealed class DownloadAddOwnerTests : IDisposable
             DownKyi.Core.BiliApi.VideoStream.PlayStreamType.Cheese,
             item.Downloading.PlayStreamType);
         Assert.Equal(DownKyi.Models.DownloadStatus.NotStarted, item.Downloading.DownloadStatus);
-        Assert.True(item.DownloadBase.NeedDownloadContent["downloadAudio"]);
-        Assert.False(item.DownloadBase.NeedDownloadContent["downloadVideo"]);
-        Assert.True(item.DownloadBase.NeedDownloadContent["downloadDanmaku"]);
-        Assert.False(item.DownloadBase.NeedDownloadContent["downloadSubtitle"]);
-        Assert.True(item.DownloadBase.NeedDownloadContent["downloadCover"]);
+        Assert.Equal(content, item.DownloadBase.NeedDownloadContent);
         Assert.StartsWith(_directory, item.DownloadBase.FilePath, StringComparison.Ordinal);
         Assert.Contains("section", item.DownloadBase.FilePath, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void DraftFactoryAddsDeterministicSuffixWhenBaseNameExists()
+    public void DraftFactoryDefersCollisionResolutionToAtomicAdmission()
     {
         Directory.CreateDirectory(_directory);
         using var settingsStore = new DownKyi.Core.Settings.SettingsStore(
@@ -226,7 +222,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
             settings,
             DownloadContentSelection.All);
 
-        Assert.Equal($"{first.DownloadBase.FilePath}(1)", second.DownloadBase.FilePath);
+        Assert.Equal(first.DownloadBase.FilePath, second.DownloadBase.FilePath);
     }
 
     public void Dispose()
@@ -407,6 +403,11 @@ public sealed class DownloadAddOwnerTests : IDisposable
             return Task.FromResult(Current?.Id == taskId ? Current : null);
         }
 
+        public Task<IReadOnlyList<string>> GetActiveOutputReservationKeysAsync(
+            bool ignoreCase,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<string>>([]);
+
         public Task<DownloadHistoryPage> GetHistoryPageAsync(
             DownloadHistoryCursor? cursor,
             int pageSize,
@@ -420,6 +421,11 @@ public sealed class DownloadAddOwnerTests : IDisposable
         public Task<IReadOnlyList<DownloadTask>> GetUnfinishedAsync(
             CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<DownloadTask>>([]);
+
+        public Task<bool> IsOutputPathReservedAsync(
+            string basePath,
+            bool ignoreCase,
+            CancellationToken cancellationToken) => Task.FromResult(false);
 
         public Task InitializeAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 

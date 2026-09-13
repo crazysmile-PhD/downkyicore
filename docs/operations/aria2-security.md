@@ -57,7 +57,11 @@ flowchart LR
 - Packaged aria2 starts only after its SHA-256 sidecar matches the executable.
   Both packaged and custom endpoints must report
   `downkyi-secure-redirect-v2` through `aria2.getVersion().enabledFeatures`;
-  missing integrity or capability evidence fails closed.
+  missing integrity or capability evidence fails closed. Consequently, the
+  Custom Aria setting supports only a DownKyi-compatible aria2 fork that
+  advertises this capability. Generic upstream aria2 and Motrix are not
+  supported endpoints; the setting UI and bootstrap diagnostic must state this
+  requirement rather than presenting them as generic-compatible alternatives.
 - RPC error code `33` identifies HTTPS downgrade rejection and `34` identifies
   sensitive-header cross-origin rejection. These machine codes remain stable
   when aria2 exhausts a URI and replaces the human-readable status message.
@@ -120,8 +124,11 @@ For a local packaged binary:
 $env:DOWNKYI_ARIA2_BINARY = '<absolute aria2c path>'
 $env:DOWNKYI_ARIA2_RID = 'win-x64'
 $env:DOWNKYI_ARIA2_TLS_REPORT = './artifacts/aria2-tls/win-x64.json'
-dotnet test ./tests/DownKyi.Tests/DownKyi.Tests.csproj -c Release `
-  --filter Category=Aria2TlsIntegration
+pwsh ./script/test-project.ps1 `
+  -ProjectPath ./tests/DownKyi.Tests/DownKyi.Tests.csproj `
+  -Configuration Release `
+  -ClassName DownKyi.Tests.Aria2TlsIntegrationTests `
+  -ResultsDirectory ./artifacts/test-results/aria2-local
 ```
 
 ## External Binary Evidence

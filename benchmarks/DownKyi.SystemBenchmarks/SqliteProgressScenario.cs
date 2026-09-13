@@ -19,9 +19,10 @@ internal static class SqliteProgressScenario
         CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(dataRoot);
+        var databasePath = Path.Combine(dataRoot, "progress.db");
         var clock = new StepClock(DateTimeOffset.UnixEpoch);
         var innerStore = new SqliteDownloadTaskStore(
-            new SqliteDownloadTaskStoreOptions(Path.Combine(dataRoot, "progress.db")),
+            new SqliteDownloadTaskStoreOptions(databasePath),
             clock);
         var store = new CountingStore(innerStore);
         try
@@ -113,8 +114,20 @@ internal static class SqliteProgressScenario
         finally
         {
             innerStore.Dispose();
-            SqliteConnection.ClearAllPools();
+            ClearOwnedSqlitePool(databasePath);
         }
+    }
+
+    private static void ClearOwnedSqlitePool(string databasePath)
+    {
+        using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = databasePath,
+            Mode = SqliteOpenMode.ReadWriteCreate,
+            Pooling = true,
+            DefaultTimeout = 5
+        }.ToString());
+        SqliteConnection.ClearPool(connection);
     }
 
     private sealed class StepClock(DateTimeOffset utcNow) : IClock
@@ -187,6 +200,17 @@ internal static class SqliteProgressScenario
 
         public Task<IReadOnlyList<DownloadTask>> GetUnfinishedAsync(CancellationToken cancellationToken) =>
             _inner.GetUnfinishedAsync(cancellationToken);
+
+        public Task<bool> IsOutputPathReservedAsync(
+            string basePath,
+            bool ignoreCase,
+            CancellationToken cancellationToken) =>
+            _inner.IsOutputPathReservedAsync(basePath, ignoreCase, cancellationToken);
+
+        public Task<IReadOnlyList<string>> GetActiveOutputReservationKeysAsync(
+            bool ignoreCase,
+            CancellationToken cancellationToken) =>
+            _inner.GetActiveOutputReservationKeysAsync(ignoreCase, cancellationToken);
 
         public Task<DownloadHistoryPage> GetHistoryPageAsync(
             DownloadHistoryCursor? cursor,

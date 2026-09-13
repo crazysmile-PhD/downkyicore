@@ -21,7 +21,7 @@ using Microsoft.Extensions.Logging;
 
 namespace DownKyi.Services.Download;
 
-internal sealed class Aria2TransferBackend : ITransferBackend
+internal sealed partial class Aria2TransferBackend : ITransferBackend
 {
     private readonly AriaClient _ariaClient;
     private readonly AriaRuntimeClientRegistry _clientRegistry;

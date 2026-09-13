@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -41,7 +42,10 @@ internal static class DownloadShutdownCoordinator
             }
             finally
             {
-                await recoverStateAsync().ConfigureAwait(false);
+                if (workerTasks.All(static task => task.IsCompleted))
+                {
+                    await recoverStateAsync().ConfigureAwait(false);
+                }
             }
         }
     }
@@ -61,6 +65,7 @@ internal static class DownloadShutdownCoordinator
         catch (TimeoutException e)
         {
             timeoutObserver(e);
+            throw;
         }
         catch (OperationCanceledException) when (shutdownToken.IsCancellationRequested)
         {

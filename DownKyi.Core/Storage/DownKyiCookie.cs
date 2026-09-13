@@ -11,6 +11,11 @@ public class DownKyiCookie
 
     [JsonPropertyName("domain")] public string? Domain { get; set; }
 
+    [JsonPropertyName("wireValue")]
+    [Newtonsoft.Json.JsonProperty("wireValue")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool IsWireValue { get; set; }
+
     public DownKyiCookie()
     {
     }
@@ -25,9 +30,14 @@ public class DownKyiCookie
         Value = value;
     }
 
-    public DownKyiCookie(string name, string? value, string? domain) : this(name, value)
+    public DownKyiCookie(
+        string name,
+        string? value,
+        string? domain,
+        bool isWireValue = false) : this(name, value)
     {
         Domain = domain;
+        IsWireValue = isWireValue;
     }
 
     public Cookie ToSystemNetCookie()

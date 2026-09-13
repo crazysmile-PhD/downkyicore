@@ -7,6 +7,8 @@ namespace DownKyi.Services.Download;
 
 internal interface IAddToDownloadSession
 {
+    Task<bool> EnsureAdmissionAsync(CancellationToken cancellationToken = default);
+
     Task<string?> SetDirectory(CancellationToken cancellationToken = default);
 
     void SetVideoInfoService(IInfoService videoInfoService);

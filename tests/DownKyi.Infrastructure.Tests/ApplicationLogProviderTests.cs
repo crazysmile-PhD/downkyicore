@@ -308,6 +308,20 @@ public sealed class ApplicationLogProviderTests : IDisposable
     }
 
     [Fact]
+    public void RetentionPreservesActiveDayDirectoryBeforeFirstEntryIsCreated()
+    {
+        var now = new DateTimeOffset(2026, 7, 18, 0, 0, 0, TimeSpan.Zero);
+        var activeDirectory = Path.Combine(_directory, "2026-07-18");
+        var activePath = Path.Combine(activeDirectory, "events.jsonl");
+        Directory.CreateDirectory(activeDirectory);
+        var retention = new ApplicationLogRetentionManager(new ApplicationLogOptions(_directory));
+
+        retention.Apply(activePath, now);
+
+        Assert.True(Directory.Exists(activeDirectory));
+    }
+
+    [Fact]
     public async Task StartupRetentionDeletesExpiredLogsAndReportsMetrics()
     {
         var cancellationToken = TestContext.Current.CancellationToken;

@@ -1,0 +1,147 @@
+name: macOS ad-hoc package launch
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/macos-adhoc-package.yml'
+      - 'DownKyi/**'
+      - 'DownKyi.Core/**'
+      - 'src/**'
+      - 'Directory.Build.*'
+      - 'Directory.Packages.props'
+      - 'global.json'
+      - 'version.txt'
+      - 'script/aria2.sh'
+      - 'script/ffmpeg.sh'
+      - 'script/ffmpeg-assets.py'
+      - 'script/validate-publish-output.ps1'
+      - 'script/assets/**'
+      - 'script/macos/**'
+      - 'tests/DownKyi.MacOS.Tests/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_NOLOGO: '1'
+
+jobs:
+  package-launch:
+    name: Package and launch (${{ matrix.runtime }}, ad-hoc)
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cpu: x64
+            runtime: osx-x64
+            os: macos-15-intel
+          - cpu: arm64
+            runtime: osx-arm64
+            os: macos-26
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Record runner identity
+        run: |
+          sw_vers
+          uname -m
+      - name: Install packaging tools
+        run: |
+          export HOMEBREW_NO_AUTO_UPDATE=true
+          brew untap aws/tap || true
+          brew install create-dmg tree
+      - name: Install .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Install Python for FFmpeg manifest verification
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Run macOS packaging regressions
+        shell: pwsh
+        run: >
+          ./script/test-project.ps1
+          -ProjectPath ./tests/DownKyi.MacOS.Tests/DownKyi.MacOS.Tests.csproj
+          -Configuration Release
+          -ResultsDirectory ./artifacts/test-results/macos-packaging-${{ matrix.cpu }}
+      - name: Read version
+        id: version
+        run: echo "content=$(tr -d '\r\n' < version.txt)" >> "$GITHUB_OUTPUT"
+      - name: Download and verify upstream runtime dependencies
+        working-directory: ./script
+        run: |
+          chmod +x aria2.sh ffmpeg.sh
+          ./aria2.sh osx-${{ matrix.cpu }}
+          ./ffmpeg.sh mac ${{ matrix.cpu }}
+      - name: Publish ${{ matrix.cpu }} app
+        run: |
+          dotnet restore DownKyi/DownKyi.csproj -r osx-${{ matrix.cpu }}
+          dotnet publish DownKyi/DownKyi.csproj --no-restore --self-contained -r osx-${{ matrix.cpu }} -c Release -p:DebugType=None -p:DebugSymbols=false
+      - name: Package app bundle
+        working-directory: ./script/macos
+        run: |
+          chmod +x package.sh set-bundle-version.sh
+          ./package.sh ${{ matrix.cpu }} ${{ steps.version.outputs.content }}
+      - name: Validate packaged runtime
+        shell: pwsh
+        run: |
+          ./script/validate-publish-output.ps1 `
+            -PublishDirectory "DownKyi/bin/Release/net10.0/osx-${{ matrix.cpu }}/publish" `
+            -RuntimeIdentifier "osx-${{ matrix.cpu }}" `
+            -ExpectedVersion "${{ steps.version.outputs.content }}" `
+            -OutputPath "script/macos/publish-manifest-osx-${{ matrix.cpu }}.json"
+      - name: Verify pre-sign aria2 supply-chain boundary
+        working-directory: ./script/macos
+        run: /bin/bash ./aria2-runtime-integrity.sh verify 哔哩下载姬.app osx-${{ matrix.cpu }}
+      - name: Ad-hoc sign app
+        working-directory: ./script/macos
+        env:
+          MACOS_ADHOC_SIGNING: 'true'
+        run: |
+          chmod +x codesign-common.sh prepare-app-layout.sh sign.sh verify-app.sh verify-app-launch.sh verify-dmg-contents.sh verify-runtime-architecture.sh aria2-runtime-integrity.sh verify-aria2-runtime-readiness.sh
+          ./sign.sh
+      - name: Verify ad-hoc policy and bundle integrity
+        working-directory: ./script/macos
+        run: |
+          details="$(codesign -dvvv '哔哩下载姬.app' 2>&1)"
+          printf '%s\n' "$details"
+          if printf '%s\n' "$details" | grep -Eq 'flags=.*runtime'; then
+            echo '::error::Ad-hoc app unexpectedly enables Hardened Runtime.'
+            exit 1
+          fi
+          ./verify-app.sh
+          ./aria2-runtime-integrity.sh verify 哔哩下载姬.app osx-${{ matrix.cpu }}
+      - name: Create DMG
+        working-directory: ./script/macos
+        run: |
+          create-dmg \
+            --hdiutil-quiet \
+            --icon 哔哩下载姬.app 165 175 \
+            --icon-size 120 \
+            --app-drop-link 495 175 \
+            --window-size 660 400 \
+            DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg 哔哩下载姬.app
+      - name: Verify mounted and copied app launch
+        working-directory: ./script/macos
+        env:
+          MACOS_VERIFY_GATEKEEPER: 'false'
+        run: ./verify-dmg-contents.sh DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg ${{ steps.version.outputs.content }} osx-${{ matrix.cpu }}
+      - name: Hash DMG
+        shell: pwsh
+        run: |
+          $package = "script/macos/DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg"
+          $hash = (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $([IO.Path]::GetFileName($package))" | Set-Content -LiteralPath "$package.sha256" -Encoding ascii
+      - name: Upload verified DMG
+        uses: actions/upload-artifact@v7
+        with:
+          name: DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}-adhoc-${{ matrix.os }}
+          path: |
+            script/macos/DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg
+            script/macos/DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg.sha256
+            script/macos/publish-manifest-osx-${{ matrix.cpu }}.json

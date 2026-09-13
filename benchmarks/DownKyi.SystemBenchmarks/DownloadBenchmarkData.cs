@@ -22,9 +22,10 @@ internal static class DownloadBenchmarkData
                 "redacted-page-cover",
                 0),
             new DownloadPlan(
-                new Dictionary<string, bool>(StringComparer.Ordinal) { ["video"] = true },
+                new DownloadContentSelection(false, true, false, false, false),
                 new Dictionary<string, string>(StringComparer.Ordinal) { ["video"] = "video.m4s" },
-                streamType: 1),
+                streamType: 1,
+                nfoRequest: null),
             new DownloadOutput(identifier, "64 MiB"),
             createdAtUtc);
         return task.Start(createdAtUtc.AddTicks(1)).RequireValue();

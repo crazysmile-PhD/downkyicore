@@ -1,5 +1,13 @@
+using DownKyi.Application.Downloads;
 using DownKyi.Core.BiliApi.VideoStream.Models;
+using DownKyi.Domain.Downloads;
+using DownKyi.Infrastructure.Downloads;
+using DownKyi.Infrastructure.Time;
+using DownKyi.Models;
 using DownKyi.Services.Download;
+using DownKyi.ViewModels.DownloadManager;
+using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DownKyi.Tests;
 
@@ -62,5 +70,82 @@ public sealed class DurlDownloadIdentityTests
         Assert.Equal(
             Path.Combine("downloads", "nested"),
             ResolvePlaybackStage.GetDownloadDirectoryPath(filePath));
+    }
+
+    [Fact]
+    public async Task PlaybackStageUsesLegacySeparatorsWithoutRewritingFrozenBasePath()
+    {
+        var directory = Path.Combine(
+            Path.GetTempPath(),
+            "downkyi-playback-path-tests",
+            Guid.NewGuid().ToString("N"));
+        var databasePath = Path.Combine(directory, "download.db");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var frozenBasePath = Path.Combine(directory, "legacy\\nested\\video");
+            var expectedDirectory = Path.Combine(directory, "legacy", "nested");
+            var downloadBase = new DownloadBase
+            {
+                Id = "frozen-playback-path",
+                FilePath = frozenBasePath
+            };
+            var downloading = new DownloadingItem
+            {
+                DownloadBase = downloadBase,
+                Downloading = new Downloading
+                {
+                    Id = downloadBase.Id,
+                    DownloadBase = downloadBase,
+                    DownloadStatus = DownloadStatus.WaitForDownload
+                },
+                PlayUrl = new PlayUrl()
+            };
+            using var store = new SqliteDownloadTaskStore(
+                new SqliteDownloadTaskStoreOptions(databasePath),
+                new SystemClock());
+            var clock = new SystemClock();
+            using var tasks = new DownloadTaskApplicationService(store, clock);
+            using var projectionStore = new DownloadTaskProjectionStore(tasks, clock);
+            using var settings = new TestSettingsStore();
+            var taskId = new DownloadTaskId(downloadBase.Id);
+            var stateWriter = new DownloadTaskStateWriter(tasks);
+            await projectionStore.AddDownloadingAsync(
+                downloading,
+                TestContext.Current.CancellationToken).ConfigureAwait(true);
+            await stateWriter.StartAsync(taskId, TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+            var stage = new ResolvePlaybackStage(
+                new TestDesktopInteractionContext().Notifications,
+                new DownloadActivityPresenter(projectionStore, stateWriter),
+                new DownloadPlaybackResolver(
+                    new TestWbiKeyProvider(),
+                    TimeProvider.System,
+                    new TestBilibiliApiClient()),
+                NullLogger<ResolvePlaybackStage>.Instance);
+            var context = new DownloadExecutionContextFactory(
+                projectionStore,
+                settings.Store).Create(taskId);
+
+            var result = await stage.ExecuteAsync(
+                context,
+                TestContext.Current.CancellationToken);
+
+            Assert.True(result.IsSuccess);
+            Assert.Equal(expectedDirectory, context.DownloadDirectory);
+            Assert.Equal(frozenBasePath, downloading.DownloadBase.FilePath, ignoreCase: false);
+        }
+        finally
+        {
+            using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+            {
+                DataSource = databasePath,
+                Mode = SqliteOpenMode.ReadWriteCreate,
+                Pooling = true,
+                DefaultTimeout = 5
+            }.ToString());
+            SqliteConnection.ClearPool(connection);
+            Directory.Delete(directory, recursive: true);
+        }
     }
 }

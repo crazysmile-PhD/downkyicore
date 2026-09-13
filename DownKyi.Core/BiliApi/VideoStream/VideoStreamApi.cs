@@ -133,10 +133,12 @@ public static partial class VideoStreamApi
         long avid,
         string bvid,
         long cid,
+        long episodeId,
         int quality = 125,
         CancellationToken cancellationToken = default)
     {
-        var baseUrl = $"https://api.bilibili.com/pgc/player/web/v2/playurl?cid={cid}&qn={quality}&fourk=1&fnver=0&fnval=4048";
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(episodeId);
+        var baseUrl = $"https://api.bilibili.com/pgc/player/web/v2/playurl?cid={cid}&ep_id={episodeId}&qn={quality}&fourk=1&fnver=0&fnval=4048";
         string url;
         if (bvid != null)
         {

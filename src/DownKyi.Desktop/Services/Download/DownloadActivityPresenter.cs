@@ -12,16 +12,21 @@ namespace DownKyi.Services.Download;
 
 internal sealed class DownloadActivityPresenter
 {
+    private readonly DownloadTaskProjectionStore _projectionStore;
     private readonly DownloadTaskStateWriter _stateWriter;
 
-    public DownloadActivityPresenter(DownloadTaskStateWriter stateWriter)
+    public DownloadActivityPresenter(
+        DownloadTaskProjectionStore projectionStore,
+        DownloadTaskStateWriter stateWriter)
     {
+        _projectionStore = projectionStore ?? throw new ArgumentNullException(nameof(projectionStore));
         _stateWriter = stateWriter ?? throw new ArgumentNullException(nameof(stateWriter));
     }
 
-    public static void Reset(DownloadingItem downloading)
+    public void Reset(DownloadExecutionContext context)
     {
-        ArgumentNullException.ThrowIfNull(downloading);
+        ArgumentNullException.ThrowIfNull(context);
+        var downloading = GetProjection(context);
         downloading.DownloadStatusTitle = string.Empty;
         downloading.DownloadContent = string.Empty;
     }
@@ -38,14 +43,14 @@ internal sealed class DownloadActivityPresenter
             cancellationToken);
     }
 
-    public static void ShowDownloadingAudio(DownloadingItem downloading)
+    public void ShowDownloadingAudio(DownloadExecutionContext context)
     {
-        ShowTransferActivity(downloading, "DownloadingAudio");
+        ShowTransferActivity(context, "DownloadingAudio");
     }
 
-    public static void ShowDownloadingVideo(DownloadingItem downloading)
+    public void ShowDownloadingVideo(DownloadExecutionContext context)
     {
-        ShowTransferActivity(downloading, "DownloadingVideo");
+        ShowTransferActivity(context, "DownloadingVideo");
     }
 
     public Task ShowMuxingAsync(
@@ -68,6 +73,20 @@ internal sealed class DownloadActivityPresenter
             context,
             "DownloadingVideo",
             "ConcatVideos",
+            resetProgress: false,
+            cancellationToken);
+    }
+
+    public Task ShowDownloadingArtifactAsync(
+        DownloadExecutionContext context,
+        string contentResourceKey,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(contentResourceKey);
+        return ShowActivityAsync(
+            context,
+            contentResourceKey,
+            "WhileDownloading",
             resetProgress: false,
             cancellationToken);
     }
@@ -98,11 +117,12 @@ internal sealed class DownloadActivityPresenter
         return $"{path}{DictionaryResource.GetString("DirectoryError")}";
     }
 
-    private static void ShowTransferActivity(
-        DownloadingItem downloading,
+    private void ShowTransferActivity(
+        DownloadExecutionContext context,
         string contentResourceKey)
     {
-        ArgumentNullException.ThrowIfNull(downloading);
+        ArgumentNullException.ThrowIfNull(context);
+        var downloading = GetProjection(context);
         downloading.DownloadStatusTitle = DictionaryResource.GetString("WhileDownloading");
         downloading.DownloadContent = DictionaryResource.GetString(contentResourceKey);
         downloading.DownloadingFileSize = string.Empty;
@@ -118,7 +138,7 @@ internal sealed class DownloadActivityPresenter
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
-        var downloading = context.Downloading;
+        var downloading = GetProjection(context);
         downloading.DownloadStatusTitle = DictionaryResource.GetString(titleResourceKey);
         downloading.DownloadContent = contentResourceKey == null
             ? string.Empty
@@ -135,5 +155,10 @@ internal sealed class DownloadActivityPresenter
             downloading.DownloadContent,
             downloading.DownloadStatusTitle,
             cancellationToken).ConfigureAwait(true);
+    }
+
+    private DownloadingItem GetProjection(DownloadExecutionContext context)
+    {
+        return _projectionStore.GetRequiredDownloadingProjection(context.TaskId);
     }
 }

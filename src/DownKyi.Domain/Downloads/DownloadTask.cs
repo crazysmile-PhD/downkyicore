@@ -2,7 +2,7 @@ using DownKyi.Domain.Results;
 
 namespace DownKyi.Domain.Downloads;
 
-public sealed class DownloadTask
+public sealed partial class DownloadTask
 {
     private DownloadTask(
         DownloadTaskId id,
@@ -107,6 +107,10 @@ public sealed class DownloadTask
         ArgumentOutOfRangeException.ThrowIfLessThan(updatedAtUtc, createdAtUtc);
 
         ValidatePhasePayload(phase, failure, completion);
+        if (phase == DownloadPhase.Completed && output.PublishingArtifact != null)
+        {
+            throw new ArgumentException("A completed task cannot have a pending publication.", nameof(output));
+        }
         return new DownloadTask(
             id,
             metadata,
@@ -173,6 +177,11 @@ public sealed class DownloadTask
     public OperationResult<DownloadTask> Complete(DownloadCompletion completion, DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(completion);
+        if (Output.PublishingArtifact != null)
+        {
+            return PublishingConflict();
+        }
+
         return TransitionTo(DownloadPhase.Completed, now, completion: completion);
     }
 

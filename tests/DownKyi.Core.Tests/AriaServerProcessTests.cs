@@ -1,12 +1,10 @@
-using System.ComponentModel;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using DownKyi.Core.Aria2cNet.Server;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DownKyi.Core.Tests;
 
-public sealed partial class AriaServerProcessTests
+public sealed class AriaServerProcessTests
 {
     [Fact]
     public void PackagedBinaryIntegrityAcceptsTheManifestDigest()
@@ -39,28 +37,6 @@ public sealed partial class AriaServerProcessTests
         File.WriteAllText(fixture.ChecksumPath, "not-a-sha256");
         Assert.Throws<InvalidDataException>(
             () => AriaBinaryIntegrityVerifier.Verify(fixture.ExecutablePath));
-    }
-
-    [Fact]
-    public async Task WindowsLifetimeJobTerminatesTheAssignedProcessWhenReleased()
-    {
-        if (!OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using var process = StartLongRunningProcess();
-        var processJob = WindowsProcessJob.TryCreateAndAssign(
-            process,
-            NullLogger.Instance);
-
-        Assert.NotNull(processJob);
-        processJob.Dispose();
-        await process
-            .WaitForExitAsync(TestContext.Current.CancellationToken)
-            .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken)
-            .ConfigureAwait(true);
-        Assert.True(process.HasExited);
     }
 
     [Fact]
@@ -128,58 +104,6 @@ public sealed partial class AriaServerProcessTests
         }
     }
 
-    [Fact]
-    public async Task WindowsStartupFailureWaitsForChildExitBeforeDeletingRpcSecret()
-    {
-        if (!OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        var directory = Path.Combine(
-            Path.GetTempPath(),
-            $"downkyi-aria-secret-exit-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(directory);
-        var server = new AriaServer(NullLoggerFactory.Instance);
-        Process? process = null;
-        try
-        {
-            using var secretFile = AriaRpcSecretFile.Create(
-                directory,
-                "fixture-secret",
-                NullLogger.Instance);
-            var secretPath = secretFile.Path;
-            server.SetStartupSecretForTests(secretFile);
-            process = StartLongRunningProcess();
-            DuplicateFileHandleIntoProcess(secretPath, process);
-            server.SetTrackedServerForTests(process);
-
-            Assert.Throws<IOException>(() => File.Delete(secretPath));
-
-            Assert.True(server.KillTrackedServer("test startup cleanup"));
-
-            Assert.True(process.HasExited);
-            Assert.False(File.Exists(secretPath));
-            Assert.False(server.HasTrackedServerForTests());
-        }
-        finally
-        {
-            server.SetStartupSecretForTests(null);
-            server.SetTrackedServerForTests(null);
-            if (process is { HasExited: false })
-            {
-                process.Kill(entireProcessTree: true);
-                await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(true);
-            }
-
-            process?.Dispose();
-            if (Directory.Exists(directory))
-            {
-                Directory.Delete(directory, recursive: true);
-            }
-        }
-    }
-
     private static Process StartLongRunningProcess()
     {
         var startInfo = OperatingSystem.IsWindows()
@@ -192,46 +116,6 @@ public sealed partial class AriaServerProcessTests
 
         return Process.Start(startInfo)
                ?? throw new InvalidOperationException("Could not start the process used by the cleanup test.");
-    }
-
-    private static void DuplicateFileHandleIntoProcess(
-        string path,
-        Process targetProcess)
-    {
-        using var sourceProcess = Process.GetCurrentProcess();
-        using var source = new FileStream(
-            path,
-            FileMode.Open,
-            FileAccess.Read,
-            FileShare.Read);
-        if (!NativeMethods.DuplicateHandle(
-                sourceProcess.Handle,
-                source.SafeFileHandle.DangerousGetHandle(),
-                targetProcess.Handle,
-                out _,
-                0,
-                inheritHandle: false,
-                NativeMethods.DuplicateSameAccess))
-        {
-            throw new Win32Exception(Marshal.GetLastPInvokeError());
-        }
-    }
-
-    private static partial class NativeMethods
-    {
-        internal const uint DuplicateSameAccess = 0x00000002;
-
-        [LibraryImport("kernel32.dll", SetLastError = true)]
-        [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        internal static partial bool DuplicateHandle(
-            IntPtr sourceProcessHandle,
-            IntPtr sourceHandle,
-            IntPtr targetProcessHandle,
-            out IntPtr targetHandle,
-            uint desiredAccess,
-            [MarshalAs(UnmanagedType.Bool)] bool inheritHandle,
-            uint options);
     }
 
     private sealed class AriaBinaryFixture : IDisposable

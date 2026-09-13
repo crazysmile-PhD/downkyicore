@@ -258,7 +258,9 @@ public sealed partial class Aria2TlsIntegrationTests
             cancellationToken).ConfigureAwait(false);
         Assert.Equal("error", firstStatus.Status);
         Assert.Equal(1, redirect.ConnectionCount);
-        await runtime.Client.RemoveDownloadResultAsync(firstGid).ConfigureAwait(false);
+        await runtime.Client
+            .RemoveDownloadResultAsync(firstGid, cancellationToken)
+            .ConfigureAwait(false);
 
         var secondStatus = await DownloadToTerminalStatusAsync(
             runtime,

@@ -10,7 +10,9 @@
             <Grid
                 Grid.Row="0"
                 Background="{DynamicResource BrushBackgroundGreyTranslucent3}"
-                KeyboardNavigation.TabNavigation="None" ColumnDefinitions="*,50,*,50">
+                KeyboardNavigation.TabNavigation="None"
+                WindowDecorationProperties.ElementRole="TitleBar"
+                ColumnDefinitions="*,50">
 
                 <StackPanel
                     Grid.Column="0"
@@ -34,8 +36,9 @@
                         Text="{Binding Title}" />
                 </StackPanel>
                 <Button
-                    Grid.Column="4"
+                    Grid.Column="1"
                     Command="{Binding CloseCommand}"
+                    WindowDecorationProperties.ElementRole="User"
                     ToolTip.Tip="{DynamicResource Close}"
                     Theme="{StaticResource CloseBtnStyle}">
                     <Path

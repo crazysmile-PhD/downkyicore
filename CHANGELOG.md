@@ -1,5 +1,85 @@
 # 更新日志
 
+## [1.1.6] - 2026-09-11
+
+### Bug Fixes
+
+- 修复 macOS `codesign` 修改内置 aria2c 后，运行时 checksum sidecar 仍保留签名前摘要，导致下载服务完整性检查失败并拒绝启动的问题。
+- macOS x64 与 arm64 现在都会在 nested signing 后刷新最终 aria2c 摘要，并对最终 App、挂载的 DMG 及 `ditto` 复制后的 App 重新验证签章、架构、checksum 与 RPC readiness。
+
+### Security
+
+- 保留原始 aria2 artifact 的 supply-chain SHA-256 验证，并将其与签名后最终交付字节的 runtime integrity domain 明确分离；缺失、格式错误、symlink 被替换或内容遭篡改时继续 fail closed。
+- Custom Aria 继续要求 `downkyi-secure-redirect-v2`；标准 aria2 与 Motrix 不再被含糊地表示为兼容端点，并会返回明确的安全能力诊断。
+
+### Release
+
+- 没有 Apple Developer ID 凭证时，macOS 套件继续使用经过完整原生 package、DMG、复制及 aria2 bootstrap 验证的 ad-hoc signing；本版本不宣称经过 Apple notarization 或具备 Gatekeeper trusted distribution。
+
+## [1.1.5] - 2026-09-11
+
+### Bug Fixes
+
+- 下载运行时启动失败现在会进入明确的 Faulted 状态，拒绝后续排队，并将已经由运行时拥有、但尚未执行的任务转为 Failed，避免任务永久停留在 Queued。
+- 启动恢复在既有任务 gate 内重新读取持久状态，保留用户在快照之后执行的暂停或终止操作；启动故障会显示脱敏且可复制的诊断信息。
+
+### Release
+
+- 本版本包含未发布 v1.1.4 的全部修复，包括 macOS ad-hoc 签名不再启用 Hardened Runtime，以及对应的 DMG、严格签章与复制后启动验证。
+- `v1.1.4` tag 保持不可变；`v1.1.5` 从最新 `main` 重新执行完整发布闸门并作为替代发行版。
+
+## [1.1.4] - 2026-09-10
+
+### Bug Fixes
+
+- 修复无 Apple Developer ID 凭证时，macOS ad-hoc 签名仍启用 Hardened Runtime，导致 macOS 26 因 Library Validation 拒绝加载 `.NET` 的 `libhostfxr.dylib`、应用在显示 UI 前以状态 130 退出的问题。
+- 支持没有音频轨的 DASH 视频下载，并补齐音频选择边界。
+- 下载恢复会等待既有 worker 完全停止后再重新排队，并持久保存 NFO 下载选择。
+
+### Architecture And Reliability
+
+- 下载请求内容与执行输入改为不可变的 typed snapshot，避免执行期间读取变化中的 UI 或任务状态。
+- 加强 PowerShell runner exit-code、CI timeout 分类与 settings roundtrip 回归。
+
+### Release
+
+- 无 Apple credentials 的 macOS 套件继续使用 ad-hoc signing，并在 macOS 26 arm64 验证签章不含 Hardened Runtime、严格 bundle 完整性、DMG 挂载及 `ditto` 复制后启动。
+- Developer ID 模式继续保留 Hardened Runtime、entitlements、notarization、stapling 与 Gatekeeper 验证；ad-hoc CI 成功不表示 Apple trusted distribution。
+
+## [1.1.3] - 2026-08-29
+
+### Security
+
+- 动态字幕 JSON 下载不再向 Bilibili 回应指定的 host 发送登录 Cookie 或 buvid，避免凭证泄漏到跨来源地址。
+
+### Bug Fixes
+
+- 修复 QR 登录只保存部分回调参数的问题：现在会收集完整 `Set-Cookie` session、原子写入登录档、重新载入并通过 `/nav` 验证，避免关闭并重启应用后丢失登录状态。
+- 修复 Windows 将 `//host/path` 字幕地址误判为 UNC / `file://` 而导致特定影片字幕无法下载的问题；protocol-relative 地址会补为 HTTPS，并拒绝 `file:`、`ftp:`、`data:` 等非 HTTP scheme。
+- 字幕 URL 的 URI parser 只负责验证，不再 canonicalize CDN path 或 query；`%7E`、`%2F` 等 percent-encoded spelling 会保持 Bilibili 回应的原始形式。
+
+### Reliability
+
+- 下载 shutdown 遇到 owned worker timeout 时会 fail closed，不再记录错误后回报成功；test runner routing 与 SQLite pool ownership 同步加强。
+- 更新六平台发布所使用的固定 FFmpeg mirror，并保留 archive layout、执行、SHA-256 与 encoder 验证。
+
+### Release
+
+- Windows、Linux 与 macOS 套件继续使用单一 `version.txt`、严格 Release build、完整测试、package manifest 与 SHA-256 sidecar gate。
+- macOS 发布只允许完整 Developer ID / notarization / stapling / Gatekeeper 验证，或无凭证时的 ad-hoc signing + strict bundle / DMG / launch 验证；不接受部分凭证或未验证产物。
+
+## [1.1.2] - 2026-08-20
+
+### Bug Fixes
+
+- 修复影片详情页载入完成后「解析影片」与「下载选中」仍可能保持停用的问题，并防止异步 Command 状态更新时重复执行。
+- 修复 macOS 最终 App bundle 的资源封印可能在打包过程中失效的问题；所有内容复制与权限修改完成后才签章，并在建立 DMG 前强制执行 `codesign --verify --deep --strict`。
+
+### Release
+
+- macOS x64 与 arm64 在未配置 Apple Developer 凭证时使用 ad-hoc 签章；bundle 完整性验证失败会阻止 hash 与上传。
+- v1.1.2 的 macOS DMG 不是 Developer ID 签章、Apple notarized、stapled 或 Gatekeeper-trusted 发行版；完整 Apple 凭证可用时，既有 workflow 仍支持这些额外步骤。
+
 ## [1.1.1] - 2026-07-29
 
 ### Security
@@ -16,9 +96,6 @@
 ### Reliability
 
 - 修复 Windows 测试宿主偶发残留前台执行绪的问题：测试资料清理由同步 `ProcessExit` handler 改为可等待的 assembly fixture，Avalonia 测试改用 assembly-scoped headless session，正式 Host、Dispatcher、SQLite 与应用关闭路径均有确定性 teardown。
-- 建立 Assembly Lifecycle Stability Gate，逐测试组件隔离验证 load、assembly info、discovery、execution、teardown 与 process exit；PR、main 与 release rehearsal 分别执行 3、50 与 100 轮。
-- 生命周期报告升级为 schema 2：使用 OS `Process.ExitTime`、保留 P50/P95/P99/max、慢阶段证据及一般错误分类，并在证据缺失、残留程序、输出污染或退出异常时 fail closed。
-- 修复 lifecycle marker 并发写入时的共享锁竞态；正式 Windows gate 会实际制造独占锁、确认 contention、释放后恢复解析，并以单一完整 proof result 判定。
 - 修复 protocol-relative 图片来源被误当成 Windows UNC 路径而阻塞 `File.Exists` 的问题。
 
 ### Release

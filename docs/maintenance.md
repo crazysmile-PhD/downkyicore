@@ -13,100 +13,42 @@ This document records the project maintenance routine for dependencies, external
 
 Avoid mixing package updates with large refactors unless the refactor is required by the dependency change.
 
+Solution builds set `CompileUsingReferenceAssemblies=false`. Consumers compile
+against completed implementation assemblies instead of the SDK's transient
+`obj/<configuration>/<framework>/ref` copies. This keeps a producer's successful
+implementation output authoritative and prevents an intermittently invalid
+reference assembly from cascading into `CS0009`, `CS0234`, and `CS0246` on
+hosted builds. Keep this policy unconditional across platforms; removal requires
+an exact-SDK cross-platform stress proof that consumers can safely return to the
+generated reference-assembly path.
+
 ## CI Policy
 
-Assembly/process lifecycle is a separate quality dimension from test
-assertions. Run `script/audit-lifecycle-ownership.ps1` after changing any
-thread, Dispatcher, timer, Host, global event, fixture or external-process
-owner. Run `script/test-assembly-lifecycle.ps1` before release; its PR, main and
-rehearsal profiles execute 3, 50 and 100 iterations per test assembly. The
-contract, diagnostics and report schema are documented in
-`docs/testing/assembly-lifecycle-stability.md`.
+### Test Platform Ownership
 
-Formal local verification runs the ownership audit followed by five iterations
-per test assembly with `-ValidateForensics`. The release workflow uses the
-`Rehearsal` profile and writes the full 100-iteration report below
-`artifacts/assembly-lifecycle/release`; neither step may be replaced by a
-successful one-off rerun.
+Every `*.Tests.csproj` must declare `DownKyiTestPlatforms` as an explicit
+semicolon-separated subset of `Windows;Linux;macOS`; projects that support all
+three list all three, with no implicit default. Native behavioral tests belong
+in an OS-owned project. `DownKyi.CentralTestRunner`, reached through
+`script/test-project.ps1` and `script/test-solution.ps1`, rejects unknown
+projects or platform declarations and runs only projects that include the
+current OS. `docs/testing/test-runner-policy.json` records the two necessary
+xUnit in-process routing exceptions and their rationale.
 
-Lifecycle report schema 2 uses the child OS `Process.ExitTime` for post-fixture
-exit, captures marker-aware execution at the unchanged slow threshold, records
-diagnostic collection wall time, and fails a slow phase whose evidence is
-missing. Schema 1 exit values include collector overhead and are historical
-only; do not compare them directly with schema 2.
+The runner records test identity, root process identity and lifecycle events.
+PASS discards the recorder; failure preserves bounded stdout/stderr, cleanup
+state and one final best-effort process snapshot under
+`artifacts/test-flight-recorder`. The snapshot is diagnostic evidence, not a
+complete descendant proof. See `docs/testing/README.md` for the executable
+owners and focused behavior tests.
 
-The slow classification threshold remains five seconds. Evidence collection
-is armed 1,000 ms before that boundary so hosted-runner scheduling cannot
-observe a borderline process only after it has exited. Reports expose both the capture
-lead and whether a phase was sampled before the classification boundary;
-`capture-failed` and `process-exited-before-capture` remain fail-closed for
-phases whose final duration reaches the threshold.
-The `-ValidateForensics` held-child self-test must also set
-`forensicsSelfTestCaptureLeadValidated=true`, proving this arm point executed
-rather than merely existing in source.
-
-Formal Windows PR, Main, Rehearsal and Flaky lifecycle profiles require
-`-ValidateForensics`. Their schema 2 report must show a detailed
-`markerReaderSelfTest` with `executed`, `passed`, `contentionObserved`,
-`contentionCount > 0`, `recoveredAfterLockRelease` and
-`markerParsedAfterRecovery` all true, plus `errorType == null`. Its contract
-mutation checks must also pass. Missing, null, unknown or non-contending proofs
-fail closed; the top-level
-`markerReaderSelfTestPassed` value is only a summary.
-The marker self-test phase, summary and final formal contract must consume the
-single `markerReaderSelfTestComplete` result; do not re-expand the predicate.
-General lifecycle failures belong in phase `failureType` / `errorType`, while
-`slowEvidenceErrorType` is only for slow-evidence collection.
-
-Only Windows sharing/lock error codes count as marker contention.
-`UnauthorizedAccessException` and other I/O errors remain separately visible
-as `markerReadErrorCount` and `markerReadErrorType`.
-
-Residual-child failures are independently fail-closed. Every failed phase must
-preserve a sanitized `residualChildren` identity list plus a
-`residual-children.json` manifest; live managed children also receive thread,
-tree and managed-stack evidence. `-ValidateForensics` must prove this path by
-creating a controlled residual child, observing its identity, writing evidence,
-classifying the phase as `ResidualChildProcess` and cleaning the synthetic tree
-by PID plus creation time. It must also prove path, URL, cookie and secret
-redaction. `residualChildSelfTestPassed` is only the summary;
-the detailed `residualChildSelfTest` fields are the contract.
-
-PR #116 merged the final lifecycle proof consistency fix into `main` at
-`6a61247`. Strict PR CI `30450175286` and CodeQL `30450175415` passed. Its
-Main profile report contains 2,102 phase results across seven assemblies and
-50 iterations, with zero failures, zero missing slow evidence and zero marker
-read errors. Teardown max is 7 ms and OS process-exit max is 187 ms; all 14
-slow execution phases retained evidence. This report validates the corrected
-lifecycle owner and gate, but the final versioned release commit must still
-pass its own Main profile and the 100-iteration Rehearsal profile.
-
-The first v1.1.1 Rehearsal run `30455540672` correctly blocked packaging after
-`DownKyi.Tests` assembly-info iteration 78 observed one residual child. The
-historical report retained only `residualChildCount=1`, so that runner's exact
-child identity cannot be recovered after the hosted VM was destroyed. The
-phase did not execute tests, Host, Dispatcher or application services; its
-stdout was valid xUnit metadata, stderr was empty and exit code was zero.
-Five hundred local repetitions of the same
-`dotnet DownKyi.Tests.dll -assemblyInfo` command observed no residual child,
-excluding a deterministic
-application owner but not the low-probability runner race. The corrected gate
-therefore preserves identity and evidence on every future observation and
-dynamically self-tests the full residual-child failure path. A new Main profile
-and complete Rehearsal remain mandatory; the failed run is not replaced by a
-blind rerun.
-
-After PR #118 merged at `ad5ac64`, Main run `30461640781` proved that the
-original 100 ms capture lead was still insufficient under hosted-runner load.
-`DownKyi.Tests` execution iteration 24 exited successfully at 5007.386 ms but
-the monitor never entered the capture branch while the process was alive.
-The report failed closed with `SlowEvidenceMissing`; residual-child and
-marker-reader self-tests passed and no real residual process was observed.
-The five-second classification threshold remains unchanged. The capture arm is
-now one second early, and architecture tests prevent reducing it back to the
-demonstrably insufficient 100 ms window. The held-child self-test uses a
-1.25-second synthetic threshold so it dynamically proves capture starts after
-0.25 seconds and before classification, without relying on a zero-clamped arm.
+Resource-contention failures follow
+`docs/testing/targeted-resource-forensics.md`: CI first classifies the failure,
+then points maintainers to a resource- and operation-specific probe. ETW remains
+opt-in and pre-armed only for a narrow target; it is never blanket-enabled for
+the normal success path. Failure-only artifacts are bounded and sanitized, and
+must state `Root cause not proven.` until failure-window evidence identifies an
+owner or proves the violated lifecycle ordering.
 
 Pull requests are guarded by `.github/workflows/quality.yml`:
 
@@ -114,7 +56,6 @@ Pull requests are guarded by `.github/workflows/quality.yml`:
 - Windows, Linux, and macOS Release builds
 - compiler and all `AnalysisMode=All` CA diagnostics treated as errors
 - unit tests with uploaded TRX reports
-- assembly load/info/discovery/execution/teardown/exit stability on Windows
 - transitive vulnerable package audit
 - deprecated package report
 
@@ -124,68 +65,10 @@ Release tags are additionally checked by
 `GITHUB_REF` equals `refs/tags/v<version>`. The v1.1.0 tag is immutable and its
 withdrawn draft must not be republished; the corrective release is v1.1.1.
 
-Gate 10 v1.1.0 integration candidate `355ef7cb` passed the local strict
-`AnalysisMode=All` Release build with zero warnings/errors, all 714 tests,
-format verification, module-boundary audit, vulnerable/deprecated dependency
-audits and `git diff --check`. Its explicitly authorized authenticated
-read-only Bilibili audit was repeated at committed candidate `8aa4382`; the
-`/nav` login gate and all 14 allowlisted contracts passed with zero drift. The
-resulting machine-readable artifact contains only sanitized contract metadata;
-Gitleaks 8.30.1 inspected all 986 tracked and non-ignored untracked candidate
-files and reported zero findings. Final PR quality, CodeQL and the
-cross-platform package rehearsal remain release requirements and are recorded
-in `docs/refactoring-live-plan.md`.
-
-PR #112 first-head quality run `30426137294`, protobuf run `30426137279`
-and CodeQL run `30426137276` passed. Manual release rehearsal `30426554087`
-then correctly blocked publication: BtbN had removed the pinned 2026-07-08
-autobuild, and `DownKyi.Core` derived the SDK `RuntimeIdentifier` from the
-runner host, causing cross-RID restore races on Windows x86 and macOS x64.
-The repaired candidate pins the existing 2026-07-28 FFmpeg release assets and
-their upstream SHA-256 digests, makes all four asset scripts independent of the
-caller's working directory, and makes the Bash aria2 script consume the shared
-manifest. `DownKyiAssetRuntimeIdentifier` now selects package content without
-  setting the SDK `RuntimeIdentifier`; package jobs explicitly restore their
-  target RID. Local strict build has zero warnings/errors, all 718 tests pass,
-and an actual Windows x86 self-contained publish passes the common package
-validator with non-empty DownKyi, aria2, FFmpeg and ffprobe files. The complete
-remote rehearsal `30428876552` proved that the expired-asset and SDK RID fixes
-worked, but exposed a narrower cross-target content issue on macOS x64,
-Windows x86 and Linux arm64: MSBuild did not automatically propagate the
-target asset RID through project references. The executable is now the only
-owner of target or local-host fallback selection and directly includes the
-matching external assets in output and publish; the custom property never
-crosses a project-reference boundary, and Core is a runtime-neutral library.
-A fresh Windows x86 self-contained publish passes the common package
-validator, and its aria2, FFmpeg and ffprobe hashes exactly match the x86
-source assets. Passing a custom RID through project-reference metadata was
-explicitly rejected because it creates multiple project instances that race on
-the same `obj/bin` paths during a solution build. The final ownership model
-passes the strict Release build with zero warnings/errors, all 719 tests,
-format, module-boundary, dependency, secret and diff gates.
-
-PR #112 quality run `30430722500`, protobuf run `30430722468` and CodeQL run
-`30430722421` pass on `1968c9d`. Windows, Linux and macOS each retain seven
-distinct TRX files with 718 executed/passed tests and no failures; the only
-non-executed result is the FFmpeg-runtime seek integration that passes locally.
-Code and test annotations are zero. The single Analyze C# warning is GitHub's
-platform notice that a PR with more than 300 changed files cannot expose its
-complete diff to CodeQL, not an analyzer finding.
-
-Manual rehearsal `30431043860` passes all three release gates and all nine
-package jobs; manual dispatch correctly skips GitHub Release publication.
-Every downloaded package SHA-256 sidecar matches, all nine publish manifests
-agree on version/RID and contain 54 valid required-file entries, and manifests
-for repeated package formats of the same RID are identical. Direct content
-inspection covers both Windows zips, both debs, the rpm, both AppImages and
-both DMGs. Every package contains DownKyi, aria2, FFmpeg, ffprobe and Fluent
-runtime content, with no Config, Logs, Cache, Storage, Cookie, SQLite/database
-or user-data path. Remote Windows binary hashes also match the checked-in
-runtime catalog.
-
-The repository always uses the supported `AnalysisMode=All` value. The pre-fix baseline is 1,654 unique diagnostics across 71 CA rules; see `docs/analyzer-baseline.md` and `docs/analyzer-baseline.csv`. `CodeAnalysisTreatWarningsAsErrors=true` is the repository default. Every cleaned rule is also pinned to `error` in `.editorconfig`, preventing a future SDK severity change from reopening the baseline. The before/after inventory and retained exceptions are recorded in `docs/analyzer-cleanup-report.md`.
-
-Current analyzer result: zero unhandled CA diagnostics. All 77 cleaned rules are enforced as errors, and the full solution defaults to `CodeAnalysisTreatWarningsAsErrors=true`. Public fields were converted only after checking JSON names, Avalonia bindings, inheritance, and download lifecycle ownership. Indexable collections now use direct indexing without changing empty-list behavior, and property/JSON names use compile-time `nameof` where the wire value is identical. Executable-only application, UI, service, model, and helper types are internal; clean Release compilation verifies Avalonia XAML can still construct its backing types. Public NFO XML contracts remain in Core because `XmlSerializer` requires public root/member types; namespace, XML names, collections, and serialized shape are covered by round-trip tests. Raw Bilibili/aria2 addresses retain string storage and exact JSON keys; login QR and redirect consumers validate absolute `Uri` values at the boundary, while protocol-relative media addresses remain supported. Benchmark cases live in the public, non-sealed `DownKyi.BenchmarkCases` assembly because BenchmarkDotNet generates derived types through reflection; the runner remains internal and validation confirms a result row exists. Async commands use the protected can-execute raiser, dialogs complete typed results, and user-space tab payloads travel through `AppNavigationRequest.Parameter`. Diagnostic hashes use uppercase SHA-256 fragments, NFO booleans use lowercase literals, and FFmpeg cleanup failures use the shared injected logger without duplicate terminal output. JSON/XML/SQLite contracts, enum numeric values, ordinal protocol comparisons, and DURL `Order` identity are all guarded by tests.
+The repository uses `AnalysisMode=All` with
+`CodeAnalysisTreatWarningsAsErrors=true`. Current analyzer inventory and the
+approved cleanup record live in `docs/analyzer-baseline.csv`,
+`docs/analyzer-baseline.md` and `docs/analyzer-cleanup-report.md`.
 
 ## Download Persistence Policy
 
@@ -201,41 +84,25 @@ Current analyzer result: zero unhandled CA diagnostics. All 77 cleaned rules are
 - State transitions persist immediately and UI projection follows the committed event. High-rate live progress may be projected without a durable write for every sample; accepted persistence uses bounded/coalesced writes and shutdown recovery preserves the last durable resume state.
 - The SQLite native bundle is `SQLite3MC.PCLRaw.bundle`. Any update must pass `LegacySqlCipherCompatibilityTests` against the committed SQLCipher v4 fixture before merge.
 
-Gate 4 local result: strict `AnalysisMode=All` Release build completed with zero warnings, all 552 solution tests passed, format changed 0/750 files, `git diff --check` and the module-boundary audit passed, and NuGet reported no vulnerable or deprecated packages. Tests cover legal state transitions, optimistic conflicts, one-way projection, legacy NRBF/SQLite materialization, pause confirmation, retryable deletion, shutdown recovery, GID/partial-file/completed-key persistence, progress and output-size reopen, and the architecture allowlist for `DownloadTask.Restore`.
-
-PR 03-06 result: legacy GID, partial-file maps, completed asset keys, paused state, progress, task identity, and history survive reopen. Completion moves from active state to history in one transaction. The removed deprecated SQLCipher provider was replaced only after the current cross-platform provider opened the old encrypted fixture and rejected a wrong password. Release build, all tests, isolated App startup/close, Linux x64/arm64 and macOS x64/arm64 cross-RID builds, deprecated-package audit, and vulnerable-package audit passed locally.
-
 ## Download And Media Runtime Policy
 
 - Queue consumption uses a bounded Channel and fixed workers. Do not restore per-item task spawning or synchronous persistence callbacks.
 - New, resumed, and startup-restored work enters through `DownloadTaskQueueGateway` as `DownloadTaskId`. The unbounded admission channel isolates UI/startup callers from worker-channel capacity; only the internal dispatcher waits for bounded worker capacity. Runtime scheduling must never poll `ObservableCollection`.
+- New task admission is serialized by the singleton `DownloadTaskAdmissionService`. It selects one normalized base path against authoritative unfinished Domain tasks and current disk outputs, persists it before UI/queue publication, and uses case-insensitive comparison on Windows. Failed retryable tasks retain the reservation; canceled/completed/deleted tasks release active ownership.
 - Built-in and aria2 transfers share key, resume, integrity, and persistence behavior. Custom aria2 is a backend selection, not a copied workflow.
 - `DownloadArtifactWriter` owns cover, subtitle, danmaku, and NFO output. `DownloadTaskStateWriter` adapts runtime calls to typed Application commands; it cannot accept `DownloadingItem` or persist reconstructed UI state.
 - Pause first persists `Pausing`; built-in/aria2 backends preserve partial files and return a paused outcome; the worker confirms `Paused` only after transfer teardown. Process shutdown returns active `Downloading`/`Pausing` tasks to `Queued` without dropping GID, partial-file maps, completed keys, progress, output size, or optimistic version.
 - Explicit task deletion persists `Canceled`, stops the physical backend, removes generated media and `.aria2` / `.download` sidecars, then deletes the row. A cleanup failure leaves a retryable canceled record rather than pretending deletion succeeded.
 - Multi-segment DURL identity includes `DURL.Order`, input is sorted by that order, and concat never starts with stream copy.
 - FFmpeg operations use `FfmpegProcessRunner`, bounded concurrency, cancellation, timeout, captured stderr, and process-tree cleanup. Hardware encoding is attempted when available, with CPU fallback kept for success rate.
+- Download mux/concat writes a same-directory temporary output and refuses to overwrite an existing destination. Failure cleans only its temporary file and preserves both foreign destination content and valid source streams; toolbox transforms keep their explicitly separate overwrite contract.
+- FFmpeg mux failure returns typed invalid-input evidence. Only a source that a real fail-on-error decode rejects may have its completed transfer key, backend identity, file and sidecars revoked; process startup, timeout, permission, destination and other infrastructure failures preserve reusable source state.
 - A multi-segment output is complete only after ffprobe confirms a video stream, expected duration, and successful middle/tail seek decoding. Invalid partial output is deleted.
 - Bilibili requests use injected `IBilibiliApiClient` and `IBuvidProvider` ports backed by the Infrastructure `IHttpClientFactory` transport. Endpoint adapters are async; static client state, global configuration and synchronous HTTP compatibility paths are prohibited.
 - HTTP 401/403 and API schema rejection are non-retryable, 429 honors bounded `Retry-After`, cancellation is never retried, and empty/HTML/malformed responses fail visibly.
 
-Gate 5 result: strict `AnalysisMode=All` Release build completed with zero warnings, all 565 solution tests passed, format verification and `git diff --check` passed, the module-boundary audit completed, NuGet reported no vulnerable or deprecated packages, and the candidate-file Gitleaks scan reported zero findings. Tests cover direct admission, pre-start buffering, deduplication, 1/4/8 worker execution, per-task cancellation, startup recovery, shutdown recovery, and architecture-test isolation from ignored local tooling trees. PR #88 also passed the Windows/Linux/macOS quality matrix and CodeQL.
-
 Loopback cancellation tests must synchronize on the server receiving the first request before canceling. Fixed timeouts are not an acceptable substitute because a loaded Windows runner can cancel before socket acceptance and produce a false zero-request failure.
-
-Gate 6 stage-extraction result: `DownloadPipeline` is 125 physical lines and only sequences six typed stages; every extracted stage remains below 500 lines. Strict `AnalysisMode=All` Release build completed with zero warnings, all 574 solution tests passed, format verification and `git diff --check` passed, the module-boundary audit completed, NuGet reported no vulnerable or deprecated packages, and Gitleaks reported zero findings across 894 candidate files. Deterministic tests cover stage order, first-failure short circuit, operation-token forwarding, DURL/DASH format detection, stable DURL transfer keys, retained expected byte length, mux output selection, injected completion time, requested-output validation, path handling, and image URI handling. PR #89 passed two Windows/Linux/macOS quality and CodeQL rounds and was merged into the stacked release-hardening base as `e288913f`. It did not change JSON settings, SQLite rows, task IDs, GIDs, partial-file maps, completed transfer keys, or resume semantics.
-
-Gate 6 retry-policy local result: `DownloadTransferCoordinator` now owns one five-attempt budget across primary URLs, backups and one refreshed playback response. Built-in Downloader retries are disabled with `MaxTryAgainOnFailure=0`; each aria2 task receives `max-tries=1`, `retry-wait=0`, `always-resume=false` and `max-resume-failure-tries=0`, and each aria RPC client call makes one physical request. Backends return typed failures, cancellation propagates, disk failures stop immediately, 403 can refresh addresses once, invalid media rotates after corrupt artifacts are removed, and retryable failures retain partial/resume files. A rejected resume state removes only the affected output and sidecars before one same-address retry. aria2 error codes are classified by their documented failure semantics; an RPC error or empty envelope terminates that poll immediately, RPC-layer failure retains the latest GID, and terminal task failure or explicit task-not-found clears stale identity. Strict `AnalysisMode=All` Release build completed with zero warnings and all 615 solution tests passed. Format verification, `git diff --check`, the module-boundary audit, vulnerable/deprecated package audits and the 900-candidate Gitleaks scan are green. PR #90's implementation head passed Windows/Linux/macOS quality run `30187122186` and CodeQL run `30187122221`; its final documentation head must pass the same remote gates before integration.
-
 CodeQL uses explicit `manual` build mode so generated and build-resolved C# remains in the high-accuracy full database. `CODEQL_OVERLAY_DATABASE_MODE=none` disables the incompatible incremental overlay optimization; do not switch to buildless `none` mode only to remove an annotation, because that can omit generated code.
-
-Gate 8 result: `DownKyi` is a one-file bootstrap, `DownKyi.Desktop` owns App/UI/presentation/runtime, and Core contains no Avalonia, QRCoder, or XAML. Projection models live under `DownKyi.Presentation`; `DownloadListState` exposes standard read-only wrappers over owner-only mutable collections, while service-interface references to `DownKyi.ViewModels` and production references to the deleted custom collection are both zero. Strict `AnalysisMode=All` Release build completed with zero warnings and all 610 solution tests passed. Format verification changed 0/791 files, `git diff --check` passed, the module audit reported zero Core UI dependencies and zero presentation-bound contracts, NuGet reported no vulnerable or deprecated packages, and Gitleaks reported zero findings across 916 candidate files. Moving `ColorBrush.axaml` required updating its existing exact-path/exact-line false-positive allowlist; no directory-wide or secret-pattern exclusion was added. PR #92 passed Windows/Linux/macOS quality run `30191251004`, protobuf run `30191250997`, and CodeQL run `30191250992`, then merged into the stacked release-hardening base as `f8e78c9a`. The merge ref had zero open CodeQL alerts; GitHub's only annotation was its 300-file PR diff limit for this required 396-file ownership move.
-
-Gate 9 logging local result: Application owns diagnostic contracts and Infrastructure owns the private NLog 6.1.4 provider, bounded sink, redactor, recent buffer, retention and file-backed exporter; Core contains no logging implementation. A 400-record concurrent flush test first exposed whole-configuration loss, and the complete solution later exposed a final-entry disposal race that focused tests had missed. The final sink keeps its async wrapper alive, defers concurrent producers through a bounded barrier, and resets only `FileTarget` handles. Five focused logging rounds, ten complete Infrastructure rounds and all 616 solution tests passed. Strict `AnalysisMode=All` Release build had zero warnings/errors; format changed 0/800 files; module boundaries and vulnerable/deprecated package audits passed; Gitleaks found zero findings across 935 candidate files. The final same-machine 10,000-event benchmark wrote every event with zero drops; its slower flush, larger allocation and one slower producer run remain explicit non-gating evidence.
-
-Gate 9 aria RPC client local result: source history classifies `AriaClient` as hand-maintained DownKyi protocol code first added by commit `587fcfb`, not generated output or a separately synchronized package. The 1,119-line owner is now six responsibility partials between 65 and 333 lines, and the oversized production-file baseline is empty. A deterministic test invokes all 36 public RPC methods and fixes their JSON-RPC method name, ID and token-placement contracts. It exposed and fixed a pre-existing `ChangeUriAsync` defect that sent `aria2.changePosition` instead of `aria2.changeUri`. Strict `AnalysisMode=All` Release build completed with zero warnings/errors; all 713 tests passed across seven test projects; format changed 0/849 files; module boundaries, vulnerable/deprecated package audits and `git diff --check` passed; Gitleaks found zero findings across 985 candidate files. PR #111 implementation head passed Windows/Linux/macOS quality run `30424513258` and CodeQL run `30424513284`; all seven checks had zero annotations and each platform artifact contained seven distinct assembly-named TRX files. The final documentation head must pass the same gates before integration.
-
-PR 07-15 result: Release build completed with zero warnings, 161 tests passed including real FFmpeg/ffprobe seek validation and Host smoke without Prism global container state, format verification passed, and both vulnerable and deprecated package audits were clean. Cross-RID Release builds passed for Windows x86, Linux x64/arm64, and macOS x64/arm64. An isolated Windows process smoke created the main window, accepted close, and exited with code 0 without reading or writing real user data. Native Linux/macOS execution remains owned by their CI runners.
 
 ## Settings Persistence Policy
 
@@ -279,8 +146,6 @@ Logging changes must pass Infrastructure `ApplicationLogProviderTests`, includin
 - Download, history, and favorites lists must retain `VirtualizingStackPanel`; styling changes cannot trade large-list responsiveness for visual uniformity.
 - Theme changes require `UiThemeArchitectureTests`, real Host XAML smoke, and an isolated packaged-App startup on Windows. Native Linux/macOS construction remains enforced by the CI matrix.
 
-PR 30-32 validation: strict `AnalysisMode=All` Release build completed with zero warnings, all 468 tests passed, format verification changed 0/719 files, and vulnerable/deprecated package audits were empty. `actionlint` accepted the quality, system-baseline, and release workflows. The isolated Windows x64 quick system suite produced all shell, restore, SQLite, transfer, UI, CPU-FFmpeg, and NVENC scenarios with complete environment metadata. Real Windows x64 and x86 publishes passed version/binary/theme validation, created the main window from isolated data, and terminated their aria2 child after forced parent exit. GitHub Actions run `29636597704` then passed all native Windows/Linux/macOS release gates plus Windows x86/x64 ZIP, Linux x64/arm64 AppImage/deb/rpm, and macOS x64/arm64 DMG package jobs; manual execution correctly skipped release publication.
-
 ## Host Composition Policy
 
 - `src/DownKyi.Domain` is framework-free and owns typed result/error contracts.
@@ -291,8 +156,6 @@ PR 30-32 validation: strict `AnalysisMode=All` Release build completed with zero
 - There is one Microsoft DI container. Prism/DryIoc, service locator access, global App services, and a second composition root are forbidden.
 - Host-independent root XAML must not use `ViewModelLocator.AutoWireViewModel` or `RegionManager.RegionName`; production C# must not reference `ContainerLocator`.
 - Long-running operations create a linked scope from `ApplicationCancellation`; caller cancellation stays local, while Host stop cancels every linked operation.
-
-PR 25-29 local result: the real headless Host resolves `MainWindow`, loads complete root XAML, and resolves key ViewModels without loading a Prism runtime. All headless UI tests run on one dedicated Avalonia dispatcher so compositor ownership is deterministic across xUnit worker threads. Architecture tests reject root-view attached composition properties, direct `ContainerLocator` references, deferred video metadata that captures an operation token, and optional JSON envelopes initialized with fake payloads. Download shutdown recovery, settings migration, SQLite resume state, DURL seekability, image source fallback, current-token optional tag loading, endpoint-specific playback envelopes, runtime WBI key refresh, strict Release analysis, format, and all 440 solution tests pass on Windows. Native Linux/macOS execution remains owned by the CI matrix.
 
 ## WBI And API Contract Policy
 
@@ -339,6 +202,11 @@ Release packaging downloads aria2 and FFmpeg from the scripts in `script/`.
 
 - `script/aria2.ps1` and `script/aria2.sh` manage aria2 assets.
 - `script/ffmpeg.ps1` and `script/ffmpeg.sh` manage FFmpeg and ffprobe assets.
+- FFmpeg upstream discovery and project-owned immutable mirroring are owned by
+  `.github/workflows/update-ffmpeg-assets.yml`; see
+  `docs/operations/ffmpeg-asset-mirroring.md`. Production entries must be
+  fixed project-owned release URLs, never BtbN/yt-dlp/martin-riedl URLs or
+  `latest` aliases.
 - Windows and Linux packages prefer FFmpeg builds with hardware encoders. Windows x86 uses the pinned yt-dlp FFmpeg build because the former compact archive omitted ffprobe.
 - macOS packages prefer builds that expose VideoToolbox when available.
 - Every script resolves the manifest, download directory and binary output
@@ -370,7 +238,10 @@ Release packaging downloads aria2 and FFmpeg from the scripts in `script/`.
   `--stop-with-process` on every OS and also joins a kill-on-close Windows Job
   Object, so an abrupt App termination cannot leave a local child running.
   Custom remote aria2 endpoints are not started or terminated by this owner;
-  non-loopback RPC requires HTTPS and does not follow redirects.
+  non-loopback RPC requires HTTPS and does not follow redirects. Custom Aria is
+  compatible only with endpoints whose `aria2.getVersion().enabledFeatures`
+  includes `downkyi-secure-redirect-v2`; generic aria2 and Motrix remain
+  unsupported because they cannot prove the required redirect protection.
 - aria2 task headers are per-transfer. Cookie can be attached only to an exact
   HTTPS `bilibili.com` host or subdomain. The actual patched transfer engine
   rejects scheme downgrade and credential-bearing cross-origin redirects before
@@ -397,13 +268,17 @@ Before pushing a release tag:
 
 1. Confirm `version.txt` matches the planned tag.
 2. Manually dispatch `.github/workflows/build.yml` on the release commit and require all Windows, Linux, and macOS release-gate/package jobs to pass.
-3. Confirm each uploaded publish manifest contains non-empty DownKyi, aria2, FFmpeg, and ffprobe binaries with SHA-256 values and the expected application version.
-4. Run the quality commands from the dependency section and `git diff --check`.
-5. Review `README.md` and `CHANGELOG.md` for user-visible changes.
-6. Push `main`, then push the `v*` tag so the same workflow recreates the validated packages.
-7. Verify generated packages, per-package `.sha256` files, and publish manifests are attached to the release.
+3. For macOS without Apple credentials, require the final app bundle to use ad-hoc signing and pass `codesign --verify --deep --strict` before DMG creation. Record that the resulting DMG is not Developer ID signed, notarized, stapled, or Gatekeeper-trusted.
+4. When `MACOS_CERTIFICATE`, `MACOS_CERTIFICATE_PWD`, `APPLE_ID`, `TEAM_ID`, and `APP_SPECIFIC_PASSWORD` are available, additionally confirm macOS x64 and arm64 app notarization, stapling, Gatekeeper assessment, DMG signing, DMG verification, DMG notarization, and final DMG assessment before upload.
+5. Confirm each uploaded publish manifest contains non-empty DownKyi, aria2, FFmpeg, and ffprobe binaries with SHA-256 values and the expected application version.
+6. Run the quality commands from the dependency section and `git diff --check`.
+7. Review `README.md` and `CHANGELOG.md` for user-visible changes.
+8. Push `main`, then push the `v*` tag so the same workflow recreates the validated packages.
+9. Verify generated packages, per-package `.sha256` files, and publish manifests are attached to the release.
 
 `script/validate-publish-output.ps1` is the common package-content gate. It also rejects a runtime that drops the Fluent theme, restores the Simple theme, omits ffprobe, or publishes a mismatched assembly version. Do not replace it with a file-exists check in only one platform job.
+
+macOS signing is deliberately last-mile and inside-out: managed assemblies and Mach-O files in the app bundle are signed explicitly before the outer app. Non-code publish files are stored under `Contents/Resources` and linked from their host-expected relative paths; `Contents/MacOS` must not contain unsigned regular data files. `script/macos/package.sh` may create the app bundle, copy `Info.plist`, icon and publish output, and apply executable bits to aria2/FFmpeg. No content or permission step may run after `script/macos/sign.sh`; a later mutation invalidates the resource seal. The release workflow verifies and launches the exact app bundle from the completed DMG, not just an earlier signing command.
 
 ## Regression Checklist
 
