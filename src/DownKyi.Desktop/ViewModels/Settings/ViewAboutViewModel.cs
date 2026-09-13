@@ -152,7 +152,8 @@ internal class ViewAboutViewModel : ViewModelBase
                     AppDialog.NewVersionAvailable,
                     new Dictionary<string, object?>
                     {
-                        ["release"] = release
+                        ["release"] = release,
+                        ["enableSkipVersion"] = false
                     })).ConfigureAwait(true);
             }
             else

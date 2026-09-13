@@ -1,3 +1,5 @@
+using DownKyi.Core.Versioning;
+
 namespace DownKyi.Core.Settings;
 
 public sealed partial class SettingsManager
@@ -68,11 +70,13 @@ public sealed partial class SettingsManager
 
     public bool SetSkipVersionOnLaunch(string skipVersionOnLaunch)
     {
-        if (Version.TryParse(skipVersionOnLaunch, out var _))
+        if (SemanticVersionPolicy.TryNormalizeIdentity(
+                skipVersionOnLaunch,
+                out var normalizedVersion))
         {
             return SetProperty(
                 _appSettings.About.SkipVersionOnLaunch,
-                skipVersionOnLaunch,
+                normalizedVersion,
                 v => _appSettings.About.SkipVersionOnLaunch = v);
         }
 
@@ -81,9 +85,11 @@ public sealed partial class SettingsManager
 
     public string GetSkipVersionOnLaunch()
     {
-        if (Version.TryParse(_appSettings.About.SkipVersionOnLaunch, out var _))
+        if (SemanticVersionPolicy.TryNormalizeIdentity(
+                _appSettings.About.SkipVersionOnLaunch,
+                out var normalizedVersion))
         {
-            return _appSettings.About.SkipVersionOnLaunch;
+            return normalizedVersion;
         }
         return string.Empty;
     }
