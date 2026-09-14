@@ -93,15 +93,27 @@ public sealed class CentralTestRunnerCancellationComponentTests
     [Fact]
     public async Task CancellationMapsTo130OnlyAfterCleanupSuccess()
     {
-        using var cancellation = new CancellationTokenSource();
-        await cancellation.CancelAsync().ConfigureAwait(true);
-        var success = await Program.RunCommandAsync([], (_, token) =>
-            Task.FromCanceled<int>(token), cancellation.Token).ConfigureAwait(true);
-        var failure = await Program.RunCommandAsync([], (_, _) =>
-            Task.FromException<int>(new TimeoutException("cleanup failed")),
-            cancellation.Token).ConfigureAwait(true);
-        Assert.Equal(130, success);
-        Assert.Equal(2, failure);
+        var evidenceDirectory = Path.Combine(
+            Path.GetTempPath(), $"downkyi-command-failure-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(evidenceDirectory);
+        try
+        {
+            using var cancellation = new CancellationTokenSource();
+            await cancellation.CancelAsync().ConfigureAwait(true);
+            var success = await Program.RunCommandAsync([], (_, token) =>
+                Task.FromCanceled<int>(token), cancellation.Token).ConfigureAwait(true);
+            var failure = await Program.RunCommandAsync(
+                ["run-project", "--evidence-directory", evidenceDirectory], (_, _) =>
+                    Task.FromException<int>(new TimeoutException("cleanup failed")),
+                cancellation.Token).ConfigureAwait(true);
+            Assert.Equal(130, success);
+            Assert.Equal(2, failure);
+            Assert.Single(Directory.GetFiles(evidenceDirectory, "*.json"));
+        }
+        finally
+        {
+            Directory.Delete(evidenceDirectory, recursive: true);
+        }
     }
 
     private static async Task<int> ReadMarkerAsync(string path)

@@ -31,6 +31,12 @@
 repository state 的 runner。不要直接新增平行的 `dotnet test` / `vstest`
 repository entry。
 
+正式結果由 runner 的 exit code 與已驗證的 TRX 決定。正常成功不顯示摘要或
+stdout/stderr 尾段；失敗 evidence 先保存，最外層 `test-project.ps1` 或
+`test-solution.ps1` 在 runner 退出後才嘗試顯示其位置。顯示失敗不改寫
+exit code 或 evidence。PowerShell 的 `-EvidenceDirectory` 是每次執行的
+evidence 父目錄；每次呼叫使用獨立子目錄，以免把其他執行的檔案誤認為本次診斷。
+
 ## Lightweight Flight Recorder
 
 修改程序啟動、取消或清理前，先看

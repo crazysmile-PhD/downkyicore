@@ -18,7 +18,7 @@ function Build-DownKyiCentralTestRunner {
         $arguments += "--no-restore"
     }
 
-    & dotnet @arguments | Out-Host
+    & dotnet @arguments *> $null
     if ($LASTEXITCODE -ne 0) {
         throw "The compiled CentralTestRunner build failed with exit code $LASTEXITCODE."
     }
@@ -83,12 +83,25 @@ function Invoke-DownKyiTestProject {
     if (-not [string]::IsNullOrWhiteSpace($Filter)) {
         $arguments += @("--filter", $Filter)
     }
-    if (-not [string]::IsNullOrWhiteSpace($EvidenceDirectory)) {
-        $arguments += @("--evidence-directory", $EvidenceDirectory)
+    $evidenceRoot = if ([string]::IsNullOrWhiteSpace($EvidenceDirectory)) {
+        Join-Path $RepositoryRoot "artifacts/test-flight-recorder"
     }
+    else {
+        [IO.Path]::GetFullPath($EvidenceDirectory, $RepositoryRoot)
+    }
+    $runEvidenceDirectory = Join-Path $evidenceRoot ("run-" + [Guid]::NewGuid().ToString("N"))
+    $arguments += @("--evidence-directory", $runEvidenceDirectory)
 
-    & dotnet @arguments | Out-Host
+    & dotnet @arguments *> $null
     $runnerExitCode = $LASTEXITCODE
+    if ($runnerExitCode -eq 0 -and [IO.Directory]::Exists($runEvidenceDirectory)) {
+        try {
+            [IO.Directory]::Delete($runEvidenceDirectory)
+        }
+        catch {
+            # Keep a non-empty directory; the runner owns recorder deletion.
+        }
+    }
     $trxPath = if ([string]::IsNullOrWhiteSpace($ResultsDirectory)) {
         $null
     }
@@ -107,6 +120,7 @@ function Invoke-DownKyiTestProject {
         ExitCode = $runnerExitCode
         Runner = "central-test-runner"
         TrxPath = $trxPath
+        EvidenceDirectory = $runEvidenceDirectory
     }
 }
 
@@ -144,13 +158,28 @@ function Invoke-DownKyiTestSolution {
     if (-not [string]::IsNullOrWhiteSpace($ResultsDirectory)) {
         $arguments += @("--results-directory", $ResultsDirectory)
     }
-    if (-not [string]::IsNullOrWhiteSpace($EvidenceDirectory)) {
-        $arguments += @("--evidence-directory", $EvidenceDirectory)
+    $evidenceRoot = if ([string]::IsNullOrWhiteSpace($EvidenceDirectory)) {
+        Join-Path $RepositoryRoot "artifacts/test-flight-recorder"
     }
+    else {
+        [IO.Path]::GetFullPath($EvidenceDirectory, $RepositoryRoot)
+    }
+    $runEvidenceDirectory = Join-Path $evidenceRoot ("run-" + [Guid]::NewGuid().ToString("N"))
+    $arguments += @("--evidence-directory", $runEvidenceDirectory)
 
-    & dotnet @arguments | Out-Host
+    & dotnet @arguments *> $null
+    $runnerExitCode = $LASTEXITCODE
+    if ($runnerExitCode -eq 0 -and [IO.Directory]::Exists($runEvidenceDirectory)) {
+        try {
+            [IO.Directory]::Delete($runEvidenceDirectory)
+        }
+        catch {
+            # Keep a non-empty directory; the runner owns recorder deletion.
+        }
+    }
     return [pscustomobject]@{
-        ExitCode = $LASTEXITCODE
+        ExitCode = $runnerExitCode
         Runner = "central-test-runner"
+        EvidenceDirectory = $runEvidenceDirectory
     }
 }

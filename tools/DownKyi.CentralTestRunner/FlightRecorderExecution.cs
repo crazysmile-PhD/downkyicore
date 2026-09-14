@@ -173,11 +173,11 @@ internal static class FlightRecorderExecution
         string eventName,
         string detail)
     {
-        await result.Recorder.RecordAsync(
+        result.Recorder.SetPostExitFailure(detail);
+        result.Recorder.RecordInMemory(
             eventName,
             pid: result.RootPid,
-            detail: detail).ConfigureAwait(false);
-        await result.Recorder.CaptureFinalSnapshotOnceAsync().ConfigureAwait(false);
+            detail: detail);
         await result.Recorder.FinalizeFailureAsync(
             eventName,
             new TailBuffer(1),

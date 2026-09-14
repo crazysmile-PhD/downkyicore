@@ -59,14 +59,68 @@ public sealed class PowerShellTestEntryContractTests
                 }).ConfigureAwait(true);
 
             Assert.Equal(expectedExitCode, result.ExitCode);
-            Assert.Contains(
-                $"fake-runner-stdout:{expectedExitCode}",
-                result.StandardOutput,
-                StringComparison.Ordinal);
-            Assert.Contains(
-                $"fake-runner-stderr:{expectedExitCode}",
-                result.StandardError,
-                StringComparison.Ordinal);
+            Assert.Equal(string.Empty, result.StandardOutput);
+            if (expectedExitCode == 0)
+            {
+                Assert.Equal(string.Empty, result.StandardError);
+            }
+            else
+            {
+                Assert.Contains(
+                    $"CentralTestRunner exited {expectedExitCode}; evidence:",
+                    result.StandardError,
+                    StringComparison.Ordinal);
+                Assert.Contains("fake-failure.json", result.StandardError, StringComparison.Ordinal);
+                Assert.Single(result.StandardError.Split(
+                    ['\r', '\n'], StringSplitOptions.RemoveEmptyEntries));
+            }
+        }
+        finally
+        {
+            Directory.Delete(fixtureRoot, recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData("test-project.ps1")]
+    [InlineData("test-solution.ps1")]
+    public async Task FailedDiagnosticWriterCannotChangeCompletedRunnerExit(string scriptName)
+    {
+        var fixtureRoot = CreateTemporaryDirectory();
+        try
+        {
+            var scriptDirectory = Path.Combine(fixtureRoot, "script");
+            Directory.CreateDirectory(scriptDirectory);
+            File.Copy(
+                Path.Combine(RepositoryRoot, "script", scriptName),
+                Path.Combine(scriptDirectory, scriptName));
+            await File.WriteAllTextAsync(
+                Path.Combine(scriptDirectory, "test-project-runner.ps1"),
+                FakeInnerRunnerScript,
+                TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+            var arguments = new List<string>
+            {
+                "-NoLogo", "-NoProfile", "-NonInteractive",
+                "-File", Path.Combine(scriptDirectory, scriptName)
+            };
+            if (string.Equals(scriptName, "test-project.ps1", StringComparison.Ordinal))
+            {
+                arguments.Add("-ProjectPath");
+                arguments.Add("fixture.csproj");
+            }
+
+            var result = await RunPowerShellAsync(
+                arguments,
+                fixtureRoot,
+                new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["DOWNKYI_FAKE_EXIT_CODE"] = "37",
+                    ["DOWNKYI_THROW_DIAGNOSTIC"] = "1"
+                }).ConfigureAwait(true);
+
+            Assert.Equal(37, result.ExitCode);
+            Assert.True(File.Exists(Path.Combine(fixtureRoot, "fake-evidence", "fake-failure.json")));
         }
         finally
         {
@@ -108,8 +162,7 @@ public sealed class PowerShellTestEntryContractTests
                         return
                     }
 
-                    [Console]::Out.WriteLine("fake-dotnet-stdout:$env:DOWNKYI_FAKE_EXIT_CODE")
-                    [Console]::Error.WriteLine("fake-dotnet-stderr:$env:DOWNKYI_FAKE_EXIT_CODE")
+                    Write-Output "fake-dotnet-stdout:$env:DOWNKYI_FAKE_EXIT_CODE"
                     $global:LASTEXITCODE = [int]$env:DOWNKYI_FAKE_EXIT_CODE
                 }
 
@@ -143,6 +196,7 @@ public sealed class PowerShellTestEntryContractTests
 
             Assert.Equal(0, result.ExitCode);
             Assert.Contains("HOST-CONTINUED", result.StandardOutput, StringComparison.Ordinal);
+            Assert.DoesNotContain("fake-dotnet-stdout:", result.StandardOutput, StringComparison.Ordinal);
             var payloadLine = result.StandardOutput
                 .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
                 .Single(line => line.StartsWith("INNER-RESULT:", StringComparison.Ordinal));
@@ -165,22 +219,52 @@ public sealed class PowerShellTestEntryContractTests
     private const string FakeInnerRunnerScript = """
         function Invoke-DownKyiTestProject {
             $exitCode = [int]$env:DOWNKYI_FAKE_EXIT_CODE
-            [Console]::Out.WriteLine("fake-runner-stdout:$exitCode")
-            [Console]::Error.WriteLine("fake-runner-stderr:$exitCode")
+            $evidenceDirectory = Join-Path (Split-Path -Parent $PSScriptRoot) 'fake-evidence'
+            if ($exitCode -ne 0) {
+                New-Item -ItemType Directory -Path $evidenceDirectory -Force | Out-Null
+                Set-Content -LiteralPath (Join-Path $evidenceDirectory 'fake-failure.json') -Value '{}'
+            }
+            if ($env:DOWNKYI_THROW_DIAGNOSTIC -eq '1') {
+                Add-Type -TypeDefinition @'
+                public sealed class ThrowingDiagnosticWriter : System.IO.TextWriter {
+                    public override System.Text.Encoding Encoding => System.Text.Encoding.UTF8;
+                    public override void WriteLine(string value) {
+                        throw new System.IO.IOException("diagnostic writer failed");
+                    }
+                }
+        '@
+                [Console]::SetError([ThrowingDiagnosticWriter]::new())
+            }
             return [pscustomobject]@{
                 ExitCode = $exitCode
                 Runner = 'fake-runner'
                 TrxPath = $null
+                EvidenceDirectory = $evidenceDirectory
             }
         }
 
         function Invoke-DownKyiTestSolution {
             $exitCode = [int]$env:DOWNKYI_FAKE_EXIT_CODE
-            [Console]::Out.WriteLine("fake-runner-stdout:$exitCode")
-            [Console]::Error.WriteLine("fake-runner-stderr:$exitCode")
+            $evidenceDirectory = Join-Path (Split-Path -Parent $PSScriptRoot) 'fake-evidence'
+            if ($exitCode -ne 0) {
+                New-Item -ItemType Directory -Path $evidenceDirectory -Force | Out-Null
+                Set-Content -LiteralPath (Join-Path $evidenceDirectory 'fake-failure.json') -Value '{}'
+            }
+            if ($env:DOWNKYI_THROW_DIAGNOSTIC -eq '1') {
+                Add-Type -TypeDefinition @'
+                public sealed class ThrowingDiagnosticWriter : System.IO.TextWriter {
+                    public override System.Text.Encoding Encoding => System.Text.Encoding.UTF8;
+                    public override void WriteLine(string value) {
+                        throw new System.IO.IOException("diagnostic writer failed");
+                    }
+                }
+        '@
+                [Console]::SetError([ThrowingDiagnosticWriter]::new())
+            }
             return [pscustomobject]@{
                 ExitCode = $exitCode
                 Runner = 'fake-runner'
+                EvidenceDirectory = $evidenceDirectory
             }
         }
         """;

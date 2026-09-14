@@ -76,6 +76,42 @@ internal sealed class FlightRecorder
         return recorder;
     }
 
+    internal static Task PreserveCommandFailureAsync(
+        string evidenceDirectory,
+        string repositoryRoot,
+        string commandIdentity,
+        Exception primaryFailure)
+    {
+        Directory.CreateDirectory(evidenceDirectory);
+        var redactor = new SensitiveEvidenceRedactor(repositoryRoot);
+        var primary = primaryFailure is AggregateException { InnerExceptions.Count: > 0 } aggregate
+            ? aggregate.InnerExceptions[0] : primaryFailure;
+        var secondary = primaryFailure is AggregateException { InnerExceptions.Count: > 1 } failures
+            ? redactor.Redact(failures.InnerExceptions[1].Message) : null;
+        var failure = redactor.Redact(primary.Message);
+        var report = new RecorderReport
+        {
+            SliceIdentity = "runner-command",
+            TestIdentity = redactor.Redact(commandIdentity),
+            RecorderStartedAtUtc = DateTimeOffset.UtcNow,
+            Outcome = "command_failed",
+            PrimaryFailure = failure,
+            SecondaryCleanupFailure = secondary,
+            DiagnosticGuidance = DiagnosticGuidance,
+            Events =
+            [
+                new RecorderEvent
+                {
+                    TimestampUtc = DateTimeOffset.UtcNow,
+                    Event = "command_failed",
+                    Detail = failure
+                }
+            ]
+        };
+        var path = Path.Combine(evidenceDirectory, $"runner-command-{Guid.NewGuid():N}.json");
+        return File.WriteAllTextAsync(path, JsonSerializer.Serialize(report, JsonOptions));
+    }
+
     public void SetRootIdentity(int pid, DateTimeOffset startTimeUtc)
     {
         report.RootProcess = new RootProcessIdentity
@@ -105,6 +141,11 @@ internal sealed class FlightRecorder
     {
         report.PrimaryFailure = Redactor.Redact(primary.Message);
         report.SecondaryCleanupFailure = Redactor.Redact(secondary.Message);
+    }
+
+    internal void SetPostExitFailure(string failure)
+    {
+        report.PrimaryFailure ??= Redactor.Redact(failure);
     }
 
     public async Task RecordAsync(

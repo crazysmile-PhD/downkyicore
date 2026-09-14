@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.IO.Pipes;
 using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
@@ -202,6 +203,8 @@ internal static class Program
             .ConfigureAwait(false);
     }
 
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types",
+        Justification = "The command boundary records any primary failure before returning its formal exit code.")]
     internal static async Task<int> RunCommandAsync(
         string[] args,
         Func<string[], CancellationToken, Task<int>> runCommandAsync,
@@ -211,27 +214,46 @@ internal static class Program
         {
             return await runCommandAsync(args, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            await WriteDiagnosticBestEffortAsync(exception.Message).ConfigureAwait(false);
-            return 2;
-        }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             return 130;
         }
+        catch (Exception exception)
+        {
+            try
+            {
+                var repositoryRoot = Path.GetFullPath(
+                    FindOption(args, "--repository-root") ?? Directory.GetCurrentDirectory());
+                var evidenceDirectory = Path.GetFullPath(
+                    FindOption(args, "--evidence-directory") ??
+                    Path.Combine(repositoryRoot, "artifacts", "test-flight-recorder"),
+                    repositoryRoot);
+                await FlightRecorder.PreserveCommandFailureAsync(
+                    evidenceDirectory,
+                    repositoryRoot,
+                    args.FirstOrDefault() ?? "unknown",
+                    exception).ConfigureAwait(false);
+            }
+            catch (Exception evidenceException) when (evidenceException is not OperationCanceledException)
+            {
+                // A broken evidence destination cannot change the primary command failure.
+            }
+
+            return 2;
+        }
     }
 
-    internal static async Task WriteDiagnosticBestEffortAsync(string message)
+    private static string? FindOption(string[] args, string option)
     {
-        try
+        for (var index = args.Length - 2; index >= 0; index--)
         {
-            await Console.Error.WriteLineAsync(message).ConfigureAwait(false);
+            if (string.Equals(args[index], option, StringComparison.Ordinal))
+            {
+                return args[index + 1];
+            }
         }
-        catch (Exception exception) when (exception is IOException or ObjectDisposedException)
-        {
-            // The recorder artifact remains the durable diagnostic source.
-        }
+
+        return null;
     }
 
     private static class NativeMethods
