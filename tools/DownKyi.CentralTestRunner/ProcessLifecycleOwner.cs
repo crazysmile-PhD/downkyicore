@@ -904,19 +904,25 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
         throw deadlineFailure;
     }
 
-    private async Task WaitForCgroupStoppedAsync(CleanupDeadline deadline)
+    internal async Task WaitForCgroupStoppedAsync(
+        CleanupDeadline deadline,
+        Func<bool>? isQuiescent = null,
+        Func<CleanupDeadline, string?>? readLiveEvidence = null)
     {
+        isQuiescent ??= cgroup!.IsQuiescent;
+        readLiveEvidence ??= cgroup!.ReadLiveEvidence;
         string? lastLive = null;
         while (deadline.WorkWindow > TimeSpan.Zero)
         {
             try
             {
-                if (cgroup!.IsQuiescent())
+                if (isQuiescent())
                 {
                     return;
                 }
 
-                lastLive = cgroup.ReadLiveEvidence(deadline) ?? "populated=1";
+                lastLive = "populated=1";
+                lastLive = readLiveEvidence(deadline) ?? lastLive;
             }
             catch (Exception exception) when (lastLive is not null)
             {
@@ -939,20 +945,42 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
         throw deadlineFailure;
     }
 
-    private async Task WaitForWindowsJobStoppedAsync(CleanupDeadline deadline)
+    internal async Task WaitForWindowsJobStoppedAsync(
+        CleanupDeadline deadline, Func<uint>? activeProcessCount = null)
     {
+        activeProcessCount ??= () => GetWindowsJobActiveProcessCount(job!);
+        uint? lastActiveCount = null;
         while (deadline.WorkWindow > TimeSpan.Zero)
         {
-            if (GetWindowsJobActiveProcessCount(job!) == 0)
+            try
             {
-                return;
+                var activeCount = activeProcessCount();
+                if (activeCount == 0)
+                {
+                    return;
+                }
+
+                lastActiveCount = activeCount;
+            }
+            catch (Exception exception) when (lastActiveCount is not null)
+            {
+                LiveEvidence = $"active processes={lastActiveCount}";
+                var liveFailure = new TimeoutException(
+                    $"Owned Windows Job could not be confirmed stopped; last observed {LiveEvidence}.");
+                RecordCleanupFailure(liveFailure);
+                RecordSecondaryFailure(exception);
+                throw new AggregateException(liveFailure, exception);
             }
 
             await Task.Delay(TimeSpan.FromTicks(Math.Min(
                 TimeSpan.FromMilliseconds(10).Ticks, deadline.WorkWindow.Ticks))).ConfigureAwait(false);
         }
 
-        throw new TimeoutException("The owned Windows Job remained active at the cleanup deadline.");
+        LiveEvidence = lastActiveCount is null ? null : $"active processes={lastActiveCount}";
+        var deadlineFailure = new TimeoutException(
+            $"The owned Windows Job remained active at the cleanup deadline; last observed {LiveEvidence}.");
+        RecordCleanupFailure(deadlineFailure);
+        throw deadlineFailure;
     }
 
     public async ValueTask DisposeAsync()

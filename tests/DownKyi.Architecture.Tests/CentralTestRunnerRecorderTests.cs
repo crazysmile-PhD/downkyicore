@@ -447,6 +447,63 @@ public sealed class CentralTestRunnerRecorderTests
     }
 
     [Fact]
+    public async Task PopulatedCgroupEvidenceSurvivesDetailInspectorFailure()
+    {
+        var owner = await ProcessLifecycleOwner.StartAsync(
+            CreateFixtureStartInfo("fixture-hold"), TimeSpan.FromSeconds(5)).ConfigureAwait(true);
+        await using var ownerDisposal = owner.ConfigureAwait(true);
+        var failure = await Record.ExceptionAsync(() => owner.WaitForCgroupStoppedAsync(
+            owner.BeginCleanup(), () => false,
+            _ => throw new OperationCanceledException("cgroup detail inspector failed")))
+            .ConfigureAwait(true);
+        var aggregate = Assert.IsType<AggregateException>(failure);
+        Assert.Contains("populated=1", aggregate.InnerExceptions[0].Message,
+            StringComparison.Ordinal);
+        Assert.IsType<OperationCanceledException>(aggregate.InnerExceptions[1]);
+
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync().ConfigureAwait(true);
+        var outcome = await owner.CompleteAsync(TimeSpan.FromSeconds(10), cancellation.Token)
+            .ConfigureAwait(true);
+        Assert.False(outcome.CleanupSucceeded);
+        Assert.Equal("populated=1", outcome.LiveEvidence);
+        Assert.Contains("populated=1", outcome.PrimaryFailure?.Message,
+            StringComparison.Ordinal);
+        Assert.IsType<OperationCanceledException>(outcome.SecondaryCleanupFailure);
+        Assert.True(outcome.HostExited);
+    }
+
+    [Fact]
+    public async Task ActiveWindowsJobEvidenceSurvivesLaterInspectorFailure()
+    {
+        var owner = await ProcessLifecycleOwner.StartAsync(
+            CreateFixtureStartInfo("fixture-hold"), TimeSpan.FromSeconds(5)).ConfigureAwait(true);
+        await using var ownerDisposal = owner.ConfigureAwait(true);
+        var observations = 0;
+        var failure = await Record.ExceptionAsync(() => owner.WaitForWindowsJobStoppedAsync(
+            owner.BeginCleanup(), () => ++observations == 1
+                ? 1u
+                : throw new OperationCanceledException("Job inspection failed")))
+            .ConfigureAwait(true);
+        var aggregate = Assert.IsType<AggregateException>(failure);
+        Assert.Equal(2, observations);
+        Assert.Contains("active processes=1", aggregate.InnerExceptions[0].Message,
+            StringComparison.Ordinal);
+        Assert.IsType<OperationCanceledException>(aggregate.InnerExceptions[1]);
+
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync().ConfigureAwait(true);
+        var outcome = await owner.CompleteAsync(TimeSpan.FromSeconds(10), cancellation.Token)
+            .ConfigureAwait(true);
+        Assert.False(outcome.CleanupSucceeded);
+        Assert.Equal("active processes=1", outcome.LiveEvidence);
+        Assert.Contains("active processes=1", outcome.PrimaryFailure?.Message,
+            StringComparison.Ordinal);
+        Assert.IsType<OperationCanceledException>(outcome.SecondaryCleanupFailure);
+        Assert.True(outcome.HostExited);
+    }
+
+    [Fact]
     public async Task UnexpectedDiagnosticFailureStillJoinsAndReapsOwner()
     {
         var evidenceDirectory = CreateEvidenceDirectory();

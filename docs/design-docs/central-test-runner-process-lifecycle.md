@@ -71,3 +71,7 @@
 遷移驗收時，同時檢查 build 與測試啟動路徑：呼叫端不得保留獨立的 stop／drain
 決定，`Dispose` 不得形成較短的清理路徑，diagnostic capture 不得延誤必要清理。
 這些是每次修改都要維持的審查條件。
+
+已知界限：Windows 失敗 recorder 的 Toolhelp 程序關係快照仍是同步呼叫；
+它在 owner 清理完成後執行，但無法由 `SnapshotWindow` 強制中斷，故失敗命令的
+診斷階段目前沒有硬返回期限。此觀察不參與 ownership，後續處理見 issue #269。
