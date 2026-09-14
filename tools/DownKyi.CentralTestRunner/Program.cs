@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.IO.Pipes;
 using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
 
@@ -62,6 +63,20 @@ internal static class Program
         if (args.Length > 0 && string.Equals(args[0], "fixture-pass", StringComparison.Ordinal))
         {
             Console.WriteLine($"fixture-pass pid={Environment.ProcessId}");
+            await Console.Error.WriteLineAsync("fixture-pass stderr").ConfigureAwait(false);
+            return 0;
+        }
+
+        if (args.Length > 1 && string.Equals(args[0], "fixture-gated-stdout", StringComparison.Ordinal))
+        {
+            using var gate = new NamedPipeClientStream(".", args[1],
+                PipeDirection.In, PipeOptions.Asynchronous);
+            await gate.ConnectAsync().ConfigureAwait(false);
+            var signal = new byte[1];
+            await gate.ReadExactlyAsync(signal).ConfigureAwait(false);
+            await Console.Out.WriteLineAsync("relay-fault-trigger").ConfigureAwait(false);
+            await Console.Out.FlushAsync().ConfigureAwait(false);
+            await Task.Delay(Timeout.InfiniteTimeSpan).ConfigureAwait(false);
             return 0;
         }
 

@@ -62,6 +62,7 @@ internal static class FlightRecorderExecution
                                               System.ComponentModel.Win32Exception)
             {
                 identityFailure = exception;
+                owner.RecordObservedFailure(exception);
                 recorder.RecordInMemory("root_identity_failed", pid: rootPid,
                     detail: exception.Message);
             }
@@ -96,7 +97,8 @@ internal static class FlightRecorderExecution
             recorder.SetOutputTails(standardOutput.Value, standardError.Value);
             if (exitCode != 0)
             {
-                var reportOutcome = identityFailure is not null
+                var reportOutcome = identityFailure is not null &&
+                    ReferenceEquals(outcome.PrimaryFailure, identityFailure)
                     ? "root_identity_failed"
                     : !outcome.CleanupSucceeded
                         ? outcome.OutputHeld ? "stream_drain_failed" : "cleanup_failed"

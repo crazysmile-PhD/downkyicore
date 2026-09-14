@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.IO.Pipes;
+using System.Reflection;
 using System.Text.Json;
 using DownKyi.CentralTestRunner;
 
@@ -167,8 +169,132 @@ public sealed class CentralTestRunnerRecorderTests
         Assert.Equal(ProcessLifecycleTrigger.Cancelled, outcome.Trigger);
         Assert.True(outcome.CleanupSucceeded);
         Assert.True(owner.OutputCaptureTasksTerminal);
+        Assert.True(owner.OwnedTasksTerminal);
         Assert.True(outcome.HostExited);
         Assert.Same(completion, owner.CompleteAsync(TimeSpan.FromSeconds(10), cancellation.Token));
+    }
+
+    [Fact]
+    public async Task TimedOutOwnerReturnsOnlyAfterOutputReadsAndHostReap()
+    {
+        var owner = await ProcessLifecycleOwner.StartAsync(
+            CreateFixtureStartInfo("fixture-stderr-hold"),
+            TimeSpan.FromSeconds(5)).ConfigureAwait(true);
+        await using var ownerDisposal = owner.ConfigureAwait(true);
+        owner.StartOutputCapture(
+            new TailBuffer(8192), new TailBuffer(8192), new SensitiveEvidenceRedactor(""));
+
+        var outcome = await owner.CompleteAsync(TimeSpan.Zero, CancellationToken.None)
+            .ConfigureAwait(true);
+
+        Assert.Equal(ProcessLifecycleTrigger.TimedOut, outcome.Trigger);
+        Assert.True(outcome.CleanupSucceeded);
+        Assert.True(outcome.HostExited);
+        Assert.True(owner.OwnedTasksTerminal);
+    }
+
+    [Fact]
+    public async Task UnixHostKeepsGroupIdentityUntilPipeHoldingDescendantIsStopped()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var directory = CreateEvidenceDirectory();
+        var marker = Path.Combine(directory, "pipe-holder.pid");
+        var runtimeConfig = Path.Combine(
+            AppContext.BaseDirectory, "DownKyi.Architecture.Tests.runtimeconfig.json");
+        int? descendantPid = null;
+        try
+        {
+            var owner = await ProcessLifecycleOwner.StartAsync(
+                CreateFixtureStartInfo("fixture-exit-with-pipe-holder", runtimeConfig, marker),
+                TimeSpan.FromSeconds(5), cleanupWindow: TimeSpan.FromSeconds(3)).ConfigureAwait(true);
+            await using var ownerDisposal = owner.ConfigureAwait(true);
+            owner.StartOutputCapture(
+                new TailBuffer(8192), new TailBuffer(8192), new SensitiveEvidenceRedactor(""));
+            var observedHeldOutput = false;
+            var hostLiveWhileOutputHeld = false;
+            var outcome = await owner.CompleteAsync(
+                TimeSpan.FromSeconds(5), CancellationToken.None,
+                onPhase: phase =>
+                {
+                    if (phase == "post_exit_output_held")
+                    {
+                        observedHeldOutput = true;
+                        hostLiveWhileOutputHeld = !owner.Host.HasExited;
+                    }
+                }).ConfigureAwait(true);
+
+            descendantPid = int.Parse(await File.ReadAllTextAsync(
+                marker, TestContext.Current.CancellationToken).ConfigureAwait(true),
+                CultureInfo.InvariantCulture);
+            Assert.True(observedHeldOutput);
+            Assert.True(hostLiveWhileOutputHeld);
+            Assert.True(outcome.OutputHeld);
+            Assert.False(outcome.CleanupSucceeded);
+            Assert.True(outcome.HostExited);
+            Assert.True(owner.OutputCaptureTasksTerminal);
+            Assert.True(owner.OwnedTasksTerminal);
+            Assert.False(IsProcessAlive(descendantPid.Value));
+        }
+        finally
+        {
+            if (descendantPid is { } pid)
+            {
+                StopFixtureProcessIfAlive(pid);
+            }
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task UnixRelayFailureBeforeRootExitCannotBecomeCancellationSuccess()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var gateName = Guid.NewGuid().ToString("N");
+        using var gate = new NamedPipeServerStream(gateName, PipeDirection.Out,
+            1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+        var owner = await ProcessLifecycleOwner.StartAsync(
+            CreateFixtureStartInfo("fixture-gated-stdout", gateName),
+            TimeSpan.FromSeconds(5)).ConfigureAwait(true);
+        await using var ownerDisposal = owner.ConfigureAwait(true);
+        await gate.WaitForConnectionAsync(TestContext.Current.CancellationToken)
+            .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
+
+        // Disconnect the owner-side relay channel before allowing the root to
+        // write. The host must report its copy failure while the root is live.
+        var readerField = typeof(ProcessLifecycleOwner).GetField(
+            "standardOutputReader", BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(readerField);
+        Assert.IsType<StreamReader>(readerField.GetValue(owner)).Dispose();
+        await gate.WriteAsync(new byte[] { 1 }, TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
+        await gate.FlushAsync(TestContext.Current.CancellationToken).ConfigureAwait(true);
+        Assert.True(SpinWait.SpinUntil(
+            () => owner.PrimaryFailure is IOException,
+            TimeSpan.FromSeconds(5)), "The live root's relay failure was not reported.");
+        var laterIdentityFailure = new InvalidOperationException("identity failed after relay");
+        owner.RecordObservedFailure(laterIdentityFailure);
+
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync().ConfigureAwait(true);
+        var outcome = await owner.CompleteAsync(TimeSpan.FromSeconds(5), cancellation.Token)
+            .WaitAsync(TimeSpan.FromSeconds(8), TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
+        Assert.Equal(ProcessLifecycleTrigger.Cancelled, outcome.Trigger);
+        Assert.False(outcome.CleanupSucceeded);
+        Assert.Contains("output relay failed", outcome.PrimaryFailure?.Message,
+            StringComparison.Ordinal);
+        Assert.Same(laterIdentityFailure, outcome.SecondaryCleanupFailure);
+        Assert.True(outcome.HostExited);
+        Assert.True(owner.OwnedTasksTerminal);
     }
 
     [Fact]
@@ -607,6 +733,12 @@ public sealed class CentralTestRunnerRecorderTests
                 CancellationToken.None);
 
             Assert.Equal(0, result.ExitCode);
+            Assert.True(result.LifecycleOutcome?.CleanupSucceeded);
+            Assert.True(result.LifecycleOutcome?.HostExited);
+            Assert.Contains("fixture-pass pid=", result.Recorder.StdoutTail,
+                StringComparison.Ordinal);
+            Assert.Contains("fixture-pass stderr", result.Recorder.StderrTail,
+                StringComparison.Ordinal);
             await FlightRecorderExecution.DiscardAsync(result);
             Assert.Empty(Directory.EnumerateFiles(evidenceDirectory));
         }

@@ -27,8 +27,8 @@ internal sealed record ProcessLifecycleOutcome(
     string? LiveEvidence,
     Exception? SecondaryCleanupFailure);
 
-// One invocation owns one kernel containment. The host enters it before launch,
-// and stays alive as the process-group anchor until cleanup releases it.
+// One invocation owns one kernel containment. The host enters it before launch;
+// on Unix, the host stays live until group cleanup and then the owner reaps it.
 internal sealed class ProcessLifecycleOwner : IAsyncDisposable
 {
     private const int SigKill = 9;
@@ -37,6 +37,13 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
     private readonly LinuxCgroupContainment? cgroup;
     private readonly NamedPipeServerStream control;
     private readonly StreamReader controlReader;
+    private readonly Task controlReadTask;
+    private readonly TaskCompletionSource<int?> rootExitReport =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource<bool?> outputRelayReport =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly StreamReader? standardOutputReader;
+    private readonly StreamReader? standardErrorReader;
     private readonly TimeSpan cleanupWindow;
     private CleanupDeadline? cleanupDeadline;
     private CancellationTokenSource? outputCancellation;
@@ -44,17 +51,24 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
     private Task? errorTask;
     private bool rootExitRead;
     private Task<ProcessLifecycleOutcome>? completionTask;
+    private Exception? primaryFailure;
+    private readonly object secondaryFailureGate = new();
     private bool disposed;
 
     private ProcessLifecycleOwner(Process host, SafeFileHandle? job,
         LinuxCgroupContainment? cgroup, NamedPipeServerStream control,
-        StreamReader controlReader, ScopeHandshake handshake, TimeSpan cleanupWindow)
+        StreamReader controlReader, ScopeHandshake handshake, TimeSpan cleanupWindow,
+        StreamReader? standardOutputReader = null, StreamReader? standardErrorReader = null,
+        bool observeControl = true)
     {
         Host = host;
         this.job = job;
         this.cgroup = cgroup;
         this.control = control;
         this.controlReader = controlReader;
+        controlReadTask = observeControl ? ReadControlAsync() : Task.CompletedTask;
+        this.standardOutputReader = standardOutputReader;
+        this.standardErrorReader = standardErrorReader;
         this.cleanupWindow = cleanupWindow;
         RootPid = handshake.Pid;
         RootStartTimeUtc = handshake.StartTimeUtc;
@@ -69,24 +83,30 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
     internal CleanupDeadline BeginCleanup() => cleanupDeadline ??= new CleanupDeadline(cleanupWindow);
     internal bool OutputCaptureTasksTerminal =>
         outputTask?.IsCompleted == true && errorTask?.IsCompleted == true;
-    internal Exception? PrimaryFailure { get; private set; }
+    internal bool OwnedTasksTerminal => controlReadTask.IsCompleted &&
+        (outputTask is null || outputTask.IsCompleted) &&
+        (errorTask is null || errorTask.IsCompleted);
+    internal Exception? PrimaryFailure => Volatile.Read(ref primaryFailure);
     internal string? LiveEvidence { get; private set; }
     internal Exception? SecondaryCleanupFailure { get; private set; }
-    private void RecordPrimaryFailure(Exception failure) => PrimaryFailure ??= failure;
+    private void RecordPrimaryFailure(Exception failure) =>
+        Interlocked.CompareExchange(ref primaryFailure, failure, null);
+    internal void RecordObservedFailure(Exception failure) => RecordCleanupFailure(failure);
 
     internal void StartOutputCapture(
         TailBuffer standardOutput, TailBuffer standardError, SensitiveEvidenceRedactor redactor)
     {
-        if (!Host.StartInfo.RedirectStandardOutput || outputCancellation is not null)
+        if ((standardOutputReader is null && !Host.StartInfo.RedirectStandardOutput) ||
+            outputCancellation is not null)
         {
             throw new InvalidOperationException("Output capture is unavailable or already started.");
         }
 
         outputCancellation = new CancellationTokenSource();
         outputTask = BoundedOutputCapture.CaptureAsync(
-            Host.StandardOutput, standardOutput, redactor, outputCancellation.Token);
+            standardOutputReader ?? Host.StandardOutput, standardOutput, redactor, outputCancellation.Token);
         errorTask = BoundedOutputCapture.CaptureAsync(
-            Host.StandardError, standardError, redactor, outputCancellation.Token);
+            standardErrorReader ?? Host.StandardError, standardError, redactor, outputCancellation.Token);
     }
 
     private async Task<bool> WaitForOutputWithinAsync(TimeSpan window)
@@ -100,13 +120,13 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
         catch (TimeoutException)
         {
             // The drain remains registered with this owner and is joined later.
-            PrimaryFailure ??= new TimeoutException(
-                "An owned descendant held the output pipe after the root exited.");
+            RecordPrimaryFailure(new TimeoutException(
+                "An owned descendant held the output pipe after the root exited."));
             return false;
         }
         catch (Exception exception)
         {
-            PrimaryFailure ??= exception;
+            RecordPrimaryFailure(exception);
             throw;
         }
     }
@@ -127,9 +147,9 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
                 "Owned output capture exceeded the cleanup deadline."));
             try { await outputCancellation!.CancelAsync().ConfigureAwait(false); }
             catch (Exception exception) { RecordCleanupFailure(exception); }
-            try { Host.StandardOutput.Dispose(); }
+            try { (standardOutputReader ?? Host.StandardOutput).Dispose(); }
             catch (Exception exception) { RecordCleanupFailure(exception); }
-            try { Host.StandardError.Dispose(); }
+            try { (standardErrorReader ?? Host.StandardError).Dispose(); }
             catch (Exception exception) { RecordCleanupFailure(exception); }
             // A deadline failure does not transfer ownership of these tasks.
             // Both pipe reads must be terminal before this owner can return.
@@ -139,7 +159,7 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
         }
         catch (Exception exception)
         {
-            PrimaryFailure ??= exception;
+            RecordPrimaryFailure(exception);
             throw;
         }
     }
@@ -157,7 +177,7 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
         }
         catch (Exception exception)
         {
-            PrimaryFailure ??= exception;
+            RecordPrimaryFailure(exception);
             throw;
         }
     }
@@ -176,18 +196,32 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
     {
         // Unix named pipes include the temporary directory in a short socket path.
         var pipeName = Guid.NewGuid().ToString("N");
+        var unixOutputRelay = redirectOutput && !OperatingSystem.IsWindows();
+        var outputPipeName = unixOutputRelay ? Guid.NewGuid().ToString("N") : null;
+        var errorPipeName = unixOutputRelay ? Guid.NewGuid().ToString("N") : null;
         NamedPipeServerStream? control = null;
+        NamedPipeServerStream? outputPipe = null;
+        NamedPipeServerStream? errorPipe = null;
         var jobName = OperatingSystem.IsWindows() ? $"Local\\downkyi-test-{Guid.NewGuid():N}" : null;
         SafeFileHandle? job = null;
         LinuxCgroupContainment? cgroup = null;
         Process? host = null;
         StreamReader? reader = null;
+        StreamReader? outputReader = null;
+        StreamReader? errorReader = null;
         var containmentReady = false;
         using var startupCancellation = new CancellationTokenSource(startupWindow);
         try
         {
             control = new NamedPipeServerStream(
                 pipeName, PipeDirection.In, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+            if (unixOutputRelay)
+            {
+                outputPipe = new NamedPipeServerStream(outputPipeName!, PipeDirection.In,
+                    1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+                errorPipe = new NamedPipeServerStream(errorPipeName!, PipeDirection.In,
+                    1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+            }
             if (jobName is not null)
             {
                 job = CreateWindowsJob(jobName);
@@ -197,8 +231,8 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
             {
                 UseShellExecute = false,
                 RedirectStandardInput = true,
-                RedirectStandardOutput = redirectOutput,
-                RedirectStandardError = redirectOutput,
+                RedirectStandardOutput = redirectOutput && !unixOutputRelay,
+                RedirectStandardError = redirectOutput && !unixOutputRelay,
                 CreateNoWindow = true
             };
             hostInfo.ArgumentList.Add(typeof(Program).Assembly.Location);
@@ -229,9 +263,19 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
                 testStartInfo.FileName,
                 [.. testStartInfo.ArgumentList],
                 testStartInfo.WorkingDirectory,
-                new Dictionary<string, string?>(testStartInfo.Environment));
+                new Dictionary<string, string?>(testStartInfo.Environment),
+                outputPipeName, errorPipeName);
             await host.StandardInput.WriteLineAsync(
                 JsonSerializer.Serialize(launch).AsMemory(), startupCancellation.Token).ConfigureAwait(false);
+            if (unixOutputRelay)
+            {
+                await outputPipe!.WaitForConnectionAsync(startupCancellation.Token).ConfigureAwait(false);
+                outputReader = new StreamReader(outputPipe);
+                outputPipe = null;
+                await errorPipe!.WaitForConnectionAsync(startupCancellation.Token).ConfigureAwait(false);
+                errorReader = new StreamReader(errorPipe);
+                errorPipe = null;
+            }
             var line = await reader.ReadLineAsync(startupCancellation.Token).ConfigureAwait(false);
             var handshake = line is null ? null : JsonSerializer.Deserialize<ScopeHandshake>(line);
             if (handshake is null || handshake.Error is not null || handshake.Pid <= 0)
@@ -240,12 +284,14 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
             }
 
             var scope = new ProcessLifecycleOwner(host, job, cgroup, control, reader, handshake,
-                cleanupWindow ?? startupWindow);
+                cleanupWindow ?? startupWindow, outputReader, errorReader);
             host = null;
             job = null;
             cgroup = null;
             reader = null;
             control = null;
+            outputReader = null;
+            errorReader = null;
             return scope;
         }
         catch (Exception launchFailure)
@@ -259,12 +305,15 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
                     // can kill, verify quiescence and reap even without a root handshake.
                     await using var recovery = new ProcessLifecycleOwner(
                         host, job, cgroup, control, reader,
-                        new ScopeHandshake(0, default, null), cleanupWindow ?? startupWindow);
+                        new ScopeHandshake(0, default, null), cleanupWindow ?? startupWindow,
+                        outputReader, errorReader, observeControl: false);
                     host = null;
                     job = null;
                     cgroup = null;
                     reader = null;
                     control = null;
+                    outputReader = null;
+                    errorReader = null;
                     var recoveryOutcome = await recovery.CompleteAsync(
                         TimeSpan.Zero, CancellationToken.None,
                         initialFailure: launchFailure).ConfigureAwait(false);
@@ -316,10 +365,85 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
             {
                 reader.Dispose();
             }
+            outputReader?.Dispose();
+            errorReader?.Dispose();
             if (control is not null)
             {
                 await control.DisposeAsync().ConfigureAwait(false);
             }
+            if (outputPipe is not null)
+            {
+                await outputPipe.DisposeAsync().ConfigureAwait(false);
+            }
+            if (errorPipe is not null)
+            {
+                await errorPipe.DisposeAsync().ConfigureAwait(false);
+            }
+        }
+    }
+
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types",
+        Justification = "The control reader must complete both reports and remain joined by the owner after any pipe failure.")]
+    private async Task ReadControlAsync()
+    {
+        try
+        {
+            string? line;
+            while ((line = await controlReader.ReadLineAsync().ConfigureAwait(false)) is not null)
+            {
+                if (int.TryParse(line, NumberStyles.Integer, CultureInfo.InvariantCulture,
+                    out var exitCode))
+                {
+                    rootExitReport.TrySetResult(exitCode);
+                }
+                else if (string.Equals(line, "output_complete", StringComparison.Ordinal))
+                {
+                    outputRelayReport.TrySetResult(true);
+                }
+                else if (string.Equals(line, "output_failed", StringComparison.Ordinal))
+                {
+                    RecordCleanupFailure(new IOException("The ownership host output relay failed."));
+                    outputRelayReport.TrySetResult(false);
+                    rootExitReport.TrySetResult(null);
+                }
+                else
+                {
+                    RecordCleanupFailure(new IOException($"Unexpected ownership host report: {line}"));
+                    outputRelayReport.TrySetResult(false);
+                    rootExitReport.TrySetResult(null);
+                }
+            }
+        }
+        catch (Exception exception)
+        {
+            RecordCleanupFailure(exception);
+        }
+        finally
+        {
+            rootExitReport.TrySetResult(null);
+            outputRelayReport.TrySetResult(null);
+        }
+    }
+
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types",
+        Justification = "Both pipe disposal attempts must run and the owned control task must be joined after either failure.")]
+    private async Task<bool> JoinControlAsync(CleanupDeadline deadline)
+    {
+        try
+        {
+            await controlReadTask.WaitAsync(deadline.WorkWindow).ConfigureAwait(false);
+            return true;
+        }
+        catch (TimeoutException)
+        {
+            RecordCleanupFailure(new TimeoutException(
+                "The ownership host control reader exceeded the cleanup deadline."));
+            try { controlReader.Dispose(); }
+            catch (Exception exception) { RecordCleanupFailure(exception); }
+            try { await control.DisposeAsync().ConfigureAwait(false); }
+            catch (Exception exception) { RecordCleanupFailure(exception); }
+            await controlReadTask.ConfigureAwait(false);
+            return false;
         }
     }
 
@@ -330,13 +454,15 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
             return;
         }
 
-        var line = await controlReader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
-        if (!int.TryParse(line, NumberStyles.Integer, CultureInfo.InvariantCulture, out var exitCode))
+        var exitCode = await rootExitReport.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        if (exitCode is null)
         {
-            throw new InvalidOperationException("The ownership host did not report the root exit code.");
+            cancellationToken.ThrowIfCancellationRequested();
+            throw PrimaryFailure ??
+                new InvalidOperationException("The ownership host did not report the root exit code.");
         }
 
-        RootExitCode = exitCode;
+        RootExitCode = exitCode.Value;
         rootExitRead = true;
     }
 
@@ -381,7 +507,7 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
         var trigger = ProcessLifecycleTrigger.Faulted;
         if (initialFailure is not null)
         {
-            RecordPrimaryFailure(initialFailure);
+            RecordObservedFailure(initialFailure);
             Phase("fault");
         }
         else
@@ -423,6 +549,18 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
                 {
                     Phase("post_exit_output_held");
                 }
+                else if (standardOutputReader is not null)
+                {
+                    // EOF alone does not prove the host's relays succeeded.
+                    // Its status is ordered after both relay tasks terminate.
+                    using var statusCancellation = new CancellationTokenSource(deadline.WorkWindow);
+                    var status = await outputRelayReport.Task.WaitAsync(statusCancellation.Token)
+                        .ConfigureAwait(false);
+                    if (status != true)
+                    {
+                        throw new IOException("The ownership host did not complete output relay.");
+                    }
+                }
             }
             catch (Exception exception)
             {
@@ -438,6 +576,16 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
             await TerminateAsync(deadline, unixGroupObserver).ConfigureAwait(false);
             stopped = true;
             Phase("terminate_returned");
+        }
+        catch (Exception exception)
+        {
+            RecordCleanupFailure(exception);
+        }
+
+        var controlJoined = false;
+        try
+        {
+            controlJoined = await JoinControlAsync(deadline).ConfigureAwait(false);
         }
         catch (Exception exception)
         {
@@ -499,7 +647,7 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
                 "Process lifecycle cleanup exceeded its shared deadline."));
         }
 
-        var succeeded = stopped && resourceReady && drained && hostExited &&
+        var succeeded = stopped && resourceReady && drained && controlJoined && hostExited &&
             PrimaryFailure is null;
         if (succeeded)
         {
@@ -526,6 +674,8 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
         }
 
         Release(controlReader.Dispose);
+        Release(() => standardOutputReader?.Dispose());
+        Release(() => standardErrorReader?.Dispose());
         try { await control.DisposeAsync().ConfigureAwait(false); }
         catch (Exception exception) { RecordCleanupFailure(exception); }
         try { outputCancellation?.Dispose(); }
@@ -538,13 +688,8 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
 
     private void RecordCleanupFailure(Exception exception)
     {
-        if (PrimaryFailure is null)
-        {
-            PrimaryFailure = exception;
-        }
-        else if (!ContainsFailure(exception, PrimaryFailure) &&
-                 (SecondaryCleanupFailure is null ||
-                  !ContainsFailure(exception, SecondaryCleanupFailure)))
+        var primary = Interlocked.CompareExchange(ref primaryFailure, exception, null);
+        if (primary is not null && !ContainsFailure(exception, primary))
         {
             RecordSecondaryFailure(exception);
         }
@@ -568,14 +713,17 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
 
     private void RecordSecondaryFailure(Exception exception)
     {
-        if (SecondaryCleanupFailure is not null &&
-            (ContainsFailure(SecondaryCleanupFailure, exception) ||
-             ContainsFailure(exception, SecondaryCleanupFailure)))
+        lock (secondaryFailureGate)
         {
-            return;
+            if (SecondaryCleanupFailure is not null &&
+                (ContainsFailure(SecondaryCleanupFailure, exception) ||
+                 ContainsFailure(exception, SecondaryCleanupFailure)))
+            {
+                return;
+            }
+            SecondaryCleanupFailure = SecondaryCleanupFailure is null ? exception :
+                new AggregateException(SecondaryCleanupFailure, exception);
         }
-        SecondaryCleanupFailure = SecondaryCleanupFailure is null ? exception :
-            new AggregateException(SecondaryCleanupFailure, exception);
     }
 
     private static bool ContainsFailure(Exception candidate, Exception expected) =>
@@ -603,6 +751,8 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
             }
             else
             {
+                // Reap Host only after this signal and group confirmation;
+                // its unreaped leader reserves the process-group identity.
                 if (NativeMethods.KillProcessGroup(Host.Id, SigKill) != 0 &&
                     Marshal.GetLastPInvokeError() != NoSuchProcess)
                 {
@@ -780,11 +930,16 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
         }
     }
 
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types",
+        Justification = "Any host failure after launch must retain the Unix group anchor until owner cleanup.")]
+    [SuppressMessage("Reliability", "CA2025:Do not pass an IDisposable instance into an unawaited Task",
+        Justification = "Normal relay tasks are joined; on host failure the owner terminates and reaps the process before returning.")]
     internal static async Task<int> RunHostAsync(string pipeName, string jobName)
     {
         using var control = new NamedPipeClientStream(".", pipeName, PipeDirection.Out, PipeOptions.Asynchronous);
         await control.ConnectAsync().ConfigureAwait(false);
         using var writer = new StreamWriter(control) { AutoFlush = true };
+        Process? child = null;
         try
         {
             if (OperatingSystem.IsWindows())
@@ -806,13 +961,29 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
                 ?? throw new InvalidOperationException("The scoped launch request was missing.");
             var launch = JsonSerializer.Deserialize<ScopeLaunch>(line)
                 ?? throw new InvalidOperationException("The scoped launch request was invalid.");
+            if ((launch.OutputPipeName is null) != (launch.ErrorPipeName is null))
+            {
+                throw new InvalidOperationException("Both output relay channels are required.");
+            }
+
+            using var outputChannel = launch.OutputPipeName is null ? null :
+                new NamedPipeClientStream(".", launch.OutputPipeName,
+                    PipeDirection.Out, PipeOptions.Asynchronous);
+            using var errorChannel = launch.ErrorPipeName is null ? null :
+                new NamedPipeClientStream(".", launch.ErrorPipeName,
+                    PipeDirection.Out, PipeOptions.Asynchronous);
+            if (outputChannel is not null)
+            {
+                await outputChannel.ConnectAsync().ConfigureAwait(false);
+                await errorChannel!.ConnectAsync().ConfigureAwait(false);
+            }
 
             var childInfo = new ProcessStartInfo(launch.FileName)
             {
                 UseShellExecute = false,
                 WorkingDirectory = launch.WorkingDirectory,
-                RedirectStandardOutput = false,
-                RedirectStandardError = false
+                RedirectStandardOutput = outputChannel is not null,
+                RedirectStandardError = errorChannel is not null
             };
             foreach (var argument in launch.Arguments)
             {
@@ -824,30 +995,89 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
                 childInfo.Environment[pair.Key] = pair.Value;
             }
 
-            using var child = Process.Start(childInfo)
+            child = Process.Start(childInfo)
                 ?? throw new InvalidOperationException("The scoped test process did not start.");
+            var outputRelay = outputChannel is null ? Task.CompletedTask :
+                RelayOutputAsync(child.StandardOutput.BaseStream, outputChannel);
+            var errorRelay = errorChannel is null ? Task.CompletedTask :
+                RelayOutputAsync(child.StandardError.BaseStream, errorChannel);
             await writer.WriteLineAsync(JsonSerializer.Serialize(new ScopeHandshake(
                 child.Id, child.StartTime.ToUniversalTime(), null))).ConfigureAwait(false);
-            ReleaseInheritedOutputHandles();
-            await child.WaitForExitAsync().ConfigureAwait(false);
+            var childExit = child.WaitForExitAsync();
+            if (outputChannel is not null)
+            {
+                var pending = new List<Task> { childExit, outputRelay, errorRelay };
+                while (!childExit.IsCompleted)
+                {
+                    var completed = await Task.WhenAny(pending).ConfigureAwait(false);
+                    if (completed == childExit)
+                    {
+                        break;
+                    }
+                    pending.Remove(completed);
+                    if (completed.IsFaulted || completed.IsCanceled)
+                    {
+                        await writer.WriteLineAsync("output_failed").ConfigureAwait(false);
+                        // The owner will stop the live root; leaving now would
+                        // release the authoritative Unix group identity.
+                        await Console.In.ReadLineAsync().ConfigureAwait(false);
+                        return 2;
+                    }
+                }
+            }
+            await childExit.ConfigureAwait(false);
             await writer.WriteLineAsync(child.ExitCode.ToString(CultureInfo.InvariantCulture))
                 .ConfigureAwait(false);
-            if (OperatingSystem.IsWindows())
+            if (outputChannel is not null)
             {
-                // The Job handle remains authoritative after the host exits.
-                // Releasing it also closes the host's output pipe handles.
-                return 0;
+                try
+                {
+                    await Task.WhenAll(outputRelay, errorRelay).ConfigureAwait(false);
+                    await writer.WriteLineAsync("output_complete").ConfigureAwait(false);
+                }
+                catch (Exception)
+                {
+                    await writer.WriteLineAsync("output_failed").ConfigureAwait(false);
+                }
             }
-            // Retain the group leader until the owner releases containment. Reaping
-            // this host before killpg would allow its group ID to be reused.
-            await Console.In.ReadLineAsync().ConfigureAwait(false);
+            if (!OperatingSystem.IsWindows())
+            {
+                // A live session leader reserves the group ID until the
+                // lifecycle owner has signalled, confirmed and reaped it.
+                await Console.In.ReadLineAsync().ConfigureAwait(false);
+            }
             return 0;
         }
-        catch (Exception exception) when (exception is InvalidOperationException or Win32Exception or IOException)
+        catch (Exception exception)
         {
-            await writer.WriteLineAsync(JsonSerializer.Serialize(new ScopeHandshake(0, default, exception.Message)))
-                .ConfigureAwait(false);
+            try
+            {
+                await writer.WriteLineAsync(JsonSerializer.Serialize(
+                    new ScopeHandshake(0, default, exception.Message))).ConfigureAwait(false);
+            }
+            catch (IOException) { }
+            if (child is not null && !OperatingSystem.IsWindows())
+            {
+                await Console.In.ReadLineAsync().ConfigureAwait(false);
+            }
             return 2;
+        }
+        finally
+        {
+            child?.Dispose();
+        }
+    }
+
+    private static async Task RelayOutputAsync(Stream source, Stream destination)
+    {
+        try
+        {
+            await source.CopyToAsync(destination).ConfigureAwait(false);
+            await destination.FlushAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            await destination.DisposeAsync().ConfigureAwait(false);
         }
     }
 
@@ -882,15 +1112,6 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
         }
     }
 
-    private static void ReleaseInheritedOutputHandles()
-    {
-        if (!OperatingSystem.IsWindows())
-        {
-            _ = NativeMethods.CloseFileDescriptor(1);
-            _ = NativeMethods.CloseFileDescriptor(2);
-        }
-    }
-
     private static uint GetWindowsJobActiveProcessCount(SafeFileHandle handle)
     {
         if (!NativeMethods.QueryInformationJobObject(handle, 1,
@@ -907,7 +1128,9 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
         string FileName,
         string[] Arguments,
         string WorkingDirectory,
-        Dictionary<string, string?> Environment);
+        Dictionary<string, string?> Environment,
+        string? OutputPipeName,
+        string? ErrorPipeName);
 
     private sealed record ScopeHandshake(int Pid, DateTimeOffset StartTimeUtc, string? Error);
 
@@ -962,10 +1185,6 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
 
     private static class NativeMethods
     {
-        [DllImport("libc", EntryPoint = "close", SetLastError = true)]
-        [DefaultDllImportSearchPaths(DllImportSearchPath.SafeDirectories)]
-        internal static extern int CloseFileDescriptor(int fileDescriptor);
-
         [DllImport("libc", EntryPoint = "setsid", SetLastError = true)]
         [DefaultDllImportSearchPaths(DllImportSearchPath.SafeDirectories)]
         internal static extern int CreateSession();

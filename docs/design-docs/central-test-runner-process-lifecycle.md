@@ -40,6 +40,12 @@
   仍為 live，就是失敗；測試不能再做第二次 `ps` 或給 grace period。
 - Owner 回傳前，所有 owner-created task 必須 terminal，所有 helper process
   必須 exited／reaped。外層 `WaitAsync` 超時不代表 underlying work 已停止。
+- Unix launch host 在 root exit 後仍保持存活，直到 owner 終止並確認 process
+  group 停止後才 reap；存活的 session leader 保留 group identity。host 不持有
+  workload 的輸出 pipe：它把 root 的 stdout／stderr 經兩條獨立通道交給 owner，
+  每條轉送工作在來源 EOF 時關閉通道，並在兩條工作結束後回報結果。owner 須
+  join 讀取工作並確認轉送結果，才可宣告正常完成。控制通道由 owner 持續讀到
+  host EOF；取消與轉送失敗同時發生時，清理後仍須 join 該讀取工作並保留失敗。
 - Owner 的 pipe reader 只收集經遮蔽且有容量上限的輸出尾段，不等待任意
   `TextWriter`。成功完成後命令層才呈現尾段；失敗／取消／逾時時以 recorder 留存尾段。
   完整即時轉送若再成為需求，須另設可終止的輸出邊界，不能放回 owner task。
