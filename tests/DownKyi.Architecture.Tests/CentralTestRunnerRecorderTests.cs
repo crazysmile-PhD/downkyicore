@@ -669,7 +669,7 @@ public sealed class CentralTestRunnerRecorderTests
             await cancellation.CancelAsync();
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() => build);
 
-            Assert.False(IsProcessAlive(processId.Value));
+            AssertProcessStopped(processId.Value);
         }
         finally
         {
@@ -902,6 +902,68 @@ public sealed class CentralTestRunnerRecorderTests
         }
 
         throw new TimeoutException("The build cancellation fixture did not publish its process identity.");
+    }
+
+    private static void AssertProcessStopped(int processId)
+    {
+        if (OperatingSystem.IsLinux())
+        {
+            string? state;
+            try
+            {
+                var status = File.ReadLines($"/proc/{processId}/status")
+                    .FirstOrDefault(line => line.StartsWith("State:", StringComparison.Ordinal));
+                state = status?.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries)
+                    .ElementAtOrDefault(1);
+            }
+            catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
+            {
+                state = null;
+            }
+            catch (IOException exception) when (exception.HResult == 3) // ESRCH: process vanished during procfs observation.
+            {
+                state = null;
+            }
+
+            Assert.True(state is null or "Z" or "X", $"pid={processId}, state={state}");
+            return;
+        }
+
+        if (OperatingSystem.IsMacOS())
+        {
+            using var ps = new Process
+            {
+                StartInfo = new ProcessStartInfo("ps")
+                {
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true
+                }
+            };
+            ps.StartInfo.ArgumentList.Add("-p");
+            ps.StartInfo.ArgumentList.Add(processId.ToString(CultureInfo.InvariantCulture));
+            ps.StartInfo.ArgumentList.Add("-o");
+            ps.StartInfo.ArgumentList.Add("stat=");
+            ps.Start();
+            if (!ps.WaitForExit(2000))
+            {
+                ps.Kill();
+                throw new TimeoutException($"ps did not return the state for pid {processId}.");
+            }
+
+            var state = ps.StandardOutput.ReadToEnd().Trim();
+            var error = ps.StandardError.ReadToEnd().Trim();
+            if (ps.ExitCode is not (0 or 1) || error.Length > 0)
+            {
+                throw new InvalidOperationException($"ps could not inspect pid {processId}: {error}");
+            }
+
+            Assert.True(state.Length == 0 || state[0] is 'Z' or 'X',
+                $"pid={processId}, ps status={state}");
+            return;
+        }
+
+        Assert.False(IsProcessAlive(processId));
     }
 
     private static bool IsProcessAlive(int processId)
