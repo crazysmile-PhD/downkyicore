@@ -11,6 +11,9 @@ internal sealed class RecorderReport
     public RootProcessIdentity? RootProcess { get; set; }
 
     public string? Outcome { get; set; }
+    public string? PrimaryFailure { get; set; }
+    public string? PrimaryEvidence { get; set; }
+    public string? SecondaryCleanupFailure { get; set; }
 
     public required List<RecorderEvent> Events { get; init; }
 

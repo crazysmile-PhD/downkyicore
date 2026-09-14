@@ -122,47 +122,6 @@ public sealed class TargetedResourceForensicsWindowsTests
     }
 
     [Fact]
-    public async Task CancellationCleanupReturnsOnlyAfterDirectoryDeleteAccessIsReady()
-    {
-        var targetDirectory = Path.Combine(
-            Path.GetTempPath(),
-            $"downkyi-cleanup-rundown-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(targetDirectory);
-        Process? owner = null;
-        try
-        {
-            owner = StartDirectoryOwner(targetDirectory);
-            await WaitForOwnerReadyAsync(owner).ConfigureAwait(true);
-            DuplicateDirectoryHandleIntoProcess(targetDirectory, owner);
-            Assert.Equal(
-                DeleteAccessState.SharingViolation,
-                TargetedResourceForensics.ProbeDeleteAccess(targetDirectory).State);
-
-            await BuildProcessRunner.CleanupAfterCancellationAsync(
-                owner,
-                TimeSpan.FromSeconds(5),
-                cleanupResourceDirectory: targetDirectory).ConfigureAwait(true);
-
-            Assert.True(owner.HasExited);
-            Assert.Equal(
-                DeleteAccessState.Allowed,
-                TargetedResourceForensics.ProbeDeleteAccess(targetDirectory).State);
-            Directory.Delete(targetDirectory);
-        }
-        finally
-        {
-            await StopOwnerAsync(owner).ConfigureAwait(true);
-            if (Directory.Exists(targetDirectory))
-            {
-                await WindowsDirectoryResourceRundown.WaitForDeleteAccessAsync(
-                    targetDirectory,
-                    TimeSpan.FromSeconds(5)).ConfigureAwait(true);
-                Directory.Delete(targetDirectory);
-            }
-        }
-    }
-
-    [Fact]
     public async Task DirectoryRundownDeadlineProducesTypedCleanupFailure()
     {
         var targetDirectory = Path.Combine(
@@ -198,89 +157,94 @@ public sealed class TargetedResourceForensicsWindowsTests
     }
 
     [Fact]
-    public async Task CancellationCleanupFailsClosedWhenAnotherOwnerBlocksTheDirectory()
+    public async Task BuildOwnerReportsDirectoryRundownFailureAfterContainingRoot()
     {
-        var targetDirectory = Path.Combine(
-            Path.GetTempPath(),
-            $"downkyi-cleanup-rundown-timeout-{Guid.NewGuid():N}");
+        var targetDirectory = Path.Combine(Path.GetTempPath(),
+            $"downkyi-build-rundown-{Guid.NewGuid():N}");
+        var marker = Path.Combine(Path.GetTempPath(), $"downkyi-build-root-{Guid.NewGuid():N}.pid");
         Directory.CreateDirectory(targetDirectory);
-        Process? root = null;
         Process? blocker = null;
+        int? rootPid = null;
         try
         {
-            root = StartDirectoryOwner(Path.GetTempPath());
             blocker = StartDirectoryOwner(targetDirectory);
-            await WaitForOwnerReadyAsync(root).ConfigureAwait(true);
             await WaitForOwnerReadyAsync(blocker).ConfigureAwait(true);
             DuplicateDirectoryHandleIntoProcess(targetDirectory, blocker);
+            var startInfo = new ProcessStartInfo("dotnet") { UseShellExecute = false };
+            startInfo.ArgumentList.Add("exec");
+            startInfo.ArgumentList.Add("--runtimeconfig");
+            startInfo.ArgumentList.Add(Path.Combine(AppContext.BaseDirectory,
+                "DownKyi.Windows.Tests.runtimeconfig.json"));
+            startInfo.ArgumentList.Add(typeof(BuildProcessRunner).Assembly.Location);
+            startInfo.ArgumentList.Add("fixture-hold-marker");
+            startInfo.ArgumentList.Add(marker);
+            using var cancellation = new CancellationTokenSource();
+            var run = BuildProcessRunner.RunAsync(startInfo, cancellation.Token,
+                TimeSpan.FromMilliseconds(500), targetDirectory);
+            rootPid = await ReadMarkerAsync(marker).ConfigureAwait(true);
+            await cancellation.CancelAsync().ConfigureAwait(true);
 
-            var exception = await Assert.ThrowsAsync<DirectoryResourceRundownTimeoutException>(
-                () => BuildProcessRunner.CleanupAfterCancellationAsync(
-                    root,
-                    TimeSpan.FromMilliseconds(500),
-                    cleanupResourceDirectory: targetDirectory)).ConfigureAwait(true);
-
-            Assert.Equal(targetDirectory, exception.ResourcePath);
-            Assert.True(root.HasExited);
+            var failure = await Assert.ThrowsAsync<DirectoryResourceRundownTimeoutException>(
+                () => run.WaitAsync(TimeSpan.FromSeconds(5),
+                    TestContext.Current.CancellationToken)).ConfigureAwait(true);
+            Assert.Equal(targetDirectory, failure.ResourcePath);
+            Assert.False(IsLive(rootPid.Value));
             Assert.False(blocker.HasExited);
         }
         finally
         {
-            await StopOwnerAsync(root).ConfigureAwait(true);
             await StopOwnerAsync(blocker).ConfigureAwait(true);
+            if (rootPid is { } pid && IsLive(pid))
+            {
+                using var root = Process.GetProcessById(pid);
+                root.Kill();
+            }
+            if (File.Exists(marker))
+            {
+                File.Delete(marker);
+            }
             if (Directory.Exists(targetDirectory))
             {
                 await WindowsDirectoryResourceRundown.WaitForDeleteAccessAsync(
-                    targetDirectory,
-                    TimeSpan.FromSeconds(5)).ConfigureAwait(true);
+                    targetDirectory, TimeSpan.FromSeconds(5)).ConfigureAwait(true);
                 Directory.Delete(targetDirectory);
             }
         }
     }
 
-    [Fact]
-    public async Task CleanupPreservesSnapshotFailureAheadOfDirectoryRundownTimeout()
+    private static bool IsLive(int pid)
     {
-        var targetDirectory = Path.Combine(
-            Path.GetTempPath(),
-            $"downkyi-rundown-preservation-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(targetDirectory);
-        Process? root = null;
-        Process? blocker = null;
         try
         {
-            root = StartDirectoryOwner(Path.GetTempPath());
-            blocker = StartDirectoryOwner(targetDirectory);
-            await WaitForOwnerReadyAsync(root).ConfigureAwait(true);
-            await WaitForOwnerReadyAsync(blocker).ConfigureAwait(true);
-            DuplicateDirectoryHandleIntoProcess(targetDirectory, blocker);
-            var snapshotFailure = new InvalidOperationException("intentional snapshot failure");
-
-            var exception = await Record.ExceptionAsync(
-                () => BuildProcessRunner.CleanupAfterCancellationAsync(
-                    root,
-                    TimeSpan.FromSeconds(1),
-                    (_, _) => Task.FromException<FinalProcessSnapshot>(snapshotFailure),
-                    targetDirectory)).ConfigureAwait(true);
-
-            var aggregate = Assert.IsType<AggregateException>(exception);
-            Assert.Same(snapshotFailure, aggregate.InnerExceptions[0]);
-            Assert.IsType<DirectoryResourceRundownTimeoutException>(aggregate.InnerExceptions[1]);
-            Assert.True(root.HasExited);
-            Assert.False(blocker.HasExited);
+            using var process = Process.GetProcessById(pid);
+            return !process.HasExited;
         }
-        finally
+        catch (ArgumentException)
         {
-            await StopOwnerAsync(root).ConfigureAwait(true);
-            await StopOwnerAsync(blocker).ConfigureAwait(true);
-            if (Directory.Exists(targetDirectory))
-            {
-                await WindowsDirectoryResourceRundown.WaitForDeleteAccessAsync(
-                    targetDirectory,
-                    TimeSpan.FromSeconds(5)).ConfigureAwait(true);
-                Directory.Delete(targetDirectory);
-            }
+            return false;
         }
+    }
+
+    private static async Task<int> ReadMarkerAsync(string path)
+    {
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        while (!deadline.IsCancellationRequested)
+        {
+            try
+            {
+                if (File.Exists(path) && int.TryParse(
+                        await File.ReadAllTextAsync(path, deadline.Token).ConfigureAwait(true),
+                        System.Globalization.NumberStyles.None,
+                        System.Globalization.CultureInfo.InvariantCulture, out var pid))
+                {
+                    return pid;
+                }
+            }
+            catch (IOException) { }
+            await Task.Delay(10, deadline.Token).ConfigureAwait(true);
+        }
+
+        throw new TimeoutException($"No marker: {path}");
     }
 
     [Fact]

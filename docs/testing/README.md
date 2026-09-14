@@ -33,6 +33,10 @@ repository entry。
 
 ## Lightweight Flight Recorder
 
+修改程序啟動、取消或清理前，先看
+[CentralTestRunner lifecycle authority](../design-docs/central-test-runner-process-lifecycle.md)
+的責任圖與終止條件。該文件描述 #267 的目標契約，尚不代表目前程式已通過驗收。
+
 CentralTestRunner 從 test process 啟動時記錄 slice identity、root PID 與
 start time，以及 exit、exit code、timeout、cancellation、bounded stop、
 cleanup 和 bounded stdout/stderr tail。正常 PASS 會刪除 recorder evidence。

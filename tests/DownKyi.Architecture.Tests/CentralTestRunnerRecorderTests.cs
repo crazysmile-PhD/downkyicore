@@ -70,7 +70,9 @@ public sealed class CentralTestRunnerRecorderTests
                 events,
                 eventName => eventName is "final_snapshot" or "final_snapshot_failed");
             var stopIndex = Array.IndexOf(events, "bounded_stop_requested");
-            Assert.InRange(snapshotIndex, 0, stopIndex - 1);
+            var cleanupIndex = Array.IndexOf(events, "cleanup_completed");
+            Assert.InRange(stopIndex, 0, cleanupIndex - 1);
+            Assert.InRange(cleanupIndex, 0, snapshotIndex - 1);
             Assert.Contains(
                 report.GetProperty("Events").EnumerateArray(),
                 item => string.Equals(
@@ -113,8 +115,7 @@ public sealed class CentralTestRunnerRecorderTests
                     TimeSpan.FromSeconds(1),
                     TimeSpan.FromSeconds(3),
                     evidenceDirectory,
-                    (_, _) => Task.FromException<FinalProcessSnapshot>(
-                        new IOException("snapshot token=fixture-snapshot-secret"))),
+                    (_, _) => throw new IOException("snapshot token=fixture-snapshot-secret")),
                 CancellationToken.None);
 
             Assert.NotEqual(0, result.ExitCode);
@@ -128,8 +129,9 @@ public sealed class CentralTestRunnerRecorderTests
                 .ToArray();
             var snapshotIndex = Array.IndexOf(events, "final_snapshot_failed");
             var stopIndex = Array.IndexOf(events, "bounded_stop_requested");
-            Assert.InRange(snapshotIndex, 0, stopIndex - 1);
-            Assert.Contains("cleanup_completed", events);
+            var cleanupIndex = Array.IndexOf(events, "cleanup_completed");
+            Assert.InRange(stopIndex, 0, cleanupIndex - 1);
+            Assert.InRange(cleanupIndex, 0, snapshotIndex - 1);
             Assert.Contains(
                 "absence is not proof",
                 report.GetProperty("FinalSnapshot").GetProperty("Completeness").GetString(),
@@ -147,89 +149,114 @@ public sealed class CentralTestRunnerRecorderTests
     }
 
     [Fact]
-    public async Task SnapshotNeverReturnsDoesNotBlockTerminationAndCleanupBudget()
+    public async Task CancelledOwnerReturnsOnlyAfterOutputReadsAndHostReap()
+    {
+        var owner = await ProcessLifecycleOwner.StartAsync(
+            CreateFixtureStartInfo("fixture-stderr-hold"),
+            TimeSpan.FromSeconds(5)).ConfigureAwait(true);
+        await using var ownerDisposal = owner.ConfigureAwait(true);
+        var stdout = new TailBuffer(8192);
+        var stderr = new TailBuffer(8192);
+        owner.StartOutputCapture(stdout, stderr, new SensitiveEvidenceRedactor(""));
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync().ConfigureAwait(true);
+
+        var completion = owner.CompleteAsync(TimeSpan.FromSeconds(10), cancellation.Token);
+        var outcome = await completion.ConfigureAwait(true);
+
+        Assert.Equal(ProcessLifecycleTrigger.Cancelled, outcome.Trigger);
+        Assert.True(outcome.CleanupSucceeded);
+        Assert.True(owner.OutputCaptureTasksTerminal);
+        Assert.True(outcome.HostExited);
+        Assert.Same(completion, owner.CompleteAsync(TimeSpan.FromSeconds(10), cancellation.Token));
+    }
+
+    [Fact]
+    public async Task LiveGroupEvidenceSurvivesInspectorTeardownFailure()
     {
         var evidenceDirectory = CreateEvidenceDirectory();
-        var cleanupClock = new Stopwatch();
+        ProcessLifecycleOwner? owner = null;
         try
         {
-            var result = await FlightRecorderExecution.RunAsync(
-                new ProcessExecutionRequest(
-                    "fixture.snapshot-never-returns.slice",
-                    "fixture.snapshot-never-returns.test",
-                    CreateFixtureStartInfo("fixture-hold"),
-                    TimeSpan.FromMilliseconds(200),
-                    TimeSpan.FromSeconds(2),
-                    evidenceDirectory,
-                    (_, _) =>
-                    {
-                        cleanupClock.Start();
-                        return new TaskCompletionSource<FinalProcessSnapshot>().Task;
-                    }),
-                CancellationToken.None);
-
-            cleanupClock.Stop();
-            Assert.Equal(124, result.ExitCode);
-            Assert.True(cleanupClock.Elapsed < TimeSpan.FromMilliseconds(2500));
-            Assert.False(IsProcessAlive(result.RootPid));
+            var startInfo = CreateFixtureStartInfo("fixture-hold");
+            owner = await ProcessLifecycleOwner.StartAsync(
+                startInfo, TimeSpan.FromSeconds(5)).ConfigureAwait(true);
+            owner.StartOutputCapture(
+                new TailBuffer(1), new TailBuffer(1), new SensitiveEvidenceRedactor(""));
+            var recorder = await FlightRecorder.CreateAsync(new ProcessExecutionRequest(
+                "owner.live", "inspector-failure", startInfo,
+                TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5), evidenceDirectory))
+                .ConfigureAwait(true);
+            recorder.SetRootIdentity(owner.RootPid, owner.RootStartTimeUtc);
+            var observations = 0;
+            var failure = await Record.ExceptionAsync(() => owner.WaitForGroupStoppedAsync(
+                owner.BeginCleanup(), _ => ++observations == 1
+                    ? "pid=5678, state=S"
+                    : throw new OperationCanceledException("inspector reap failed")))
+                .ConfigureAwait(true);
+            var aggregate = Assert.IsType<AggregateException>(failure);
+            Assert.IsType<TimeoutException>(aggregate.InnerExceptions[0]);
+            Assert.IsType<OperationCanceledException>(aggregate.InnerExceptions[1]);
+            Assert.Equal(2, observations);
+            Assert.Equal("pid=5678, state=S", owner.LiveEvidence);
+            using var cancellation = new CancellationTokenSource();
+            await cancellation.CancelAsync().ConfigureAwait(true);
+            var outcome = await owner.CompleteAsync(TimeSpan.FromSeconds(10), cancellation.Token)
+                .ConfigureAwait(true);
+            Assert.Equal(ProcessLifecycleTrigger.Cancelled, outcome.Trigger);
+            Assert.False(outcome.CleanupSucceeded);
+            Assert.Contains("pid=5678, state=S", outcome.PrimaryFailure?.Message,
+                StringComparison.Ordinal);
+            Assert.Equal("pid=5678, state=S", outcome.LiveEvidence);
+            Assert.IsType<OperationCanceledException>(outcome.SecondaryCleanupFailure);
+            Assert.True(outcome.HostExited);
+            Assert.True(owner.OutputCaptureTasksTerminal);
+            recorder.SetLifecycleFailure(owner);
+            await recorder.FinalizeFailureAsync("cleanup_failed",
+                new TailBuffer(1), new TailBuffer(1), owner.BeginCleanup()).ConfigureAwait(true);
             using var document = JsonDocument.Parse(await File.ReadAllTextAsync(
-                result.EvidencePath,
-                TestContext.Current.CancellationToken));
-            var events = document.RootElement.GetProperty("Events")
-                .EnumerateArray()
-                .Select(item => item.GetProperty("Event").GetString())
-                .ToArray();
-            Assert.Contains("final_snapshot_failed", events);
-            Assert.Contains("bounded_stop_requested", events);
-            Assert.Contains("cleanup_completed", events);
+                recorder.EvidencePath, TestContext.Current.CancellationToken).ConfigureAwait(true));
+            var report = document.RootElement;
+            Assert.Contains("pid=5678, state=S",
+                report.GetProperty("PrimaryFailure").GetString(), StringComparison.Ordinal);
+            Assert.Equal("pid=5678, state=S",
+                report.GetProperty("PrimaryEvidence").GetString());
+            Assert.Equal("inspector reap failed",
+                report.GetProperty("SecondaryCleanupFailure").GetString());
         }
         finally
         {
+            if (owner is not null)
+            {
+                await owner.DisposeAsync().ConfigureAwait(true);
+            }
             Directory.Delete(evidenceDirectory, recursive: true);
         }
     }
 
     [Fact]
-    public async Task BlockedStderrForwardingCannotDelayMandatoryTermination()
+    public async Task UnexpectedDiagnosticFailureStillJoinsAndReapsOwner()
     {
         var evidenceDirectory = CreateEvidenceDirectory();
-        using var blockedError = new BlockingTextWriter();
+        var marker = Path.Combine(evidenceDirectory, "root.pid");
         try
         {
-            using var cancellation = new CancellationTokenSource();
-            var run = FlightRecorderExecution.RunAsync(
+            var failure = await Record.ExceptionAsync(() => FlightRecorderExecution.RunAsync(
                 new ProcessExecutionRequest(
-                    "fixture.stderr-backpressure.slice",
-                    "fixture.stderr-backpressure.test",
-                    CreateFixtureStartInfo("fixture-stderr-hold"),
-                    TimeSpan.FromSeconds(10),
-                    TimeSpan.FromSeconds(1),
+                    "owner.abnormal", "snapshot-exception",
+                    CreateFixtureStartInfo("fixture-hold-marker", marker),
+                    TimeSpan.FromMilliseconds(300), TimeSpan.FromSeconds(3),
                     evidenceDirectory,
-                    ErrorDestination: blockedError),
-                cancellation.Token);
-            await blockedError.Entered.WaitAsync(TimeSpan.FromSeconds(5),
-                TestContext.Current.CancellationToken);
-
-            var cleanupClock = Stopwatch.StartNew();
-            await cancellation.CancelAsync();
-            var result = await run.WaitAsync(TimeSpan.FromSeconds(4),
-                TestContext.Current.CancellationToken);
-            cleanupClock.Stop();
-
-            Assert.Equal(2, result.ExitCode);
-            Assert.True(cleanupClock.Elapsed < TimeSpan.FromSeconds(3));
-            Assert.False(IsProcessAlive(result.RootPid));
-            using var document = JsonDocument.Parse(await File.ReadAllTextAsync(
-                result.EvidencePath, TestContext.Current.CancellationToken));
-            var events = document.RootElement.GetProperty("Events").EnumerateArray()
-                .Select(item => item.GetProperty("Event").GetString()).ToArray();
-            Assert.Contains("bounded_stop_requested", events);
-            Assert.Contains("cleanup_completed", events);
-            Assert.Contains("cleanup_failed", events);
+                    (_, _) => throw new ArgumentException("unexpected diagnostic failure")),
+                CancellationToken.None)).ConfigureAwait(true);
+            Assert.IsType<ArgumentException>(failure);
+            var pid = int.Parse(await File.ReadAllTextAsync(
+                marker, TestContext.Current.CancellationToken).ConfigureAwait(true),
+                CultureInfo.InvariantCulture);
+            Assert.False(IsProcessAlive(pid));
         }
         finally
         {
-            blockedError.Release();
             Directory.Delete(evidenceDirectory, recursive: true);
         }
     }
@@ -299,9 +326,8 @@ public sealed class CentralTestRunnerRecorderTests
                     TimeSpan.FromSeconds(1),
                     TimeSpan.FromSeconds(3),
                     evidenceDirectory,
-                    (_, _) => Task.FromException<FinalProcessSnapshot>(
-                        new IOException(
-                            $"snapshot access_token=fixture-snapshot-secret url=https://example.invalid/private?token=fixture-query-secret path={userProfile}"))),
+                    (_, _) => throw new IOException(
+                        $"snapshot access_token=fixture-snapshot-secret url=https://example.invalid/private?token=fixture-query-secret path={userProfile}")),
                 CancellationToken.None);
             await result.Recorder.RecordAsync(
                 "external_detail",
@@ -651,33 +677,4 @@ public sealed class CentralTestRunnerRecorderTests
         return path;
     }
 
-    private sealed class BlockingTextWriter : TextWriter
-    {
-        private readonly TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        private readonly ManualResetEventSlim release = new(false);
-
-        public Task Entered => entered.Task;
-
-        public override System.Text.Encoding Encoding => System.Text.Encoding.UTF8;
-
-        public override Task WriteLineAsync(string? value)
-        {
-            entered.TrySetResult();
-            release.Wait();
-            return Task.CompletedTask;
-        }
-
-        public void Release() => release.Set();
-
-        protected override void Dispose(bool disposing)
-        {
-            if (disposing)
-            {
-                release.Set();
-                release.Dispose();
-            }
-
-            base.Dispose(disposing);
-        }
-    }
 }

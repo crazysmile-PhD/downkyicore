@@ -11,7 +11,7 @@ internal static class Program
     {
         if (args.Length == 3 && string.Equals(args[0], "owned-scope-host", StringComparison.Ordinal))
         {
-            return await OwnedProcessScope.RunHostAsync(args[1], args[2]).ConfigureAwait(false);
+            return await ProcessLifecycleOwner.RunHostAsync(args[1], args[2]).ConfigureAwait(false);
         }
 
         if (args.Length > 0 && string.Equals(args[0], "fixture-hold", StringComparison.Ordinal))
@@ -124,32 +124,6 @@ internal static class Program
             return 0;
         }
 
-        if (args.Length > 2 && string.Equals(args[0], "fixture-legacy-tree-kill", StringComparison.Ordinal))
-        {
-            var treeInfo = new ProcessStartInfo("/bin/sh")
-            {
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true
-            };
-            treeInfo.ArgumentList.Add(args[1]);
-            treeInfo.ArgumentList.Add(args[2]);
-            using var tree = Process.Start(treeInfo)
-                ?? throw new InvalidOperationException("The legacy tree-kill fixture did not start.");
-            var ready = await tree.StandardOutput.ReadLineAsync().ConfigureAwait(false);
-            if (!string.Equals(ready, "ready", StringComparison.Ordinal))
-            {
-                throw new InvalidOperationException("The legacy tree-kill fixture did not become ready.");
-            }
-
-            Console.WriteLine($"legacy-kill-start pid={tree.Id}");
-            await Console.Out.FlushAsync().ConfigureAwait(false);
-            tree.Kill(entireProcessTree: true);
-            Console.WriteLine($"legacy-kill-returned pid={tree.Id}");
-            await Console.Out.FlushAsync().ConfigureAwait(false);
-            return 0;
-        }
-
         if (args.Length > 4 && string.Equals(args[0], "fixture-sensitive-hold", StringComparison.Ordinal))
         {
             await Console.Out.WriteLineAsync($"Authorization: Bearer {args[1]}").ConfigureAwait(false);
@@ -235,25 +209,13 @@ internal static class Program
 
     internal static async Task WriteDiagnosticBestEffortAsync(string message)
     {
-        // Diagnostics have no authority over process cleanup or runner exit.
-        var write = Task.Run(() =>
-        {
-            try
-            {
-                Console.Error.WriteLine(message);
-            }
-            catch (Exception exception) when (exception is IOException or ObjectDisposedException)
-            {
-                // The recorder artifact remains the durable diagnostic source.
-            }
-        }, CancellationToken.None);
         try
         {
-            await write.WaitAsync(TimeSpan.FromMilliseconds(100)).ConfigureAwait(false);
+            await Console.Error.WriteLineAsync(message).ConfigureAwait(false);
         }
-        catch (TimeoutException)
+        catch (Exception exception) when (exception is IOException or ObjectDisposedException)
         {
-            // An unavailable stderr sink cannot extend the bounded cleanup path.
+            // The recorder artifact remains the durable diagnostic source.
         }
     }
 

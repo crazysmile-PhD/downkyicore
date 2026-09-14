@@ -22,13 +22,13 @@ internal sealed class FlightRecorder
 
     private readonly RecorderReport report;
     private readonly TimeSpan snapshotTimeout;
-    private readonly Func<int, TimeSpan, Task<FinalProcessSnapshot>> snapshotCapture;
+    private readonly Func<int, TimeSpan, FinalProcessSnapshot> snapshotCapture;
 
     private FlightRecorder(
         string evidencePath,
         RecorderReport report,
         TimeSpan snapshotTimeout,
-        Func<int, TimeSpan, Task<FinalProcessSnapshot>> snapshotCapture,
+        Func<int, TimeSpan, FinalProcessSnapshot> snapshotCapture,
         SensitiveEvidenceRedactor redactor)
     {
         EvidencePath = evidencePath;
@@ -39,6 +39,8 @@ internal sealed class FlightRecorder
     }
 
     public string EvidencePath { get; }
+    internal string StdoutTail => report.StdoutTail ?? string.Empty;
+    internal string StderrTail => report.StderrTail ?? string.Empty;
 
     internal SensitiveEvidenceRedactor Redactor { get; }
 
@@ -67,7 +69,7 @@ internal sealed class FlightRecorder
             evidencePath,
             report,
             request.CleanupTimeout,
-            request.SnapshotCapture ?? ProcessTreeSnapshot.CaptureAsync,
+            request.SnapshotCapture ?? ProcessTreeSnapshot.Capture,
             redactor);
         await recorder.RecordAsync("recorder_start").ConfigureAwait(false);
         await recorder.RecordAsync("scope_launch_begin").ConfigureAwait(false);
@@ -87,6 +89,22 @@ internal sealed class FlightRecorder
     {
         report.StdoutTail = Redactor.Redact(standardOutput);
         report.StderrTail = Redactor.Redact(standardError);
+    }
+
+    internal void SetLifecycleFailure(ProcessLifecycleOwner owner)
+    {
+        report.PrimaryFailure = owner.PrimaryFailure is null
+            ? null : Redactor.Redact(owner.PrimaryFailure.Message);
+        report.PrimaryEvidence = owner.LiveEvidence is null
+            ? null : Redactor.Redact(owner.LiveEvidence);
+        report.SecondaryCleanupFailure = owner.SecondaryCleanupFailure is null
+            ? null : Redactor.Redact(owner.SecondaryCleanupFailure.Message);
+    }
+
+    internal void SetStartupFailure(Exception primary, Exception secondary)
+    {
+        report.PrimaryFailure = Redactor.Redact(primary.Message);
+        report.SecondaryCleanupFailure = Redactor.Redact(secondary.Message);
     }
 
     public async Task RecordAsync(
@@ -131,8 +149,8 @@ internal sealed class FlightRecorder
             var window = deadline?.SnapshotWindow ?? (snapshotTimeout < TimeSpan.FromSeconds(1)
                 ? snapshotTimeout
                 : TimeSpan.FromSeconds(1));
-            report.FinalSnapshot = await Task.Run(() => snapshotCapture(rootPid, window))
-                .WaitAsync(window).ConfigureAwait(false);
+            // The diagnostic backend starts no helper process or task.
+            report.FinalSnapshot = snapshotCapture(rootPid, window);
             if (deadline is null)
             {
                 await RecordAsync("final_snapshot", pid: rootPid).ConfigureAwait(false);
@@ -190,13 +208,18 @@ internal sealed class FlightRecorder
         }
         else
         {
-            await PersistAsync().WaitAsync(deadline.Remaining).ConfigureAwait(false);
+            if (deadline.Remaining == TimeSpan.Zero)
+            {
+                throw new TimeoutException("No cleanup budget remains to persist failure evidence.");
+            }
+            using var persistenceCancellation = new CancellationTokenSource(deadline.Remaining);
+            await PersistAsync(persistenceCancellation.Token).ConfigureAwait(false);
         }
     }
 
-    private Task PersistAsync()
+    private Task PersistAsync(CancellationToken cancellationToken = default)
     {
         var json = JsonSerializer.Serialize(report, JsonOptions);
-        return File.WriteAllTextAsync(EvidencePath, json);
+        return File.WriteAllTextAsync(EvidencePath, json, cancellationToken);
     }
 }

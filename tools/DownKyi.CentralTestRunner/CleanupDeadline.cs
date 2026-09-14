@@ -18,9 +18,4 @@ internal sealed class CleanupDeadline(TimeSpan budget)
 
     public TimeSpan WorkWindow => TimeSpan.FromTicks(
         Remaining.Ticks - Math.Min(TimeSpan.FromMilliseconds(250).Ticks, Remaining.Ticks / 4));
-
-    public Task WaitAsync(Task task)
-    {
-        return task.WaitAsync(Remaining);
-    }
 }

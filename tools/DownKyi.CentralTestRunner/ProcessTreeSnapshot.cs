@@ -5,11 +5,23 @@ namespace DownKyi.CentralTestRunner;
 
 internal static class ProcessTreeSnapshot
 {
-    public static async Task<FinalProcessSnapshot> CaptureAsync(
+    public static FinalProcessSnapshot Capture(
         int rootPid,
         TimeSpan timeout)
     {
-        var parentIds = await ReadParentIdsAsync(timeout).ConfigureAwait(false);
+        if (timeout <= TimeSpan.Zero)
+        {
+            throw new TimeoutException("Process relationship snapshot exceeded the bounded cleanup window.");
+        }
+
+        var deadline = new CleanupDeadline(timeout);
+        var parentIds = OperatingSystem.IsWindows()
+            ? WindowsProcessRelationshipSnapshot.ReadParentIds()
+            : UnixProcessGroupInspector.ReadParentIds(deadline);
+        if (deadline.Remaining == TimeSpan.Zero)
+        {
+            throw new TimeoutException("Process relationship snapshot exceeded the bounded cleanup window.");
+        }
         var included = new HashSet<int>();
         if (rootPid > 0)
         {
@@ -59,54 +71,6 @@ internal static class ProcessTreeSnapshot
         };
     }
 
-    private static Task<Dictionary<int, int>> ReadParentIdsAsync(TimeSpan timeout)
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return Task.FromResult(WindowsProcessRelationshipSnapshot.ReadParentIds());
-        }
-
-        return ReadParentIdsAsync(CreateUnixSnapshotStartInfo(), timeout);
-    }
-
-    internal static async Task<Dictionary<int, int>> ReadParentIdsAsync(
-        ProcessStartInfo startInfo,
-        TimeSpan timeout)
-    {
-        var deadline = new CleanupDeadline(timeout);
-        using var process = new Process { StartInfo = startInfo };
-        process.Start();
-        var outputTask = process.StandardOutput.ReadToEndAsync();
-        var errorTask = process.StandardError.ReadToEndAsync();
-        try
-        {
-            await process.WaitForExitAsync().WaitAsync(deadline.Remaining).ConfigureAwait(false);
-            var output = await outputTask.WaitAsync(deadline.Remaining).ConfigureAwait(false);
-            var error = await errorTask.WaitAsync(deadline.Remaining).ConfigureAwait(false);
-            if (process.ExitCode != 0)
-            {
-                throw new InvalidOperationException($"Process relationship snapshot failed: {error.Trim()}");
-            }
-
-            return ParseParentIds(output);
-        }
-        catch (TimeoutException)
-        {
-            try
-            {
-                if (!process.HasExited)
-                {
-                    process.Kill();
-                }
-            }
-            catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception)
-            {
-                // The snapshot helper may have exited while the bound elapsed.
-            }
-            throw new TimeoutException("Process relationship snapshot exceeded the bounded cleanup window.");
-        }
-    }
-
     internal static Dictionary<int, int> ParseParentIds(string output)
     {
         var result = new Dictionary<int, int>();
@@ -128,17 +92,4 @@ internal static class ProcessTreeSnapshot
         return result;
     }
 
-    private static ProcessStartInfo CreateUnixSnapshotStartInfo()
-    {
-        var startInfo = new ProcessStartInfo("/bin/ps")
-        {
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true
-        };
-        startInfo.ArgumentList.Add("-axo");
-        startInfo.ArgumentList.Add("pid=,ppid=");
-        return startInfo;
-    }
 }

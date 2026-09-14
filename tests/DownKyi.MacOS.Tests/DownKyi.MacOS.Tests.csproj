@@ -27,7 +27,7 @@
 
   <ItemGroup>
     <Compile Include="..\PlatformShared\FileSystemPhysicalOutputPathResolverUnixTests.cs" Link="FileSystemPhysicalOutputPathResolverUnixTests.cs" />
-    <Compile Include="..\PlatformShared\OwnedProcessScopePlatformTests.cs" Link="OwnedProcessScopePlatformTests.cs" />
+    <Compile Include="..\PlatformShared\ProcessLifecycleOwnerPlatformTests.cs" Link="ProcessLifecycleOwnerPlatformTests.cs" />
   </ItemGroup>
 
   <ItemGroup>
