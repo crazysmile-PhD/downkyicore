@@ -1,5 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.IO.Pipes;
 using System.Runtime.InteropServices;
 using System.Text.Json;
@@ -14,12 +16,15 @@ internal sealed class OwnedProcessScope : IDisposable
     private const int SigKill = 9;
     private const int NoSuchProcess = 3;
     private readonly SafeFileHandle? job;
+    private readonly StreamReader controlReader;
     private bool terminationAttempted;
 
-    private OwnedProcessScope(Process host, SafeFileHandle? job, ScopeHandshake handshake)
+    private OwnedProcessScope(Process host, SafeFileHandle? job, ScopeHandshake handshake,
+        StreamReader controlReader)
     {
         Host = host;
         this.job = job;
+        this.controlReader = controlReader;
         RootPid = handshake.Pid;
         RootStartTimeUtc = handshake.StartTimeUtc;
     }
@@ -29,15 +34,21 @@ internal sealed class OwnedProcessScope : IDisposable
     internal DateTimeOffset RootStartTimeUtc { get; }
     internal SafeFileHandle? WindowsJobHandle => job;
 
+    [SuppressMessage("Maintainability", "CA1508:Avoid dead conditional code",
+        Justification = "Startup failure also occurs before the job handle transfers to the scope.")]
+    [SuppressMessage("Reliability", "CA2000:Dispose objects before losing scope",
+        Justification = "The control reader transfers to the scope; failed launches dispose the pipe in finally.")]
     internal static async Task<OwnedProcessScope> StartAsync(ProcessStartInfo testStartInfo, TimeSpan startupWindow)
     {
         // Unix named pipes include the temporary directory in a short socket path.
         var pipeName = Guid.NewGuid().ToString("N");
-        using var control = new NamedPipeServerStream(
+        var control = new NamedPipeServerStream(
             pipeName, PipeDirection.In, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
         var jobName = OperatingSystem.IsWindows() ? $"Local\\downkyi-test-{Guid.NewGuid():N}" : null;
         SafeFileHandle? job = null;
         Process? host = null;
+        StreamReader? reader = null;
+        var controlTransferred = false;
         try
         {
             if (jobName is not null)
@@ -72,7 +83,7 @@ internal sealed class OwnedProcessScope : IDisposable
                 .WaitAsync(startupWindow).ConfigureAwait(false);
             host.StandardInput.Close();
             await control.WaitForConnectionAsync().WaitAsync(startupWindow).ConfigureAwait(false);
-            using var reader = new StreamReader(control);
+            reader = new StreamReader(control);
             var line = await reader.ReadLineAsync().WaitAsync(startupWindow).ConfigureAwait(false);
             var handshake = line is null ? null : JsonSerializer.Deserialize<ScopeHandshake>(line);
             if (handshake is null || handshake.Error is not null || handshake.Pid <= 0)
@@ -80,9 +91,11 @@ internal sealed class OwnedProcessScope : IDisposable
                 throw new InvalidOperationException($"The ownership scope did not launch the test: {handshake?.Error ?? "no handshake"}");
             }
 
-            var scope = new OwnedProcessScope(host, job, handshake);
+            var scope = new OwnedProcessScope(host, job, handshake, reader);
+            controlTransferred = true;
             host = null;
             job = null;
+            reader = null;
             return scope;
         }
         catch
@@ -105,9 +118,32 @@ internal sealed class OwnedProcessScope : IDisposable
         }
         finally
         {
+            reader?.Dispose();
+            if (!controlTransferred)
+            {
+                await control.DisposeAsync().ConfigureAwait(false);
+            }
             host?.Dispose();
             job?.Dispose();
         }
+    }
+
+    internal async Task<int> WaitForRootExitAsync(CancellationToken cancellationToken)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            await Host.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+            return Host.ExitCode;
+        }
+
+        var report = await controlReader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+        if (!int.TryParse(report, NumberStyles.Integer, CultureInfo.InvariantCulture,
+                out var exitCode))
+        {
+            throw new InvalidOperationException("The ownership host did not report the root exit code.");
+        }
+
+        return exitCode;
     }
 
     internal async Task TerminateAsync(CleanupDeadline deadline)
@@ -120,11 +156,39 @@ internal sealed class OwnedProcessScope : IDisposable
             return;
         }
 
+        if (Host.HasExited)
+        {
+            throw new InvalidOperationException(
+                "The ownership host exited before the process group could be signalled safely.");
+        }
+
         if (NativeMethods.KillProcessGroup(Host.Id, SigKill) != 0 &&
             Marshal.GetLastPInvokeError() != NoSuchProcess)
         {
             throw new Win32Exception(Marshal.GetLastPInvokeError());
         }
+
+        await WaitForGroupStoppedAsync(deadline).ConfigureAwait(false);
+    }
+
+    internal async Task WaitForGroupStoppedAsync(CleanupDeadline deadline)
+    {
+        string? liveMember = null;
+        while (deadline.WorkWindow > TimeSpan.Zero)
+        {
+            liveMember = UnixProcessGroupInspector.ReadLiveMember(
+                Host.Id, deadline, ignoredPid: Host.Id);
+            if (liveMember is null)
+            {
+                return;
+            }
+
+            await Task.Delay(TimeSpan.FromTicks(Math.Min(
+                TimeSpan.FromMilliseconds(10).Ticks, deadline.WorkWindow.Ticks))).ConfigureAwait(false);
+        }
+
+        throw new TimeoutException(
+            $"Owned process group {Host.Id} could not be confirmed stopped; last observed {liveMember ?? "unknown"}.");
     }
 
     public void Dispose()
@@ -135,6 +199,7 @@ internal sealed class OwnedProcessScope : IDisposable
             _ = NativeMethods.KillProcessGroup(Host.Id, SigKill);
         }
 
+        controlReader.Dispose();
         job?.Dispose();
         Host.Dispose();
     }
@@ -184,10 +249,29 @@ internal sealed class OwnedProcessScope : IDisposable
 
             using var child = Process.Start(childInfo)
                 ?? throw new InvalidOperationException("The scoped test process did not start.");
+            if (!OperatingSystem.IsWindows())
+            {
+                // The child inherited both output pipes. The host must release
+                // its copies while it remains alive as the process-group anchor.
+                var outputError = NativeMethods.Close(1) == 0 ? 0 : Marshal.GetLastPInvokeError();
+                var errorError = NativeMethods.Close(2) == 0 ? 0 : Marshal.GetLastPInvokeError();
+                if (outputError != 0 || errorError != 0)
+                {
+                    throw new Win32Exception(outputError != 0 ? outputError : errorError);
+                }
+            }
             await writer.WriteLineAsync(JsonSerializer.Serialize(new ScopeHandshake(
                 child.Id, child.StartTime.ToUniversalTime(), null))).ConfigureAwait(false);
             await child.WaitForExitAsync().ConfigureAwait(false);
-            return child.ExitCode;
+            if (OperatingSystem.IsWindows())
+            {
+                return child.ExitCode;
+            }
+
+            await writer.WriteLineAsync(child.ExitCode.ToString(CultureInfo.InvariantCulture))
+                .ConfigureAwait(false);
+            await Task.Delay(Timeout.InfiniteTimeSpan).ConfigureAwait(false);
+            return 0;
         }
         catch (Exception exception) when (exception is InvalidOperationException or Win32Exception or IOException)
         {
@@ -281,6 +365,10 @@ internal sealed class OwnedProcessScope : IDisposable
         [DllImport("libc", EntryPoint = "killpg", SetLastError = true)]
         [DefaultDllImportSearchPaths(DllImportSearchPath.SafeDirectories)]
         internal static extern int KillProcessGroup(int groupId, int signal);
+
+        [DllImport("libc", EntryPoint = "close", SetLastError = true)]
+        [DefaultDllImportSearchPaths(DllImportSearchPath.SafeDirectories)]
+        internal static extern int Close(int descriptor);
 
         [DllImport("kernel32.dll", EntryPoint = "CreateJobObjectW", CharSet = CharSet.Unicode, SetLastError = true)]
         [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]

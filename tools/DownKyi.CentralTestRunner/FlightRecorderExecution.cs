@@ -91,9 +91,11 @@ internal static class FlightRecorderExecution
                 cancellationToken,
                 timeout.Token);
 
+            int processExitCode;
             try
             {
-                await process.WaitForExitAsync(waitCancellation.Token).ConfigureAwait(false);
+                processExitCode = await scope.WaitForRootExitAsync(waitCancellation.Token)
+                    .ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -129,7 +131,6 @@ internal static class FlightRecorderExecution
                     recorder);
             }
 
-            var processExitCode = process.ExitCode;
             TracePhase(recorder, rootPid, "process_exited");
             var postExitCleanup = new CleanupDeadline(request.CleanupTimeout);
             recorder.RecordInMemory(
@@ -236,6 +237,8 @@ internal static class FlightRecorderExecution
         return Task.CompletedTask;
     }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1031:Do not catch general exception types",
+        Justification = "Any failed containment observation must prevent cancellation success.")]
     private static async Task<bool> StopAsync(
         OwnedProcessScope scope,
         CleanupDeadline deadline,
@@ -260,7 +263,7 @@ internal static class FlightRecorderExecution
             recorder.RecordInMemory("cleanup_completed", pid: scope.RootPid);
             return true;
         }
-        catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception or OperationCanceledException or TimeoutException)
+        catch (Exception exception)
         {
             TracePhase(recorder, scope.RootPid, "cleanup_failed");
             recorder.RecordInMemory(
