@@ -169,7 +169,11 @@ public sealed class ProcessLifecycleOwnerPlatformTests
 
             File.Delete(Path.Combine(directory, "cgroup.kill"));
             File.Delete(Path.Combine(directory, "cgroup.procs"));
-            containment.RemoveAfterFailedStartup();
+            var nested = Path.Combine(directory, "nested");
+            Directory.CreateDirectory(nested);
+            Assert.Throws<IOException>(() => containment.Remove());
+            Directory.Delete(nested);
+            containment.Remove();
             Assert.False(Directory.Exists(directory));
         }
         finally

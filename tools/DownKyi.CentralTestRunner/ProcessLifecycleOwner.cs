@@ -356,7 +356,7 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
                     catch (Exception exception) { RecordStartupCleanupFailure(exception); }
                     if (cgroup is not null)
                     {
-                        try { cgroup.RemoveAfterFailedStartup(); }
+                        try { cgroup.Remove(); }
                         catch (Exception exception) { RecordStartupCleanupFailure(exception); }
                     }
                 }
@@ -706,7 +706,7 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
         try { outputCancellation?.Dispose(); }
         catch (Exception exception) { RecordCleanupFailure(exception); }
         Release(() => job?.Dispose());
-        Release(() => cgroup?.Dispose());
+        Release(() => cgroup?.Remove());
         Release(Host.Dispose);
         disposed = true;
     }

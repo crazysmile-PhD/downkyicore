@@ -53,7 +53,7 @@ internal sealed class LinuxCgroupContainment : IDisposable
         containment = new LinuxCgroupContainment(path);
         if (!File.Exists(Path.Combine(path, "cgroup.kill")))
         {
-            containment.RemoveAfterFailedStartup();
+            containment.Remove();
             containment = null;
             return; // This kernel cannot provide authoritative group kill.
         }
@@ -70,7 +70,9 @@ internal sealed class LinuxCgroupContainment : IDisposable
 
     internal void Kill() => File.WriteAllText(Path.Combine(path, "cgroup.kill"), "1");
 
-    internal void RemoveAfterFailedStartup() => Directory.Delete(path);
+    // The lifecycle owner calls this before deciding cleanup success. A
+    // quiescent subtree can still contain empty child cgroups.
+    internal void Remove() => Directory.Delete(path);
 
     internal bool IsQuiescent()
     {
@@ -123,10 +125,10 @@ internal sealed class LinuxCgroupContainment : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(path); }
+        try { Remove(); }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
-            // A failed cleanup is reported by quiescence, not disposal.
+            // Best-effort fallback only; the owner reports Remove failures.
         }
     }
 }
