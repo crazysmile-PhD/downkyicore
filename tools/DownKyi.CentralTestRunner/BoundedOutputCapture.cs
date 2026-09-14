@@ -10,7 +10,6 @@ internal static class BoundedOutputCapture
     internal static async Task CaptureAsync(
         StreamReader reader,
         TailBuffer tail,
-        TextWriter destination,
         SensitiveEvidenceRedactor redactor,
         CancellationToken cancellationToken)
     {
@@ -21,13 +20,12 @@ internal static class BoundedOutputCapture
             var discardingLine = false;
             var previousWasCarriageReturn = false;
 
-            async Task FlushLineAsync()
+            void FlushLine()
             {
                 var redacted = discardingLine
                     ? TruncatedOutputLine
                     : redactor.Redact(line.ToString());
                 tail.Add(redacted);
-                await destination.WriteLineAsync(redacted).ConfigureAwait(false);
                 line.Clear();
                 discardingLine = false;
             }
@@ -47,7 +45,7 @@ internal static class BoundedOutputCapture
                     {
                         if (!previousWasCarriageReturn)
                         {
-                            await FlushLineAsync().ConfigureAwait(false);
+                            FlushLine();
                         }
                         previousWasCarriageReturn = false;
                         continue;
@@ -55,7 +53,7 @@ internal static class BoundedOutputCapture
 
                     if (character == '\r')
                     {
-                        await FlushLineAsync().ConfigureAwait(false);
+                        FlushLine();
                         previousWasCarriageReturn = true;
                         continue;
                     }
@@ -79,7 +77,7 @@ internal static class BoundedOutputCapture
 
             if (line.Length > 0 || discardingLine)
             {
-                await FlushLineAsync().ConfigureAwait(false);
+                FlushLine();
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

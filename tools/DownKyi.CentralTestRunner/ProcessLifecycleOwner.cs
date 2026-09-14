@@ -75,8 +75,7 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
     private void RecordPrimaryFailure(Exception failure) => PrimaryFailure ??= failure;
 
     internal void StartOutputCapture(
-        TailBuffer standardOutput, TailBuffer standardError, SensitiveEvidenceRedactor redactor,
-        TextWriter? standardOutputDestination = null, TextWriter? standardErrorDestination = null)
+        TailBuffer standardOutput, TailBuffer standardError, SensitiveEvidenceRedactor redactor)
     {
         if (!Host.StartInfo.RedirectStandardOutput || outputCancellation is not null)
         {
@@ -85,11 +84,9 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
 
         outputCancellation = new CancellationTokenSource();
         outputTask = BoundedOutputCapture.CaptureAsync(
-            Host.StandardOutput, standardOutput, standardOutputDestination ?? Console.Out,
-            redactor, outputCancellation.Token);
+            Host.StandardOutput, standardOutput, redactor, outputCancellation.Token);
         errorTask = BoundedOutputCapture.CaptureAsync(
-            Host.StandardError, standardError, standardErrorDestination ?? Console.Error,
-            redactor, outputCancellation.Token);
+            Host.StandardError, standardError, redactor, outputCancellation.Token);
     }
 
     private async Task<bool> WaitForOutputWithinAsync(TimeSpan window)
@@ -551,6 +548,22 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
         {
             RecordSecondaryFailure(exception);
         }
+    }
+
+    // Evidence persistence is a caller service. A late recorder failure still
+    // enters the same causal outcome without replacing an observed live process.
+    internal ProcessLifecycleOutcome RecordEvidenceFailure(
+        ProcessLifecycleOutcome completed, Exception failure)
+    {
+        RecordCleanupFailure(failure);
+        var amended = completed with
+        {
+            CleanupSucceeded = false,
+            PrimaryFailure = PrimaryFailure,
+            SecondaryCleanupFailure = SecondaryCleanupFailure
+        };
+        completionTask = Task.FromResult(amended);
+        return amended;
     }
 
     private void RecordSecondaryFailure(Exception exception)

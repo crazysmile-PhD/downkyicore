@@ -590,22 +590,6 @@ public sealed class ProcessLifecycleOwnerPlatformTests
             }
         }
 
-        if (!OperatingSystem.IsWindows() && expectedStartTimeUtc is { } expected)
-        {
-            try
-            {
-                using var process = Process.GetProcessById(pid);
-                if (process.StartTime.ToUniversalTime() != expected)
-                {
-                    return;
-                }
-            }
-            catch (ArgumentException)
-            {
-                // The first state observation was live; a later exit cannot make it a pass.
-            }
-        }
-
         if (OperatingSystem.IsMacOS())
         {
             Assert.Fail($"pid={pid}, ps status={state}, original start={expectedStartTimeUtc:O}");

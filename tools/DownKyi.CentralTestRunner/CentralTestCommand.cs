@@ -151,12 +151,47 @@ internal static class CentralTestCommand
                 TimeSpan.FromSeconds(5),
                 evidenceDirectory),
             cancellationToken).ConfigureAwait(false);
+        // Presentation follows owner completion, so a blocked console cannot
+        // hold an owned pipe reader or postpone mandatory process termination.
+        if (result.ExitCode == 0 &&
+            result.LifecycleOutcome?.Trigger == ProcessLifecycleTrigger.RootExited)
+        {
+            try
+            {
+                if (result.Recorder.StdoutTail.Length > 0)
+                {
+                    await Console.Out.WriteLineAsync(result.Recorder.StdoutTail).ConfigureAwait(false);
+                }
+                if (result.Recorder.StderrTail.Length > 0)
+                {
+                    await Console.Error.WriteLineAsync(result.Recorder.StderrTail).ConfigureAwait(false);
+                }
+            }
+            catch (Exception exception) when (exception is IOException or ObjectDisposedException)
+            {
+                // Presentation follows cleanup and cannot change its outcome.
+            }
+        }
         if (result.ExitCode != 0)
         {
             var evidenceIdentity = Path.GetRelativePath(repositoryRoot, result.EvidencePath)
                 .Replace('\\', '/');
-            await Program.WriteDiagnosticBestEffortAsync(
-                $"Test flight recorder preserved: {evidenceIdentity}").ConfigureAwait(false);
+            if (result.EvidenceWriteFailed)
+            {
+                var lifecycle = result.LifecycleOutcome;
+                var redactor = result.Recorder.Redactor;
+                await Program.WriteDiagnosticBestEffortAsync(
+                    $"Test flight recorder incomplete: {evidenceIdentity}; " +
+                    $"primary={redactor.Redact(lifecycle?.PrimaryFailure?.Message ?? "unknown")}; " +
+                    $"live={redactor.Redact(lifecycle?.LiveEvidence ?? "unavailable")}; " +
+                    $"secondary={redactor.Redact(lifecycle?.SecondaryCleanupFailure?.Message ?? "none")}")
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                await Program.WriteDiagnosticBestEffortAsync(
+                    $"Test flight recorder preserved: {evidenceIdentity}").ConfigureAwait(false);
+            }
             return result.ExitCode;
         }
 

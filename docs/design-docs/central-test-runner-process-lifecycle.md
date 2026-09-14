@@ -40,6 +40,9 @@
   仍為 live，就是失敗；測試不能再做第二次 `ps` 或給 grace period。
 - Owner 回傳前，所有 owner-created task 必須 terminal，所有 helper process
   必須 exited／reaped。外層 `WaitAsync` 超時不代表 underlying work 已停止。
+- Owner 的 pipe reader 只收集經遮蔽且有容量上限的輸出尾段，不等待任意
+  `TextWriter`。成功完成後命令層才呈現尾段；失敗／取消／逾時時以 recorder 留存尾段。
+  完整即時轉送若再成為需求，須另設可終止的輸出邊界，不能放回 owner task。
 - 全部清理階段共用同一個 monotonic `CleanupDeadline`；期限耗盡不能回 130。
   若工作無法在期限內停止並 join，就需要可終止的執行邊界，不能放棄工作或
   暗中增加 budget。

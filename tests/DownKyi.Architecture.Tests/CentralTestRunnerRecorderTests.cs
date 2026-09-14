@@ -73,7 +73,7 @@ public sealed class CentralTestRunnerRecorderTests
             var cleanupIndex = Array.IndexOf(events, "cleanup_completed");
             Assert.InRange(stopIndex, 0, cleanupIndex - 1);
             Assert.InRange(cleanupIndex, 0, snapshotIndex - 1);
-            Assert.Contains(
+            Assert.DoesNotContain(
                 report.GetProperty("Events").EnumerateArray(),
                 item => string.Equals(
                             item.GetProperty("Event").GetString(),
@@ -241,19 +241,52 @@ public sealed class CentralTestRunnerRecorderTests
         var marker = Path.Combine(evidenceDirectory, "root.pid");
         try
         {
-            var failure = await Record.ExceptionAsync(() => FlightRecorderExecution.RunAsync(
+            var result = await FlightRecorderExecution.RunAsync(
                 new ProcessExecutionRequest(
                     "owner.abnormal", "snapshot-exception",
                     CreateFixtureStartInfo("fixture-hold-marker", marker),
                     TimeSpan.FromMilliseconds(300), TimeSpan.FromSeconds(3),
                     evidenceDirectory,
                     (_, _) => throw new ArgumentException("unexpected diagnostic failure")),
-                CancellationToken.None)).ConfigureAwait(true);
-            Assert.IsType<ArgumentException>(failure);
+                CancellationToken.None).ConfigureAwait(true);
+            Assert.Equal(2, result.ExitCode);
+            Assert.True(result.EvidenceWriteFailed);
+            Assert.IsType<ArgumentException>(result.LifecycleOutcome?.PrimaryFailure);
             var pid = int.Parse(await File.ReadAllTextAsync(
                 marker, TestContext.Current.CancellationToken).ConfigureAwait(true),
                 CultureInfo.InvariantCulture);
             Assert.False(IsProcessAlive(pid));
+        }
+        finally
+        {
+            Directory.Delete(evidenceDirectory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task LateEvidenceFailureCannotReplaceLifecyclePrimary()
+    {
+        var evidenceDirectory = CreateEvidenceDirectory();
+        try
+        {
+            var result = await FlightRecorderExecution.RunAsync(
+                new ProcessExecutionRequest(
+                    "owner.primary", "late-evidence-failure",
+                    CreateFixtureStartInfo("fixture-hold"),
+                    TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(3),
+                    evidenceDirectory,
+                    (_, _) => throw new ArgumentException("snapshot failed"),
+                    _ => throw new System.ComponentModel.Win32Exception("identity failed")),
+                CancellationToken.None).ConfigureAwait(true);
+
+            Assert.Equal(2, result.ExitCode);
+            Assert.True(result.EvidenceWriteFailed);
+            Assert.Contains("identity failed", result.LifecycleOutcome?.PrimaryFailure?.Message,
+                StringComparison.Ordinal);
+            Assert.Contains("snapshot failed",
+                result.LifecycleOutcome?.SecondaryCleanupFailure?.Message,
+                StringComparison.Ordinal);
+            Assert.False(IsProcessAlive(result.RootPid));
         }
         finally
         {
