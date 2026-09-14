@@ -3,9 +3,9 @@
 `ModuleBoundaryBaselineTests` 不是 suppression。它把 2026-07-22 已確認的邊界與命名債務設為最大集合：
 
 - 現有 violation 被刪除：pass。
-- 現有巨檔縮小：pass。
 - 新增 violation：fail。
-- 已知巨檔增長：fail。
+
+單檔行數不設 CI 上限；維護成本由責任邊界與行為測試判斷，不靠拆檔壓行數。
 
 ## 為何不用「現況先紅」
 

@@ -307,4 +307,4 @@ legacy `UseSsl` migration and third-party binary evidence are documented in
 - `tests/DownKyi.Desktop.Tests/UiSmokeTests.cs`
 - `tests/DownKyi.Tests/LocalModuleCompositionTests.cs`
 
-基線測試採 ratchet 模式：現有違規可以減少或移除，新增違規或擴大巨檔會失敗。基線不是豁免，也不能成為長期目標。
+基線測試採 ratchet 模式：現有責任邊界違規可以減少或移除，新增邊界違規會失敗。單檔行數不作為 CI 上限；基線不是豁免，也不能成為長期目標。

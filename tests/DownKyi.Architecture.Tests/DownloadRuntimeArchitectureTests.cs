@@ -107,12 +107,6 @@ public sealed class DownloadRuntimeArchitectureTests
             .ToArray();
 
         Assert.Equal(expectedFiles.Order(StringComparer.Ordinal), actualFiles);
-        Assert.All(
-            actualFiles,
-            fileName => Assert.True(
-                File.ReadAllLines(Path.Combine(directory, fileName!)).Length <= 500,
-                $"{fileName} exceeds the 500-line owner limit."));
-
         var coreSource = File.ReadAllText(Path.Combine(directory, "AriaClient.cs"));
         Assert.Contains("GetRpcResponseAsync", coreSource, StringComparison.Ordinal);
         Assert.Contains("RequestAsync", coreSource, StringComparison.Ordinal);

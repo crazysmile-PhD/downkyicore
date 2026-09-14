@@ -721,9 +721,6 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
             "ViewModels",
             "ViewMySpaceViewModel.State.cs"));
 
-        Assert.All(
-            new[] { viewModelSource, stateSource },
-            source => Assert.True(source.Count(character => character == '\n') < 500));
         Assert.Contains("IUserSpacePageCoordinator", viewModelSource, StringComparison.Ordinal);
         Assert.Contains("ISettingsStore", viewModelSource, StringComparison.Ordinal);
         Assert.Contains("ExecuteBackSpace", viewModelSource, StringComparison.Ordinal);

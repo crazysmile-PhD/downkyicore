@@ -98,7 +98,7 @@ Resolution (2026-07-26): Gate 6 extracted a typed execution context and six orde
 
 `DownloadPipeline.cs` 有 1,058 physical lines，直接操作 `DownloadingItem`、download lists、UI display state、播放地址、音訊/影片/DURL、retry、FFmpeg、artifact 與 persistence。先前抽出的 artifact/state writers 是有效改善，但不代表 pipeline 已完成拆分。
 
-目標 stages 與契約見根層 `ARCHITECTURE.md`。File-length ratchet 只防止惡化，不可替代責任測試。
+目標 stages 與契約見根層 `ARCHITECTURE.md`。當時使用的 file-length ratchet 已撤除；責任測試仍保留。
 
 ## Finding 5: Retry ownership 重複
 
@@ -191,16 +191,17 @@ Logging 風險已依 ADR 收斂並由 PR #94 整合：Application 只保留 cont
 3. duplicate full-name sets 不可擴大。
 4. generic type-name baseline 不可擴大。
 5. file/type mismatch baseline 不可擴大。
-6. 500 行以上檔案不可新增或增長。
-7. Domain-to-legacy reconstruction 不可離開 projection owner。
-8. UI collection polling 不可擴散。
-9. static/sync HTTP debt 不可擴散。
-10. 已刪除的 custom mutable collection 不得返回；下載清單只能公開標準唯讀 wrapper。
-11. 一般 network 與 aria RPC/runtime settings owners 必須維持分離，且兩個檔案都受 500 行上限約束。
-12. Network settings 的 navigation/general commands、aria commands 與 binding state 必須維持分離，每個 partial 都受 500 行上限約束。
-13. Video settings 的 navigation/playback/transcoding commands、directory/content/filename commands 與 binding state 必須維持分離，每個 partial 都受 500 行上限約束，且只有 main owner 可接收 `ISettingsStore`。
-14. My-space 的 navigation/profile workflow 與 binding state 必須維持分離，兩個 partial 都受 500 行上限約束，且 state owner 不得取得 coordinator、settings 或 cancellation ownership。
-15. aria2 RPC transport、download control、status/URI、options、lifecycle 與 `system.*` owners 必須維持分離；所有 partial 受 500 行上限約束，公開方法 inventory 與 wire method/token 契約不得漂移。
+6. Domain-to-legacy reconstruction 不可離開 projection owner。
+7. UI collection polling 不可擴散。
+8. static/sync HTTP debt 不可擴散。
+9. 已刪除的 custom mutable collection 不得返回；下載清單只能公開標準唯讀 wrapper。
+10. 一般 network 與 aria RPC/runtime settings owners 必須維持分離。
+11. Network settings 的 navigation/general commands、aria commands 與 binding state 必須維持分離。
+12. Video settings 的 navigation/playback/transcoding commands、directory/content/filename commands 與 binding state 必須維持分離，且只有 main owner 可接收 `ISettingsStore`。
+13. My-space 的 navigation/profile workflow 與 binding state 必須維持分離，且 state owner 不得取得 coordinator、settings 或 cancellation ownership。
+14. aria2 RPC transport、download control、status/URI、options、lifecycle 與 `system.*` owners 必須維持分離；公開方法 inventory 與 wire method/token 契約不得漂移。
+
+2026-09-14 起不再以 500 行限制檔案長度；上述責任邊界仍由其行為和架構測試保護。
 
 這些測試是過渡 ratchet。每移除一項債務，應同步刪除對應 baseline entry；不得把 baseline 當成永久例外清單。
 
