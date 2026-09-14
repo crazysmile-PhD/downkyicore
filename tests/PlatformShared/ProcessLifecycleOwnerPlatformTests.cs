@@ -693,6 +693,10 @@ public sealed class ProcessLifecycleOwnerPlatformTests
         {
             return null;
         }
+        catch (IOException exception) when (exception.HResult == 3) // ESRCH: process vanished during procfs enumeration.
+        {
+            return null;
+        }
     }
 
     private static string? ReadMacState(int pid)
