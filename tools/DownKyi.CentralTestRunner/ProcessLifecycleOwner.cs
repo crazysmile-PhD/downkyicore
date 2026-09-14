@@ -247,7 +247,7 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
 
             if (OperatingSystem.IsLinux())
             {
-                cgroup = LinuxCgroupContainment.TryCreateForHost(host.Id);
+                LinuxCgroupContainment.TryCreateForHost(host.Id, out cgroup);
             }
 
             await control.WaitForConnectionAsync(startupCancellation.Token).ConfigureAwait(false);
@@ -297,6 +297,10 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
         catch (Exception launchFailure)
         {
             Exception? cleanupFailure = null;
+            void RecordStartupCleanupFailure(Exception failure) =>
+                cleanupFailure = cleanupFailure is null
+                    ? failure
+                    : new AggregateException(cleanupFailure, failure);
             try
             {
                 if (host is not null && containmentReady && reader is not null && control is not null)
@@ -322,24 +326,44 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
                 else if (host is not null)
                 {
                     // No launch request can have run before the ready handshake.
-                    if (job is not null)
+                    try
                     {
-                        TerminateWindowsJob(job);
+                        if (job is not null)
+                        {
+                            TerminateWindowsJob(job);
+                        }
+                        else
+                        {
+                            cgroup?.Kill();
+                        }
                     }
-                    else if (cgroup is not null)
+                    catch (Exception exception)
                     {
-                        cgroup.Kill();
+                        RecordStartupCleanupFailure(exception);
                     }
-                    if (!host.HasExited)
+                    try
                     {
-                        host.Kill();
+                        if (!host.HasExited)
+                        {
+                            host.Kill();
+                        }
                     }
-                    await host.WaitForExitAsync().ConfigureAwait(false);
+                    catch (Exception exception)
+                    {
+                        RecordStartupCleanupFailure(exception);
+                    }
+                    try { await host.WaitForExitAsync().ConfigureAwait(false); }
+                    catch (Exception exception) { RecordStartupCleanupFailure(exception); }
+                    if (cgroup is not null)
+                    {
+                        try { cgroup.RemoveAfterFailedStartup(); }
+                        catch (Exception exception) { RecordStartupCleanupFailure(exception); }
+                    }
                 }
             }
             catch (Exception exception)
             {
-                cleanupFailure = exception;
+                RecordStartupCleanupFailure(exception);
             }
 
             var primary = launchFailure is OperationCanceledException &&

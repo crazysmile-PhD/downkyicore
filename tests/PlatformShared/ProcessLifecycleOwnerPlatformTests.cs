@@ -145,6 +145,44 @@ public sealed class ProcessLifecycleOwnerPlatformTests
     }
 
     [Fact]
+    public void LinuxFailedCgroupMembershipKeepsDirectoryOwnedForStartupRecovery()
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        // An ordinary directory cannot change /proc membership. It makes the
+        // verification failure deterministic without requiring delegated cgroups.
+        var directory = Path.Combine(Path.GetTempPath(), $"downkyi-cgroup-setup-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        File.WriteAllText(Path.Combine(directory, "cgroup.kill"), "");
+        File.WriteAllText(Path.Combine(directory, "cgroup.procs"), "");
+        LinuxCgroupContainment? containment = null;
+        try
+        {
+            Assert.Throws<InvalidOperationException>(() =>
+                LinuxCgroupContainment.TryAttachHostInDirectory(
+                    Environment.ProcessId, directory, out containment));
+            Assert.NotNull(containment);
+            Assert.True(Directory.Exists(directory));
+
+            File.Delete(Path.Combine(directory, "cgroup.kill"));
+            File.Delete(Path.Combine(directory, "cgroup.procs"));
+            containment.RemoveAfterFailedStartup();
+            Assert.False(Directory.Exists(directory));
+        }
+        finally
+        {
+            containment?.Dispose();
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public async Task ReusedPidInDiagnosticSnapshotCannotAuthorizeTermination()
     {
         var directory = Path.Combine(Path.GetTempPath(), $"downkyi-pid-reuse-{Guid.NewGuid():N}");

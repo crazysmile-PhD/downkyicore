@@ -13,13 +13,14 @@ internal sealed class LinuxCgroupContainment : IDisposable
         this.path = path;
     }
 
-    internal static LinuxCgroupContainment? TryCreateForHost(int hostPid)
+    internal static void TryCreateForHost(int hostPid, out LinuxCgroupContainment? containment)
     {
+        containment = null;
         var membership = File.ReadLines("/proc/self/cgroup")
             .FirstOrDefault(line => line.StartsWith("0::", StringComparison.Ordinal));
         if (membership is null)
         {
-            return null; // cgroup v2 is unavailable.
+            return; // cgroup v2 is unavailable.
         }
 
         var relative = membership[3..].TrimStart('/');
@@ -27,49 +28,49 @@ internal sealed class LinuxCgroupContainment : IDisposable
         if (!File.Exists(Path.Combine(parent, "cgroup.procs")) ||
             !File.Exists(Path.Combine(parent, "cgroup.events")))
         {
-            return null;
+            return;
         }
 
         var path = Path.Combine(parent, $"downkyi-{Guid.NewGuid():N}");
+        TryAttachHostInDirectory(hostPid, path, out containment);
+    }
+
+    internal static void TryAttachHostInDirectory(
+        int hostPid, string path, out LinuxCgroupContainment? containment)
+    {
+        containment = null;
         try
         {
             Directory.CreateDirectory(path);
         }
         catch (Exception exception) when (exception is UnauthorizedAccessException or IOException)
         {
-            return null; // The runner has no delegated writable cgroup subtree.
+            return; // The runner has no delegated writable cgroup subtree.
         }
 
-        try
+        // Register the created directory with the caller before any membership
+        // operation can fail. Startup recovery owns its removal from this point.
+        containment = new LinuxCgroupContainment(path);
+        if (!File.Exists(Path.Combine(path, "cgroup.kill")))
         {
-            if (!File.Exists(Path.Combine(path, "cgroup.kill")))
-            {
-                Directory.Delete(path);
-                return null; // This kernel cannot provide authoritative group kill.
-            }
-
-            File.WriteAllText(Path.Combine(path, "cgroup.procs"),
-                hostPid.ToString(CultureInfo.InvariantCulture));
-            var actual = File.ReadLines($"/proc/{hostPid}/cgroup")
-                .FirstOrDefault(line => line.StartsWith("0::", StringComparison.Ordinal));
-            if (actual is null || !actual[3..].EndsWith("/" + Path.GetFileName(path), StringComparison.Ordinal))
-            {
-                throw new InvalidOperationException("The ownership host did not enter its cgroup.");
-            }
-
-            return new LinuxCgroupContainment(path);
+            containment.RemoveAfterFailedStartup();
+            containment = null;
+            return; // This kernel cannot provide authoritative group kill.
         }
-        catch
+
+        File.WriteAllText(Path.Combine(path, "cgroup.procs"),
+            hostPid.ToString(CultureInfo.InvariantCulture));
+        var actual = File.ReadLines($"/proc/{hostPid}/cgroup")
+            .FirstOrDefault(line => line.StartsWith("0::", StringComparison.Ordinal));
+        if (actual is null || !actual[3..].EndsWith("/" + Path.GetFileName(path), StringComparison.Ordinal))
         {
-            // Membership may already have changed. Never downgrade to a process group
-            // after this point; the launch must fail closed and the host must be reaped.
-            try { File.WriteAllText(Path.Combine(path, "cgroup.kill"), "1"); }
-            catch (IOException) { }
-            throw;
+            throw new InvalidOperationException("The ownership host did not enter its cgroup.");
         }
     }
 
     internal void Kill() => File.WriteAllText(Path.Combine(path, "cgroup.kill"), "1");
+
+    internal void RemoveAfterFailedStartup() => Directory.Delete(path);
 
     internal bool IsQuiescent()
     {
