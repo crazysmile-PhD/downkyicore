@@ -177,7 +177,8 @@ internal sealed class FlightRecorder
         });
     }
 
-    public async Task CaptureFinalSnapshotOnceAsync(CleanupDeadline? deadline = null)
+    public async Task CaptureFinalSnapshotOnceAsync(
+        CleanupDeadline? deadline = null, Action<Exception>? onUnexpectedFailure = null)
     {
         if (report.FinalSnapshot is not null)
         {
@@ -202,25 +203,36 @@ internal sealed class FlightRecorder
             }
         }
         catch (Exception exception) when (exception is IOException or InvalidOperationException or
-                                          System.ComponentModel.Win32Exception or TimeoutException or
-                                          UnauthorizedAccessException or NotSupportedException)
+                                           System.ComponentModel.Win32Exception or TimeoutException or
+                                           UnauthorizedAccessException or NotSupportedException)
         {
-            var error = Redactor.Redact(exception.Message);
-            report.FinalSnapshot = new FinalProcessSnapshot
-            {
-                CapturedAtUtc = DateTimeOffset.UtcNow,
-                Completeness = SnapshotNotice,
-                Processes = [],
-                Error = error
-            };
-            if (deadline is null)
-            {
-                await RecordAsync("final_snapshot_failed", pid: rootPid, detail: error).ConfigureAwait(false);
-            }
-            else
-            {
-                RecordInMemory("final_snapshot_failed", pid: rootPid, detail: error);
-            }
+            await RecordSnapshotFailureAsync(exception, rootPid, deadline).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (onUnexpectedFailure is not null)
+        {
+            onUnexpectedFailure!(exception);
+            await RecordSnapshotFailureAsync(exception, rootPid, deadline).ConfigureAwait(false);
+        }
+    }
+
+    private async Task RecordSnapshotFailureAsync(
+        Exception exception, int rootPid, CleanupDeadline? deadline)
+    {
+        var error = Redactor.Redact(exception.Message);
+        report.FinalSnapshot = new FinalProcessSnapshot
+        {
+            CapturedAtUtc = DateTimeOffset.UtcNow,
+            Completeness = SnapshotNotice,
+            Processes = [],
+            Error = error
+        };
+        if (deadline is null)
+        {
+            await RecordAsync("final_snapshot_failed", pid: rootPid, detail: error).ConfigureAwait(false);
+        }
+        else
+        {
+            RecordInMemory("final_snapshot_failed", pid: rootPid, detail: error);
         }
     }
 
@@ -228,11 +240,18 @@ internal sealed class FlightRecorder
         string outcome,
         TailBuffer standardOutput,
         TailBuffer standardError,
-        CleanupDeadline? deadline = null)
+        CleanupDeadline? deadline = null,
+        Action<Exception>? onUnexpectedSnapshotFailure = null)
     {
-        await CaptureFinalSnapshotOnceAsync(deadline).ConfigureAwait(false);
+        var unexpectedSnapshotFailure = false;
+        await CaptureFinalSnapshotOnceAsync(deadline,
+            onUnexpectedSnapshotFailure is null ? null : exception =>
+            {
+                onUnexpectedSnapshotFailure(exception);
+                unexpectedSnapshotFailure = true;
+            }).ConfigureAwait(false);
 
-        report.Outcome = outcome;
+        report.Outcome = unexpectedSnapshotFailure ? "cleanup_failed" : outcome;
         if (standardOutput.Value.Length > 0 || report.StdoutTail is null)
         {
             report.StdoutTail = Redactor.Redact(standardOutput.Value);

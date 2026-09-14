@@ -42,7 +42,8 @@ internal static class UnixProcessGroupInspector
 
             string stat;
             try { stat = File.ReadAllText(Path.Combine(directory, "stat")); }
-            catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
+            catch (Exception exception) when (exception is FileNotFoundException or
+                DirectoryNotFoundException or IOException { HResult: 3 }) // ESRCH
             {
                 continue; // The process exited during the observation.
             }
@@ -86,7 +87,8 @@ internal static class UnixProcessGroupInspector
 
             string stat;
             try { stat = File.ReadAllText(Path.Combine(directory, "stat")); }
-            catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
+            catch (Exception exception) when (exception is FileNotFoundException or
+                DirectoryNotFoundException or IOException { HResult: 3 }) // ESRCH
             {
                 continue;
             }

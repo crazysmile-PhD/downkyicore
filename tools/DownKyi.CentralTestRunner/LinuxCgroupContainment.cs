@@ -110,7 +110,8 @@ internal sealed class LinuxCgroupContainment : IDisposable
                     return $"pid={pid}, state={state}";
                 }
             }
-            catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
+            catch (Exception exception) when (exception is FileNotFoundException or
+                DirectoryNotFoundException or IOException { HResult: 3 }) // ESRCH
             {
                 // The member exited between cgroup and /proc observations.
             }

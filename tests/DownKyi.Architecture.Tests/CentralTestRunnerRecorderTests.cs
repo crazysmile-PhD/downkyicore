@@ -10,6 +10,21 @@ namespace DownKyi.Architecture.Tests;
 public sealed class CentralTestRunnerRecorderTests
 {
     [Fact]
+    public async Task WorkloadStdinReachesEofWithoutConsumingHostLifecycleSignal()
+    {
+        var owner = await ProcessLifecycleOwner.StartAsync(
+            CreateFixtureStartInfo("fixture-stdin-eof"), TimeSpan.FromSeconds(5),
+            redirectOutput: false).ConfigureAwait(true);
+        await using var ownerDisposal = owner.ConfigureAwait(true);
+        var outcome = await owner.CompleteAsync(TimeSpan.FromSeconds(5), CancellationToken.None)
+            .ConfigureAwait(true);
+        Assert.Equal(ProcessLifecycleTrigger.RootExited, outcome.Trigger);
+        Assert.Equal(0, outcome.RootExitCode);
+        Assert.True(outcome.CleanupSucceeded);
+        Assert.True(outcome.HostExited);
+    }
+
+    [Fact]
     public async Task TimedOutTestProcessPreservesIdentityCleanupSnapshotAndGuidance()
     {
         var evidenceDirectory = CreateEvidenceDirectory();
@@ -376,8 +391,13 @@ public sealed class CentralTestRunnerRecorderTests
                     (_, _) => throw new ArgumentException("unexpected diagnostic failure")),
                 CancellationToken.None).ConfigureAwait(true);
             Assert.Equal(2, result.ExitCode);
-            Assert.True(result.EvidenceWriteFailed);
+            Assert.False(result.EvidenceWriteFailed);
             Assert.IsType<ArgumentException>(result.LifecycleOutcome?.PrimaryFailure);
+            using var report = JsonDocument.Parse(await File.ReadAllTextAsync(
+                result.EvidencePath, TestContext.Current.CancellationToken).ConfigureAwait(true));
+            Assert.Equal("cleanup_failed", report.RootElement.GetProperty("Outcome").GetString());
+            Assert.Contains("unexpected diagnostic failure",
+                report.RootElement.GetProperty("PrimaryFailure").GetString(), StringComparison.Ordinal);
             var pid = int.Parse(await File.ReadAllTextAsync(
                 marker, TestContext.Current.CancellationToken).ConfigureAwait(true),
                 CultureInfo.InvariantCulture);
@@ -401,17 +421,23 @@ public sealed class CentralTestRunnerRecorderTests
                     CreateFixtureStartInfo("fixture-hold"),
                     TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(3),
                     evidenceDirectory,
-                    (_, _) => throw new ArgumentException("snapshot failed"),
+                    (_, _) => throw new OperationCanceledException("snapshot cancelled"),
                     _ => throw new System.ComponentModel.Win32Exception("identity failed")),
                 CancellationToken.None).ConfigureAwait(true);
 
             Assert.Equal(2, result.ExitCode);
-            Assert.True(result.EvidenceWriteFailed);
+            Assert.False(result.EvidenceWriteFailed);
             Assert.Contains("identity failed", result.LifecycleOutcome?.PrimaryFailure?.Message,
                 StringComparison.Ordinal);
-            Assert.Contains("snapshot failed",
+            Assert.Contains("snapshot cancelled",
                 result.LifecycleOutcome?.SecondaryCleanupFailure?.Message,
                 StringComparison.Ordinal);
+            using var report = JsonDocument.Parse(await File.ReadAllTextAsync(
+                result.EvidencePath, TestContext.Current.CancellationToken).ConfigureAwait(true));
+            Assert.Contains("identity failed",
+                report.RootElement.GetProperty("PrimaryFailure").GetString(), StringComparison.Ordinal);
+            Assert.Contains("snapshot cancelled",
+                report.RootElement.GetProperty("SecondaryCleanupFailure").GetString(), StringComparison.Ordinal);
             Assert.False(IsProcessAlive(result.RootPid));
         }
         finally

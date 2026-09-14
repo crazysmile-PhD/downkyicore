@@ -68,6 +68,11 @@ internal static class Program
             return 0;
         }
 
+        if (args.Length > 0 && string.Equals(args[0], "fixture-stdin-eof", StringComparison.Ordinal))
+        {
+            return await Console.In.ReadLineAsync().ConfigureAwait(false) is null ? 0 : 3;
+        }
+
         if (args.Length > 1 && string.Equals(args[0], "fixture-gated-stdout", StringComparison.Ordinal))
         {
             using var gate = new NamedPipeClientStream(".", args[1],

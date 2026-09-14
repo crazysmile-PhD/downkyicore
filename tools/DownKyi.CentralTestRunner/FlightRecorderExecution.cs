@@ -113,7 +113,13 @@ internal static class FlightRecorderExecution
                 try
                 {
                     await recorder.FinalizeFailureAsync(
-                        reportOutcome, standardOutput, standardError, owner.BeginCleanup())
+                        reportOutcome, standardOutput, standardError, owner.BeginCleanup(),
+                        exception =>
+                        {
+                            outcome = owner.RecordEvidenceFailure(outcome, exception);
+                            recorder.SetLifecycleFailure(owner);
+                            exitCode = 2;
+                        })
                         .ConfigureAwait(false);
                 }
                 catch (Exception exception)

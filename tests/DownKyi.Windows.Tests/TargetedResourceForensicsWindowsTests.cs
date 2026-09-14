@@ -212,6 +212,40 @@ public sealed class TargetedResourceForensicsWindowsTests
         }
     }
 
+    [Fact]
+    public async Task NormalBuildExitIgnoresAnUnrelatedDirectoryLock()
+    {
+        var targetDirectory = Path.Combine(Path.GetTempPath(),
+            $"downkyi-build-unrelated-lock-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(targetDirectory);
+        Process? blocker = null;
+        try
+        {
+            blocker = StartDirectoryOwner(targetDirectory);
+            await WaitForOwnerReadyAsync(blocker).ConfigureAwait(true);
+            DuplicateDirectoryHandleIntoProcess(targetDirectory, blocker);
+            var startInfo = new ProcessStartInfo("dotnet") { UseShellExecute = false };
+            startInfo.ArgumentList.Add("exec");
+            startInfo.ArgumentList.Add("--runtimeconfig");
+            startInfo.ArgumentList.Add(Path.Combine(AppContext.BaseDirectory,
+                "DownKyi.Windows.Tests.runtimeconfig.json"));
+            startInfo.ArgumentList.Add(typeof(BuildProcessRunner).Assembly.Location);
+            startInfo.ArgumentList.Add("fixture-stdin-eof");
+
+            var exitCode = await BuildProcessRunner.RunAsync(startInfo, CancellationToken.None,
+                TimeSpan.FromMilliseconds(500), targetDirectory).ConfigureAwait(true);
+            Assert.Equal(0, exitCode);
+            Assert.False(blocker.HasExited);
+        }
+        finally
+        {
+            await StopOwnerAsync(blocker).ConfigureAwait(true);
+            await WindowsDirectoryResourceRundown.WaitForDeleteAccessAsync(
+                targetDirectory, TimeSpan.FromSeconds(5)).ConfigureAwait(true);
+            Directory.Delete(targetDirectory);
+        }
+    }
+
     private static bool IsLive(int pid)
     {
         try

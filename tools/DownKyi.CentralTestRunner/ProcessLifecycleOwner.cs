@@ -593,7 +593,8 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
         }
 
         var resourceReady = true;
-        if (OperatingSystem.IsWindows() && cleanupResourceDirectory is not null)
+        if (OperatingSystem.IsWindows() && trigger != ProcessLifecycleTrigger.RootExited &&
+            cleanupResourceDirectory is not null)
         {
             try
             {
@@ -982,6 +983,7 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
             {
                 UseShellExecute = false,
                 WorkingDirectory = launch.WorkingDirectory,
+                RedirectStandardInput = true,
                 RedirectStandardOutput = outputChannel is not null,
                 RedirectStandardError = errorChannel is not null
             };
@@ -997,6 +999,7 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
 
             child = Process.Start(childInfo)
                 ?? throw new InvalidOperationException("The scoped test process did not start.");
+            child.StandardInput.Close(); // Workload stdin must not consume the host's lifecycle channel.
             var outputRelay = outputChannel is null ? Task.CompletedTask :
                 RelayOutputAsync(child.StandardOutput.BaseStream, outputChannel);
             var errorRelay = errorChannel is null ? Task.CompletedTask :
