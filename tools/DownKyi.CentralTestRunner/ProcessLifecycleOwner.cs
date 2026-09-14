@@ -52,6 +52,7 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
     private bool rootExitRead;
     private Task<ProcessLifecycleOutcome>? completionTask;
     private Exception? primaryFailure;
+    private int cleanupFailed;
     private readonly object secondaryFailureGate = new();
     private bool disposed;
 
@@ -89,7 +90,8 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
     internal Exception? PrimaryFailure => Volatile.Read(ref primaryFailure);
     internal string? LiveEvidence { get; private set; }
     internal Exception? SecondaryCleanupFailure { get; private set; }
-    private void RecordPrimaryFailure(Exception failure) =>
+    private void RecordPrimaryFailure(Exception failure) => RecordCleanupFailure(failure);
+    private void RecordTerminalFailure(Exception failure) =>
         Interlocked.CompareExchange(ref primaryFailure, failure, null);
     internal void RecordObservedFailure(Exception failure) => RecordCleanupFailure(failure);
 
@@ -418,6 +420,13 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
                 if (int.TryParse(line, NumberStyles.Integer, CultureInfo.InvariantCulture,
                     out var exitCode))
                 {
+                    if (exitCode != 0)
+                    {
+                        // Commit the root result before the reader can observe
+                        // a later relay or teardown error on this same channel.
+                        RecordTerminalFailure(new InvalidOperationException(
+                            $"The owned process exited with code {exitCode}."));
+                    }
                     rootExitReport.TrySetResult(exitCode);
                 }
                 else if (string.Equals(line, "output_complete", StringComparison.Ordinal))
@@ -560,6 +569,13 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
             }
         }
 
+        // Timeout is committed before cleanup starts. Nonzero root exit is
+        // committed by the control reader before it publishes that result.
+        if (trigger == ProcessLifecycleTrigger.TimedOut)
+        {
+            RecordTerminalFailure(new TimeoutException("The owned process exceeded its execution deadline."));
+        }
+
         var deadline = BeginCleanup();
         var outputHeld = false;
         if (trigger == ProcessLifecycleTrigger.RootExited &&
@@ -673,11 +689,11 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
         }
 
         var succeeded = stopped && resourceReady && drained && controlJoined && hostExited &&
-            PrimaryFailure is null;
+            Volatile.Read(ref cleanupFailed) == 0;
         if (succeeded)
         {
             Phase("cleanup_completed");
-            succeeded = PrimaryFailure is null;
+            succeeded = Volatile.Read(ref cleanupFailed) == 0;
         }
         if (!succeeded)
         {
@@ -713,6 +729,7 @@ internal sealed class ProcessLifecycleOwner : IAsyncDisposable
 
     private void RecordCleanupFailure(Exception exception)
     {
+        Interlocked.Exchange(ref cleanupFailed, 1);
         var primary = Interlocked.CompareExchange(ref primaryFailure, exception, null);
         if (primary is not null && !ContainsFailure(exception, primary))
         {

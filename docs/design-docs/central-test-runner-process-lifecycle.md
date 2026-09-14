@@ -47,7 +47,7 @@
   join 讀取工作並確認轉送結果，才可宣告正常完成。控制通道由 owner 持續讀到
   host EOF；取消與轉送失敗同時發生時，清理後仍須 join 該讀取工作並保留失敗。
 - Owner 的 pipe reader 只收集經遮蔽且有容量上限的輸出尾段，不等待任意
-  `TextWriter`。成功完成後命令層才呈現尾段；失敗／取消／逾時時以 recorder 留存尾段。
+  `TextWriter`。成功時不顯示尾段並清除 recorder；失敗／取消／逾時時以 recorder 留存尾段。
   完整即時轉送若再成為需求，須另設可終止的輸出邊界，不能放回 owner task。
 - 全部清理階段共用同一個 monotonic `CleanupDeadline`；期限耗盡不能回 130。
   若工作無法在期限內停止並 join，就需要可終止的執行邊界，不能放棄工作或
@@ -56,6 +56,8 @@
   保留該 live evidence 並以「未證實停止」為主因；inspector／reap exception
   是次因。期限到達或成功回傳後觀察到 live 也不能被稍後結果洗掉。
   Recorder 只保存 owner 的因果順序。
+- Root 逾時或非零退出在清理前固定為主因；`CleanupSucceeded` 只表示清理完成，
+  不代表測試通過。後續清理或 evidence 失敗使最終 exit code 為 2，但只列為次因。
 
 ## 修改時從哪裡讀起
 

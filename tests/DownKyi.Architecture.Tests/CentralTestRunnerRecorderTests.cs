@@ -204,8 +204,79 @@ public sealed class CentralTestRunnerRecorderTests
 
         Assert.Equal(ProcessLifecycleTrigger.TimedOut, outcome.Trigger);
         Assert.True(outcome.CleanupSucceeded);
+        Assert.IsType<TimeoutException>(outcome.PrimaryFailure);
         Assert.True(outcome.HostExited);
         Assert.True(owner.OwnedTasksTerminal);
+
+        var evidenceFailure = new IOException("Recorder failed after timeout.");
+        var amended = owner.RecordEvidenceFailure(outcome, evidenceFailure);
+        Assert.False(amended.CleanupSucceeded);
+        Assert.IsType<TimeoutException>(amended.PrimaryFailure);
+        Assert.Same(evidenceFailure, amended.SecondaryCleanupFailure);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task NonzeroRootExitKeepsCleanupAndEvidenceResultsSeparate(bool inspectorFails)
+    {
+        var evidenceDirectory = CreateEvidenceDirectory();
+        try
+        {
+            var result = await FlightRecorderExecution.RunAsync(
+                new ProcessExecutionRequest(
+                    "fixture.nonzero.slice",
+                    "fixture.nonzero.test",
+                    CreateFixtureStartInfo("fixture-long-line", "safe"),
+                    TimeSpan.FromSeconds(10),
+                    TimeSpan.FromSeconds(3),
+                    evidenceDirectory,
+                    SnapshotCapture: (_, _) => inspectorFails
+                        ? throw new OperationCanceledException("Inspector failed after nonzero exit.")
+                        : new FinalProcessSnapshot
+                        {
+                            Completeness = "Diagnostic snapshot only.",
+                            Processes = []
+                        }),
+                CancellationToken.None);
+
+            Assert.Equal(inspectorFails ? 2 : 1, result.ExitCode);
+            var outcome = Assert.IsType<ProcessLifecycleOutcome>(result.LifecycleOutcome);
+            Assert.Equal(ProcessLifecycleTrigger.RootExited, outcome.Trigger);
+            Assert.Equal(1, outcome.RootExitCode);
+            Assert.Equal(!inspectorFails, outcome.CleanupSucceeded);
+            Assert.Contains("exited with code 1", outcome.PrimaryFailure?.Message,
+                StringComparison.Ordinal);
+            if (inspectorFails)
+            {
+                Assert.IsType<OperationCanceledException>(outcome.SecondaryCleanupFailure);
+            }
+            else
+            {
+                Assert.Null(outcome.SecondaryCleanupFailure);
+            }
+
+            using var document = JsonDocument.Parse(await File.ReadAllTextAsync(
+                result.EvidencePath, TestContext.Current.CancellationToken));
+            var report = document.RootElement;
+            Assert.Contains("exited with code 1",
+                report.GetProperty("PrimaryFailure").GetString(), StringComparison.Ordinal);
+            Assert.Equal(inspectorFails ? "cleanup_failed" : "process_exit",
+                report.GetProperty("Outcome").GetString());
+            if (inspectorFails)
+            {
+                Assert.Contains("Inspector failed after nonzero exit.",
+                    report.GetProperty("SecondaryCleanupFailure").GetString(), StringComparison.Ordinal);
+            }
+            else
+            {
+                Assert.False(report.TryGetProperty("SecondaryCleanupFailure", out _));
+            }
+        }
+        finally
+        {
+            Directory.Delete(evidenceDirectory, recursive: true);
+        }
     }
 
     [Fact]
@@ -392,12 +463,16 @@ public sealed class CentralTestRunnerRecorderTests
                 CancellationToken.None).ConfigureAwait(true);
             Assert.Equal(2, result.ExitCode);
             Assert.False(result.EvidenceWriteFailed);
-            Assert.IsType<ArgumentException>(result.LifecycleOutcome?.PrimaryFailure);
+            Assert.IsType<TimeoutException>(result.LifecycleOutcome?.PrimaryFailure);
+            Assert.IsType<ArgumentException>(result.LifecycleOutcome?.SecondaryCleanupFailure);
             using var report = JsonDocument.Parse(await File.ReadAllTextAsync(
                 result.EvidencePath, TestContext.Current.CancellationToken).ConfigureAwait(true));
             Assert.Equal("cleanup_failed", report.RootElement.GetProperty("Outcome").GetString());
-            Assert.Contains("unexpected diagnostic failure",
+            Assert.Contains("execution deadline",
                 report.RootElement.GetProperty("PrimaryFailure").GetString(), StringComparison.Ordinal);
+            Assert.Contains("unexpected diagnostic failure",
+                report.RootElement.GetProperty("SecondaryCleanupFailure").GetString(),
+                StringComparison.Ordinal);
             var pid = int.Parse(await File.ReadAllTextAsync(
                 marker, TestContext.Current.CancellationToken).ConfigureAwait(true),
                 CultureInfo.InvariantCulture);
