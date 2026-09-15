@@ -32,10 +32,10 @@ public class VersionCheckerServiceTests
 
     [Theory]
     [InlineData("v1.0.32", "1.0.32")]
-    [InlineData("1.0.32-debug", "1.0.32")]
+    [InlineData("1.0.32-debug", "1.0.32-debug")]
     [InlineData("1.0.32+abcdef", "1.0.32")]
-    [InlineData("v1.0.32-beta.1", "1.0.32")]
-    public void NormalizeVersionNameReturnsComparableSemverCore(string input, string expected)
+    [InlineData("v1.0.32-beta.1", "1.0.32-beta.1")]
+    public void NormalizeVersionNamePreservesSemverReleaseIdentity(string input, string expected)
     {
         Assert.Equal(expected, AppInfo.NormalizeVersionName(input));
     }
@@ -70,6 +70,23 @@ public class VersionCheckerServiceTests
         Assert.True(service.IsNewVersionAvailable("v99.0.0"));
     }
 
+    [Theory]
+    [InlineData("1.1.1-beta.2", "1.1.1-beta.1", true)]
+    [InlineData("1.1.1", "1.1.1-rc.1", true)]
+    [InlineData("1.1.1-rc.1", "1.1.1", false)]
+    [InlineData("1.1.1+build.2", "1.1.1+build.1", false)]
+    public void VersionAvailabilityUsesFullSemverPrecedence(
+        string latest,
+        string current,
+        bool expected)
+    {
+        using var handler = new StubHandler("{}");
+        using var httpClient = CreateHttpClient(handler);
+        var service = new VersionCheckerService(httpClient, "owner", "repo", current);
+
+        Assert.Equal(expected, service.IsNewVersionAvailable(latest));
+    }
+
     [Fact]
     public async Task LatestReleaseCheckPreservesPreCanceledRequest()
     {
@@ -99,6 +116,26 @@ public class VersionCheckerServiceTests
 
         Assert.Equal("v2.0.0-beta.1", release?.TagName);
         Assert.Equal("https://api.github.test/repos/owner/repo/releases", handler.RequestUri?.AbsoluteUri);
+    }
+
+    [Fact]
+    public async Task SkippedPrereleaseIgnoresEquivalentBuildAndReturnsNextRelease()
+    {
+        using var handler = new StubHandler("""
+            [
+              {"tag_name":"v2.0.0-beta.1+build.2"},
+              {"tag_name":"v2.0.0-beta.2"}
+            ]
+            """);
+        using var httpClient = CreateHttpClient(handler);
+        var service = new VersionCheckerService(httpClient, "owner", "repo", "1.0.0");
+
+        var release = await service.GetLatestReleaseAsync(
+            true,
+            "2.0.0-beta.1+build.1",
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal("v2.0.0-beta.2", release?.TagName);
     }
 
     private static HttpClient CreateHttpClient(HttpMessageHandler handler)
