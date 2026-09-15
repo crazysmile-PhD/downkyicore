@@ -63,10 +63,27 @@ internal static class ProcessTreeSnapshot
     {
         if (OperatingSystem.IsWindows())
         {
-            return Task.FromResult(WindowsProcessRelationshipSnapshot.ReadParentIds());
+            return ReadParentIdsAsync(
+                WindowsProcessRelationshipSnapshot.ReadParentIds,
+                timeout);
         }
 
         return ReadParentIdsAsync(CreateUnixSnapshotStartInfo(), timeout);
+    }
+
+    internal static async Task<Dictionary<int, int>> ReadParentIdsAsync(
+        Func<Dictionary<int, int>> readParentIds,
+        TimeSpan timeout)
+    {
+        try
+        {
+            return await Task.Run(readParentIds).WaitAsync(timeout).ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            throw new TimeoutException(
+                "Process relationship snapshot exceeded the bounded cleanup window.");
+        }
     }
 
     internal static async Task<Dictionary<int, int>> ReadParentIdsAsync(
