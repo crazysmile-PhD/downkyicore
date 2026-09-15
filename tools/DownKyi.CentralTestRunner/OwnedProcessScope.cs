@@ -117,6 +117,7 @@ internal sealed class OwnedProcessScope : IDisposable
         {
             await Task.Run(() => TerminateWindowsJob(job!))
                 .WaitAsync(deadline.Remaining).ConfigureAwait(false);
+            await WaitForWindowsJobToEmptyAsync(job!, deadline).ConfigureAwait(false);
             return;
         }
 
@@ -124,6 +125,78 @@ internal sealed class OwnedProcessScope : IDisposable
             Marshal.GetLastPInvokeError() != NoSuchProcess)
         {
             throw new Win32Exception(Marshal.GetLastPInvokeError());
+        }
+
+        if (!OperatingSystem.IsLinux() && !OperatingSystem.IsMacOS())
+        {
+            return;
+        }
+
+        using (var hostExit = new CancellationTokenSource(deadline.WorkWindow))
+        {
+            await Host.WaitForExitAsync(hostExit.Token).ConfigureAwait(false);
+        }
+        if (OperatingSystem.IsMacOS())
+        {
+            await WaitForMacProcessGroupToEmptyAsync(deadline).ConfigureAwait(false);
+        }
+        else
+        {
+            await WaitForLinuxProcessGroupToEmptyAsync(deadline).ConfigureAwait(false);
+        }
+    }
+
+    internal async Task WaitForMacProcessGroupToEmptyAsync(CleanupDeadline deadline)
+    {
+        while (MacProcessGroupHasMembers(Host.Id))
+        {
+            var remaining = deadline.WorkWindow;
+            if (remaining == TimeSpan.Zero)
+            {
+                throw new TimeoutException(
+                    $"The owned macOS process group {Host.Id} is still active.");
+            }
+
+            await Task.Delay(TimeSpan.FromTicks(Math.Min(
+                TimeSpan.FromMilliseconds(10).Ticks, remaining.Ticks))).ConfigureAwait(false);
+        }
+    }
+
+    private static bool MacProcessGroupHasMembers(int groupId)
+    {
+        // Darwin killpg skips zombies, so signal 0 can return EPERM for a group
+        // that only contains zombies. libproc counts those members directly.
+        var member = new int[1];
+        var count = NativeMethods.ListProcessGroupPids(groupId, member, sizeof(int));
+        return count >= 0
+            ? count > 0
+            : throw new Win32Exception(Marshal.GetLastPInvokeError());
+    }
+
+    internal async Task WaitForLinuxProcessGroupToEmptyAsync(CleanupDeadline deadline)
+    {
+        while (true)
+        {
+            if (NativeMethods.KillProcessGroup(Host.Id, 0) != 0)
+            {
+                var error = Marshal.GetLastPInvokeError();
+                if (error == NoSuchProcess)
+                {
+                    return;
+                }
+
+                throw new Win32Exception(error);
+            }
+
+            var remaining = deadline.WorkWindow;
+            if (remaining == TimeSpan.Zero)
+            {
+                throw new TimeoutException(
+                    $"The owned Linux process group {Host.Id} is still active.");
+            }
+
+            await Task.Delay(TimeSpan.FromTicks(Math.Min(
+                TimeSpan.FromMilliseconds(10).Ticks, remaining.Ticks))).ConfigureAwait(false);
         }
     }
 
@@ -228,6 +301,35 @@ internal sealed class OwnedProcessScope : IDisposable
         }
     }
 
+    private static async Task WaitForWindowsJobToEmptyAsync(
+        SafeFileHandle handle, CleanupDeadline deadline)
+    {
+        while (true)
+        {
+            if (!NativeMethods.QueryInformationJobObject(handle, 1,
+                    out JobObjectBasicAccountingInformation accounting,
+                    (uint)Marshal.SizeOf<JobObjectBasicAccountingInformation>(), IntPtr.Zero))
+            {
+                throw new Win32Exception(Marshal.GetLastPInvokeError());
+            }
+
+            if (accounting.ActiveProcesses == 0)
+            {
+                return;
+            }
+
+            var remaining = deadline.WorkWindow;
+            if (remaining == TimeSpan.Zero)
+            {
+                throw new TimeoutException(
+                    $"The owned Windows Job still has {accounting.ActiveProcesses} active processes.");
+            }
+
+            await Task.Delay(TimeSpan.FromTicks(Math.Min(
+                TimeSpan.FromMilliseconds(10).Ticks, remaining.Ticks))).ConfigureAwait(false);
+        }
+    }
+
     private sealed record ScopeLaunch(
         string FileName,
         string[] Arguments,
@@ -272,6 +374,19 @@ internal sealed class OwnedProcessScope : IDisposable
         public nuint PeakJobMemoryUsed;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct JobObjectBasicAccountingInformation
+    {
+        public long TotalUserTime;
+        public long TotalKernelTime;
+        public long ThisPeriodTotalUserTime;
+        public long ThisPeriodTotalKernelTime;
+        public uint TotalPageFaultCount;
+        public uint TotalProcesses;
+        public uint ActiveProcesses;
+        public uint TotalTerminatedProcesses;
+    }
+
     private static class NativeMethods
     {
         [DllImport("libc", EntryPoint = "setsid", SetLastError = true)]
@@ -281,6 +396,9 @@ internal sealed class OwnedProcessScope : IDisposable
         [DllImport("libc", EntryPoint = "killpg", SetLastError = true)]
         [DefaultDllImportSearchPaths(DllImportSearchPath.SafeDirectories)]
         internal static extern int KillProcessGroup(int groupId, int signal);
+
+        [DllImport("/usr/lib/libproc.dylib", EntryPoint = "proc_listpgrppids", SetLastError = true)]
+        internal static extern int ListProcessGroupPids(int groupId, [Out] int[] buffer, int size);
 
         [DllImport("kernel32.dll", EntryPoint = "CreateJobObjectW", CharSet = CharSet.Unicode, SetLastError = true)]
         [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
@@ -306,6 +424,13 @@ internal sealed class OwnedProcessScope : IDisposable
         [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static extern bool TerminateJobObject(SafeFileHandle job, uint exitCode);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool QueryInformationJobObject(
+            SafeFileHandle job, int informationClass,
+            out JobObjectBasicAccountingInformation information, uint length, IntPtr returnLength);
 
         [DllImport("kernel32.dll")]
         [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]

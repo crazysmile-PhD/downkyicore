@@ -235,6 +235,45 @@ public sealed class CentralTestRunnerRecorderTests
     }
 
     [Fact]
+    public async Task RecorderPersistenceDeadlineDoesNotAbandonAnOpenFile()
+    {
+        var directory = CreateEvidenceDirectory();
+        var path = Path.Combine(directory, "owned-write.json");
+        var persistenceStopped = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        try
+        {
+            var persistence = FlightRecorder.PersistWithinDeadlineAsync(
+                new CleanupDeadline(TimeSpan.FromMilliseconds(100)),
+                async cancellationToken =>
+                {
+                    try
+                    {
+                        using var stream = new FileStream(
+                            path, FileMode.Create, FileAccess.Write, FileShare.Read,
+                            bufferSize: 1, FileOptions.Asynchronous);
+                        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        persistenceStopped.TrySetResult();
+                    }
+                });
+
+            await Assert.ThrowsAsync<TimeoutException>(() => persistence)
+                .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+            Assert.True(persistenceStopped.Task.IsCompleted);
+            File.Delete(path);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task OutputPipeHeldByDescendantDoesNotHangRunner()
     {
         var evidenceDirectory = CreateEvidenceDirectory();
