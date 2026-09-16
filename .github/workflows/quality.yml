@@ -35,6 +35,23 @@ jobs:
       - name: Verify formatting
         run: dotnet format ${{ env.SOLUTION_FILE }} --verify-no-changes --no-restore --verbosity diagnostic
 
+  legacy-ca-audit:
+    name: Legacy CA and code metrics audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Install .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Restore
+        run: dotnet restore ${{ env.SOLUTION_FILE }}
+      - name: Report advisory findings
+        shell: pwsh
+        run: ./script/audit-code-metrics.ps1 -Configuration Release -NoRestore
+
   build-test:
     name: Build and test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
