@@ -1,7 +1,8 @@
 is_global = true
 global_level = 100
 
-# Issue #194 inventory rules are advisory. The normal strict build does not load this file.
+# Issue #194 inventory rules are warning-only in this independent audit path.
+# The normal strict build loads the separate legacy-ca-blocking.globalconfig policy.
 dotnet_diagnostic.CA1005.severity = warning
 dotnet_diagnostic.CA1017.severity = warning
 dotnet_diagnostic.CA1021.severity = warning
