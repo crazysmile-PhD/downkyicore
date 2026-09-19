@@ -1,0 +1,14 @@
+is_global = true
+global_level = 100
+
+# Issue #194 inventory rules are advisory. The normal strict build does not load this file.
+dotnet_diagnostic.CA1005.severity = warning
+dotnet_diagnostic.CA1017.severity = warning
+dotnet_diagnostic.CA1021.severity = warning
+dotnet_diagnostic.CA1045.severity = warning
+dotnet_diagnostic.CA1060.severity = warning
+dotnet_diagnostic.CA1501.severity = warning
+dotnet_diagnostic.CA1502.severity = warning
+dotnet_diagnostic.CA1505.severity = warning
+dotnet_diagnostic.CA1506.severity = warning
+dotnet_diagnostic.CA1509.severity = warning

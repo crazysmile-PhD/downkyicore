@@ -180,6 +180,7 @@ Logging changes must pass Infrastructure `ApplicationLogProviderTests`, includin
 
 - Do not add project-wide `NoWarn`, analyzer exclusions, `#nullable disable`, `GlobalSuppressions.cs`, or `.editorconfig` severities of `none` or `silent`.
 - Do not add `#pragma warning disable` or `SuppressMessage` merely to make a build pass.
+- `script/audit-code-metrics.ps1` is the independent advisory path for the Issue #194 legacy rules. It enables CA1005, CA1017, CA1021, CA1045, CA1060, CA1501, CA1502, CA1505, CA1506, and CA1509 as warnings with warnings-as-errors disabled. Findings are visible in CI but do not fail the job; restore, build, or audit execution failures still fail closed.
 - A minimal external-protocol suppression is allowed only when the protocol requires the algorithm, a contract test proves the requirement, and the code documents why it is not used for passwords or trust decisions.
 - Fix diagnostics in this order: security/correctness; async/cancellation/disposal/threading; performance/allocation; public API/collections; naming/globalization/style.
 - Before changing fields, properties, collections, or names, inspect JSON/XML serialization, SQLite persistence, Avalonia bindings, reflection, and external protocol contracts.

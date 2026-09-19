@@ -90,6 +90,37 @@ public sealed class AgentEnvironmentArchitectureTests
     }
 
     [Fact]
+    public void LegacyCaAuditReportsFindingsWithoutMakingThemBlocking()
+    {
+        var advisoryRules = new[]
+        {
+            "CA1005", "CA1017", "CA1021", "CA1045", "CA1060",
+            "CA1501", "CA1502", "CA1505", "CA1506", "CA1509"
+        };
+        var globalConfig = Read("script/code-metrics/legacy-ca.globalconfig");
+        foreach (var rule in advisoryRules)
+        {
+            Assert.Contains($"dotnet_diagnostic.{rule}.severity = warning", globalConfig, StringComparison.Ordinal);
+            Assert.DoesNotContain($"dotnet_diagnostic.{rule}.severity = error", globalConfig, StringComparison.Ordinal);
+        }
+
+        var directoryBuildProps = Read("Directory.Build.props");
+        Assert.Contains("'$(DownKyiLegacyCaAudit)' == 'true'", directoryBuildProps, StringComparison.Ordinal);
+        Assert.Contains("script/code-metrics/legacy-ca.globalconfig", directoryBuildProps, StringComparison.Ordinal);
+
+        var auditScript = Read("script/audit-code-metrics.ps1");
+        Assert.Contains("-p:DownKyiLegacyCaAudit=true", auditScript, StringComparison.Ordinal);
+        Assert.Contains("-p:TreatWarningsAsErrors=false", auditScript, StringComparison.Ordinal);
+        Assert.Contains("-p:CodeAnalysisTreatWarningsAsErrors=false", auditScript, StringComparison.Ordinal);
+        Assert.Contains("exit $LASTEXITCODE", auditScript, StringComparison.Ordinal);
+
+        var qualityWorkflow = Read(".github/workflows/quality.yml");
+        var auditJob = Slice(qualityWorkflow, "  legacy-ca-audit:", "  build-test:");
+        Assert.Contains("./script/audit-code-metrics.ps1", auditJob, StringComparison.Ordinal);
+        Assert.DoesNotContain("continue-on-error", auditJob, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ContinuousIntegrationBoundsAndRetriesOnlyAnIsolatedBuildTestTimeout()
     {
         var qualityWorkflow = Read(".github/workflows/quality.yml");
