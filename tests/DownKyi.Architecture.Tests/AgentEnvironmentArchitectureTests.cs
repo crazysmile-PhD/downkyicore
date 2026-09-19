@@ -90,24 +90,40 @@ public sealed class AgentEnvironmentArchitectureTests
     }
 
     [Fact]
-    public void LegacyCaAuditReportsFindingsWithoutMakingThemBlocking()
+    public void LegacyCaAuditReportsCompleteInventoryWhileReviewedRulesBlockStrictBuild()
     {
-        var advisoryRules = new[]
+        var blockingRules = new[]
         {
             "CA1005", "CA1017", "CA1021", "CA1045", "CA1060",
-            "CA1501", "CA1502", "CA1505", "CA1506", "CA1509"
+            "CA1502", "CA1505", "CA1509"
         };
+        var advisoryOnlyRules = new[] { "CA1501", "CA1506" };
+        var inventoryRules = blockingRules.Concat(advisoryOnlyRules);
         var globalConfig = Read("script/code-metrics/legacy-ca.globalconfig");
-        foreach (var rule in advisoryRules)
+        foreach (var rule in inventoryRules)
         {
             Assert.Contains($"dotnet_diagnostic.{rule}.severity = warning", globalConfig, StringComparison.Ordinal);
             Assert.DoesNotContain($"dotnet_diagnostic.{rule}.severity = error", globalConfig, StringComparison.Ordinal);
         }
 
+        var blockingConfig = Read("script/code-metrics/legacy-ca-blocking.globalconfig");
+        foreach (var rule in blockingRules)
+        {
+            Assert.Contains($"dotnet_diagnostic.{rule}.severity = error", blockingConfig, StringComparison.Ordinal);
+            Assert.DoesNotContain($"dotnet_diagnostic.{rule}.severity = warning", blockingConfig, StringComparison.Ordinal);
+        }
+
+        foreach (var rule in advisoryOnlyRules)
+        {
+            Assert.DoesNotContain($"dotnet_diagnostic.{rule}.severity = error", blockingConfig, StringComparison.Ordinal);
+        }
+
         var directoryBuildProps = Read("Directory.Build.props");
+        Assert.Contains("'$(DownKyiLegacyCaAudit)' != 'true'", directoryBuildProps, StringComparison.Ordinal);
         Assert.Contains("'$(DownKyiLegacyCaAudit)' == 'true'", directoryBuildProps, StringComparison.Ordinal);
         Assert.Contains("DownKyiLegacyCaAuditSarifDirectory", directoryBuildProps, StringComparison.Ordinal);
         Assert.Contains("$(MSBuildProjectName).sarif", directoryBuildProps, StringComparison.Ordinal);
+        Assert.Contains("script/code-metrics/legacy-ca-blocking.globalconfig", directoryBuildProps, StringComparison.Ordinal);
         Assert.Contains("script/code-metrics/legacy-ca.globalconfig", directoryBuildProps, StringComparison.Ordinal);
 
         var auditScript = Read("script/audit-code-metrics.ps1");

@@ -21,6 +21,10 @@
     <ErrorLog>$(DownKyiLegacyCaAuditSarifDirectory)/$(MSBuildProjectName).sarif</ErrorLog>
   </PropertyGroup>
 
+  <ItemGroup Condition="'$(DownKyiLegacyCaAudit)' != 'true'">
+    <GlobalAnalyzerConfigFiles Include="$(MSBuildThisFileDirectory)script/code-metrics/legacy-ca-blocking.globalconfig" />
+  </ItemGroup>
+
   <ItemGroup Condition="'$(DownKyiLegacyCaAudit)' == 'true'">
     <GlobalAnalyzerConfigFiles Include="$(MSBuildThisFileDirectory)script/code-metrics/legacy-ca.globalconfig" />
   </ItemGroup>

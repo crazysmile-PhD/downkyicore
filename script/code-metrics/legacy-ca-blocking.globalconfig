@@ -1,0 +1,13 @@
+is_global = true
+global_level = 100
+
+# Reviewed Issue #194 rules enforced by the normal strict build.
+dotnet_diagnostic.CA1005.severity = error
+dotnet_diagnostic.CA1017.severity = error
+dotnet_diagnostic.CA1021.severity = error
+dotnet_diagnostic.CA1045.severity = error
+dotnet_diagnostic.CA1060.severity = error
+dotnet_diagnostic.CA1502.severity = error
+dotnet_diagnostic.CA1505.severity = error
+dotnet_diagnostic.CA1509.severity = error
+
