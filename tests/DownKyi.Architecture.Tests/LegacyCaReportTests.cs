@@ -74,6 +74,30 @@ public sealed class LegacyCaReportTests
             Assert.Equal("new", overloadedFinding.GetProperty("status").GetString());
             Assert.Equal(1, overloadedFinding.GetProperty("rawFindingIds").GetArrayLength());
 
+            var summary = await File.ReadAllTextAsync(
+                Path.Combine(outputDirectory, "legacy-ca-summary.md"),
+                TestContext.Current.CancellationToken).ConfigureAwait(true);
+            Assert.Contains("- Raw findings: 5", summary, StringComparison.Ordinal);
+            Assert.Contains("- Logical findings: 4", summary, StringComparison.Ordinal);
+            Assert.Contains("- Summary groups: 4", summary, StringComparison.Ordinal);
+            Assert.Contains("- New CA1501/CA1506 findings: 2", summary, StringComparison.Ordinal);
+            Assert.Contains("- Increased CA1501/CA1506 metrics: 1", summary, StringComparison.Ordinal);
+            Assert.Contains(
+                $"| metric-worsened | CA1506 | `tests/SharedTests.cs` | `SharedOperation` | 42 | 1 | `{sharedFinding.GetProperty("id").GetString()}` |",
+                summary,
+                StringComparison.Ordinal);
+            Assert.Contains(
+                $"| new | CA1506 | `tests/SharedTests.cs` | `SharedOperation` | 43 |  | `{overloadedFinding.GetProperty("id").GetString()}` |",
+                summary,
+                StringComparison.Ordinal);
+            var previousGroupIndex = -1;
+            foreach (var groupId in groups.Select(group => group.GetProperty("id").GetString()))
+            {
+                var groupIndex = summary.IndexOf($"`{groupId}`", previousGroupIndex + 1, StringComparison.Ordinal);
+                Assert.True(groupIndex > previousGroupIndex, $"Summary group order changed around {groupId}.");
+                previousGroupIndex = groupIndex;
+            }
+
             var rawIds = IdSet(rawFindings.Select(finding => finding.GetProperty("id")));
             var findingRawIds = IdSet(findings.SelectMany(finding => finding.GetProperty("rawFindingIds").EnumerateArray()));
             var groupRawIds = IdSet(groups.SelectMany(group => group.GetProperty("rawFindingIds").EnumerateArray()));
