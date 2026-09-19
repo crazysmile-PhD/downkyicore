@@ -16,7 +16,7 @@ public sealed class CentralTestRunnerFixtureDispatchTests
             .SelectMany(File.ReadAllLines)
             .SelectMany(line => Regex.Matches(
                 line,
-                @"string\.Equals\(args\[0\],\s*""(?<command>(?:fixture-[a-z-]+|owned-scope-host))""",
+                @"^\s*""(?<command>(?:fixture-[a-z-]+|owned-scope-host))""\s*=>",
                 RegexOptions.CultureInvariant))
             .Select(match => match.Groups["command"].Value)
             .Distinct(StringComparer.Ordinal)
