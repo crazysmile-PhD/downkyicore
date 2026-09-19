@@ -23,6 +23,14 @@ public sealed class ViewDownloadSetterSelectionTests
         viewModel.DirectoryList.Add("other-directory");
         viewModel.DirectoryList.Add(selectedDirectory);
         viewModel.Directory = selectedDirectory;
+        var observedSelections = new List<string>();
+        viewModel.PropertyChanged += (_, eventArgs) =>
+        {
+            if (eventArgs.PropertyName == nameof(viewModel.Directory))
+            {
+                observedSelections.Add(viewModel.Directory);
+            }
+        };
         viewModel.DirectoryList.CollectionChanged += (_, eventArgs) =>
         {
             if (eventArgs.Action == NotifyCollectionChangedAction.Remove)
@@ -36,6 +44,7 @@ public sealed class ViewDownloadSetterSelectionTests
         Assert.Equal(selectedDirectory, viewModel.Directory);
         Assert.Equal(selectedDirectory, viewModel.DirectoryList[0]);
         Assert.Equal(selectedDirectory, settings.Store.Current.Video.SaveVideoRootPath);
+        Assert.Equal([reentrantSelection, selectedDirectory], observedSelections);
     }
 
     private sealed class StubFilePickerService : IFilePickerService
