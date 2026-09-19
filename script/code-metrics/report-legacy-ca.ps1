@@ -27,7 +27,11 @@ $resolvedBaselinePath = [System.IO.Path]::GetFullPath($BaselinePath)
 $repositoryRootWithSeparator = $resolvedRepositoryRoot.TrimEnd(
     [System.IO.Path]::DirectorySeparatorChar,
     [System.IO.Path]::AltDirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
-$repositoryUriPrefix = ([Uri]$repositoryRootWithSeparator).AbsoluteUri
+$repositoryUriPrefix = [UriBuilder]::new(
+    [Uri]::UriSchemeFile,
+    '',
+    -1,
+    $repositoryRootWithSeparator).Uri.AbsoluteUri
 
 function Get-StableId {
     param(
