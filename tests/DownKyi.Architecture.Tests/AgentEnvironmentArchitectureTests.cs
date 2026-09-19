@@ -106,17 +106,32 @@ public sealed class AgentEnvironmentArchitectureTests
 
         var directoryBuildProps = Read("Directory.Build.props");
         Assert.Contains("'$(DownKyiLegacyCaAudit)' == 'true'", directoryBuildProps, StringComparison.Ordinal);
+        Assert.Contains("DownKyiLegacyCaAuditSarifDirectory", directoryBuildProps, StringComparison.Ordinal);
+        Assert.Contains("$(MSBuildProjectName).sarif", directoryBuildProps, StringComparison.Ordinal);
         Assert.Contains("script/code-metrics/legacy-ca.globalconfig", directoryBuildProps, StringComparison.Ordinal);
 
         var auditScript = Read("script/audit-code-metrics.ps1");
         Assert.Contains("-p:DownKyiLegacyCaAudit=true", auditScript, StringComparison.Ordinal);
         Assert.Contains("-p:TreatWarningsAsErrors=false", auditScript, StringComparison.Ordinal);
         Assert.Contains("-p:CodeAnalysisTreatWarningsAsErrors=false", auditScript, StringComparison.Ordinal);
+        Assert.Contains("raw-build.log", auditScript, StringComparison.Ordinal);
+        Assert.Contains("$redactedBuildLines", auditScript, StringComparison.Ordinal);
+        Assert.Contains("'<repo>'", auditScript, StringComparison.Ordinal);
+        Assert.Contains("report-legacy-ca.ps1", auditScript, StringComparison.Ordinal);
+        Assert.Contains("legacy-ca-baseline.json", auditScript, StringComparison.Ordinal);
         Assert.Contains("exit $LASTEXITCODE", auditScript, StringComparison.Ordinal);
+
+        var reportScript = Read("script/code-metrics/report-legacy-ca.ps1");
+        Assert.Contains("sourceResult", reportScript, StringComparison.Ordinal);
+        Assert.Contains("rawFindingIds", reportScript, StringComparison.Ordinal);
+        Assert.Contains("metric-worsened", reportScript, StringComparison.Ordinal);
 
         var qualityWorkflow = Read(".github/workflows/quality.yml");
         var auditJob = Slice(qualityWorkflow, "  legacy-ca-audit:", "  build-test:");
         Assert.Contains("./script/audit-code-metrics.ps1", auditJob, StringComparison.Ordinal);
+        Assert.Contains("name: legacy-ca-code-metrics", auditJob, StringComparison.Ordinal);
+        Assert.Contains("path: artifacts/code-metrics", auditJob, StringComparison.Ordinal);
+        Assert.Contains("if-no-files-found: error", auditJob, StringComparison.Ordinal);
         Assert.DoesNotContain("continue-on-error", auditJob, StringComparison.Ordinal);
     }
 

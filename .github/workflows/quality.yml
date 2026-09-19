@@ -51,6 +51,13 @@ jobs:
       - name: Report advisory findings
         shell: pwsh
         run: ./script/audit-code-metrics.ps1 -Configuration Release -NoRestore
+      - name: Upload advisory report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: legacy-ca-code-metrics
+          path: artifacts/code-metrics
+          if-no-files-found: error
 
   build-test:
     name: Build and test (${{ matrix.os }})
