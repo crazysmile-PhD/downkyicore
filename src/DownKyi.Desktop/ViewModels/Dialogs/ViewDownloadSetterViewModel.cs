@@ -401,7 +401,9 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
         // 将Directory移动到第一项
         // 如果直接在ComboBox中选择的就需要
         // 否则选中项不会在下次出现在第一项
-        ListHelper.InsertUnique(DirectoryList, Directory, 0, ref _directory);
+        var selectedDirectory = Directory;
+        ListHelper.InsertUnique(DirectoryList, selectedDirectory, 0);
+        Directory = selectedDirectory;
 
         // 将更新后的目录设置一次写入，避免其他消费者看到半套状态
         _settingsStore.Update(settings => settings with
