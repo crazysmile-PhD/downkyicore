@@ -241,325 +241,386 @@ function Get-DefaultMetadata {
         Rationale = 'This rule is retained in the complete advisory inventory.'
     }
 }
-
-if (-not (Test-Path -LiteralPath $resolvedSarifDirectory -PathType Container)) {
-    throw "SARIF directory was not produced: $resolvedSarifDirectory"
-}
-
-$sarifFiles = @(Get-ChildItem -LiteralPath $resolvedSarifDirectory -Filter '*.sarif' -File | Sort-Object Name)
-if ($sarifFiles.Count -eq 0) {
-    throw "No SARIF files were produced in $resolvedSarifDirectory"
-}
-
-$rawDrafts = [System.Collections.Generic.List[object]]::new()
-foreach ($sarifFile in $sarifFiles) {
-    $sarifText = Get-Content -LiteralPath $sarifFile.FullName -Raw
-    $sanitizedSarifText = $sarifText.Replace(
-        $repositoryUriPrefix,
-        '',
-        [StringComparison]::OrdinalIgnoreCase)
-    if (-not [string]::Equals($sarifText, $sanitizedSarifText, [StringComparison]::Ordinal)) {
-        Set-Content -LiteralPath $sarifFile.FullName -Value $sanitizedSarifText -Encoding utf8NoBOM
+function Read-SarifFindings {
+    if (-not (Test-Path -LiteralPath $resolvedSarifDirectory -PathType Container)) {
+        throw "SARIF directory was not produced: $resolvedSarifDirectory"
     }
-    $sarif = $sanitizedSarifText | ConvertFrom-Json -Depth 100
-    foreach ($run in @($sarif.runs)) {
-        foreach ($result in @($run.results)) {
-            $rule = [string]$result.ruleId
-            $isSuppressed = $null -ne $result.suppressionStates -and @($result.suppressionStates).Count -gt 0
-            if ($rule -notin $legacyRules -or $isSuppressed) {
-                continue
-            }
 
-            $message = Get-ResultMessage $result
-            $location = Get-ResultLocation $result
-            $path = Get-RepositoryRelativePath $location.Uri
-            $rawDrafts.Add([pscustomobject][ordered]@{
-                rule = $rule
-                project = $sarifFile.BaseName
-                path = $path
-                line = $location.Line
-                column = $location.Column
-                symbol = Get-Symbol $message
-                message = $message
-                observedMetric = Get-ObservedMetric $message
-                sourceSarif = $sarifFile.Name
-                sourceResult = $result
+    $sarifFiles = @(Get-ChildItem -LiteralPath $resolvedSarifDirectory -Filter '*.sarif' -File | Sort-Object Name)
+    if ($sarifFiles.Count -eq 0) {
+        throw "No SARIF files were produced in $resolvedSarifDirectory"
+    }
+
+    $rawDrafts = [System.Collections.Generic.List[object]]::new()
+    foreach ($sarifFile in $sarifFiles) {
+        $sarifText = Get-Content -LiteralPath $sarifFile.FullName -Raw
+        $sanitizedSarifText = $sarifText.Replace(
+            $repositoryUriPrefix,
+            '',
+            [StringComparison]::OrdinalIgnoreCase)
+        if (-not [string]::Equals($sarifText, $sanitizedSarifText, [StringComparison]::Ordinal)) {
+            Set-Content -LiteralPath $sarifFile.FullName -Value $sanitizedSarifText -Encoding utf8NoBOM
+        }
+        $sarif = $sanitizedSarifText | ConvertFrom-Json -Depth 100
+        foreach ($run in @($sarif.runs)) {
+            foreach ($result in @($run.results)) {
+                $rule = [string]$result.ruleId
+                $isSuppressed = $null -ne $result.suppressionStates -and @($result.suppressionStates).Count -gt 0
+                if ($rule -notin $legacyRules -or $isSuppressed) {
+                    continue
+                }
+
+                $message = Get-ResultMessage $result
+                $location = Get-ResultLocation $result
+                $path = Get-RepositoryRelativePath $location.Uri
+                $rawDrafts.Add([pscustomobject][ordered]@{
+                    rule = $rule
+                    project = $sarifFile.BaseName
+                    path = $path
+                    line = $location.Line
+                    column = $location.Column
+                    symbol = Get-Symbol $message
+                    message = $message
+                    observedMetric = Get-ObservedMetric $message
+                    sourceSarif = $sarifFile.Name
+                    sourceResult = $result
+                })
+            }
+        }
+    }
+
+    $orderedRawDrafts = @($rawDrafts | Sort-Object rule, path, line, column, project, message)
+    $rawFindings = [System.Collections.Generic.List[object]]::new()
+    for ($index = 0; $index -lt $orderedRawDrafts.Count; $index++) {
+        $draft = $orderedRawDrafts[$index]
+        $rawFindings.Add([pscustomobject][ordered]@{
+            id = 'raw-{0:D4}' -f ($index + 1)
+            rule = $draft.rule
+            project = $draft.project
+            path = $draft.path
+            line = $draft.line
+            column = $draft.column
+            symbol = $draft.symbol
+            message = $draft.message
+            observedMetric = $draft.observedMetric
+            sourceSarif = $draft.sourceSarif
+            sourceResult = $draft.sourceResult
+        })
+    }
+
+    return @($rawFindings)
+}
+
+function Build-LogicalFindings {
+    param([object[]]$RawFindings)
+
+    $logicalDrafts = [System.Collections.Generic.List[object]]::new()
+    $baseIdentityGroups = @($rawFindings | Group-Object { "$($_.rule)|$($_.path)|$($_.symbol)" })
+    foreach ($baseIdentityGroup in $baseIdentityGroups) {
+        $locationGroups = @($baseIdentityGroup.Group | Group-Object { "$($_.line):$($_.column)" } | Sort-Object Name)
+        $requiresLocationDiscriminator = $locationGroups.Count -gt 1
+        foreach ($locationGroup in $locationGroups) {
+            $first = $locationGroup.Group[0]
+            $identity = if ($requiresLocationDiscriminator) {
+                "$($baseIdentityGroup.Name)|location:$($locationGroup.Name)"
+            }
+            else {
+                $baseIdentityGroup.Name
+            }
+            $metadata = Get-DefaultMetadata $first.rule $first.path $first.symbol $first.message $identity
+            $metrics = @($locationGroup.Group | Where-Object { $null -ne $_.observedMetric } | ForEach-Object { [int]$_.observedMetric })
+            $metric = if ($metrics.Count -gt 0) { [int](($metrics | Measure-Object -Maximum).Maximum) } else { $null }
+            $logicalDrafts.Add([pscustomobject][ordered]@{
+                identity = $identity
+                id = Get-StableId 'finding' $identity
+                rule = $first.rule
+                path = $first.path
+                line = $first.line
+                column = $first.column
+                symbol = $first.symbol
+                observedMetric = $metric
+                projects = @($locationGroup.Group.project | Sort-Object -Unique)
+                messageVariants = @($locationGroup.Group.message | Sort-Object -Unique)
+                rawFindingIds = @($locationGroup.Group.id)
+                defaultMetadata = $metadata
             })
         }
     }
+    $logicalDrafts = @($logicalDrafts | Sort-Object rule, path, line, symbol)
+
+    return @($logicalDrafts)
 }
 
-$orderedRawDrafts = @($rawDrafts | Sort-Object rule, path, line, column, project, message)
-$rawFindings = [System.Collections.Generic.List[object]]::new()
-for ($index = 0; $index -lt $orderedRawDrafts.Count; $index++) {
-    $draft = $orderedRawDrafts[$index]
-    $rawFindings.Add([pscustomobject][ordered]@{
-        id = 'raw-{0:D4}' -f ($index + 1)
-        rule = $draft.rule
-        project = $draft.project
-        path = $draft.path
-        line = $draft.line
-        column = $draft.column
-        symbol = $draft.symbol
-        message = $draft.message
-        observedMetric = $draft.observedMetric
-        sourceSarif = $draft.sourceSarif
-        sourceResult = $draft.sourceResult
-    })
-}
+function Compare-Baseline {
+    param([object[]]$LogicalFindings)
 
-$logicalDrafts = [System.Collections.Generic.List[object]]::new()
-$baseIdentityGroups = @($rawFindings | Group-Object { "$($_.rule)|$($_.path)|$($_.symbol)" })
-foreach ($baseIdentityGroup in $baseIdentityGroups) {
-    $locationGroups = @($baseIdentityGroup.Group | Group-Object { "$($_.line):$($_.column)" } | Sort-Object Name)
-    $requiresLocationDiscriminator = $locationGroups.Count -gt 1
-    foreach ($locationGroup in $locationGroups) {
-        $first = $locationGroup.Group[0]
-        $identity = if ($requiresLocationDiscriminator) {
-            "$($baseIdentityGroup.Name)|location:$($locationGroup.Name)"
+    $logicalDrafts = @($LogicalFindings)
+    if ($InitializeBaseline) {
+        $baselineDirectory = Split-Path -Parent $resolvedBaselinePath
+        if ($baselineDirectory) {
+            New-Item -ItemType Directory -Path $baselineDirectory -Force | Out-Null
+        }
+
+        $baselineDocument = [ordered]@{
+            schemaVersion = 1
+            description = 'Reviewed CA1501 and CA1506 findings present when the advisory code-metrics baseline was established.'
+            findings = @($logicalDrafts | Where-Object { $_.rule -in $baselineRules } | ForEach-Object {
+                [ordered]@{
+                    identity = $_.identity
+                    rule = $_.rule
+                    path = $_.path
+                    symbol = $_.symbol
+                    observedMetric = $_.observedMetric
+                    groupId = $_.defaultMetadata.GroupId
+                    groupTitle = $_.defaultMetadata.GroupTitle
+                    classification = $_.defaultMetadata.Classification
+                    reviewStatus = $_.defaultMetadata.ReviewStatus
+                    rationale = $_.defaultMetadata.Rationale
+                }
+            })
+        }
+        Set-Content -LiteralPath $resolvedBaselinePath -Value ($baselineDocument | ConvertTo-Json -Depth 20) -Encoding utf8NoBOM
+    }
+
+    if (-not (Test-Path -LiteralPath $resolvedBaselinePath -PathType Leaf)) {
+        throw "Code-metrics baseline is missing: $resolvedBaselinePath"
+    }
+    $baseline = Get-Content -LiteralPath $resolvedBaselinePath -Raw | ConvertFrom-Json -Depth 50
+    if ([int]$baseline.schemaVersion -ne 1) {
+        throw "Unsupported code-metrics baseline schema version: $($baseline.schemaVersion)"
+    }
+    $baselineByIdentity = @{}
+    foreach ($entry in @($baseline.findings)) {
+        if ($baselineByIdentity.ContainsKey([string]$entry.identity)) {
+            throw "Duplicate baseline identity: $($entry.identity)"
+        }
+        $baselineByIdentity[[string]$entry.identity] = $entry
+    }
+
+    $findings = [System.Collections.Generic.List[object]]::new()
+    foreach ($draft in $logicalDrafts) {
+        $baselineEntry = if ($baselineByIdentity.ContainsKey($draft.identity)) { $baselineByIdentity[$draft.identity] } else { $null }
+        if ($draft.rule -notin $baselineRules) {
+            $status = 'observed'
+            $metricDelta = $null
+            $metadata = $draft.defaultMetadata
+        }
+        elseif ($null -eq $baselineEntry) {
+            $status = 'new'
+            $metricDelta = $null
+            $metadata = $draft.defaultMetadata
         }
         else {
-            $baseIdentityGroup.Name
-        }
-        $metadata = Get-DefaultMetadata $first.rule $first.path $first.symbol $first.message $identity
-        $metrics = @($locationGroup.Group | Where-Object { $null -ne $_.observedMetric } | ForEach-Object { [int]$_.observedMetric })
-        $metric = if ($metrics.Count -gt 0) { [int](($metrics | Measure-Object -Maximum).Maximum) } else { $null }
-        $logicalDrafts.Add([pscustomobject][ordered]@{
-            identity = $identity
-            id = Get-StableId 'finding' $identity
-            rule = $first.rule
-            path = $first.path
-            line = $first.line
-            column = $first.column
-            symbol = $first.symbol
-            observedMetric = $metric
-            projects = @($locationGroup.Group.project | Sort-Object -Unique)
-            messageVariants = @($locationGroup.Group.message | Sort-Object -Unique)
-            rawFindingIds = @($locationGroup.Group.id)
-            defaultMetadata = $metadata
-        })
-    }
-}
-$logicalDrafts = @($logicalDrafts | Sort-Object rule, path, line, symbol)
-
-if ($InitializeBaseline) {
-    $baselineDirectory = Split-Path -Parent $resolvedBaselinePath
-    if ($baselineDirectory) {
-        New-Item -ItemType Directory -Path $baselineDirectory -Force | Out-Null
-    }
-
-    $baselineDocument = [ordered]@{
-        schemaVersion = 1
-        description = 'Reviewed CA1501 and CA1506 findings present when the advisory code-metrics baseline was established.'
-        findings = @($logicalDrafts | Where-Object { $_.rule -in $baselineRules } | ForEach-Object {
-            [ordered]@{
-                identity = $_.identity
-                rule = $_.rule
-                path = $_.path
-                symbol = $_.symbol
-                observedMetric = $_.observedMetric
-                groupId = $_.defaultMetadata.GroupId
-                groupTitle = $_.defaultMetadata.GroupTitle
-                classification = $_.defaultMetadata.Classification
-                reviewStatus = $_.defaultMetadata.ReviewStatus
-                rationale = $_.defaultMetadata.Rationale
+            $metricDelta = if ($null -ne $draft.observedMetric -and $null -ne $baselineEntry.observedMetric) {
+                [int]$draft.observedMetric - [int]$baselineEntry.observedMetric
+            } else {
+                $null
             }
+            $status = if ($null -ne $metricDelta -and $metricDelta -gt 0) { 'metric-worsened' } else { 'baseline' }
+            $metadata = [ordered]@{
+                GroupId = [string]$baselineEntry.groupId
+                GroupTitle = [string]$baselineEntry.groupTitle
+                Classification = [string]$baselineEntry.classification
+                ReviewStatus = [string]$baselineEntry.reviewStatus
+                Rationale = [string]$baselineEntry.rationale
+            }
+        }
+
+        $findings.Add([pscustomobject][ordered]@{
+            id = $draft.id
+            identity = $draft.identity
+            rule = $draft.rule
+            path = $draft.path
+            line = $draft.line
+            column = $draft.column
+            symbol = $draft.symbol
+            observedMetric = $draft.observedMetric
+            baselineMetric = if ($null -ne $baselineEntry) { $baselineEntry.observedMetric } else { $null }
+            metricDelta = $metricDelta
+            status = $status
+            groupId = $metadata.GroupId
+            classification = $metadata.Classification
+            reviewStatus = $metadata.ReviewStatus
+            rationale = $metadata.Rationale
+            projects = $draft.projects
+            messageVariants = $draft.messageVariants
+            rawFindingIds = $draft.rawFindingIds
         })
     }
-    Set-Content -LiteralPath $resolvedBaselinePath -Value ($baselineDocument | ConvertTo-Json -Depth 20) -Encoding utf8NoBOM
+    $findings = @($findings)
+
+    $currentIdentities = @{}
+    foreach ($finding in $findings) { $currentIdentities[$finding.identity] = $true }
+    $baselineMissing = @($baseline.findings | Where-Object { -not $currentIdentities.ContainsKey([string]$_.identity) })
+    $newFindings = @($findings | Where-Object status -eq 'new')
+    $worsenedFindings = @($findings | Where-Object status -eq 'metric-worsened')
+
+    return [pscustomobject][ordered]@{
+        Baseline = $baseline
+        BaselineByIdentity = $baselineByIdentity
+        Findings = @($findings)
+        BaselineMissing = @($baselineMissing)
+        NewFindings = @($newFindings)
+        WorsenedFindings = @($worsenedFindings)
+    }
 }
 
-if (-not (Test-Path -LiteralPath $resolvedBaselinePath -PathType Leaf)) {
-    throw "Code-metrics baseline is missing: $resolvedBaselinePath"
-}
-$baseline = Get-Content -LiteralPath $resolvedBaselinePath -Raw | ConvertFrom-Json -Depth 50
-if ([int]$baseline.schemaVersion -ne 1) {
-    throw "Unsupported code-metrics baseline schema version: $($baseline.schemaVersion)"
-}
-$baselineByIdentity = @{}
-foreach ($entry in @($baseline.findings)) {
-    if ($baselineByIdentity.ContainsKey([string]$entry.identity)) {
-        throw "Duplicate baseline identity: $($entry.identity)"
+function Build-FindingGroups {
+    param(
+        [object[]]$Findings,
+        [hashtable]$BaselineByIdentity,
+        [object[]]$LogicalFindings
+    )
+
+    $findings = @($Findings)
+    $logicalDrafts = @($LogicalFindings)
+    $groups = [System.Collections.Generic.List[object]]::new()
+    foreach ($group in @($findings | Group-Object groupId | Sort-Object Name)) {
+        $members = @($group.Group | Sort-Object rule, path, line, symbol)
+        $statuses = @($members.status | Sort-Object -Unique)
+        $groupStatus = if ($statuses -contains 'new') {
+            'new'
+        } elseif ($statuses -contains 'metric-worsened') {
+            'metric-worsened'
+        } elseif ($statuses -contains 'baseline') {
+            'baseline'
+        } else {
+            'observed'
+        }
+        $first = $members[0]
+        $baselineEntry = if ($baselineByIdentity.ContainsKey($first.identity)) { $baselineByIdentity[$first.identity] } else { $null }
+        $title = if ($null -ne $baselineEntry) { [string]$baselineEntry.groupTitle } else { [string]$first.identity }
+        if ($null -eq $baselineEntry) {
+            $title = [string]$logicalDrafts.Where({ $_.identity -eq $first.identity }, 'First').defaultMetadata.GroupTitle
+        }
+        $groups.Add([pscustomobject][ordered]@{
+            id = $group.Name
+            rule = [string]$first.rule
+            title = $title
+            classification = [string]$first.classification
+            reviewStatus = [string]$first.reviewStatus
+            status = $groupStatus
+            findingIds = @($members.id)
+            rawFindingIds = @($members | ForEach-Object { $_.rawFindingIds } | Sort-Object -Unique)
+            members = @($members | ForEach-Object {
+                [ordered]@{
+                    findingId = $_.id
+                    rule = $_.rule
+                    file = $_.path
+                    path = $_.path
+                    symbol = $_.symbol
+                    rawFindingIds = $_.rawFindingIds
+                }
+            })
+        })
     }
-    $baselineByIdentity[[string]$entry.identity] = $entry
+    $groups = @($groups)
+
+    return @($groups)
 }
 
-$findings = [System.Collections.Generic.List[object]]::new()
-foreach ($draft in $logicalDrafts) {
-    $baselineEntry = if ($baselineByIdentity.ContainsKey($draft.identity)) { $baselineByIdentity[$draft.identity] } else { $null }
-    if ($draft.rule -notin $baselineRules) {
-        $status = 'observed'
-        $metricDelta = $null
-        $metadata = $draft.defaultMetadata
+function Write-Reports {
+    param(
+        [object[]]$RawFindings,
+        $Comparison,
+        [object[]]$Groups
+    )
+
+    $rawFindings = @($RawFindings)
+    $baseline = $Comparison.Baseline
+    $findings = @($Comparison.Findings)
+    $baselineMissing = @($Comparison.BaselineMissing)
+    $newFindings = @($Comparison.NewFindings)
+    $worsenedFindings = @($Comparison.WorsenedFindings)
+    $groups = @($Groups)
+    $result = [ordered]@{
+        schemaVersion = 1
+        generatedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
+        baselinePath = [System.IO.Path]::GetRelativePath($resolvedRepositoryRoot, $resolvedBaselinePath).Replace('\', '/')
+        counts = [ordered]@{
+            rawFindingCount = $rawFindings.Count
+            logicalFindingCount = $findings.Count
+            groupCount = $groups.Count
+            baselineCount = @($baseline.findings).Count
+            newFindingCount = $newFindings.Count
+            metricWorsenedCount = $worsenedFindings.Count
+            baselineMissingCount = $baselineMissing.Count
+        }
+        newFindings = @($newFindings.id)
+        metricWorsenedFindings = @($worsenedFindings.id)
+        baselineMissing = $baselineMissing
+        groups = $groups
+        findings = $findings
+        rawFindings = $rawFindings
     }
-    elseif ($null -eq $baselineEntry) {
-        $status = 'new'
-        $metricDelta = $null
-        $metadata = $draft.defaultMetadata
+
+    New-Item -ItemType Directory -Path $resolvedOutputDirectory -Force | Out-Null
+    $jsonPath = Join-Path $resolvedOutputDirectory 'legacy-ca-report.json'
+    $markdownPath = Join-Path $resolvedOutputDirectory 'legacy-ca-summary.md'
+    Set-Content -LiteralPath $jsonPath -Value ($result | ConvertTo-Json -Depth 100) -Encoding utf8NoBOM
+
+    $markdown = [System.Collections.Generic.List[string]]::new()
+    $markdown.Add('# Legacy CA advisory report')
+    $markdown.Add('')
+    $markdown.Add('The JSON report is authoritative. Every summary group lists finding IDs, every finding lists all raw finding IDs, and every raw finding embeds its complete SARIF result.')
+    $markdown.Add('')
+    $markdown.Add("- Raw findings: $($rawFindings.Count)")
+    $markdown.Add("- Logical findings: $($findings.Count)")
+    $markdown.Add("- Summary groups: $($groups.Count)")
+    $markdown.Add("- New CA1501/CA1506 findings: $($newFindings.Count)")
+    $markdown.Add("- Increased CA1501/CA1506 metrics: $($worsenedFindings.Count)")
+    $markdown.Add("- Baseline findings not observed: $($baselineMissing.Count)")
+    $markdown.Add('')
+    $markdown.Add('Any numeric increase is reported with its exact delta; the report does not guess whether a CA1506 increase justifies refactoring.')
+    $markdown.Add('')
+    $markdown.Add('## Findings requiring attention')
+    $markdown.Add('')
+    if ($newFindings.Count -eq 0 -and $worsenedFindings.Count -eq 0) {
+        $markdown.Add('No new or worsened CA1501/CA1506 findings.')
     }
     else {
-        $metricDelta = if ($null -ne $draft.observedMetric -and $null -ne $baselineEntry.observedMetric) {
-            [int]$draft.observedMetric - [int]$baselineEntry.observedMetric
-        } else {
-            $null
-        }
-        $status = if ($null -ne $metricDelta -and $metricDelta -gt 0) { 'metric-worsened' } else { 'baseline' }
-        $metadata = [ordered]@{
-            GroupId = [string]$baselineEntry.groupId
-            GroupTitle = [string]$baselineEntry.groupTitle
-            Classification = [string]$baselineEntry.classification
-            ReviewStatus = [string]$baselineEntry.reviewStatus
-            Rationale = [string]$baselineEntry.rationale
+        $markdown.Add('| Status | Rule | File | Symbol | Metric | Delta | Finding |')
+        $markdown.Add('| --- | --- | --- | --- | ---: | ---: | --- |')
+        foreach ($finding in @($newFindings + $worsenedFindings | Sort-Object status, rule, path, symbol)) {
+            $markdown.Add("| $($finding.status) | $($finding.rule) | ``$($finding.path)`` | ``$($finding.symbol)`` | $($finding.observedMetric) | $($finding.metricDelta) | ``$($finding.id)`` |")
         }
     }
-
-    $findings.Add([pscustomobject][ordered]@{
-        id = $draft.id
-        identity = $draft.identity
-        rule = $draft.rule
-        path = $draft.path
-        line = $draft.line
-        column = $draft.column
-        symbol = $draft.symbol
-        observedMetric = $draft.observedMetric
-        baselineMetric = if ($null -ne $baselineEntry) { $baselineEntry.observedMetric } else { $null }
-        metricDelta = $metricDelta
-        status = $status
-        groupId = $metadata.GroupId
-        classification = $metadata.Classification
-        reviewStatus = $metadata.ReviewStatus
-        rationale = $metadata.Rationale
-        projects = $draft.projects
-        messageVariants = $draft.messageVariants
-        rawFindingIds = $draft.rawFindingIds
-    })
-}
-$findings = @($findings)
-
-$groups = [System.Collections.Generic.List[object]]::new()
-foreach ($group in @($findings | Group-Object groupId | Sort-Object Name)) {
-    $members = @($group.Group | Sort-Object rule, path, line, symbol)
-    $statuses = @($members.status | Sort-Object -Unique)
-    $groupStatus = if ($statuses -contains 'new') {
-        'new'
-    } elseif ($statuses -contains 'metric-worsened') {
-        'metric-worsened'
-    } elseif ($statuses -contains 'baseline') {
-        'baseline'
-    } else {
-        'observed'
-    }
-    $first = $members[0]
-    $baselineEntry = if ($baselineByIdentity.ContainsKey($first.identity)) { $baselineByIdentity[$first.identity] } else { $null }
-    $title = if ($null -ne $baselineEntry) { [string]$baselineEntry.groupTitle } else { [string]$first.identity }
-    if ($null -eq $baselineEntry) {
-        $title = [string]$logicalDrafts.Where({ $_.identity -eq $first.identity }, 'First').defaultMetadata.GroupTitle
-    }
-    $groups.Add([pscustomobject][ordered]@{
-        id = $group.Name
-        rule = [string]$first.rule
-        title = $title
-        classification = [string]$first.classification
-        reviewStatus = [string]$first.reviewStatus
-        status = $groupStatus
-        findingIds = @($members.id)
-        rawFindingIds = @($members | ForEach-Object { $_.rawFindingIds } | Sort-Object -Unique)
-        members = @($members | ForEach-Object {
-            [ordered]@{
-                findingId = $_.id
-                rule = $_.rule
-                file = $_.path
-                path = $_.path
-                symbol = $_.symbol
-                rawFindingIds = $_.rawFindingIds
-            }
-        })
-    })
-}
-$groups = @($groups)
-
-$currentIdentities = @{}
-foreach ($finding in $findings) { $currentIdentities[$finding.identity] = $true }
-$baselineMissing = @($baseline.findings | Where-Object { -not $currentIdentities.ContainsKey([string]$_.identity) })
-$newFindings = @($findings | Where-Object status -eq 'new')
-$worsenedFindings = @($findings | Where-Object status -eq 'metric-worsened')
-
-$result = [ordered]@{
-    schemaVersion = 1
-    generatedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
-    baselinePath = [System.IO.Path]::GetRelativePath($resolvedRepositoryRoot, $resolvedBaselinePath).Replace('\', '/')
-    counts = [ordered]@{
-        rawFindingCount = $rawFindings.Count
-        logicalFindingCount = $findings.Count
-        groupCount = $groups.Count
-        baselineCount = @($baseline.findings).Count
-        newFindingCount = $newFindings.Count
-        metricWorsenedCount = $worsenedFindings.Count
-        baselineMissingCount = $baselineMissing.Count
-    }
-    newFindings = @($newFindings.id)
-    metricWorsenedFindings = @($worsenedFindings.id)
-    baselineMissing = $baselineMissing
-    groups = $groups
-    findings = $findings
-    rawFindings = $rawFindings
-}
-
-New-Item -ItemType Directory -Path $resolvedOutputDirectory -Force | Out-Null
-$jsonPath = Join-Path $resolvedOutputDirectory 'legacy-ca-report.json'
-$markdownPath = Join-Path $resolvedOutputDirectory 'legacy-ca-summary.md'
-Set-Content -LiteralPath $jsonPath -Value ($result | ConvertTo-Json -Depth 100) -Encoding utf8NoBOM
-
-$markdown = [System.Collections.Generic.List[string]]::new()
-$markdown.Add('# Legacy CA advisory report')
-$markdown.Add('')
-$markdown.Add('The JSON report is authoritative. Every summary group lists finding IDs, every finding lists all raw finding IDs, and every raw finding embeds its complete SARIF result.')
-$markdown.Add('')
-$markdown.Add("- Raw findings: $($rawFindings.Count)")
-$markdown.Add("- Logical findings: $($findings.Count)")
-$markdown.Add("- Summary groups: $($groups.Count)")
-$markdown.Add("- New CA1501/CA1506 findings: $($newFindings.Count)")
-$markdown.Add("- Increased CA1501/CA1506 metrics: $($worsenedFindings.Count)")
-$markdown.Add("- Baseline findings not observed: $($baselineMissing.Count)")
-$markdown.Add('')
-$markdown.Add('Any numeric increase is reported with its exact delta; the report does not guess whether a CA1506 increase justifies refactoring.')
-$markdown.Add('')
-$markdown.Add('## Findings requiring attention')
-$markdown.Add('')
-if ($newFindings.Count -eq 0 -and $worsenedFindings.Count -eq 0) {
-    $markdown.Add('No new or worsened CA1501/CA1506 findings.')
-}
-else {
-    $markdown.Add('| Status | Rule | File | Symbol | Metric | Delta | Finding |')
-    $markdown.Add('| --- | --- | --- | --- | ---: | ---: | --- |')
-    foreach ($finding in @($newFindings + $worsenedFindings | Sort-Object status, rule, path, symbol)) {
-        $markdown.Add("| $($finding.status) | $($finding.rule) | ``$($finding.path)`` | ``$($finding.symbol)`` | $($finding.observedMetric) | $($finding.metricDelta) | ``$($finding.id)`` |")
-    }
-}
-$markdown.Add('')
-$markdown.Add('## Group overview')
-$markdown.Add('')
-$markdown.Add('| Group | Rule | Classification | Status | Findings | Raw |')
-$markdown.Add('| --- | --- | --- | --- | ---: | ---: |')
-foreach ($group in $groups) {
-    $markdown.Add("| ``$($group.id)`` | $($group.rule) | $($group.classification) | $($group.status) | $(@($group.findingIds).Count) | $(@($group.rawFindingIds).Count) |")
-}
-$markdown.Add('')
-$markdown.Add('## Traceability')
-$markdown.Add('')
-foreach ($group in $groups) {
-    $markdown.Add("<details><summary><code>$($group.id)</code> - $($group.title)</summary>")
     $markdown.Add('')
-    foreach ($member in @($group.members)) {
-        $rawIds = @($member.rawFindingIds) -join ', '
-        $markdown.Add("- ``$($member.findingId)`` - $($member.rule) - ``$($member.path)`` - ``$($member.symbol)`` - raw: ``$rawIds``")
+    $markdown.Add('## Group overview')
+    $markdown.Add('')
+    $markdown.Add('| Group | Rule | Classification | Status | Findings | Raw |')
+    $markdown.Add('| --- | --- | --- | --- | ---: | ---: |')
+    foreach ($group in $groups) {
+        $markdown.Add("| ``$($group.id)`` | $($group.rule) | $($group.classification) | $($group.status) | $(@($group.findingIds).Count) | $(@($group.rawFindingIds).Count) |")
     }
     $markdown.Add('')
-    $markdown.Add('</details>')
+    $markdown.Add('## Traceability')
     $markdown.Add('')
-}
-Set-Content -LiteralPath $markdownPath -Value $markdown -Encoding utf8NoBOM
+    foreach ($group in $groups) {
+        $markdown.Add("<details><summary><code>$($group.id)</code> - $($group.title)</summary>")
+        $markdown.Add('')
+        foreach ($member in @($group.members)) {
+            $rawIds = @($member.rawFindingIds) -join ', '
+            $markdown.Add("- ``$($member.findingId)`` - $($member.rule) - ``$($member.path)`` - ``$($member.symbol)`` - raw: ``$rawIds``")
+        }
+        $markdown.Add('')
+        $markdown.Add('</details>')
+        $markdown.Add('')
+    }
+    Set-Content -LiteralPath $markdownPath -Value $markdown -Encoding utf8NoBOM
 
-Write-Host "Legacy CA report: $jsonPath"
-Write-Host "Legacy CA summary: $markdownPath"
-Write-Host "raw=$($rawFindings.Count) logical=$($findings.Count) groups=$($groups.Count) new=$($newFindings.Count) worsened=$($worsenedFindings.Count)"
+    Write-Host "Legacy CA report: $jsonPath"
+    Write-Host "Legacy CA summary: $markdownPath"
+    Write-Host "raw=$($rawFindings.Count) logical=$($findings.Count) groups=$($groups.Count) new=$($newFindings.Count) worsened=$($worsenedFindings.Count)"
+}
+
+$rawFindings = @(Read-SarifFindings)
+$logicalFindings = @(Build-LogicalFindings -RawFindings $rawFindings)
+$comparison = Compare-Baseline -LogicalFindings $logicalFindings
+$groupArguments = @{
+    Findings = $comparison.Findings
+    BaselineByIdentity = $comparison.BaselineByIdentity
+    LogicalFindings = $logicalFindings
+}
+$groups = @(Build-FindingGroups @groupArguments)
+Write-Reports -RawFindings $rawFindings -Comparison $comparison -Groups $groups
