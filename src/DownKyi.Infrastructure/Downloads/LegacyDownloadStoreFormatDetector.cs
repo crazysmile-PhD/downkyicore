@@ -159,24 +159,24 @@ internal static class LegacyDownloadStoreFormatDetector
         var hasStagingToken = baseColumns.Contains("staging_token");
         var hasPublishingArtifact = PublishingColumns.All(baseColumns.Contains);
         var hasAnyPublishingArtifact = PublishingColumns.Any(baseColumns.Contains);
-        var kind = DetectKind(
-            userVersion,
-            tables.Count == 0,
-            hasLegacyCoreTables,
-            tables.Contains("download_history"),
-            hasCurrentHistoryShape,
-            tables.Contains("download_schema_migrations"),
-            tables.Contains("download_quarantine"),
-            hasStateColumns,
-            hasAnyStateColumns,
-            hasReservationKey,
-            hasAdmissionGate,
-            hasNfoRequest,
-            hasPublishedArtifacts,
-            hasStagingToken,
-            hasPublishingArtifact,
-            hasAnyPublishingArtifact);
-
+        var fingerprint = new DownloadStoreSchemaFingerprint(
+            UserVersion: userVersion,
+            HasNoTables: tables.Count == 0,
+            HasLegacyCoreTables: hasLegacyCoreTables,
+            HasHistoryTable: tables.Contains("download_history"),
+            HasCurrentHistoryShape: hasCurrentHistoryShape,
+            HasSchemaLedger: tables.Contains("download_schema_migrations"),
+            HasQuarantine: tables.Contains("download_quarantine"),
+            HasStateColumns: hasStateColumns,
+            HasAnyStateColumns: hasAnyStateColumns,
+            HasReservationKey: hasReservationKey,
+            HasAdmissionGate: hasAdmissionGate,
+            HasNfoRequest: hasNfoRequest,
+            HasPublishedArtifacts: hasPublishedArtifacts,
+            HasStagingToken: hasStagingToken,
+            HasPublishingArtifact: hasPublishingArtifact,
+            HasAnyPublishingArtifact: hasAnyPublishingArtifact);
+        var kind = DetectKind(fingerprint);
         return new LegacyDownloadStoreFormat(
             Kind: kind,
             DatabaseExisted: true,
@@ -193,113 +193,134 @@ internal static class LegacyDownloadStoreFormatDetector
             HasPublishingArtifact: hasPublishingArtifact);
     }
 
-    private static LegacyDownloadStoreKind DetectKind(
-        int userVersion,
-        bool hasNoTables,
-        bool hasLegacyCoreTables,
-        bool hasHistoryTable,
-        bool hasCurrentHistoryShape,
-        bool hasSchemaLedger,
-        bool hasQuarantine,
-        bool hasStateColumns,
-        bool hasAnyStateColumns,
-        bool hasReservationKey,
-        bool hasAdmissionGate,
-        bool hasNfoRequest,
-        bool hasPublishedArtifacts,
-        bool hasStagingToken,
-        bool hasPublishingArtifact,
-        bool hasAnyPublishingArtifact)
+    private static LegacyDownloadStoreKind DetectKind(DownloadStoreSchemaFingerprint fingerprint)
     {
-        if (userVersion == 0 && hasNoTables)
+        if (fingerprint.IsNew)
         {
             return LegacyDownloadStoreKind.New;
         }
 
-        if (hasCurrentHistoryShape
-            && userVersion == DownloadStoreSchema.CurrentVersion
-            && hasSchemaLedger
-            && hasQuarantine
-            && hasStateColumns
-            && hasReservationKey
-            && hasAdmissionGate
-            && hasNfoRequest
-            && hasPublishedArtifacts
-            && hasStagingToken
-            && hasPublishingArtifact)
+        if (fingerprint.IsCurrent)
         {
             return LegacyDownloadStoreKind.Current;
         }
 
-        if (hasHistoryTable
-            || !hasLegacyCoreTables
-            || hasAnyStateColumns != hasStateColumns
-            || hasAnyPublishingArtifact != hasPublishingArtifact)
+        if (fingerprint.IsStructurallyIncomplete)
         {
             return LegacyDownloadStoreKind.Unsupported;
         }
 
-        if (!hasStateColumns)
+        if (!fingerprint.HasStateColumns)
         {
-            var hasOnlyRelationalColumns = !hasReservationKey
-                                           && !hasAdmissionGate
-                                           && !hasNfoRequest
-                                           && !hasPublishedArtifacts
-                                           && !hasStagingToken
-                                           && !hasPublishingArtifact;
-            var isKnownV0 = userVersion == 0 && !hasSchemaLedger && !hasQuarantine;
-            var isKnownV1 = userVersion == 1 && hasSchemaLedger && hasQuarantine;
-            return hasOnlyRelationalColumns && (isKnownV0 || isKnownV1)
+            return fingerprint.IsRelational
                 ? LegacyDownloadStoreKind.Relational
                 : LegacyDownloadStoreKind.Unsupported;
         }
 
-        if (!hasSchemaLedger || !hasQuarantine)
+        if (!fingerprint.HasRequiredSchemaMetadata)
         {
             return LegacyDownloadStoreKind.Unsupported;
         }
 
-        if (!hasReservationKey)
+        if (!fingerprint.HasReservationKey)
         {
-            return userVersion == 2
-                   && !hasAdmissionGate
-                   && !hasNfoRequest
-                   && !hasPublishedArtifacts
-                   && !hasStagingToken
-                   && !hasPublishingArtifact
+            return fingerprint.IsStateful
                 ? LegacyDownloadStoreKind.Stateful
                 : LegacyDownloadStoreKind.Unsupported;
         }
 
-        if (!hasAdmissionGate)
+        if (!fingerprint.HasAdmissionGate)
         {
-            return userVersion == 3
-                   && !hasNfoRequest
-                   && !hasPublishedArtifacts
-                   && !hasStagingToken
-                   && !hasPublishingArtifact
+            return fingerprint.IsReserved
                 ? LegacyDownloadStoreKind.Reserved
                 : LegacyDownloadStoreKind.Unsupported;
         }
 
-        var additiveShapeVersion = hasPublishingArtifact
+        return fingerprint.IsAdmissionSafe
+            ? LegacyDownloadStoreKind.AdmissionSafe
+            : LegacyDownloadStoreKind.Unsupported;
+    }
+
+    private readonly record struct DownloadStoreSchemaFingerprint(
+        int UserVersion,
+        bool HasNoTables,
+        bool HasLegacyCoreTables,
+        bool HasHistoryTable,
+        bool HasCurrentHistoryShape,
+        bool HasSchemaLedger,
+        bool HasQuarantine,
+        bool HasStateColumns,
+        bool HasAnyStateColumns,
+        bool HasReservationKey,
+        bool HasAdmissionGate,
+        bool HasNfoRequest,
+        bool HasPublishedArtifacts,
+        bool HasStagingToken,
+        bool HasPublishingArtifact,
+        bool HasAnyPublishingArtifact)
+    {
+        public bool IsNew => UserVersion == 0 && HasNoTables;
+
+        public bool IsCurrent => HasCurrentHistoryShape
+                                 && UserVersion == DownloadStoreSchema.CurrentVersion
+                                 && HasRequiredSchemaMetadata
+                                 && HasStateColumns
+                                 && HasReservationKey
+                                 && HasAdmissionGate
+                                 && HasNfoRequest
+                                 && HasPublishedArtifacts
+                                 && HasStagingToken
+                                 && HasPublishingArtifact;
+
+        public bool IsStructurallyIncomplete => HasHistoryTable
+                                                || !HasLegacyCoreTables
+                                                || HasAnyStateColumns != HasStateColumns
+                                                || HasAnyPublishingArtifact != HasPublishingArtifact;
+
+        public bool HasRequiredSchemaMetadata => HasSchemaLedger && HasQuarantine;
+
+        public bool IsRelational => HasOnlyRelationalColumns && (IsKnownV0 || IsKnownV1);
+
+        public bool IsStateful => UserVersion == 2
+                                  && !HasAdmissionGate
+                                  && !HasNfoRequest
+                                  && !HasPublishedArtifacts
+                                  && !HasStagingToken
+                                  && !HasPublishingArtifact;
+
+        public bool IsReserved => UserVersion == 3
+                                  && !HasNfoRequest
+                                  && !HasPublishedArtifacts
+                                  && !HasStagingToken
+                                  && !HasPublishingArtifact;
+
+        public bool IsAdmissionSafe => HasMonotonicAdditiveShape
+                                       && UserVersion == AdditiveShapeVersion;
+
+        private bool HasOnlyRelationalColumns => !HasReservationKey
+                                                 && !HasAdmissionGate
+                                                 && !HasNfoRequest
+                                                 && !HasPublishedArtifacts
+                                                 && !HasStagingToken
+                                                 && !HasPublishingArtifact;
+
+        private bool IsKnownV0 => UserVersion == 0 && !HasSchemaLedger && !HasQuarantine;
+
+        private bool IsKnownV1 => UserVersion == 1 && HasRequiredSchemaMetadata;
+
+        private int AdditiveShapeVersion => HasPublishingArtifact
             ? 8
-            : hasStagingToken
+            : HasStagingToken
                 ? 7
-                : hasPublishedArtifacts
+                : HasPublishedArtifacts
                     ? 6
-                    : hasNfoRequest
+                    : HasNfoRequest
                         ? 5
                         : 4;
-        var hasMonotonicAdditiveShape = (!hasPublishedArtifacts || hasNfoRequest)
-                                        && (!hasStagingToken || hasPublishedArtifacts)
-                                        && (!hasPublishingArtifact || hasStagingToken);
-        if (!hasMonotonicAdditiveShape || userVersion != additiveShapeVersion)
-        {
-            return LegacyDownloadStoreKind.Unsupported;
-        }
 
-        return LegacyDownloadStoreKind.AdmissionSafe;
+        private bool HasMonotonicAdditiveShape => (!HasPublishedArtifacts || HasNfoRequest)
+                                                  && (!HasStagingToken || HasPublishedArtifacts)
+                                                  && (!HasPublishingArtifact || HasStagingToken);
     }
 
     private static async Task<HashSet<string>> ReadDownloadBaseColumnsAsync(
