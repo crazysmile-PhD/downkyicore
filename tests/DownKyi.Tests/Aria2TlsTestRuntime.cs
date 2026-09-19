@@ -635,7 +635,7 @@ internal sealed class WindowsTrustedRootRegistration : IDisposable
         string source,
         out int error)
     {
-        var store = CertOpenStore(
+        var store = NativeMethods.CertOpenStore(
             new IntPtr(10),
             encodingType: 0,
             cryptographicProvider: IntPtr.Zero,
@@ -647,7 +647,7 @@ internal sealed class WindowsTrustedRootRegistration : IDisposable
             return null;
         }
 
-        if (CertAddEncodedCertificateToStore(
+        if (NativeMethods.CertAddEncodedCertificateToStore(
                 store,
                 CertificateEncoding,
                 certificate,
@@ -660,7 +660,7 @@ internal sealed class WindowsTrustedRootRegistration : IDisposable
         }
 
         error = Marshal.GetLastPInvokeError();
-        CertCloseStore(store, flags: 0);
+        NativeMethods.CertCloseStore(store, flags: 0);
         return null;
     }
 
@@ -680,7 +680,7 @@ internal sealed class WindowsTrustedRootRegistration : IDisposable
         var store = Interlocked.Exchange(ref _store, IntPtr.Zero);
         try
         {
-            if (context != IntPtr.Zero && !CertDeleteCertificateFromStore(context))
+            if (context != IntPtr.Zero && !NativeMethods.CertDeleteCertificateFromStore(context))
             {
                 throw CreateNativeError("The Windows test root certificate could not be removed.");
             }
@@ -689,38 +689,41 @@ internal sealed class WindowsTrustedRootRegistration : IDisposable
         {
             if (store != IntPtr.Zero)
             {
-                CertCloseStore(store, flags: 0);
+                NativeMethods.CertCloseStore(store, flags: 0);
             }
         }
     }
 
-    [DllImport("crypt32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    private static extern IntPtr CertOpenStore(
-        IntPtr storeProvider,
-        uint encodingType,
-        IntPtr cryptographicProvider,
-        uint flags,
-        string storeName);
+    private static class NativeMethods
+    {
+        [DllImport("crypt32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+        internal static extern IntPtr CertOpenStore(
+            IntPtr storeProvider,
+            uint encodingType,
+            IntPtr cryptographicProvider,
+            uint flags,
+            string storeName);
 
-    [DllImport("crypt32.dll", SetLastError = true)]
-    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool CertAddEncodedCertificateToStore(
-        IntPtr certificateStore,
-        uint certificateEncodingType,
-        byte[] certificate,
-        int certificateLength,
-        uint addDisposition,
-        out IntPtr certificateContext);
+        [DllImport("crypt32.dll", SetLastError = true)]
+        [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool CertAddEncodedCertificateToStore(
+            IntPtr certificateStore,
+            uint certificateEncodingType,
+            byte[] certificate,
+            int certificateLength,
+            uint addDisposition,
+            out IntPtr certificateContext);
 
-    [DllImport("crypt32.dll", SetLastError = true)]
-    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool CertDeleteCertificateFromStore(IntPtr certificateContext);
+        [DllImport("crypt32.dll", SetLastError = true)]
+        [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool CertDeleteCertificateFromStore(IntPtr certificateContext);
 
-    [DllImport("crypt32.dll", SetLastError = true)]
-    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool CertCloseStore(IntPtr certificateStore, uint flags);
+        [DllImport("crypt32.dll", SetLastError = true)]
+        [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool CertCloseStore(IntPtr certificateStore, uint flags);
+    }
 }

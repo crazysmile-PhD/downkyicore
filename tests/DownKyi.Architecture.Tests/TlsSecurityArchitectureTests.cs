@@ -217,6 +217,40 @@ public sealed class TlsSecurityArchitectureTests
     }
 
     [Fact]
+    public void WindowsTrustedRootNativeBoundaryContractIsStable()
+    {
+        var tlsRuntime = ReadProductionSource(
+            "tests",
+            "DownKyi.Tests",
+            "Aria2TlsTestRuntime.cs");
+
+        Assert.Equal(
+            4,
+            tlsRuntime.Split("[DllImport(\"crypt32.dll\"", StringSplitOptions.None).Length - 1);
+        Assert.Equal(
+            4,
+            tlsRuntime.Split("[DefaultDllImportSearchPaths(DllImportSearchPath.System32)]", StringSplitOptions.None).Length - 1);
+        Assert.Equal(
+            3,
+            tlsRuntime.Split("[return: MarshalAs(UnmanagedType.Bool)]", StringSplitOptions.None).Length - 1);
+        Assert.Contains("private static class NativeMethods", tlsRuntime, StringComparison.Ordinal);
+        Assert.Contains("internal static extern IntPtr CertOpenStore(", tlsRuntime, StringComparison.Ordinal);
+        Assert.Contains("internal static extern bool CertAddEncodedCertificateToStore(", tlsRuntime, StringComparison.Ordinal);
+        Assert.Contains("internal static extern bool CertDeleteCertificateFromStore(IntPtr certificateContext);", tlsRuntime, StringComparison.Ordinal);
+        Assert.Contains("internal static extern bool CertCloseStore(IntPtr certificateStore, uint flags);", tlsRuntime, StringComparison.Ordinal);
+
+        var disposeStart = tlsRuntime.IndexOf("public void Dispose()", StringComparison.Ordinal);
+        var nativeDeclarationsStart = tlsRuntime.IndexOf("[DllImport(\"crypt32.dll\"", disposeStart, StringComparison.Ordinal);
+        Assert.True(disposeStart >= 0 && nativeDeclarationsStart > disposeStart);
+        var dispose = tlsRuntime[disposeStart..nativeDeclarationsStart];
+        Assert.True(
+            dispose.IndexOf("Interlocked.Exchange(ref _certificateContext", StringComparison.Ordinal)
+            < dispose.IndexOf("Interlocked.Exchange(ref _store", StringComparison.Ordinal));
+        Assert.True(
+            dispose.IndexOf("CertDeleteCertificateFromStore(context)", StringComparison.Ordinal)
+            < dispose.IndexOf("CertCloseStore(store, flags: 0)", StringComparison.Ordinal));
+    }
+    [Fact]
     public void AriaStartupAndResumeSecurityContractsRemainFailClosed()
     {
         var applicationSettings = ReadProductionSource(
