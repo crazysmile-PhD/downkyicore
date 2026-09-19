@@ -17,6 +17,10 @@
     </AssemblyAttribute>
   </ItemGroup>
 
+  <PropertyGroup Condition="'$(DownKyiLegacyCaAudit)' == 'true' and '$(DownKyiLegacyCaAuditSarifDirectory)' != ''">
+    <ErrorLog>$(DownKyiLegacyCaAuditSarifDirectory)/$(MSBuildProjectName).sarif</ErrorLog>
+  </PropertyGroup>
+
   <ItemGroup Condition="'$(DownKyiLegacyCaAudit)' == 'true'">
     <GlobalAnalyzerConfigFiles Include="$(MSBuildThisFileDirectory)script/code-metrics/legacy-ca.globalconfig" />
   </ItemGroup>
