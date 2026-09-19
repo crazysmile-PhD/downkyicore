@@ -233,10 +233,11 @@ public sealed class TlsSecurityArchitectureTests
         Assert.Equal(
             3,
             tlsRuntime.Split("[return: MarshalAs(UnmanagedType.Bool)]", StringSplitOptions.None).Length - 1);
-        Assert.Contains("private static extern IntPtr CertOpenStore(", tlsRuntime, StringComparison.Ordinal);
-        Assert.Contains("private static extern bool CertAddEncodedCertificateToStore(", tlsRuntime, StringComparison.Ordinal);
-        Assert.Contains("private static extern bool CertDeleteCertificateFromStore(IntPtr certificateContext);", tlsRuntime, StringComparison.Ordinal);
-        Assert.Contains("private static extern bool CertCloseStore(IntPtr certificateStore, uint flags);", tlsRuntime, StringComparison.Ordinal);
+        Assert.Contains("private static class NativeMethods", tlsRuntime, StringComparison.Ordinal);
+        Assert.Contains("internal static extern IntPtr CertOpenStore(", tlsRuntime, StringComparison.Ordinal);
+        Assert.Contains("internal static extern bool CertAddEncodedCertificateToStore(", tlsRuntime, StringComparison.Ordinal);
+        Assert.Contains("internal static extern bool CertDeleteCertificateFromStore(IntPtr certificateContext);", tlsRuntime, StringComparison.Ordinal);
+        Assert.Contains("internal static extern bool CertCloseStore(IntPtr certificateStore, uint flags);", tlsRuntime, StringComparison.Ordinal);
 
         var disposeStart = tlsRuntime.IndexOf("public void Dispose()", StringComparison.Ordinal);
         var nativeDeclarationsStart = tlsRuntime.IndexOf("[DllImport(\"crypt32.dll\"", disposeStart, StringComparison.Ordinal);
