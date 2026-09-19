@@ -70,6 +70,71 @@ public sealed class DownloadRuntimeFailureDialogViewModelTests
         Assert.True(body.Length < viewModel.DiagnosticText.Length);
     }
 
+    [Theory]
+    [InlineData(
+        "https://downloads.example.test/file?signature=unrecognized-secret",
+        "unrecognized-secret")]
+    [InlineData("/srv/alice/downkyi/runtime.db", "alice/downkyi")]
+    [InlineData("Database:/srv/alice/downkyi/runtime.db", "alice/downkyi")]
+    [InlineData("/srv/Jane Doe/downkyi/runtime.db", "Doe/downkyi")]
+    [InlineData("Database:/srv/Jane Doe/downkyi/runtime.db", "Doe/downkyi")]
+    [InlineData(@"C:\Users\Jane Doe\downkyi\runtime.db", @"Jane Doe\downkyi")]
+    [InlineData(@"Database:C:\Users\Jane Doe\downkyi\runtime.db", @"Jane Doe\downkyi")]
+    [InlineData(@"\\server\Jane Doe\downkyi\runtime.db", @"Jane Doe\downkyi")]
+    public async Task DialogRedactsExternalResourcesBeforeDisplayCopyAndIssue(
+        string resource,
+        string sensitiveFragment)
+    {
+        var clipboard = new RecordingClipboardService();
+        var launcher = new RecordingPlatformLauncher();
+        var viewModel = new DownloadRuntimeFailureDialogViewModel(
+            new RedactingLogService(),
+            clipboard,
+            launcher,
+            new RecordingNotificationService(),
+            NullLogger<DownloadRuntimeFailureDialogViewModel>.Instance);
+        viewModel.OnDialogOpened(new AppDialogRequest(
+            AppDialog.DownloadRuntimeFailure,
+            new Dictionary<string, object?>
+            {
+                ["failure"] = new InvalidOperationException($"Request failed for {resource}")
+            }));
+
+        await viewModel.CopyErrorDetailsAsync();
+        await viewModel.CreateGitHubIssueAsync();
+
+        Assert.Contains("[resource redacted]", viewModel.DiagnosticText, StringComparison.Ordinal);
+        Assert.DoesNotContain(resource, viewModel.DiagnosticText, StringComparison.Ordinal);
+        Assert.DoesNotContain(sensitiveFragment, viewModel.DiagnosticText, StringComparison.Ordinal);
+        Assert.Equal(viewModel.DiagnosticText, clipboard.Text);
+        var body = GetQueryValue(launcher.Uri!, "body");
+        Assert.Equal(viewModel.DiagnosticText, body);
+    }
+
+    [Fact]
+    public void DialogHandlesLargeDotSeparatedNonResourceDiagnostic()
+    {
+        var viewModel = new DownloadRuntimeFailureDialogViewModel(
+            new RedactingLogService(),
+            new RecordingClipboardService(),
+            new RecordingPlatformLauncher(),
+            new RecordingNotificationService(),
+            NullLogger<DownloadRuntimeFailureDialogViewModel>.Instance);
+        var diagnostic = string.Join('.', Enumerable.Repeat("segment", 20_000));
+
+        viewModel.OnDialogOpened(new AppDialogRequest(
+            AppDialog.DownloadRuntimeFailure,
+            new Dictionary<string, object?>
+            {
+                ["failure"] = new InvalidOperationException(diagnostic)
+            }));
+
+        Assert.DoesNotContain(
+            "[resource redacted]",
+            viewModel.DiagnosticText,
+            StringComparison.Ordinal);
+    }
+
     private static string GetQueryValue(Uri uri, string name)
     {
         foreach (var field in uri.Query.TrimStart('?').Split('&'))

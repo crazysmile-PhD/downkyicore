@@ -1,5 +1,6 @@
 using System;
 using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using DownKyi.Application.Desktop;
 using DownKyi.Application.Diagnostics;
@@ -10,7 +11,7 @@ using Microsoft.Extensions.Logging;
 
 namespace DownKyi.ViewModels.Dialogs;
 
-internal sealed class DownloadRuntimeFailureDialogViewModel : BaseDialogViewModel
+internal sealed partial class DownloadRuntimeFailureDialogViewModel : BaseDialogViewModel
 {
     private const int MaximumIssueUriLength = 8_000;
     private const string IssueTitle = "Download system failed to initialize";
@@ -127,10 +128,18 @@ internal sealed class DownloadRuntimeFailureDialogViewModel : BaseDialogViewMode
         return length;
     }
 
+    [GeneratedRegex(
+        "(^|[^\\w])(?:[a-z][a-z0-9+.-]*://|[a-z]:[\\\\/]|[\\\\/])[^\\r\\n]*",
+        RegexOptions.IgnoreCase |
+        RegexOptions.Multiline |
+        RegexOptions.CultureInvariant |
+        RegexOptions.NonBacktracking)]
+    private static partial Regex ExternalResourceLineRegex();
+
     private string CreateDiagnosticText(Exception failure)
     {
-        var exceptionText = _logService.RedactDiagnosticText(failure.ToString());
-        var operatingSystem = _logService.RedactDiagnosticText(
+        var exceptionText = RedactDiagnosticText(failure.ToString());
+        var operatingSystem = RedactDiagnosticText(
             RuntimeInformation.OSDescription);
         return $"""
             DownKyi version: {new AppInfo().VersionName}
@@ -140,5 +149,13 @@ internal sealed class DownloadRuntimeFailureDialogViewModel : BaseDialogViewMode
 
             {exceptionText}
             """;
+    }
+
+    private string RedactDiagnosticText(string? text)
+    {
+        var resourceRedacted = ExternalResourceLineRegex().Replace(
+            text ?? string.Empty,
+            "$1[resource redacted]");
+        return _logService.RedactDiagnosticText(resourceRedacted);
     }
 }
