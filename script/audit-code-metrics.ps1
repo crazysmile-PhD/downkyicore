@@ -54,8 +54,23 @@ $buildOutput = @(& dotnet @buildArguments 2>&1)
 $buildExitCode = $LASTEXITCODE
 $buildLines = @($buildOutput | ForEach-Object { $_.ToString() })
 $buildLines | ForEach-Object { Write-Host $_ }
+$checkoutPathVariants = @(
+    $repositoryRoot
+    $repositoryRoot.Replace('\', '/')
+) | Sort-Object -Unique
+$redactedBuildLines = @($buildLines | ForEach-Object {
+    $redactedLine = $_
+    foreach ($checkoutPath in $checkoutPathVariants) {
+        $redactedLine = [regex]::Replace(
+            $redactedLine,
+            [regex]::Escape($checkoutPath),
+            '<repo>',
+            [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    }
+    $redactedLine
+})
 Set-Content -LiteralPath (Join-Path $resolvedOutputDirectory 'raw-build.log') `
-    -Value $buildLines `
+    -Value $redactedBuildLines `
     -Encoding utf8NoBOM
 if ($buildExitCode -ne 0) {
     $global:LASTEXITCODE = $buildExitCode

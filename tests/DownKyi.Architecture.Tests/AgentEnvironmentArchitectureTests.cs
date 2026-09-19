@@ -115,6 +115,8 @@ public sealed class AgentEnvironmentArchitectureTests
         Assert.Contains("-p:TreatWarningsAsErrors=false", auditScript, StringComparison.Ordinal);
         Assert.Contains("-p:CodeAnalysisTreatWarningsAsErrors=false", auditScript, StringComparison.Ordinal);
         Assert.Contains("raw-build.log", auditScript, StringComparison.Ordinal);
+        Assert.Contains("$redactedBuildLines", auditScript, StringComparison.Ordinal);
+        Assert.Contains("'<repo>'", auditScript, StringComparison.Ordinal);
         Assert.Contains("report-legacy-ca.ps1", auditScript, StringComparison.Ordinal);
         Assert.Contains("legacy-ca-baseline.json", auditScript, StringComparison.Ordinal);
         Assert.Contains("exit $LASTEXITCODE", auditScript, StringComparison.Ordinal);

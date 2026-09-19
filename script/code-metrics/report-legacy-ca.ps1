@@ -24,6 +24,10 @@ $resolvedRepositoryRoot = [System.IO.Path]::GetFullPath($RepositoryRoot)
 $resolvedSarifDirectory = [System.IO.Path]::GetFullPath($SarifDirectory)
 $resolvedOutputDirectory = [System.IO.Path]::GetFullPath($OutputDirectory)
 $resolvedBaselinePath = [System.IO.Path]::GetFullPath($BaselinePath)
+$repositoryRootWithSeparator = $resolvedRepositoryRoot.TrimEnd(
+    [System.IO.Path]::DirectorySeparatorChar,
+    [System.IO.Path]::AltDirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
+$repositoryUriPrefix = ([Uri]$repositoryRootWithSeparator).AbsoluteUri
 
 function Get-StableId {
     param(
@@ -245,7 +249,15 @@ if ($sarifFiles.Count -eq 0) {
 
 $rawDrafts = [System.Collections.Generic.List[object]]::new()
 foreach ($sarifFile in $sarifFiles) {
-    $sarif = Get-Content -LiteralPath $sarifFile.FullName -Raw | ConvertFrom-Json -Depth 100
+    $sarifText = Get-Content -LiteralPath $sarifFile.FullName -Raw
+    $sanitizedSarifText = $sarifText.Replace(
+        $repositoryUriPrefix,
+        '',
+        [StringComparison]::OrdinalIgnoreCase)
+    if (-not [string]::Equals($sarifText, $sanitizedSarifText, [StringComparison]::Ordinal)) {
+        Set-Content -LiteralPath $sarifFile.FullName -Value $sanitizedSarifText -Encoding utf8NoBOM
+    }
+    $sarif = $sanitizedSarifText | ConvertFrom-Json -Depth 100
     foreach ($run in @($sarif.runs)) {
         foreach ($result in @($run.results)) {
             $rule = [string]$result.ruleId
@@ -293,32 +305,36 @@ for ($index = 0; $index -lt $orderedRawDrafts.Count; $index++) {
 }
 
 $logicalDrafts = [System.Collections.Generic.List[object]]::new()
-$identityGroups = @($rawFindings | Group-Object { "$($_.rule)|$($_.path)|$($_.symbol)" })
-foreach ($identityGroup in $identityGroups) {
-    $locations = @($identityGroup.Group | ForEach-Object { "$($_.line):$($_.column)" } | Sort-Object -Unique)
-    if ($locations.Count -gt 1) {
-        throw "Ambiguous logical finding identity '$($identityGroup.Name)' spans locations $($locations -join ', '). Add an explicit discriminator instead of merging it."
+$baseIdentityGroups = @($rawFindings | Group-Object { "$($_.rule)|$($_.path)|$($_.symbol)" })
+foreach ($baseIdentityGroup in $baseIdentityGroups) {
+    $locationGroups = @($baseIdentityGroup.Group | Group-Object { "$($_.line):$($_.column)" } | Sort-Object Name)
+    $requiresLocationDiscriminator = $locationGroups.Count -gt 1
+    foreach ($locationGroup in $locationGroups) {
+        $first = $locationGroup.Group[0]
+        $identity = if ($requiresLocationDiscriminator) {
+            "$($baseIdentityGroup.Name)|location:$($locationGroup.Name)"
+        }
+        else {
+            $baseIdentityGroup.Name
+        }
+        $metadata = Get-DefaultMetadata $first.rule $first.path $first.symbol $first.message $identity
+        $metrics = @($locationGroup.Group | Where-Object { $null -ne $_.observedMetric } | ForEach-Object { [int]$_.observedMetric })
+        $metric = if ($metrics.Count -gt 0) { [int](($metrics | Measure-Object -Maximum).Maximum) } else { $null }
+        $logicalDrafts.Add([pscustomobject][ordered]@{
+            identity = $identity
+            id = Get-StableId 'finding' $identity
+            rule = $first.rule
+            path = $first.path
+            line = $first.line
+            column = $first.column
+            symbol = $first.symbol
+            observedMetric = $metric
+            projects = @($locationGroup.Group.project | Sort-Object -Unique)
+            messageVariants = @($locationGroup.Group.message | Sort-Object -Unique)
+            rawFindingIds = @($locationGroup.Group.id)
+            defaultMetadata = $metadata
+        })
     }
-
-    $first = $identityGroup.Group[0]
-    $identity = $identityGroup.Name
-    $metadata = Get-DefaultMetadata $first.rule $first.path $first.symbol $first.message $identity
-    $metrics = @($identityGroup.Group | Where-Object { $null -ne $_.observedMetric } | ForEach-Object { [int]$_.observedMetric })
-    $metric = if ($metrics.Count -gt 0) { [int](($metrics | Measure-Object -Maximum).Maximum) } else { $null }
-    $logicalDrafts.Add([pscustomobject][ordered]@{
-        identity = $identity
-        id = Get-StableId 'finding' $identity
-        rule = $first.rule
-        path = $first.path
-        line = $first.line
-        column = $first.column
-        symbol = $first.symbol
-        observedMetric = $metric
-        projects = @($identityGroup.Group.project | Sort-Object -Unique)
-        messageVariants = @($identityGroup.Group.message | Sort-Object -Unique)
-        rawFindingIds = @($identityGroup.Group.id)
-        defaultMetadata = $metadata
-    })
 }
 $logicalDrafts = @($logicalDrafts | Sort-Object rule, path, line, symbol)
 

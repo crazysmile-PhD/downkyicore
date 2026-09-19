@@ -24,7 +24,8 @@ public sealed class LegacyCaReportTests
                 "project-a",
                 new SyntheticFinding("CA1501", Path.Combine(temporaryRoot, "src", "ExistingView.cs"), 4, "'ExistingView' has an object hierarchy of '11', which is greater than '6': '" + inheritanceChain + "'."),
                 new SyntheticFinding("CA1501", Path.Combine(temporaryRoot, "src", "NewView.cs"), 5, "'NewView' has an object hierarchy of '12', which is greater than '6': '" + inheritanceChain + "'."),
-                new SyntheticFinding("CA1506", Path.Combine(temporaryRoot, "tests", "SharedTests.cs"), 6, "'SharedOperation' is coupled with '42' different types from '12' namespaces. Rewrite or refactor the method to decrease its class coupling below '41'."));
+                new SyntheticFinding("CA1506", Path.Combine(temporaryRoot, "tests", "SharedTests.cs"), 6, "'SharedOperation' is coupled with '42' different types from '12' namespaces. Rewrite or refactor the method to decrease its class coupling below '41'."),
+                new SyntheticFinding("CA1506", Path.Combine(temporaryRoot, "tests", "SharedTests.cs"), 16, "'SharedOperation' is coupled with '43' different types from '12' namespaces. Rewrite or refactor the method to decrease its class coupling below '41'."));
             WriteSarif(
                 Path.Combine(sarifDirectory, "project-b.sarif"),
                 "project-b",
@@ -42,21 +43,36 @@ public sealed class LegacyCaReportTests
             var findings = root.GetProperty("findings").EnumerateArray().ToArray();
             var groups = root.GetProperty("groups").EnumerateArray().ToArray();
 
-            Assert.Equal(4, rawFindings.Length);
-            Assert.Equal(3, findings.Length);
+            Assert.Equal(5, rawFindings.Length);
+            Assert.Equal(4, findings.Length);
             Assert.All(rawFindings, finding =>
             {
                 Assert.True(finding.TryGetProperty("sourceResult", out var sourceResult));
                 Assert.True(sourceResult.TryGetProperty("properties", out var properties));
                 Assert.False(string.IsNullOrWhiteSpace(properties.GetProperty("fixtureMarker").GetString()));
+                var uri = sourceResult
+                    .GetProperty("locations")[0]
+                    .GetProperty("resultFile")
+                    .GetProperty("uri")
+                    .GetString();
+                Assert.False(Uri.TryCreate(uri, UriKind.Absolute, out _));
             });
+            var checkoutUri = new Uri(temporaryRoot + Path.DirectorySeparatorChar).AbsoluteUri;
+            Assert.DoesNotContain(checkoutUri, reportJson, StringComparison.OrdinalIgnoreCase);
+            var sanitizedSarif = await File.ReadAllTextAsync(
+                Path.Combine(sarifDirectory, "project-a.sarif"),
+                TestContext.Current.CancellationToken).ConfigureAwait(true);
+            Assert.DoesNotContain(checkoutUri, sanitizedSarif, StringComparison.OrdinalIgnoreCase);
 
             Assert.Equal("baseline", FindBySymbol(findings, "ExistingView").GetProperty("status").GetString());
             Assert.Equal("new", FindBySymbol(findings, "NewView").GetProperty("status").GetString());
-            var sharedFinding = FindBySymbol(findings, "SharedOperation");
+            var sharedFinding = FindBySymbolAndLine(findings, "SharedOperation", 6);
             Assert.Equal("metric-worsened", sharedFinding.GetProperty("status").GetString());
             Assert.Equal(1, sharedFinding.GetProperty("metricDelta").GetInt32());
             Assert.Equal(2, sharedFinding.GetProperty("rawFindingIds").GetArrayLength());
+            var overloadedFinding = FindBySymbolAndLine(findings, "SharedOperation", 16);
+            Assert.Equal("new", overloadedFinding.GetProperty("status").GetString());
+            Assert.Equal(1, overloadedFinding.GetProperty("rawFindingIds").GetArrayLength());
 
             var rawIds = IdSet(rawFindings.Select(finding => finding.GetProperty("id")));
             var findingRawIds = IdSet(findings.SelectMany(finding => finding.GetProperty("rawFindingIds").EnumerateArray()));
@@ -86,6 +102,11 @@ public sealed class LegacyCaReportTests
     private static JsonElement FindBySymbol(IEnumerable<JsonElement> findings, string symbol) =>
         findings.Single(finding => string.Equals(finding.GetProperty("symbol").GetString(), symbol, StringComparison.Ordinal));
 
+    private static JsonElement FindBySymbolAndLine(IEnumerable<JsonElement> findings, string symbol, int line) =>
+        findings.Single(finding =>
+            string.Equals(finding.GetProperty("symbol").GetString(), symbol, StringComparison.Ordinal) &&
+            finding.GetProperty("line").GetInt32() == line);
+
     private static void WriteSarif(string path, string fixtureMarker, params SyntheticFinding[] findings)
     {
         var results = findings.Select(finding => new
@@ -110,7 +131,7 @@ public sealed class LegacyCaReportTests
             },
             new
             {
-                identity = "CA1506|tests/SharedTests.cs|SharedOperation", rule = "CA1506", path = "tests/SharedTests.cs", symbol = "SharedOperation", observedMetric = 41,
+                identity = "CA1506|tests/SharedTests.cs|SharedOperation|location:6:1", rule = "CA1506", path = "tests/SharedTests.cs", symbol = "SharedOperation", observedMetric = 41,
                 groupId = "baseline-shared-operation", groupTitle = "Existing integration test", classification = "integration-test", reviewStatus = "reviewed-reasonable", rationale = "Fixture baseline."
             }
         };
