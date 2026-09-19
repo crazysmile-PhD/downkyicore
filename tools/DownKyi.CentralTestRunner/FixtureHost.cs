@@ -25,7 +25,6 @@ internal static class FixtureHost
             "fixture-stderr-hold" => await RunStderrHoldAsync().ConfigureAwait(false),
             "fixture-tree-root" => await RunTreeRootAsync(args).ConfigureAwait(false),
             "fixture-tree-child" => await RunTreeChildAsync(args).ConfigureAwait(false),
-            "fixture-legacy-tree-kill" => await RunLegacyTreeKillAsync(args).ConfigureAwait(false),
             "fixture-sensitive-hold" => await RunSensitiveHoldAsync(args).ConfigureAwait(false),
             "fixture-long-line" => await RunLongLineAsync(args).ConfigureAwait(false),
             _ => null
@@ -174,37 +173,6 @@ internal static class FixtureHost
         await File.WriteAllTextAsync(Path.Combine(args[2], "child.pid"),
             Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture)).ConfigureAwait(false);
         await Task.Delay(Timeout.InfiniteTimeSpan).ConfigureAwait(false);
-        return 0;
-    }
-
-    private static async Task<int?> RunLegacyTreeKillAsync(string[] args)
-    {
-        if (args.Length <= 2)
-        {
-            return null;
-        }
-
-        var treeInfo = new ProcessStartInfo("/bin/sh")
-        {
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true
-        };
-        treeInfo.ArgumentList.Add(args[1]);
-        treeInfo.ArgumentList.Add(args[2]);
-        using var tree = Process.Start(treeInfo)
-            ?? throw new InvalidOperationException("The legacy tree-kill fixture did not start.");
-        var ready = await tree.StandardOutput.ReadLineAsync().ConfigureAwait(false);
-        if (!string.Equals(ready, "ready", StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException("The legacy tree-kill fixture did not become ready.");
-        }
-
-        Console.WriteLine($"legacy-kill-start pid={tree.Id}");
-        await Console.Out.FlushAsync().ConfigureAwait(false);
-        tree.Kill(entireProcessTree: true);
-        Console.WriteLine($"legacy-kill-returned pid={tree.Id}");
-        await Console.Out.FlushAsync().ConfigureAwait(false);
         return 0;
     }
 
