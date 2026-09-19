@@ -8,7 +8,7 @@ namespace DownKyi.Tests;
 public sealed class DownloadRuntimeFailureDialogViewModelTests
 {
     [Fact]
-    public async Task DialogCopiesRedactedDiagnosticAndOpensNewIssuePage()
+    public async Task DialogCopiesRedactedDiagnosticAndPrefillsNewIssue()
     {
         var logs = new RedactingLogService();
         var clipboard = new RecordingClipboardService();
@@ -36,8 +36,52 @@ public sealed class DownloadRuntimeFailureDialogViewModelTests
         Assert.DoesNotContain("secret-path", viewModel.DiagnosticText, StringComparison.Ordinal);
         Assert.Equal("github.com", launcher.Uri?.Host);
         Assert.Equal("/crazysmile-PhD/downkyicore/issues/new", launcher.Uri?.AbsolutePath);
-        Assert.Contains("title=", launcher.Uri?.Query, StringComparison.Ordinal);
+        Assert.Equal("Download system failed to initialize", GetQueryValue(launcher.Uri!, "title"));
+        Assert.Equal(viewModel.DiagnosticText, GetQueryValue(launcher.Uri!, "body"));
         Assert.Single(notifications.Messages);
+    }
+
+    [Fact]
+    public async Task NewIssueTruncatesOnlyItsBodyWhenDiagnosticWouldExceedSafeUriLength()
+    {
+        var launcher = new RecordingPlatformLauncher();
+        var viewModel = new DownloadRuntimeFailureDialogViewModel(
+            new RedactingLogService(),
+            new RecordingClipboardService(),
+            launcher,
+            new RecordingNotificationService(),
+            NullLogger<DownloadRuntimeFailureDialogViewModel>.Instance);
+        viewModel.OnDialogOpened(new AppDialogRequest(
+            AppDialog.DownloadRuntimeFailure,
+            new Dictionary<string, object?>
+            {
+                ["failure"] = new InvalidOperationException(new string('\u4E0B', 10_000))
+            }));
+
+        await viewModel.CreateGitHubIssueAsync();
+
+        var body = GetQueryValue(launcher.Uri!, "body");
+        Assert.True(launcher.Uri!.AbsoluteUri.Length <= 8_000);
+        Assert.StartsWith("DownKyi version:", body, StringComparison.Ordinal);
+        Assert.EndsWith(
+            "Use Copy Error Details for the complete text.]",
+            body,
+            StringComparison.Ordinal);
+        Assert.True(body.Length < viewModel.DiagnosticText.Length);
+    }
+
+    private static string GetQueryValue(Uri uri, string name)
+    {
+        foreach (var field in uri.Query.TrimStart('?').Split('&'))
+        {
+            var parts = field.Split('=', 2);
+            if (parts.Length == 2 && string.Equals(parts[0], name, StringComparison.Ordinal))
+            {
+                return Uri.UnescapeDataString(parts[1]);
+            }
+        }
+
+        throw new InvalidOperationException($"Query parameter '{name}' was not found.");
     }
 
     private sealed class RedactingLogService : IApplicationLogService
