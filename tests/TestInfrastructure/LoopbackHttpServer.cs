@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -20,6 +21,10 @@ public sealed record LoopbackHttpRequest(
     string PathAndQuery,
     long? RangeStart);
 
+[SuppressMessage(
+    "Usage",
+    "CA2213:Disposable fields should be disposed",
+    Justification = "The shutdown source is disposed through the failure-preserving cleanup sink.")]
 public sealed class LoopbackHttpServer : IAsyncDisposable
 {
     private readonly TaskCompletionSource _firstRequestReceived =
@@ -27,19 +32,26 @@ public sealed class LoopbackHttpServer : IAsyncDisposable
     private readonly CancellationTokenSource _shutdown = new();
     private readonly Func<LoopbackHttpRequest, LoopbackResponse> _responseFactory;
     private readonly ConcurrentQueue<LoopbackHttpRequest> _requests = new();
+    private readonly LoopbackServiceFailureSink? _failureSink;
     private readonly TcpListener _listener;
     private readonly Task _serverTask;
+    private int _disposed;
     private int _requestCount;
 
-    public LoopbackHttpServer(Func<int, LoopbackResponse> responseFactory)
-        : this(request => responseFactory(request.RequestNumber))
+    public LoopbackHttpServer(
+        Func<int, LoopbackResponse> responseFactory,
+        LoopbackServiceFailureSink? failureSink = null)
+        : this(request => responseFactory(request.RequestNumber), failureSink)
     {
         ArgumentNullException.ThrowIfNull(responseFactory);
     }
 
-    private LoopbackHttpServer(Func<LoopbackHttpRequest, LoopbackResponse> responseFactory)
+    private LoopbackHttpServer(
+        Func<LoopbackHttpRequest, LoopbackResponse> responseFactory,
+        LoopbackServiceFailureSink? failureSink)
     {
         _responseFactory = responseFactory ?? throw new ArgumentNullException(nameof(responseFactory));
+        _failureSink = failureSink;
         _listener = new TcpListener(IPAddress.Loopback, 0);
         _listener.Start();
 
@@ -55,9 +67,10 @@ public sealed class LoopbackHttpServer : IAsyncDisposable
     public IReadOnlyCollection<LoopbackHttpRequest> Requests => _requests.ToArray();
 
     public static LoopbackHttpServer CreateRequestAware(
-        Func<LoopbackHttpRequest, LoopbackResponse> responseFactory)
+        Func<LoopbackHttpRequest, LoopbackResponse> responseFactory,
+        LoopbackServiceFailureSink? failureSink = null)
     {
-        return new LoopbackHttpServer(responseFactory);
+        return new LoopbackHttpServer(responseFactory, failureSink);
     }
 
     public Task WaitForFirstRequestAsync(CancellationToken cancellationToken)
@@ -180,6 +193,36 @@ public sealed class LoopbackHttpServer : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        if (_failureSink != null)
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            {
+                return;
+            }
+
+            await _failureSink.RunAsync(
+                nameof(LoopbackHttpServer),
+                "cancel-shutdown",
+                () => _shutdown.CancelAsync()).ConfigureAwait(false);
+            _failureSink.Run(
+                nameof(LoopbackHttpServer),
+                "stop-listener",
+                _listener.Stop);
+            await _failureSink.RunAsync(
+                nameof(LoopbackHttpServer),
+                "await-server",
+                () => _serverTask).ConfigureAwait(false);
+            _failureSink.Run(
+                nameof(LoopbackHttpServer),
+                "dispose-listener",
+                _listener.Dispose);
+            _failureSink.Run(
+                nameof(LoopbackHttpServer),
+                "dispose-cancellation-source",
+                _shutdown.Dispose);
+            return;
+        }
+
         await _shutdown.CancelAsync().ConfigureAwait(false);
         _listener.Stop();
 

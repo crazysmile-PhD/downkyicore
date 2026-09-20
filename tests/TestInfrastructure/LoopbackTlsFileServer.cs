@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
@@ -15,6 +16,10 @@ public sealed record LoopbackTlsRequest(
     long? RangeStart,
     long? RangeEnd);
 
+[SuppressMessage(
+    "Usage",
+    "CA2213:Disposable fields should be disposed",
+    Justification = "The shutdown source is disposed through the failure-preserving cleanup sink.")]
 public sealed class LoopbackTlsFileServer : IAsyncDisposable
 {
     private readonly CancellationTokenSource _shutdown = new();
@@ -25,9 +30,11 @@ public sealed class LoopbackTlsFileServer : IAsyncDisposable
     private readonly TimeSpan _chunkDelay;
     private readonly ConcurrentQueue<LoopbackTlsRequest> _requests = new();
     private readonly ConcurrentQueue<Exception> _failures = new();
+    private readonly LoopbackServiceFailureSink? _failureSink;
     private readonly TcpListener _listener;
     private readonly Task _serverTask;
     private int _connectionCount;
+    private int _disposed;
 
     public LoopbackTlsFileServer(
         Func<int, X509Certificate2> certificateFactory,
@@ -35,7 +42,8 @@ public sealed class LoopbackTlsFileServer : IAsyncDisposable
         Uri? redirectTarget = null,
         bool truncateFirstResponse = false,
         TimeSpan chunkDelay = default,
-        Func<int, LoopbackTlsRequest, Uri?>? redirectFactory = null)
+        Func<int, LoopbackTlsRequest, Uri?>? redirectFactory = null,
+        LoopbackServiceFailureSink? failureSink = null)
     {
         _certificateFactory = certificateFactory
             ?? throw new ArgumentNullException(nameof(certificateFactory));
@@ -47,6 +55,7 @@ public sealed class LoopbackTlsFileServer : IAsyncDisposable
         }
         _truncateFirstResponse = truncateFirstResponse;
         _chunkDelay = chunkDelay;
+        _failureSink = failureSink;
         _listener = new TcpListener(IPAddress.Loopback, 0);
         _listener.Start();
         var endpoint = (IPEndPoint)_listener.LocalEndpoint;
@@ -309,6 +318,36 @@ public sealed class LoopbackTlsFileServer : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        if (_failureSink != null)
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            {
+                return;
+            }
+
+            await _failureSink.RunAsync(
+                nameof(LoopbackTlsFileServer),
+                "cancel-shutdown",
+                () => _shutdown.CancelAsync()).ConfigureAwait(false);
+            _failureSink.Run(
+                nameof(LoopbackTlsFileServer),
+                "stop-listener",
+                _listener.Stop);
+            await _failureSink.RunAsync(
+                nameof(LoopbackTlsFileServer),
+                "await-server",
+                () => _serverTask).ConfigureAwait(false);
+            _failureSink.Run(
+                nameof(LoopbackTlsFileServer),
+                "dispose-listener",
+                _listener.Dispose);
+            _failureSink.Run(
+                nameof(LoopbackTlsFileServer),
+                "dispose-cancellation-source",
+                _shutdown.Dispose);
+            return;
+        }
+
         await _shutdown.CancelAsync().ConfigureAwait(false);
         _listener.Stop();
         try

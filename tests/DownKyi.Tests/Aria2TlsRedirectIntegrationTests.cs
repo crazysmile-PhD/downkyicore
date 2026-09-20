@@ -15,12 +15,13 @@ public sealed partial class Aria2TlsIntegrationTests
         List<Aria2TlsCaseResult> results,
         CancellationToken cancellationToken)
     {
-        var target = CreatePlainHttpTarget();
+        var target = CreatePlainHttpTarget(runtime);
         await using var targetLifetime = target.ConfigureAwait(false);
         var redirect = new LoopbackTlsFileServer(
             _ => certificate,
             [],
-            redirectTarget: target.Url);
+            redirectTarget: target.Url,
+            failureSink: runtime.LocalServiceFailures);
         await using var redirectLifetime = redirect.ConfigureAwait(false);
 
         const string outputName = "https-to-http-redirect.bin";
@@ -52,12 +53,13 @@ public sealed partial class Aria2TlsIntegrationTests
         List<Aria2TlsCaseResult> results,
         CancellationToken cancellationToken)
     {
-        var target = CreatePlainHttpTarget();
+        var target = CreatePlainHttpTarget(runtime);
         await using var targetLifetime = target.ConfigureAwait(false);
         var redirect = new LoopbackTlsFileServer(
             _ => certificate,
             payload,
-            redirectFactory: (connection, _) => connection > 1 ? target.Url : null);
+            redirectFactory: (connection, _) => connection > 1 ? target.Url : null,
+            failureSink: runtime.LocalServiceFailures);
         await using var redirectLifetime = redirect.ConfigureAwait(false);
         using var resolver = CreateTrustedAddressResolver(trustedRoot);
         var resolution = await resolver.ResolveAsync(
@@ -130,7 +132,7 @@ public sealed partial class Aria2TlsIntegrationTests
         List<Aria2TlsCaseResult> results,
         CancellationToken cancellationToken)
     {
-        var target = CreatePlainHttpTarget();
+        var target = CreatePlainHttpTarget(runtime);
         await using var targetLifetime = target.ConfigureAwait(false);
         var redirect = new LoopbackTlsFileServer(
             _ => certificate,
@@ -138,7 +140,8 @@ public sealed partial class Aria2TlsIntegrationTests
             redirectFactory: (_, request) =>
                 string.Equals(request.Method, "GET", StringComparison.OrdinalIgnoreCase)
                     ? target.Url
-                    : null);
+                    : null,
+            failureSink: runtime.LocalServiceFailures);
         await using var redirectLifetime = redirect.ConfigureAwait(false);
 
         using (var handler = new HttpClientHandler { AllowAutoRedirect = false })
@@ -194,12 +197,13 @@ public sealed partial class Aria2TlsIntegrationTests
         List<Aria2TlsCaseResult> results,
         CancellationToken cancellationToken)
     {
-        var target = CreatePlainHttpTarget();
+        var target = CreatePlainHttpTarget(runtime);
         await using var targetLifetime = target.ConfigureAwait(false);
         var redirect = new LoopbackTlsFileServer(
             _ => certificate,
             payload,
-            redirectFactory: (_, request) => request.RangeStart is > 0 ? target.Url : null);
+            redirectFactory: (_, request) => request.RangeStart is > 0 ? target.Url : null,
+            failureSink: runtime.LocalServiceFailures);
         await using var redirectLifetime = redirect.ConfigureAwait(false);
 
         const string outputName = "range-downgrade.bin";
@@ -236,13 +240,14 @@ public sealed partial class Aria2TlsIntegrationTests
         List<Aria2TlsCaseResult> results,
         CancellationToken cancellationToken)
     {
-        var target = CreatePlainHttpTarget();
+        var target = CreatePlainHttpTarget(runtime);
         await using var targetLifetime = target.ConfigureAwait(false);
         var redirect = new LoopbackTlsFileServer(
             _ => certificate,
             payload,
             truncateFirstResponse: true,
-            redirectFactory: (connection, _) => connection > 1 ? target.Url : null);
+            redirectFactory: (connection, _) => connection > 1 ? target.Url : null,
+            failureSink: runtime.LocalServiceFailures);
         await using var redirectLifetime = redirect.ConfigureAwait(false);
         const string outputName = "second-round-downgrade.bin";
         var firstGid = await runtime.AddDownloadAsync(
@@ -300,12 +305,16 @@ public sealed partial class Aria2TlsIntegrationTests
 
         foreach (var testCase in cases)
         {
-            var target = new LoopbackTlsFileServer(_ => certificate, payload);
+            var target = new LoopbackTlsFileServer(
+                _ => certificate,
+                payload,
+                failureSink: runtime.LocalServiceFailures);
             await using var targetLifetime = target.ConfigureAwait(false);
             var redirect = new LoopbackTlsFileServer(
                 _ => certificate,
                 [],
-                redirectTarget: target.Url);
+                redirectTarget: target.Url,
+                failureSink: runtime.LocalServiceFailures);
             await using var redirectLifetime = redirect.ConfigureAwait(false);
             var outputName = $"{testCase.ReportName}.bin";
             var status = await DownloadToTerminalStatusAsync(
@@ -344,7 +353,8 @@ public sealed partial class Aria2TlsIntegrationTests
             redirectFactory: (_, request) =>
                 request.RequestTarget.StartsWith("/media.bin", StringComparison.Ordinal)
                     ? finalAddress
-                    : null);
+                    : null,
+            failureSink: runtime.LocalServiceFailures);
         await using var serverLifetime = server.ConfigureAwait(false);
         finalAddress = new Uri(server.Url, "/final.bin");
 
@@ -383,12 +393,16 @@ public sealed partial class Aria2TlsIntegrationTests
         List<Aria2TlsCaseResult> results,
         CancellationToken cancellationToken)
     {
-        var target = new LoopbackTlsFileServer(_ => certificate, payload);
+        var target = new LoopbackTlsFileServer(
+            _ => certificate,
+            payload,
+            failureSink: runtime.LocalServiceFailures);
         await using var targetLifetime = target.ConfigureAwait(false);
         var redirect = new LoopbackTlsFileServer(
             _ => certificate,
             [],
-            redirectTarget: target.Url);
+            redirectTarget: target.Url,
+            failureSink: runtime.LocalServiceFailures);
         await using var redirectLifetime = redirect.ConfigureAwait(false);
 
         const string outputName = "cross-origin-https-redirect.bin";
@@ -410,11 +424,12 @@ public sealed partial class Aria2TlsIntegrationTests
             "complete"));
     }
 
-    private static LoopbackHttpServer CreatePlainHttpTarget()
+    private static LoopbackHttpServer CreatePlainHttpTarget(Aria2TlsTestRuntime runtime)
     {
         return new LoopbackHttpServer(_ => new LoopbackResponse(
             HttpStatusCode.OK,
-            Body: "blocked-target"));
+            Body: "blocked-target"),
+            runtime.LocalServiceFailures);
     }
 
     private static async Task<AriaTellStatusResult> DownloadToTerminalStatusAsync(

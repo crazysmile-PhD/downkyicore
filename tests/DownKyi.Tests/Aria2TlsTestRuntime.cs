@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
@@ -10,6 +11,7 @@ using System.Security.Principal;
 using DownKyi.Core.Aria2cNet.Client;
 using DownKyi.Core.Aria2cNet.Client.Entity;
 using DownKyi.Core.Aria2cNet.Server;
+using DownKyi.TestInfrastructure;
 
 namespace DownKyi.Tests;
 
@@ -51,6 +53,12 @@ internal sealed class Aria2TlsTestRuntime : IAsyncDisposable
 
     public string CertificateAuthoritySource => _trustedRoot.Source;
 
+    public LoopbackServiceFailureSink LocalServiceFailures { get; } = new();
+
+    [SuppressMessage(
+        "Design",
+        "CA1031:Do not catch general exception types",
+        Justification = "Startup must retain its failure while every acquired resource is cleaned up.")]
     public static async Task<Aria2TlsTestRuntime> StartAsync(
         string binaryPath,
         X509Certificate2 trustedRoot,
@@ -75,25 +83,26 @@ internal sealed class Aria2TlsTestRuntime : IAsyncDisposable
         var workingDirectory = Path.Combine(
             Path.GetTempPath(),
             $"downkyi-aria2-tls-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(workingDirectory);
-        var rootPath = Path.Combine(workingDirectory, "trusted-root.pem");
-        await File.WriteAllTextAsync(
-            rootPath,
-            trustedRoot.ExportCertificatePem(),
-            cancellationToken).ConfigureAwait(false);
-        var rootCertificatePath = Path.Combine(workingDirectory, "trusted-root.cer");
-        await File.WriteAllBytesAsync(
-            rootCertificatePath,
-            trustedRoot.Export(X509ContentType.Cert),
-            cancellationToken).ConfigureAwait(false);
-        var trustedRootScope = await TrustedRootScope.InstallAsync(
-            trustedRoot,
-            rootPath,
-            rootCertificatePath,
-            cancellationToken).ConfigureAwait(false);
+        TrustedRootScope? trustedRootScope = null;
         Process? process = null;
         try
         {
+            Directory.CreateDirectory(workingDirectory);
+            var rootPath = Path.Combine(workingDirectory, "trusted-root.pem");
+            await File.WriteAllTextAsync(
+                rootPath,
+                trustedRoot.ExportCertificatePem(),
+                cancellationToken).ConfigureAwait(false);
+            var rootCertificatePath = Path.Combine(workingDirectory, "trusted-root.cer");
+            await File.WriteAllBytesAsync(
+                rootCertificatePath,
+                trustedRoot.Export(X509ContentType.Cert),
+                cancellationToken).ConfigureAwait(false);
+            trustedRootScope = await TrustedRootScope.InstallAsync(
+                trustedRoot,
+                rootPath,
+                rootCertificatePath,
+                cancellationToken).ConfigureAwait(false);
             var port = GetAvailablePort();
             var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
             var secretFile = Path.Combine(workingDirectory, $".rpc-{Guid.NewGuid():N}.conf");
@@ -132,18 +141,38 @@ internal sealed class Aria2TlsTestRuntime : IAsyncDisposable
                 version,
                 binarySha256);
         }
-        catch
+        catch (Exception error)
         {
-            if (process is { HasExited: false })
+            var failures = new FailurePreservingTestCollector();
+            failures.Capture("runtime-startup", error);
+            if (process != null)
             {
-                process.Kill(entireProcessTree: true);
-                await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
+                await failures.RunAsync(
+                    "startup-process-termination",
+                    async () =>
+                    {
+                        if (!process.HasExited)
+                        {
+                            process.Kill(entireProcessTree: true);
+                            await process.WaitForExitAsync(CancellationToken.None)
+                                .ConfigureAwait(false);
+                        }
+                    }).ConfigureAwait(false);
+                failures.Run("startup-process-disposal", process.Dispose);
             }
 
-            process?.Dispose();
-            await trustedRootScope.DisposeAsync().ConfigureAwait(false);
-            DeleteDirectory(workingDirectory);
-            throw;
+            if (trustedRootScope != null)
+            {
+                await failures.RunAsync(
+                    "trusted-root-cleanup",
+                    () => trustedRootScope.DisposeAsync().AsTask()).ConfigureAwait(false);
+            }
+
+            failures.Run(
+                "temporary-directory-cleanup",
+                () => DeleteDirectory(workingDirectory));
+            failures.ThrowIfAny();
+            throw new UnreachableException();
         }
     }
 
@@ -372,16 +401,31 @@ internal sealed class Aria2TlsTestRuntime : IAsyncDisposable
         }
 
         _disposed = true;
-        try
-        {
-            if (!_process.HasExited)
+        var failures = new FailurePreservingTestCollector();
+        await failures.RunAsync(
+            "aria2-force-shutdown",
+            async () =>
             {
+                if (_process.HasExited)
+                {
+                    return;
+                }
+
                 try
                 {
                     await Client.ForceShutdownAsync().ConfigureAwait(false);
                 }
                 catch (HttpRequestException)
                 {
+                }
+            }).ConfigureAwait(false);
+        await failures.RunAsync(
+            "aria2-process-termination",
+            async () =>
+            {
+                if (_process.HasExited)
+                {
+                    return;
                 }
 
                 using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -394,16 +438,18 @@ internal sealed class Aria2TlsTestRuntime : IAsyncDisposable
                     _process.Kill(entireProcessTree: true);
                     await _process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
                 }
-            }
-
-            await Task.WhenAll(_standardOutput, _standardError).ConfigureAwait(false);
-        }
-        finally
-        {
-            _process.Dispose();
-            await _trustedRoot.DisposeAsync().ConfigureAwait(false);
-            DeleteDirectory(_workingDirectory);
-        }
+            }).ConfigureAwait(false);
+        await failures.RunAsync(
+            "aria2-output-drain",
+            () => Task.WhenAll(_standardOutput, _standardError)).ConfigureAwait(false);
+        failures.Run("aria2-process-disposal", _process.Dispose);
+        await failures.RunAsync(
+            "trusted-root-cleanup",
+            () => _trustedRoot.DisposeAsync().AsTask()).ConfigureAwait(false);
+        failures.Run(
+            "temporary-directory-cleanup",
+            () => DeleteDirectory(_workingDirectory));
+        failures.ThrowIfAny();
     }
 }
 
@@ -428,6 +474,10 @@ internal sealed class TrustedRootScope : IAsyncDisposable
 
     public string Source { get; }
 
+    [SuppressMessage(
+        "Design",
+        "CA1031:Do not catch general exception types",
+        Justification = "Trust installation must retain its failure while partial installation is removed.")]
     public static async Task<TrustedRootScope> InstallAsync(
         X509Certificate2 root,
         string rootPemPath,
@@ -454,17 +504,24 @@ internal sealed class TrustedRootScope : IAsyncDisposable
                     ["-n", "update-ca-certificates"],
                     cancellationToken).ConfigureAwait(false);
             }
-            catch
+            catch (Exception error)
             {
-                await RunBoundedProcessAsync(
-                    "sudo",
-                    ["-n", "rm", "-f", "--", installedPath],
-                    CancellationToken.None).ConfigureAwait(false);
-                await RunBoundedProcessAsync(
-                    "sudo",
-                    ["-n", "update-ca-certificates"],
-                    CancellationToken.None).ConfigureAwait(false);
-                throw;
+                var failures = new FailurePreservingTestCollector();
+                failures.Capture("linux-trust-store-update", error);
+                await failures.RunAsync(
+                    "linux-certificate-removal",
+                    () => RunBoundedProcessAsync(
+                        "sudo",
+                        ["-n", "rm", "-f", "--", installedPath],
+                        CancellationToken.None)).ConfigureAwait(false);
+                await failures.RunAsync(
+                    "linux-trust-store-refresh",
+                    () => RunBoundedProcessAsync(
+                        "sudo",
+                        ["-n", "update-ca-certificates"],
+                        CancellationToken.None)).ConfigureAwait(false);
+                failures.ThrowIfAny();
+                throw new UnreachableException();
             }
 
             return new TrustedRootScope(
@@ -528,17 +585,33 @@ internal sealed class TrustedRootScope : IAsyncDisposable
         {
             await process.WaitForExitAsync(timeout.Token).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+        catch (OperationCanceledException error) when (timeout.IsCancellationRequested)
         {
-            if (!process.HasExited)
-            {
-                process.Kill(entireProcessTree: true);
-            }
-
-            await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
-            await Task.WhenAll(standardOutput, standardError).ConfigureAwait(false);
-            cancellationToken.ThrowIfCancellationRequested();
-            throw new TimeoutException("The certificate trust tool did not finish in time.");
+            var failures = new FailurePreservingTestCollector();
+            failures.Capture(
+                "certificate-trust-command",
+                cancellationToken.IsCancellationRequested
+                    ? error
+                    : new TimeoutException(
+                        "The certificate trust tool did not finish in time.",
+                        error));
+            failures.Run(
+                "certificate-trust-command-termination",
+                () =>
+                {
+                    if (!process.HasExited)
+                    {
+                        process.Kill(entireProcessTree: true);
+                    }
+                });
+            await failures.RunAsync(
+                "certificate-trust-command-reap",
+                () => process.WaitForExitAsync(CancellationToken.None)).ConfigureAwait(false);
+            await failures.RunAsync(
+                "certificate-trust-command-output-drain",
+                () => Task.WhenAll(standardOutput, standardError)).ConfigureAwait(false);
+            failures.ThrowIfAny();
+            throw new UnreachableException();
         }
 
         await Task.WhenAll(standardOutput, standardError).ConfigureAwait(false);
@@ -552,37 +625,46 @@ internal sealed class TrustedRootScope : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        var failures = new FailurePreservingTestCollector();
         if (_linuxCertificatePath != null)
         {
-            await RunBoundedProcessAsync(
-                "sudo",
-                ["-n", "rm", "-f", "--", _linuxCertificatePath],
-                CancellationToken.None).ConfigureAwait(false);
-            await RunBoundedProcessAsync(
-                "sudo",
-                ["-n", "update-ca-certificates"],
-                CancellationToken.None).ConfigureAwait(false);
+            await failures.RunAsync(
+                "linux-certificate-removal",
+                () => RunBoundedProcessAsync(
+                    "sudo",
+                    ["-n", "rm", "-f", "--", _linuxCertificatePath],
+                    CancellationToken.None)).ConfigureAwait(false);
+            await failures.RunAsync(
+                "linux-trust-store-refresh",
+                () => RunBoundedProcessAsync(
+                    "sudo",
+                    ["-n", "update-ca-certificates"],
+                    CancellationToken.None)).ConfigureAwait(false);
         }
 
         if (_windowsRoot != null)
         {
-            _windowsRoot.Dispose();
+            failures.Run("windows-certificate-removal", _windowsRoot.Dispose);
         }
 
         if (_macCommonName != null)
         {
-            await RunBoundedProcessAsync(
-                "sudo",
-                [
-                    "-n",
-                    "security",
-                    "delete-certificate",
-                    "-c",
-                    _macCommonName,
-                    MacSystemKeychain
-                ],
-                CancellationToken.None).ConfigureAwait(false);
+            await failures.RunAsync(
+                "macos-certificate-removal",
+                () => RunBoundedProcessAsync(
+                    "sudo",
+                    [
+                        "-n",
+                        "security",
+                        "delete-certificate",
+                        "-c",
+                        _macCommonName,
+                        MacSystemKeychain
+                    ],
+                    CancellationToken.None)).ConfigureAwait(false);
         }
+
+        failures.ThrowIfAny();
     }
 }
 
@@ -678,20 +760,32 @@ internal sealed class WindowsTrustedRootRegistration : IDisposable
     {
         var context = Interlocked.Exchange(ref _certificateContext, IntPtr.Zero);
         var store = Interlocked.Exchange(ref _store, IntPtr.Zero);
-        try
-        {
-            if (context != IntPtr.Zero && !NativeMethods.CertDeleteCertificateFromStore(context))
+        var failures = new FailurePreservingTestCollector();
+        failures.Run(
+            "windows-certificate-removal",
+            () =>
             {
-                throw CreateNativeError("The Windows test root certificate could not be removed.");
-            }
-        }
-        finally
-        {
-            if (store != IntPtr.Zero)
+                if (context != IntPtr.Zero
+                    && !NativeMethods.CertDeleteCertificateFromStore(context))
+                {
+                    throw CreateNativeError(
+                        "The Windows test root certificate could not be removed.");
+                }
+            });
+        failures.Run(
+            "windows-root-store-close",
+            () =>
             {
-                NativeMethods.CertCloseStore(store, flags: 0);
-            }
-        }
+                if (store != IntPtr.Zero)
+                {
+                    if (!NativeMethods.CertCloseStore(store, flags: 0))
+                    {
+                        throw CreateNativeError(
+                            "The Windows root certificate store could not be closed.");
+                    }
+                }
+            });
+        failures.ThrowIfAny();
     }
 
     private static class NativeMethods
