@@ -222,7 +222,10 @@ internal sealed class OwnedProcessScope : IDisposable
                 else if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
                 {
                     entireScopeTerminationSucceeded =
-                        SignalUnixProcessGroupIfPresent(host.Id, SigKill);
+                        SignalUnixProcessGroupIfPresent(
+                            host.Id,
+                            SigKill,
+                            darwinMembershipAuthority: OperatingSystem.IsMacOS());
                 }
             }
             catch (Exception exception) when (
@@ -396,16 +399,8 @@ internal sealed class OwnedProcessScope : IDisposable
         {
             if (terminateMembers)
             {
-                try
-                {
-                    _ = SignalUnixProcessGroupIfPresent(groupId, SigKill);
-                }
-                catch (Win32Exception exception) when (
-                    exception.NativeErrorCode == OperationNotPermitted)
-                {
-                    // Darwin reports EPERM when libproc can still see only zombie
-                    // members. Keep libproc authoritative and wait for them to clear.
-                }
+                _ = SignalUnixProcessGroupIfPresent(
+                    groupId, SigKill, darwinMembershipAuthority: true);
             }
 
             var remaining = deadline.WorkWindow;
@@ -458,7 +453,10 @@ internal sealed class OwnedProcessScope : IDisposable
         }
     }
 
-    private static bool SignalUnixProcessGroupIfPresent(int groupId, int signal)
+    private static bool SignalUnixProcessGroupIfPresent(
+        int groupId,
+        int signal,
+        bool darwinMembershipAuthority = false)
     {
         if (NativeMethods.KillProcessGroup(groupId, signal) == 0)
         {
@@ -469,6 +467,13 @@ internal sealed class OwnedProcessScope : IDisposable
         if (error == NoSuchProcess)
         {
             return false;
+        }
+
+        // Darwin can report EPERM after every signalable member has exited.
+        // The following libproc drain remains authoritative for membership.
+        if (darwinMembershipAuthority && error == OperationNotPermitted)
+        {
+            return true;
         }
 
         throw new Win32Exception(error);
