@@ -220,18 +220,8 @@ internal sealed class OwnedProcessScope : IDisposable
                 }
                 else if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
                 {
-                    if (NativeMethods.KillProcessGroup(host.Id, SigKill) != 0)
-                    {
-                        var error = Marshal.GetLastPInvokeError();
-                        if (error != NoSuchProcess)
-                        {
-                            throw new Win32Exception(error);
-                        }
-                    }
-                    else
-                    {
-                        entireScopeTerminationSucceeded = true;
-                    }
+                    entireScopeTerminationSucceeded =
+                        SignalUnixProcessGroupIfPresent(host.Id, SigKill);
                 }
             }
             catch (Exception exception) when (
@@ -266,8 +256,10 @@ internal sealed class OwnedProcessScope : IDisposable
         }
 
         // Unix group membership retains a dead host until its parent reaps it,
-        // so waitpid must precede the group-empty probe there. Windows Job
-        // accounting has no corresponding zombie state and remains scope-first.
+        // so waitpid must precede the group drain there. The drain repeats SIGKILL
+        // because a failed-start host may complete setsid after the first probe.
+        // Windows Job accounting has no corresponding zombie state and remains
+        // scope-first.
         var reapHostBeforeScope =
             lifecycleState is ScopeLifecycleState.ScopeMayContainTarget &&
             (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS());
@@ -292,11 +284,13 @@ internal sealed class OwnedProcessScope : IDisposable
                 }
                 else if (OperatingSystem.IsMacOS())
                 {
-                    await WaitForMacProcessGroupToEmptyAsync(host.Id, deadline).ConfigureAwait(false);
+                    await WaitForMacProcessGroupToEmptyAsync(
+                        host.Id, deadline, terminateMembers: true).ConfigureAwait(false);
                 }
                 else if (OperatingSystem.IsLinux())
                 {
-                    await WaitForLinuxProcessGroupToEmptyAsync(host.Id, deadline).ConfigureAwait(false);
+                    await WaitForLinuxProcessGroupToEmptyAsync(
+                        host.Id, deadline, terminateMembers: true).ConfigureAwait(false);
                 }
             }
             catch (Exception exception) when (
@@ -390,14 +384,20 @@ internal sealed class OwnedProcessScope : IDisposable
     }
 
     internal Task WaitForMacProcessGroupToEmptyAsync(CleanupDeadline deadline) =>
-        WaitForMacProcessGroupToEmptyAsync(Host.Id, deadline);
+        WaitForMacProcessGroupToEmptyAsync(Host.Id, deadline, terminateMembers: false);
 
     private static async Task WaitForMacProcessGroupToEmptyAsync(
         int groupId,
-        CleanupDeadline deadline)
+        CleanupDeadline deadline,
+        bool terminateMembers)
     {
         while (MacProcessGroupHasMembers(groupId))
         {
+            if (terminateMembers)
+            {
+                _ = SignalUnixProcessGroupIfPresent(groupId, SigKill);
+            }
+
             var remaining = deadline.WorkWindow;
             if (remaining == TimeSpan.Zero)
             {
@@ -422,23 +422,18 @@ internal sealed class OwnedProcessScope : IDisposable
     }
 
     internal Task WaitForLinuxProcessGroupToEmptyAsync(CleanupDeadline deadline) =>
-        WaitForLinuxProcessGroupToEmptyAsync(Host.Id, deadline);
+        WaitForLinuxProcessGroupToEmptyAsync(Host.Id, deadline, terminateMembers: false);
 
     private static async Task WaitForLinuxProcessGroupToEmptyAsync(
         int groupId,
-        CleanupDeadline deadline)
+        CleanupDeadline deadline,
+        bool terminateMembers)
     {
         while (true)
         {
-            if (NativeMethods.KillProcessGroup(groupId, 0) != 0)
+            if (!SignalUnixProcessGroupIfPresent(groupId, terminateMembers ? SigKill : 0))
             {
-                var error = Marshal.GetLastPInvokeError();
-                if (error == NoSuchProcess)
-                {
-                    return;
-                }
-
-                throw new Win32Exception(error);
+                return;
             }
 
             var remaining = deadline.WorkWindow;
@@ -451,6 +446,22 @@ internal sealed class OwnedProcessScope : IDisposable
             await Task.Delay(TimeSpan.FromTicks(Math.Min(
                 TimeSpan.FromMilliseconds(10).Ticks, remaining.Ticks))).ConfigureAwait(false);
         }
+    }
+
+    private static bool SignalUnixProcessGroupIfPresent(int groupId, int signal)
+    {
+        if (NativeMethods.KillProcessGroup(groupId, signal) == 0)
+        {
+            return true;
+        }
+
+        var error = Marshal.GetLastPInvokeError();
+        if (error == NoSuchProcess)
+        {
+            return false;
+        }
+
+        throw new Win32Exception(error);
     }
 
     public void Dispose()
