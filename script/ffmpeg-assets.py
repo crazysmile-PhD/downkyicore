@@ -39,7 +39,7 @@ SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 NATIVE_RUNNERS_BY_RID = {
     "win-x86": {"runner": "windows-latest", "architecture": "x64"},
     "win-x64": {"runner": "windows-latest", "architecture": "x64"},
-    "linux-x64": {"runner": "ubuntu-latest", "architecture": "x64"},
+    "linux-x64": {"runner": "ubuntu-26.04", "architecture": "x64"},
     "linux-arm64": {"runner": "ubuntu-24.04-arm", "architecture": "arm64"},
     "osx-x64": {"runner": "macos-15-intel", "architecture": "x64"},
     "osx-arm64": {"runner": "macos-15", "architecture": "arm64"},
