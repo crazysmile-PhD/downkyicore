@@ -25,13 +25,21 @@ public sealed class WindowsEtwResourceFlightRecorderTests
     {
         var clock = Stopwatch.StartNew();
 
-        var exception = Assert.Throws<TimeoutException>(
+        var exception = Record.Exception(
             () => WindowsEtwResourceFlightRecorder.RunTool(
                 "dotnet",
                 TimeSpan.FromSeconds(1),
                 CreateFixtureArguments("fixture-hold")));
 
-        Assert.Contains("diagnostic timeout", exception.Message, StringComparison.Ordinal);
+        var timeout = exception switch
+        {
+            TimeoutException directTimeout => directTimeout,
+            AggregateException aggregate =>
+                Assert.IsType<TimeoutException>(aggregate.InnerExceptions[0]),
+            _ => throw new Xunit.Sdk.XunitException(
+                "Expected a bounded timeout failure.")
+        };
+        Assert.Contains("diagnostic timeout", timeout.Message, StringComparison.Ordinal);
         Assert.InRange(clock.Elapsed, TimeSpan.Zero, TestTimeout);
     }
 
