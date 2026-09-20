@@ -148,6 +148,7 @@ public sealed class OwnedProcessScopePlatformTests
             async () =>
             {
                 Exception? runCleanupFailure = null;
+                var resultRecoveredDuringCleanup = false;
                 if (run is not null && result is null)
                 {
                     try
@@ -160,7 +161,7 @@ public sealed class OwnedProcessScopePlatformTests
                             () => StopIfAlive(childPid),
                             () => StopIfAlive(grandchildPid)).ConfigureAwait(true);
                         result = await run.ConfigureAwait(true);
-                        Assert.Equal(130, result.ExitCode);
+                        resultRecoveredDuringCleanup = true;
                     }
                     catch (Exception exception)
                     {
@@ -168,8 +169,45 @@ public sealed class OwnedProcessScopePlatformTests
                         if (run.IsCompletedSuccessfully)
                         {
                             result = await run.ConfigureAwait(true);
+                            resultRecoveredDuringCleanup = true;
+                        }
+                    }
+                }
+
+                if (result is { ExitCode: not 130 })
+                {
+                    if (resultRecoveredDuringCleanup)
+                    {
+                        try
+                        {
                             Assert.Equal(130, result.ExitCode);
                         }
+                        catch (Exception resultFailure)
+                        {
+                            runCleanupFailure = runCleanupFailure is null
+                                ? resultFailure
+                                : new AggregateException(
+                                    "The fixture run cleanup and terminal result validation both failed.",
+                                    runCleanupFailure,
+                                    resultFailure);
+                        }
+                    }
+
+                    try
+                    {
+                        FailurePreservingTestCleanup.RunCleanupActions(
+                            () => StopIfAlive(rootPid),
+                            () => StopIfAlive(childPid),
+                            () => StopIfAlive(grandchildPid));
+                    }
+                    catch (Exception residualStopFailure)
+                    {
+                        runCleanupFailure = runCleanupFailure is null
+                            ? residualStopFailure
+                            : new AggregateException(
+                                "The fixture run cleanup and residual process stops both failed.",
+                                runCleanupFailure,
+                                residualStopFailure);
                     }
                 }
 
@@ -242,6 +280,7 @@ public sealed class OwnedProcessScopePlatformTests
                        failure.Message.Contains("fallback stop failure", StringComparison.Ordinal));
         Assert.True(cancellationRequested);
         Assert.NotNull(terminalCompletion);
+        await terminalCompletion.ConfigureAwait(true);
         Assert.True(terminalCompletion.IsCompletedSuccessfully);
         Assert.True(runCompletion.Task.IsCompletedSuccessfully);
         Assert.True(resourcesDeleted);

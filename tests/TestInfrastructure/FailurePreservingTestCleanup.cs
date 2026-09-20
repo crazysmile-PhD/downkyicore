@@ -88,17 +88,7 @@ public static class FailurePreservingTestCleanup
 
         if (fallbackRequired)
         {
-            foreach (var stop in fallbackStops)
-            {
-                try
-                {
-                    stop();
-                }
-                catch (Exception exception)
-                {
-                    failures.Add(exception);
-                }
-            }
+            CaptureFailures(fallbackStops, failures);
         }
 
         if (!operationObserved)
@@ -113,17 +103,16 @@ public static class FailurePreservingTestCleanup
             }
         }
 
-        if (failures.Count == 1)
-        {
-            ExceptionDispatchInfo.Capture(failures[0]).Throw();
-        }
+        ThrowFailures("The started test operation and its cleanup both failed.", failures);
+    }
 
-        if (failures.Count > 1)
-        {
-            throw new AggregateException(
-                "The started test operation and its cleanup both failed.",
-                failures);
-        }
+    public static void RunCleanupActions(params Action[] cleanupActions)
+    {
+        ArgumentNullException.ThrowIfNull(cleanupActions);
+
+        var failures = new List<Exception>();
+        CaptureFailures(cleanupActions, failures);
+        ThrowFailures("One or more cleanup actions failed.", failures);
     }
 
     private static void AddFailure(List<Exception> failures, Exception failure)
@@ -131,6 +120,38 @@ public static class FailurePreservingTestCleanup
         if (!failures.Any(existing => ReferenceEquals(existing, failure)))
         {
             failures.Add(failure);
+        }
+    }
+
+    [SuppressMessage(
+        "Design",
+        "CA1031:Do not catch general exception types",
+        Justification = "Every cleanup action must be attempted and every failure retained.")]
+    private static void CaptureFailures(Action[] cleanupActions, List<Exception> failures)
+    {
+        foreach (var cleanupAction in cleanupActions)
+        {
+            try
+            {
+                cleanupAction();
+            }
+            catch (Exception exception)
+            {
+                failures.Add(exception);
+            }
+        }
+    }
+
+    private static void ThrowFailures(string message, List<Exception> failures)
+    {
+        if (failures.Count == 1)
+        {
+            ExceptionDispatchInfo.Capture(failures[0]).Throw();
+        }
+
+        if (failures.Count > 1)
+        {
+            throw new AggregateException(message, failures);
         }
     }
 }
