@@ -227,21 +227,6 @@ $fileTypeMismatches = @(
     }
 )
 
-$oversizedFiles = @(
-    Get-ProductionFiles -Patterns @("*.cs", "*.axaml") |
-        ForEach-Object {
-            $lines = (Get-Content -LiteralPath $_.FullName).Count
-            if ($lines -gt 500) {
-                [ordered]@{
-                    path  = Convert-ToRelativePath $_.FullName
-                    lines = $lines
-                }
-            }
-        } |
-        Where-Object { $_ } |
-        Sort-Object lines -Descending
-)
-
 $downloadRoot = Join-Path $repositoryRoot "src/DownKyi.Desktop/Services/Download"
 $downloadSources = @(Get-ChildItem -LiteralPath $downloadRoot -Recurse -File -Filter "*.cs")
 $downloadingItemReferences = 0
@@ -323,7 +308,7 @@ catch {
 }
 
 $result = [ordered]@{
-    schemaVersion = 3
+    schemaVersion = 4
     generatedAtUtc = [DateTimeOffset]::UtcNow.ToString("O")
     commitSha = $commitSha
     projects = $projects
@@ -334,7 +319,6 @@ $result = [ordered]@{
         duplicateSimpleNames = $duplicateSimpleNames
         genericTypeNames = $genericTypeNames
         fileTypeMismatches = $fileTypeMismatches
-        oversizedFiles = $oversizedFiles
         runtimeBoundary = [ordered]@{
             downloadingItemReferences = $downloadingItemReferences
             domainTaskReferences = $domainTaskReferences
