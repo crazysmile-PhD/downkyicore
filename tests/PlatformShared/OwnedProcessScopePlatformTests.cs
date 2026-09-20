@@ -192,23 +192,23 @@ public sealed class OwnedProcessScopePlatformTests
                                     resultFailure);
                         }
                     }
+                }
 
-                    try
-                    {
-                        FailurePreservingTestCleanup.RunCleanupActions(
-                            () => StopIfAlive(rootPid),
-                            () => StopIfAlive(childPid),
-                            () => StopIfAlive(grandchildPid));
-                    }
-                    catch (Exception residualStopFailure)
-                    {
-                        runCleanupFailure = runCleanupFailure is null
-                            ? residualStopFailure
-                            : new AggregateException(
-                                "The fixture run cleanup and residual process stops both failed.",
-                                runCleanupFailure,
-                                residualStopFailure);
-                    }
+                try
+                {
+                    FailurePreservingTestCleanup.RunCleanupActions(
+                        () => StopIfAlive(rootPid),
+                        () => StopIfAlive(childPid),
+                        () => StopIfAlive(grandchildPid));
+                }
+                catch (Exception residualStopFailure)
+                {
+                    runCleanupFailure = runCleanupFailure is null
+                        ? residualStopFailure
+                        : new AggregateException(
+                            "The fixture run cleanup and residual process stops both failed.",
+                            runCleanupFailure,
+                            residualStopFailure);
                 }
 
                 try
