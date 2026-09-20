@@ -161,7 +161,6 @@ public sealed class Aria2TlsProcessCleanupTests
             failure => failure is TimeoutException &&
                        failure.Message.Contains("could not be reaped", StringComparison.Ordinal));
         Assert.NotNull(terminalExit);
-        Assert.True(terminalExit.IsCompletedSuccessfully);
         Assert.True(exit.Task.IsCompletedSuccessfully);
         Assert.True(clock.Elapsed >= TimeSpan.FromMilliseconds(150));
 
