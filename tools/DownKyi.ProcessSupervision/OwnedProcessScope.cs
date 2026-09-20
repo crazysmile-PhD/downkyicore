@@ -5,7 +5,7 @@ using System.Runtime.InteropServices;
 using System.Text.Json;
 using Microsoft.Win32.SafeHandles;
 
-namespace DownKyi.CentralTestRunner;
+namespace DownKyi.ProcessSupervision;
 
 // One test invocation owns one OS group. The small child host joins that group
 // before it launches the test, so no test code can run outside the scope.
@@ -53,7 +53,7 @@ internal sealed class OwnedProcessScope : IDisposable
                 RedirectStandardError = true,
                 CreateNoWindow = true
             };
-            hostInfo.ArgumentList.Add(typeof(Program).Assembly.Location);
+            hostInfo.ArgumentList.Add(typeof(ProcessSupervisionHost).Assembly.Location);
             hostInfo.ArgumentList.Add("owned-scope-host");
             hostInfo.ArgumentList.Add(pipeName);
             hostInfo.ArgumentList.Add(jobName ?? "-");
