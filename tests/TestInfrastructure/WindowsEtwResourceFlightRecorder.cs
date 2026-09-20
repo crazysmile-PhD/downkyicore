@@ -548,11 +548,7 @@ internal sealed class WindowsEtwResourceFlightRecorder : IDisposable
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(timeout, TimeSpan.Zero);
 
         var deadline = new CleanupDeadline(timeout);
-        using var scope = OwnedProcessScope.StartAsync(
-                CreateToolStartInfo(executable, arguments),
-                deadline.WorkWindow)
-            .GetAwaiter()
-            .GetResult();
+        using var scope = StartToolScope(executable, arguments, deadline);
         var process = scope.Host;
 
         string standardOutput = string.Empty;
@@ -614,6 +610,27 @@ internal sealed class WindowsEtwResourceFlightRecorder : IDisposable
         return new ToolResult(
             process.ExitCode,
             Sanitize(output.ReplaceLineEndings(" ").Trim()));
+    }
+
+    private static OwnedProcessScope StartToolScope(
+        string executable,
+        IReadOnlyList<string> arguments,
+        CleanupDeadline deadline)
+    {
+        try
+        {
+            return OwnedProcessScope.StartAsync(
+                    CreateToolStartInfo(executable, arguments),
+                    deadline)
+                .GetAwaiter()
+                .GetResult();
+        }
+        catch (TimeoutException exception)
+        {
+            throw new TimeoutException(
+                $"{executable} did not start within the diagnostic timeout.",
+                exception);
+        }
     }
 
     private static ProcessStartInfo CreateToolStartInfo(

@@ -34,13 +34,46 @@ internal sealed class OwnedProcessScope : IDisposable
     internal static Task<OwnedProcessScope> StartAsync(
         ProcessStartInfo testStartInfo,
         TimeSpan startupWindow) =>
-        StartAsync(testStartInfo, startupWindow, hostJobNameOverride: null);
+        StartAsync(
+            testStartInfo,
+            startupWindow,
+            sharedStartupDeadline: null,
+            hostJobNameOverride: null);
 
-    internal static async Task<OwnedProcessScope> StartAsync(
+    internal static Task<OwnedProcessScope> StartAsync(
+        ProcessStartInfo testStartInfo,
+        CleanupDeadline startupDeadline) =>
+        StartAsync(
+            testStartInfo,
+            startupWindow: default,
+            sharedStartupDeadline: startupDeadline,
+            hostJobNameOverride: null);
+
+    internal static Task<OwnedProcessScope> StartAsync(
         ProcessStartInfo testStartInfo,
         TimeSpan startupWindow,
+        string? hostJobNameOverride) =>
+        StartAsync(
+            testStartInfo,
+            startupWindow,
+            sharedStartupDeadline: null,
+            hostJobNameOverride: hostJobNameOverride);
+
+    private static async Task<OwnedProcessScope> StartAsync(
+        ProcessStartInfo testStartInfo,
+        TimeSpan startupWindow,
+        CleanupDeadline? sharedStartupDeadline,
         string? hostJobNameOverride)
     {
+        TimeSpan CurrentStartupWindow() =>
+            sharedStartupDeadline?.WorkWindow ?? startupWindow;
+
+        if (CurrentStartupWindow() == TimeSpan.Zero)
+        {
+            throw new TimeoutException(
+                "The process supervision startup deadline expired before launch.");
+        }
+
         // Unix named pipes include the temporary directory in a short socket path.
         var pipeName = Guid.NewGuid().ToString("N");
         using var control = new NamedPipeServerStream(
@@ -79,11 +112,13 @@ internal sealed class OwnedProcessScope : IDisposable
                 testStartInfo.WorkingDirectory,
                 new Dictionary<string, string?>(testStartInfo.Environment));
             await host.StandardInput.WriteLineAsync(JsonSerializer.Serialize(launch))
-                .WaitAsync(startupWindow).ConfigureAwait(false);
+                .WaitAsync(CurrentStartupWindow()).ConfigureAwait(false);
             host.StandardInput.Close();
-            await control.WaitForConnectionAsync().WaitAsync(startupWindow).ConfigureAwait(false);
+            await control.WaitForConnectionAsync()
+                .WaitAsync(CurrentStartupWindow()).ConfigureAwait(false);
             using var reader = new StreamReader(control);
-            var line = await reader.ReadLineAsync().WaitAsync(startupWindow).ConfigureAwait(false);
+            var line = await reader.ReadLineAsync()
+                .WaitAsync(CurrentStartupWindow()).ConfigureAwait(false);
             var handshake = line is null ? null : JsonSerializer.Deserialize<ScopeHandshake>(line);
             if (handshake is null || handshake.Error is not null || handshake.Pid <= 0)
             {
@@ -102,14 +137,14 @@ internal sealed class OwnedProcessScope : IDisposable
                 primaryFailure.Data[FailedHostPidDataKey] = host.Id;
             }
 
-            var cleanupFailure = await CleanupFailedStartAsync(host, job, startupWindow)
+            var cleanupDeadline = sharedStartupDeadline ?? new CleanupDeadline(startupWindow);
+            var cleanupFailure = await CleanupFailedStartAsync(host, job, cleanupDeadline)
                 .ConfigureAwait(false);
             if (cleanupFailure is not null)
             {
-                throw new AggregateException(
+                throw new InvalidOperationException(
                     "Process supervision startup and cleanup both failed.",
-                    primaryFailure,
-                    cleanupFailure);
+                    new AggregateException(primaryFailure, cleanupFailure));
             }
 
             ExceptionDispatchInfo.Capture(primaryFailure).Throw();
@@ -125,7 +160,7 @@ internal sealed class OwnedProcessScope : IDisposable
     private static async Task<Exception?> CleanupFailedStartAsync(
         Process? host,
         SafeFileHandle? job,
-        TimeSpan cleanupWindow)
+        CleanupDeadline cleanupDeadline)
     {
         var failures = new List<Exception>();
         try
@@ -159,7 +194,8 @@ internal sealed class OwnedProcessScope : IDisposable
         {
             try
             {
-                await host.WaitForExitAsync().WaitAsync(cleanupWindow).ConfigureAwait(false);
+                await host.WaitForExitAsync()
+                    .WaitAsync(cleanupDeadline.Remaining).ConfigureAwait(false);
             }
             catch (Exception exception) when (
                 exception is InvalidOperationException or TimeoutException)

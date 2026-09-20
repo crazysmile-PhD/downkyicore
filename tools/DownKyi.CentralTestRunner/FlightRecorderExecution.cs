@@ -188,7 +188,9 @@ internal static class FlightRecorderExecution
         catch (Exception exception) when (!scopeStarted &&
                                           exception is InvalidOperationException or System.ComponentModel.Win32Exception or TimeoutException or IOException)
         {
-            await recorder.RecordAsync("process_start_failed", detail: exception.Message).ConfigureAwait(false);
+            await recorder.RecordAsync(
+                "process_start_failed",
+                detail: Program.FormatExceptionDiagnostic(exception)).ConfigureAwait(false);
             await recorder.CaptureFinalSnapshotOnceAsync().ConfigureAwait(false);
             await recorder.FinalizeFailureAsync("start_failed", standardOutput, standardError).ConfigureAwait(false);
             return new ProcessExecutionResult(2, 0, default, recorder.EvidencePath, recorder);

@@ -93,23 +93,9 @@ public sealed class WindowsEtwResourceFlightRecorderTests
         var marker = Path.Combine(Path.GetTempPath(), $"downkyi-etw-tool-start-{Guid.NewGuid():N}.txt");
         try
         {
-            var startInfo = new ProcessStartInfo("pwsh.exe")
-            {
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-            };
-            startInfo.ArgumentList.Add("-NoLogo");
-            startInfo.ArgumentList.Add("-NoProfile");
-            startInfo.ArgumentList.Add("-NonInteractive");
-            startInfo.ArgumentList.Add("-Command");
-            startInfo.ArgumentList.Add(
-                $"Set-Content -LiteralPath '{marker.Replace("'", "''", StringComparison.Ordinal)}' -Value launched");
-
             var failure = await Assert.ThrowsAsync<InvalidOperationException>(
                 () => OwnedProcessScope.StartAsync(
-                    startInfo,
+                    CreateMarkerStartInfo(marker),
                     TestTimeout,
                     $"Local\\downkyi-missing-job-{Guid.NewGuid():N}")).ConfigureAwait(true);
 
@@ -122,6 +108,48 @@ public sealed class WindowsEtwResourceFlightRecorderTests
         {
             File.Delete(marker);
         }
+    }
+
+    [Fact]
+    public async Task SharedSupervisorHonorsElapsedCallerDeadlineBeforeLaunch()
+    {
+        var marker = Path.Combine(Path.GetTempPath(), $"downkyi-etw-expired-start-{Guid.NewGuid():N}.txt");
+        try
+        {
+            var deadline = new CleanupDeadline(TimeSpan.FromMilliseconds(50));
+            await Task.Delay(TimeSpan.FromMilliseconds(100), TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+            var stopwatch = Stopwatch.StartNew();
+
+            var failure = await Assert.ThrowsAsync<TimeoutException>(
+                () => OwnedProcessScope.StartAsync(CreateMarkerStartInfo(marker), deadline)).ConfigureAwait(true);
+
+            Assert.Contains("deadline expired before launch", failure.Message, StringComparison.Ordinal);
+            Assert.InRange(stopwatch.Elapsed, TimeSpan.Zero, TimeSpan.FromSeconds(1));
+            Assert.False(File.Exists(marker));
+        }
+        finally
+        {
+            File.Delete(marker);
+        }
+    }
+
+    private static ProcessStartInfo CreateMarkerStartInfo(string marker)
+    {
+        var startInfo = new ProcessStartInfo("pwsh.exe")
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        startInfo.ArgumentList.Add("-NoLogo");
+        startInfo.ArgumentList.Add("-NoProfile");
+        startInfo.ArgumentList.Add("-NonInteractive");
+        startInfo.ArgumentList.Add("-Command");
+        startInfo.ArgumentList.Add(
+            $"Set-Content -LiteralPath '{marker.Replace("'", "''", StringComparison.Ordinal)}' -Value launched");
+        return startInfo;
     }
 
     private static bool IsAlive(int processId)
