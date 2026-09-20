@@ -223,6 +223,26 @@ public sealed class CentralTestRunnerCancellationComponentTests
     }
 
     [Fact]
+    public async Task ExitCodeMappingReturns2ForCanceledInternalCleanupDeadline()
+    {
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+        var cleanupDeadline = new OperationCanceledException("scope cleanup deadline");
+        BuildProcessCleanupDiagnostics.Attach(
+            cleanupDeadline,
+            BuildProcessCleanupPhase.ScopeTermination,
+            rootPid: 42,
+            elapsed: TimeSpan.FromSeconds(5));
+
+        var exitCode = await Program.RunCommandAsync(
+            [],
+            (_, _) => Task.FromException<int>(cleanupDeadline),
+            cancellation.Token).ConfigureAwait(true);
+
+        Assert.Equal(2, exitCode);
+    }
+
+    [Fact]
     public void ExceptionDiagnosticRetainsTheExceptionChainAndRedactsSensitiveValues()
     {
         var sensitivePath = Path.Combine(
@@ -240,6 +260,23 @@ public sealed class CentralTestRunnerCancellationComponentTests
         Assert.Contains("token=<redacted>", diagnostic, StringComparison.Ordinal);
         Assert.DoesNotContain(sensitivePath, diagnostic, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("secret-value", diagnostic, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ExceptionDiagnosticRedactsConfiguredRepositoryRootOutsideCurrentDirectory()
+    {
+        var repositoryRoot = Path.Combine(
+            Path.GetPathRoot(Environment.CurrentDirectory)!,
+            "external-checkout",
+            "downkyi");
+        var sensitivePath = Path.Combine(repositoryRoot, "tools", "runner.cs");
+
+        var diagnostic = Program.FormatExceptionDiagnostic(
+            new IOException($"fixture={sensitivePath}"),
+            repositoryRoot);
+
+        Assert.Contains("<repository-root>", diagnostic, StringComparison.Ordinal);
+        Assert.DoesNotContain(repositoryRoot, diagnostic, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

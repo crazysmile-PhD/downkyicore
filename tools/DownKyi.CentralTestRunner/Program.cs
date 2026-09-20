@@ -39,9 +39,17 @@ internal static class Program
         {
             return await runCommandAsync(args, cancellationToken).ConfigureAwait(false);
         }
+        catch (OperationCanceledException exception) when (
+            BuildProcessCleanupDiagnostics.Describe(exception).Any())
+        {
+            await WriteDiagnosticBestEffortAsync(
+                FormatExceptionDiagnostic(exception, ResolveRepositoryRoot(args))).ConfigureAwait(false);
+            return 2;
+        }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            await WriteDiagnosticBestEffortAsync(FormatExceptionDiagnostic(exception)).ConfigureAwait(false);
+            await WriteDiagnosticBestEffortAsync(
+                FormatExceptionDiagnostic(exception, ResolveRepositoryRoot(args))).ConfigureAwait(false);
             return 2;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -50,7 +58,9 @@ internal static class Program
         }
     }
 
-    internal static string FormatExceptionDiagnostic(Exception exception)
+    internal static string FormatExceptionDiagnostic(
+        Exception exception,
+        string? repositoryRoot = null)
     {
         ArgumentNullException.ThrowIfNull(exception);
 
@@ -61,7 +71,9 @@ internal static class Program
         var diagnostic = string.IsNullOrEmpty(cleanupContext)
             ? exceptionDetail
             : $"{cleanupContext}{Environment.NewLine}{exceptionDetail}";
-        var redacted = new SensitiveEvidenceRedactor(Environment.CurrentDirectory).Redact(diagnostic);
+        var redacted = new SensitiveEvidenceRedactor(
+            repositoryRoot,
+            Environment.CurrentDirectory).Redact(diagnostic);
         if (redacted.Length <= MaximumDiagnosticLength)
         {
             return redacted;
@@ -94,5 +106,29 @@ internal static class Program
         {
             // An unavailable stderr sink cannot extend the bounded cleanup path.
         }
+    }
+
+    private static string? ResolveRepositoryRoot(string[] args)
+    {
+        for (var index = 0; index < args.Length - 1; index++)
+        {
+            if (!string.Equals(args[index], "--repository-root", StringComparison.Ordinal) ||
+                string.IsNullOrWhiteSpace(args[index + 1]))
+            {
+                continue;
+            }
+
+            try
+            {
+                return Path.GetFullPath(args[index + 1]);
+            }
+            catch (Exception exception) when (
+                exception is ArgumentException or NotSupportedException or PathTooLongException)
+            {
+                return null;
+            }
+        }
+
+        return null;
     }
 }
