@@ -47,7 +47,9 @@ public sealed class CentralTestRunnerCancellationComponentTests
                 TestContext.Current.CancellationToken,
                 TestTimeout)).ConfigureAwait(true);
 
-        Assert.Contains("did not launch", failure.Message, StringComparison.Ordinal);
+        Assert.True(
+            failure.Message.Contains("did not launch", StringComparison.Ordinal),
+            failure.ToString());
     }
 
     [Fact]
