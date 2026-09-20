@@ -32,7 +32,7 @@ env:
 jobs:
   discover:
     name: Discover fixed upstream candidate
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     outputs:
       no_op: ${{ steps.candidate.outputs.no_op }}
       matrix: ${{ steps.candidate.outputs.matrix }}
@@ -121,7 +121,7 @@ jobs:
     name: Mirror validated candidate and open PR
     needs: [discover, validate]
     if: needs.discover.outputs.no_op != 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     env:
       RUNTIME_ASSETS_REPOSITORY: crazysmile-PhD/downkyi-runtime-assets
       RUNTIME_ASSETS_TOKEN: ${{ secrets.RUNTIME_ASSETS_TOKEN }}
