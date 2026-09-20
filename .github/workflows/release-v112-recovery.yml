@@ -425,7 +425,8 @@ jobs:
           PUBLISH_OUTPUT_DIRECTORY: ${{ github.workspace }}/subject/DownKyi/bin/Release/net10.0/osx-${{ matrix.cpu }}/publish/.
         run: |
           chmod +x package.sh prepare-app-layout.sh codesign-common.sh
-          ./package.sh ${{ matrix.cpu }}
+          release_version="${EXPECTED_RELEASE_VERSION#v}"
+          ./package.sh ${{ matrix.cpu }} "$release_version"
       - name: Validate packaged runtime
         shell: pwsh
         run: >
@@ -478,7 +479,12 @@ jobs:
         working-directory: tooling/script/macos
         env:
           MACOS_VERIFY_GATEKEEPER: ${{ env.HAS_MACOS_SIGNING == 'true' }}
-        run: ./verify-dmg-contents.sh DownKyi-1.1.2-osx-${{ matrix.cpu }}.dmg
+        run: |
+          release_version="${EXPECTED_RELEASE_VERSION#v}"
+          ./verify-dmg-contents.sh \
+            DownKyi-1.1.2-osx-${{ matrix.cpu }}.dmg \
+            "$release_version" \
+            osx-${{ matrix.cpu }}
       - name: Hash DMG and revalidate subject
         shell: pwsh
         run: |
