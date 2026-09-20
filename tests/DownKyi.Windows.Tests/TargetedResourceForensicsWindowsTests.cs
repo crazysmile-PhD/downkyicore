@@ -220,6 +220,12 @@ public sealed class TargetedResourceForensicsWindowsTests
                 () => BuildProcessRunner.CleanupAfterCancellationAsync(
                     rootScope,
                     TimeSpan.FromMilliseconds(500),
+                    (_, _) => Task.FromResult(new FinalProcessSnapshot
+                    {
+                        CapturedAtUtc = DateTimeOffset.UtcNow,
+                        Completeness = "Controlled successful snapshot.",
+                        Processes = [],
+                    }),
                     cleanupResourceDirectory: targetDirectory)).ConfigureAwait(true);
 
             Assert.Equal(targetDirectory, exception.ResourcePath);
@@ -313,13 +319,18 @@ public sealed class TargetedResourceForensicsWindowsTests
         TargetedResourceForensics? forensics = null;
         try
         {
-            owner = StartDirectoryLockOwner(targetDirectory);
-            await WaitForDirectoryLockReadyAsync(owner).ConfigureAwait(true);
-            forensics = TargetedResourceForensics.Start(
+            forensics = await TargetedResourceForensics.StartAfterRecorderAsync(
                 targetDirectory,
                 nameof(ControlledDirectoryOwnerProducesCorrelatedLifecycleArtifact),
-                Environment.ProcessId);
-            forensics.AddKnownProcessId(owner.Id, "root-owner");
+                Environment.ProcessId,
+                async () =>
+                {
+                    owner = StartDirectoryLockOwner(targetDirectory);
+                    await WaitForDirectoryLockReadyAsync(owner).ConfigureAwait(true);
+                }).ConfigureAwait(true);
+            var controlledOwner = owner ??
+                throw new InvalidOperationException("The controlled directory owner did not start.");
+            forensics.AddKnownProcessId(controlledOwner.Id, "root-owner");
 
             Assert.Equal(
                 DeleteAccessState.SharingViolation,
@@ -331,8 +342,8 @@ public sealed class TargetedResourceForensicsWindowsTests
                 DeleteAccessState.SharingViolation,
                 forensics.MarkCleanupReturned().State);
 
-            owner.Kill(entireProcessTree: true);
-            await owner.WaitForExitAsync(TestContext.Current.CancellationToken)
+            controlledOwner.Kill(entireProcessTree: true);
+            await controlledOwner.WaitForExitAsync(TestContext.Current.CancellationToken)
                 .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken)
                 .ConfigureAwait(true);
             await forensics.ObservePostCleanupAsync(TimeSpan.FromMilliseconds(500))
@@ -353,13 +364,13 @@ public sealed class TargetedResourceForensicsWindowsTests
                 TestContext.Current.CancellationToken).ConfigureAwait(true);
             Assert.Contains("operation=DirectoryDeleteAccess", artifact, StringComparison.Ordinal);
             Assert.Contains("knownProcessIds=", artifact, StringComparison.Ordinal);
-            Assert.Contains($"{owner.Id}:root-owner", artifact, StringComparison.Ordinal);
+            Assert.Contains($"{controlledOwner.Id}:root-owner", artifact, StringComparison.Ordinal);
             Assert.Contains(
                 Environment.ProcessId.ToString(CultureInfo.InvariantCulture),
                 artifact,
                 StringComparison.Ordinal);
             Assert.Contains(
-                owner.Id.ToString(CultureInfo.InvariantCulture),
+                controlledOwner.Id.ToString(CultureInfo.InvariantCulture),
                 artifact,
                 StringComparison.Ordinal);
             Assert.Contains("state=SharingViolation", artifact, StringComparison.Ordinal);
