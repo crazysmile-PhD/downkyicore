@@ -207,7 +207,7 @@ jobs:
         env:
           DOWNKYI_ARIA2_BINARY: ${{ github.workspace }}/${{ matrix.binary }}
           DOWNKYI_ARIA2_RID: ${{ matrix.rid }}
-          DOWNKYI_ARIA2_TLS_REPORT: ${{ github.workspace }}/artifacts/aria2-tls/${{ matrix.rid }}.json
+          DOWNKYI_ARIA2_TLS_REPORT: ${{ github.workspace }}/artifacts/aria2-tls/${{ matrix.rid }}
         run: |
           . ./script/test-project-runner.ps1
           $result = Invoke-DownKyiTestProject `
@@ -227,7 +227,7 @@ jobs:
         with:
           name: aria2-tls-${{ matrix.rid }}
           path: |
-            artifacts/aria2-tls/${{ matrix.rid }}.json
+            artifacts/aria2-tls/${{ matrix.rid }}
             artifacts/test-results/aria2-${{ matrix.rid }}
             artifacts/test-flight-recorder
           if-no-files-found: warn
