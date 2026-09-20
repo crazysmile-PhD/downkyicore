@@ -16,7 +16,7 @@ public sealed class CentralTestRunnerFixtureDispatchTests
             .SelectMany(File.ReadAllLines)
             .SelectMany(line => Regex.Matches(
                 line,
-                @"^\s*""(?<command>(?:fixture-[a-z-]+|owned-scope-host))""\s*=>",
+                @"^\s*""(?<command>fixture-[a-z-]+)""\s*=>",
                 RegexOptions.CultureInvariant))
             .Select(match => match.Groups["command"].Value)
             .Distinct(StringComparer.Ordinal)
@@ -34,8 +34,7 @@ public sealed class CentralTestRunnerFixtureDispatchTests
                 "fixture-sensitive-hold",
                 "fixture-stderr-hold",
                 "fixture-tree-child",
-                "fixture-tree-root",
-                "owned-scope-host"
+                "fixture-tree-root"
             ],
             commands);
     }

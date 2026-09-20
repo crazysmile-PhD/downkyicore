@@ -16,7 +16,6 @@ internal static class FixtureHost
 
         return args[0] switch
         {
-            "owned-scope-host" => await RunOwnedScopeHostAsync(args).ConfigureAwait(false),
             "fixture-hold" => await RunHoldAsync().ConfigureAwait(false),
             "fixture-directory-lock" => await RunDirectoryLockAsync(args).ConfigureAwait(false),
             "fixture-pass" => RunPass(),
@@ -29,16 +28,6 @@ internal static class FixtureHost
             "fixture-long-line" => await RunLongLineAsync(args).ConfigureAwait(false),
             _ => null
         };
-    }
-
-    private static async Task<int?> RunOwnedScopeHostAsync(string[] args)
-    {
-        if (args.Length != 3)
-        {
-            return null;
-        }
-
-        return await OwnedProcessScope.RunHostAsync(args[1], args[2]).ConfigureAwait(false);
     }
 
     private static async Task<int> RunHoldAsync()

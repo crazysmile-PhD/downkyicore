@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using DownKyi.CentralTestRunner;
+using DownKyi.ProcessSupervision;
 
 namespace DownKyi.Architecture.Tests;
 

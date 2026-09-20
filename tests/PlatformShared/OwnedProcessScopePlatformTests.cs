@@ -5,6 +5,7 @@ using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using DownKyi.CentralTestRunner;
+using DownKyi.ProcessSupervision;
 using DownKyi.TestInfrastructure;
 using Microsoft.Win32.SafeHandles;
 

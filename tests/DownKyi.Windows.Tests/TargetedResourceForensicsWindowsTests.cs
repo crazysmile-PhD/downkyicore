@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using DownKyi.CentralTestRunner;
+using DownKyi.ProcessSupervision;
 using DownKyi.TestInfrastructure;
 using Microsoft.Win32.SafeHandles;
 
