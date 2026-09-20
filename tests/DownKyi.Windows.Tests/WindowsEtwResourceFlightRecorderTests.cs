@@ -6,6 +6,8 @@ namespace DownKyi.Windows.Tests;
 
 public sealed class WindowsEtwResourceFlightRecorderTests
 {
+    private static readonly TimeSpan DrainTestTimeout = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan PipeHolderTestTimeout = TimeSpan.FromSeconds(8);
     private static readonly TimeSpan TestTimeout = TimeSpan.FromSeconds(5);
 
     [Fact]
@@ -13,7 +15,7 @@ public sealed class WindowsEtwResourceFlightRecorderTests
     {
         var result = WindowsEtwResourceFlightRecorder.RunTool(
             "pwsh.exe",
-            TestTimeout,
+            DrainTestTimeout,
             "-NoLogo",
             "-NoProfile",
             "-NonInteractive",
@@ -58,7 +60,7 @@ public sealed class WindowsEtwResourceFlightRecorderTests
             var exception = Assert.Throws<TimeoutException>(
                 () => WindowsEtwResourceFlightRecorder.RunTool(
                     "dotnet",
-                    TimeSpan.FromSeconds(3),
+                    PipeHolderTestTimeout,
                     "exec",
                     "--runtimeconfig",
                     runtimeConfig,
@@ -67,7 +69,7 @@ public sealed class WindowsEtwResourceFlightRecorderTests
                     runtimeConfig,
                     marker));
 
-            Assert.Contains("output did not drain", exception.Message, StringComparison.Ordinal);
+            Assert.Contains("diagnostic timeout", exception.Message, StringComparison.Ordinal);
             childPid = int.Parse(File.ReadAllText(marker), System.Globalization.CultureInfo.InvariantCulture);
             Assert.False(IsAlive(childPid.Value));
         }
@@ -80,6 +82,40 @@ public sealed class WindowsEtwResourceFlightRecorderTests
                 child.WaitForExit();
             }
 
+            File.Delete(marker);
+        }
+    }
+
+    [Fact]
+    public void JobAssignmentFailurePreservesPrimaryAndDoesNotLaunchTool()
+    {
+        var marker = Path.Combine(Path.GetTempPath(), $"downkyi-etw-tool-start-{Guid.NewGuid():N}.txt");
+        var expected = new InvalidOperationException("fixture assignment failure");
+        int? hostPid = null;
+        try
+        {
+            var actual = Assert.Throws<InvalidOperationException>(
+                () => WindowsEtwResourceFlightRecorder.RunTool(
+                    "pwsh.exe",
+                    TestTimeout,
+                    process =>
+                    {
+                        hostPid = process.Id;
+                        throw expected;
+                    },
+                    "-NoLogo",
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    $"Set-Content -LiteralPath '{marker.Replace("'", "''", StringComparison.Ordinal)}' -Value launched"));
+
+            Assert.Same(expected, actual);
+            Assert.NotNull(hostPid);
+            Assert.False(IsAlive(hostPid.Value));
+            Assert.False(File.Exists(marker));
+        }
+        finally
+        {
             File.Delete(marker);
         }
     }

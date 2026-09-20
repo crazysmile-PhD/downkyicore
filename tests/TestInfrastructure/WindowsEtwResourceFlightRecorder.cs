@@ -3,6 +3,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Runtime.ExceptionServices;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
 
@@ -542,22 +543,30 @@ internal sealed class WindowsEtwResourceFlightRecorder : IDisposable
     internal static ToolResult RunTool(
         string executable,
         TimeSpan timeout,
-        params string[] arguments)
+        params string[] arguments) =>
+        RunToolCore(executable, timeout, assignProcessToJob: null, arguments);
+
+    internal static ToolResult RunTool(
+        string executable,
+        TimeSpan timeout,
+        Action<Process> assignProcessToJob,
+        params string[] arguments) =>
+        RunToolCore(executable, timeout, assignProcessToJob, arguments);
+
+    private static ToolResult RunToolCore(
+        string executable,
+        TimeSpan timeout,
+        Action<Process>? assignProcessToJob,
+        string[] arguments)
     {
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(timeout, TimeSpan.Zero);
 
-        var startInfo = new ProcessStartInfo(executable)
-        {
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-        };
-        foreach (var argument in arguments)
-        {
-            startInfo.ArgumentList.Add(argument);
-        }
+        EventWaitHandle? launchGate = null;
+        var startInfo = OperatingSystem.IsWindows()
+            ? CreateGatedWindowsStartInfo(executable, arguments, out launchGate)
+            : CreateToolStartInfo(executable, arguments);
 
+        using var gate = launchGate;
         using var job = OperatingSystem.IsWindows() ? WindowsToolProcessJob.Create() : null;
         using var process = new Process { StartInfo = startInfo };
         if (!process.Start())
@@ -567,16 +576,33 @@ internal sealed class WindowsEtwResourceFlightRecorder : IDisposable
 
         try
         {
-            job?.Assign(process);
-        }
-        catch
-        {
-            if (!process.HasExited)
+            if (job is not null)
             {
-                process.Kill(entireProcessTree: true);
+                if (assignProcessToJob is null)
+                {
+                    job.Assign(process);
+                }
+                else
+                {
+                    assignProcessToJob(process);
+                }
+            }
+        }
+        catch (Exception assignmentFailure)
+        {
+            var cleanupFailure = CompleteFailedToolStart(
+                process,
+                executable,
+                new ToolDeadline(timeout));
+            if (cleanupFailure is not null)
+            {
+                throw new AggregateException(
+                    $"Unable to own {executable}; launched-host cleanup also failed.",
+                    assignmentFailure,
+                    cleanupFailure);
             }
 
-            throw;
+            ExceptionDispatchInfo.Capture(assignmentFailure).Throw();
         }
 
         string standardOutput = string.Empty;
@@ -595,6 +621,7 @@ internal sealed class WindowsEtwResourceFlightRecorder : IDisposable
             exception => errorFailure = exception);
         outputReader.Start();
         errorReader.Start();
+        launchGate?.Set();
 
         var deadline = new ToolDeadline(timeout);
         Exception? primaryFailure = null;
@@ -640,6 +667,106 @@ internal sealed class WindowsEtwResourceFlightRecorder : IDisposable
         return new ToolResult(
             process.ExitCode,
             Sanitize(output.ReplaceLineEndings(" ").Trim()));
+    }
+
+    private static ProcessStartInfo CreateToolStartInfo(
+        string executable,
+        IReadOnlyList<string> arguments)
+    {
+        var startInfo = new ProcessStartInfo(executable)
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        foreach (var argument in arguments)
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        return startInfo;
+    }
+
+    private static ProcessStartInfo CreateGatedWindowsStartInfo(
+        string executable,
+        IReadOnlyList<string> arguments,
+        out EventWaitHandle launchGate)
+    {
+        var gateName = $"Local\\downkyi-tool-{Guid.NewGuid():N}";
+        launchGate = new EventWaitHandle(false, EventResetMode.ManualReset, gateName);
+        var payload = Convert.ToBase64String(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(
+            new ToolLaunch(executable, [.. arguments], gateName))));
+        var script = $$"""
+            $ErrorActionPreference = 'Stop'
+            $payload = [Text.Encoding]::UTF8.GetString(
+                [Convert]::FromBase64String('{{payload}}')) | ConvertFrom-Json
+            $gate = [Threading.EventWaitHandle]::OpenExisting([string]$payload.GateName)
+            try {
+                [void]$gate.WaitOne()
+                $toolArguments = @($payload.Arguments | ForEach-Object { [string]$_ })
+                & ([string]$payload.Executable) @toolArguments
+                if ($null -eq $LASTEXITCODE) {
+                    throw 'The diagnostic tool did not report an exit code.'
+                }
+                exit [int]$LASTEXITCODE
+            }
+            finally {
+                $gate.Dispose()
+            }
+            """;
+        return CreateToolStartInfo(
+            "pwsh.exe",
+            [
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-EncodedCommand",
+                Convert.ToBase64String(Encoding.Unicode.GetBytes(script))
+            ]);
+    }
+
+    [SuppressMessage(
+        "Design",
+        "CA1031:Do not catch general exception types",
+        Justification = "The job-assignment failure must be retained while every bounded cleanup step is attempted.")]
+    private static Exception? CompleteFailedToolStart(
+        Process process,
+        string executable,
+        ToolDeadline deadline)
+    {
+        var failures = new List<Exception>();
+        try
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+        }
+        catch (Exception exception)
+        {
+            failures.Add(exception);
+        }
+
+        try
+        {
+            if (!process.HasExited && !process.WaitForExit(deadline.Remaining))
+            {
+                failures.Add(new TimeoutException(
+                    $"{executable} launch host did not exit before the diagnostic deadline."));
+            }
+        }
+        catch (Exception exception)
+        {
+            failures.Add(exception);
+        }
+
+        return failures.Count switch
+        {
+            0 => null,
+            1 => failures[0],
+            _ => new AggregateException($"{executable} launch-host cleanup had multiple failures.", failures)
+        };
     }
 
     private static Thread CreateReaderThread(
@@ -794,6 +921,8 @@ internal sealed class WindowsEtwResourceFlightRecorder : IDisposable
     }
 
     internal sealed record ToolResult(int ExitCode, string Output);
+
+    private sealed record ToolLaunch(string Executable, string[] Arguments, string GateName);
 
     private sealed class ToolDeadline(TimeSpan timeout)
     {
