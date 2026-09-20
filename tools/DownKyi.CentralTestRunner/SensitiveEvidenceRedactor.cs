@@ -16,16 +16,25 @@ internal sealed class SensitiveEvidenceRedactor
         "\\bhttps?://[^\\s\\\"'<>]+",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
-    private readonly string workingDirectory;
+    private readonly string[] pathRoots;
 
-    internal SensitiveEvidenceRedactor(string workingDirectory)
+    internal SensitiveEvidenceRedactor(params string?[] pathRoots)
     {
-        this.workingDirectory = workingDirectory;
+        this.pathRoots = pathRoots
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Select(path => Path.GetFullPath(path!))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
     internal string Redact(string value)
     {
-        var redacted = ReplacePath(value, workingDirectory, "<repository-root>");
+        var redacted = value;
+        foreach (var pathRoot in pathRoots)
+        {
+            redacted = ReplacePath(redacted, pathRoot, "<repository-root>");
+        }
+
         var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         redacted = ReplacePath(redacted, userProfile, "<user-profile>");
         redacted = SensitiveHeaderPattern.Replace(
