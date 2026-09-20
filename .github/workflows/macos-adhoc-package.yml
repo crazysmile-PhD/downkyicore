@@ -15,9 +15,14 @@ on:
       - 'script/ffmpeg.sh'
       - 'script/ffmpeg-assets.py'
       - 'script/validate-publish-output.ps1'
+      - 'script/test-project.ps1'
+      - 'script/test-project-runner.ps1'
       - 'script/assets/**'
       - 'script/macos/**'
+      - 'docs/testing/test-runner-policy.json'
       - 'tests/DownKyi.MacOS.Tests/**'
+      - 'tests/PlatformShared/**'
+      - 'tools/DownKyi.CentralTestRunner/**'
   workflow_dispatch:
 
 permissions:
@@ -69,6 +74,15 @@ jobs:
           -ProjectPath ./tests/DownKyi.MacOS.Tests/DownKyi.MacOS.Tests.csproj
           -Configuration Release
           -ResultsDirectory ./artifacts/test-results/macos-packaging-${{ matrix.cpu }}
+      - name: Upload macOS test evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos-test-evidence-${{ matrix.runtime }}-attempt-${{ github.run_attempt }}
+          path: |
+            artifacts/test-results/macos-packaging-${{ matrix.cpu }}
+            artifacts/test-flight-recorder
+          if-no-files-found: warn
       - name: Read version
         id: version
         run: echo "content=$(tr -d '\r\n' < version.txt)" >> "$GITHUB_OUTPUT"

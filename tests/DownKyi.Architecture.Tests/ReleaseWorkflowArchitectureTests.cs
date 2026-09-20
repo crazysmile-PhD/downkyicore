@@ -641,9 +641,14 @@ public sealed class ReleaseWorkflowArchitectureTests
                      "script/aria2.sh",
                      "script/ffmpeg.sh",
                      "script/ffmpeg-assets.py",
+                     "script/test-project.ps1",
+                     "script/test-project-runner.ps1",
                      "script/validate-publish-output.ps1",
                      "script/assets/**",
-                     "script/macos/**"
+                     "script/macos/**",
+                     "docs/testing/test-runner-policy.json",
+                     "tests/PlatformShared/**",
+                     "tools/DownKyi.CentralTestRunner/**"
                  })
         {
             Assert.Contains(packageInput, triggerPaths);
@@ -656,6 +661,25 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.Contains("flags=.*runtime", workflow, StringComparison.Ordinal);
         Assert.Contains("create-dmg", workflow, StringComparison.Ordinal);
         Assert.Contains("./verify-dmg-contents.sh", workflow, StringComparison.Ordinal);
+        var packageSteps = GetWorkflowSteps(workflow, "  package-launch:");
+        AssertStepCondition(
+            packageSteps,
+            "Upload macOS test evidence",
+            "${{ always() }}");
+        var evidenceUpload = FindWorkflowStep(packageSteps, "Upload macOS test evidence");
+        Assert.Contains(
+            evidenceUpload,
+            line => line.Trim() ==
+                    "name: macos-test-evidence-${{ matrix.runtime }}-attempt-${{ github.run_attempt }}");
+        Assert.Contains(
+            evidenceUpload,
+            line => line.Trim() == "artifacts/test-results/macos-packaging-${{ matrix.cpu }}");
+        Assert.Contains(
+            evidenceUpload,
+            line => line.Trim() == "artifacts/test-flight-recorder");
+        Assert.Contains(
+            evidenceUpload,
+            line => line.Trim() == "if-no-files-found: warn");
         Assert.DoesNotContain("secrets.", workflow, StringComparison.Ordinal);
         Assert.DoesNotContain("notarytool", workflow, StringComparison.Ordinal);
         Assert.DoesNotContain("stapler", workflow, StringComparison.Ordinal);
@@ -688,6 +712,7 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.Contains("script/test-project-runner.ps1", criticalPaths, StringComparison.Ordinal);
         Assert.Contains("docs/testing/test-runner-policy.json", criticalPaths, StringComparison.Ordinal);
         Assert.Contains("tools/DownKyi.CentralTestRunner", criticalPaths, StringComparison.Ordinal);
+        Assert.Contains("tools/DownKyi.ProcessSupervision", criticalPaths, StringComparison.Ordinal);
         Assert.Contains("Resolve macOS release trust mode", workflow, StringComparison.Ordinal);
         Assert.Contains("macos_trust_mode: ${{ steps.macos_trust.outputs.macos_trust_mode }}", workflow, StringComparison.Ordinal);
         Assert.Contains("HAS_MACOS_SIGNING: ${{ needs.authority.outputs.has_macos_signing }}", workflow, StringComparison.Ordinal);

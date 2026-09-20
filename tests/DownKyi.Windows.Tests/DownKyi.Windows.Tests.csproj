@@ -21,6 +21,7 @@
     <ProjectReference Include="..\..\DownKyi.Core\DownKyi.Core.csproj" />
     <ProjectReference Include="..\..\src\DownKyi.Infrastructure\DownKyi.Infrastructure.csproj" />
     <ProjectReference Include="..\..\tools\DownKyi.CentralTestRunner\DownKyi.CentralTestRunner.csproj" />
+    <ProjectReference Include="..\..\tools\DownKyi.ProcessSupervision\DownKyi.ProcessSupervision.csproj" />
     <ProjectReference Include="..\TestInfrastructure\DownKyi.TestInfrastructure.csproj" />
   </ItemGroup>
 
