@@ -46,7 +46,7 @@ internal sealed class DownloadListState
     public void AddDownloaded(DownloadedItem item)
     {
         ArgumentNullException.ThrowIfNull(item);
-        if (_downloaded.Any(candidate => candidate.HistoryRecord.Id == item.HistoryRecord.Id))
+        if (_downloaded.Any(candidate => GetTaskId(candidate) == GetTaskId(item)))
         {
             return;
         }
@@ -58,16 +58,16 @@ internal sealed class DownloadListState
     {
         ArgumentNullException.ThrowIfNull(items);
         var loadedIds = _downloaded
-            .Select(item => item.HistoryRecord.Id)
-            .ToHashSet();
-        _downloaded.AddRange(items.Where(item => loadedIds.Add(item.HistoryRecord.Id)));
+            .Select(GetTaskId)
+            .ToHashSet(StringComparer.Ordinal);
+        _downloaded.AddRange(items.Where(item => loadedIds.Add(GetTaskId(item))));
     }
 
     public bool RemoveDownloaded(DownloadedItem item)
     {
         ArgumentNullException.ThrowIfNull(item);
         var loadedItem = _downloaded.FirstOrDefault(candidate =>
-            candidate.HistoryRecord.Id == item.HistoryRecord.Id);
+            GetTaskId(candidate) == GetTaskId(item));
         return loadedItem != null && _downloaded.Remove(loadedItem);
     }
 
@@ -92,9 +92,9 @@ internal sealed class DownloadListState
 
         var loadedItems = items.ToList();
         var loadedIds = loadedItems
-            .Select(item => item.HistoryRecord.Id)
-            .ToHashSet();
-        loadedItems.AddRange(_downloaded.Where(item => loadedIds.Add(item.HistoryRecord.Id)));
+            .Select(GetTaskId)
+            .ToHashSet(StringComparer.Ordinal);
+        loadedItems.AddRange(_downloaded.Where(item => loadedIds.Add(GetTaskId(item))));
         ReplaceDownloadedCore(loadedItems);
         IsDownloadedHistoryLoaded = true;
     }
@@ -115,6 +115,11 @@ internal sealed class DownloadListState
     private static int CompareFinishedAscending(DownloadedItem left, DownloadedItem right)
     {
         return left.Downloaded.FinishedTimestamp.CompareTo(right.Downloaded.FinishedTimestamp);
+    }
+
+    private static string GetTaskId(DownloadedItem item)
+    {
+        return item.HistoryRecord?.Id.Value ?? item.DownloadBase.Id;
     }
 
     private static int CompareFinishedDescending(DownloadedItem left, DownloadedItem right)
