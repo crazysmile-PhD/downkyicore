@@ -60,16 +60,19 @@ jobs:
           if-no-files-found: error
 
   build-test:
-    name: Build and test (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+    name: Build and test (${{ matrix.check_name }})
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - windows-latest
-          - ${{ vars.UBUNTU_X64_RUNNER }}
-          - macos-latest
+        include:
+          - runner: windows-latest
+            check_name: windows
+          - runner: ${{ vars.UBUNTU_X64_RUNNER }}
+            check_name: ubuntu-x64
+          - runner: macos-latest
+            check_name: macos
     steps:
       - name: Checkout
         uses: actions/checkout@v7

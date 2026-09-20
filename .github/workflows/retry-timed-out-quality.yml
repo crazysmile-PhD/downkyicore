@@ -25,8 +25,6 @@ jobs:
       }}
     runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
     timeout-minutes: 5
-    env:
-      UBUNTU_X64_RUNNER: ${{ vars.UBUNTU_X64_RUNNER }}
     steps:
       - name: Retry eligible job
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
@@ -35,9 +33,9 @@ jobs:
             const { owner, repo } = context.repo;
             const eventRun = context.payload.workflow_run;
             const expectedBuildTests = [
-              "Build and test (windows-latest)",
-              `Build and test (${process.env.UBUNTU_X64_RUNNER})`,
-              "Build and test (macos-latest)",
+              "Build and test (windows)",
+              "Build and test (ubuntu-x64)",
+              "Build and test (macos)",
             ];
             const readRun = async () => (await github.request(
               "GET /repos/{owner}/{repo}/actions/runs/{run_id}",
