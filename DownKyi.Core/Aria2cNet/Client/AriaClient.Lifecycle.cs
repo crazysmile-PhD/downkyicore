@@ -146,7 +146,12 @@ public sealed partial class AriaClient
     /// This method returns OK.
     /// </summary>
     /// <returns></returns>
-    public async Task<AriaShutdown> ForceShutdownAsync()
+    public Task<AriaShutdown> ForceShutdownAsync()
+    {
+        return ForceShutdownAsync(CancellationToken.None);
+    }
+
+    internal async Task<AriaShutdown> ForceShutdownAsync(CancellationToken cancellationToken)
     {
         List<object> ariaParams = new List<object>
         {
@@ -159,7 +164,7 @@ public sealed partial class AriaClient
             Method = "aria2.forceShutdown",
             Params = ariaParams
         };
-        return await GetRpcResponseAsync<AriaShutdown>(ariaSend).ConfigureAwait(false);
+        return await GetRpcResponseAsync<AriaShutdown>(ariaSend, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

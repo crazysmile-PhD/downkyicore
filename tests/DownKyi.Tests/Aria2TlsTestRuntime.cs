@@ -1,7 +1,9 @@
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Security.Cryptography;
@@ -19,6 +21,7 @@ internal sealed class Aria2TlsTestRuntime : IAsyncDisposable
     private readonly Process _process;
     private readonly Task<string> _standardError;
     private readonly Task<string> _standardOutput;
+    private readonly CancellationTokenSource _outputCancellation;
     private readonly TrustedRootScope _trustedRoot;
     private readonly string _workingDirectory;
     private bool _disposed;
@@ -27,6 +30,7 @@ internal sealed class Aria2TlsTestRuntime : IAsyncDisposable
         Process process,
         Task<string> standardOutput,
         Task<string> standardError,
+        CancellationTokenSource outputCancellation,
         AriaClient client,
         TrustedRootScope trustedRoot,
         string workingDirectory,
@@ -36,6 +40,7 @@ internal sealed class Aria2TlsTestRuntime : IAsyncDisposable
         _process = process;
         _standardOutput = standardOutput;
         _standardError = standardError;
+        _outputCancellation = outputCancellation;
         Client = client;
         _trustedRoot = trustedRoot;
         _workingDirectory = workingDirectory;
@@ -51,6 +56,10 @@ internal sealed class Aria2TlsTestRuntime : IAsyncDisposable
 
     public string CertificateAuthoritySource => _trustedRoot.Source;
 
+    [SuppressMessage(
+        "Design",
+        "CA1031:Do not catch general exception types",
+        Justification = "Startup must retain the primary failure while every acquired resource is rolled back.")]
     public static async Task<Aria2TlsTestRuntime> StartAsync(
         string binaryPath,
         X509Certificate2 trustedRoot,
@@ -92,6 +101,9 @@ internal sealed class Aria2TlsTestRuntime : IAsyncDisposable
             rootCertificatePath,
             cancellationToken).ConfigureAwait(false);
         Process? process = null;
+        var outputCancellation = new CancellationTokenSource();
+        Task<string>? standardOutput = null;
+        Task<string>? standardError = null;
         try
         {
             var port = GetAvailablePort();
@@ -114,8 +126,8 @@ internal sealed class Aria2TlsTestRuntime : IAsyncDisposable
                 throw new InvalidOperationException("The aria2 TLS test process did not start.");
             }
 
-            var standardOutput = process.StandardOutput.ReadToEndAsync(cancellationToken);
-            var standardError = process.StandardError.ReadToEndAsync(cancellationToken);
+            standardOutput = process.StandardOutput.ReadToEndAsync(outputCancellation.Token);
+            standardError = process.StandardError.ReadToEndAsync(outputCancellation.Token);
             var client = new AriaClient("http://127.0.0.1", port, token);
             var version = await WaitForReadyAsync(
                 process,
@@ -126,24 +138,49 @@ internal sealed class Aria2TlsTestRuntime : IAsyncDisposable
                 process,
                 standardOutput,
                 standardError,
+                outputCancellation,
                 client,
                 trustedRootScope,
                 workingDirectory,
                 version,
                 binarySha256);
         }
-        catch
+        catch (Exception startupFailure)
         {
-            if (process is { HasExited: false })
+            var failures = new List<Exception> { startupFailure };
+            if (process is not null)
             {
-                process.Kill(entireProcessTree: true);
-                await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
+                try
+                {
+                    await Aria2TlsProcessCleanup.RunAsync(
+                        CreateCleanupOperations(
+                            process,
+                            standardOutput ?? Task.FromResult(string.Empty),
+                            standardError ?? Task.FromResult(string.Empty),
+                            outputCancellation,
+                            requestShutdownAsync: null),
+                        TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+                }
+                catch (Exception cleanupFailure)
+                {
+                    failures.Add(new InvalidOperationException(
+                        "aria2 startup process cleanup failed.",
+                        cleanupFailure));
+                }
             }
 
-            process?.Dispose();
-            await trustedRootScope.DisposeAsync().ConfigureAwait(false);
-            DeleteDirectory(workingDirectory);
-            throw;
+            CaptureCleanupFailure(() => process?.Dispose(), "aria2 startup process disposal", failures);
+            await CaptureCleanupFailureAsync(
+                () => trustedRootScope.DisposeAsync().AsTask(),
+                "aria2 startup trusted-root cleanup",
+                failures).ConfigureAwait(false);
+            CaptureCleanupFailure(
+                () => DeleteDirectory(workingDirectory),
+                "aria2 startup directory cleanup",
+                failures);
+            outputCancellation.Dispose();
+            ThrowFailures(failures);
+            throw new InvalidOperationException("Unreachable aria2 startup cleanup path.");
         }
     }
 
@@ -364,6 +401,71 @@ internal sealed class Aria2TlsTestRuntime : IAsyncDisposable
         }
     }
 
+    private static Aria2TlsProcessCleanupOperations CreateCleanupOperations(
+        Process process,
+        Task standardOutput,
+        Task standardError,
+        CancellationTokenSource outputCancellation,
+        Func<CancellationToken, Task>? requestShutdownAsync)
+    {
+        return new Aria2TlsProcessCleanupOperations(
+            () => process.HasExited,
+            requestShutdownAsync,
+            token => process.WaitForExitAsync(token),
+            () => process.Kill(entireProcessTree: true),
+            standardOutput,
+            standardError,
+            () => outputCancellation.CancelAsync());
+    }
+
+    [SuppressMessage(
+        "Design",
+        "CA1031:Do not catch general exception types",
+        Justification = "Every cleanup failure is retained and reported after the remaining owners run.")]
+    private static async Task CaptureCleanupFailureAsync(
+        Func<Task> cleanup,
+        string stage,
+        List<Exception> failures)
+    {
+        try
+        {
+            await cleanup().ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            failures.Add(new InvalidOperationException($"{stage} failed.", exception));
+        }
+    }
+
+    [SuppressMessage(
+        "Design",
+        "CA1031:Do not catch general exception types",
+        Justification = "Every cleanup failure is retained and reported after the remaining owners run.")]
+    private static void CaptureCleanupFailure(
+        Action cleanup,
+        string stage,
+        List<Exception> failures)
+    {
+        try
+        {
+            cleanup();
+        }
+        catch (Exception exception)
+        {
+            failures.Add(new InvalidOperationException($"{stage} failed.", exception));
+        }
+    }
+
+    private static void ThrowFailures(List<Exception> failures)
+    {
+        if (failures.Count == 1)
+        {
+            ExceptionDispatchInfo.Capture(failures[0]).Throw();
+        }
+
+        throw new AggregateException("aria2 TLS runtime operation and cleanup failed.", failures);
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (_disposed)
@@ -372,37 +474,32 @@ internal sealed class Aria2TlsTestRuntime : IAsyncDisposable
         }
 
         _disposed = true;
-        try
-        {
-            if (!_process.HasExited)
-            {
-                try
-                {
-                    await Client.ForceShutdownAsync().ConfigureAwait(false);
-                }
-                catch (HttpRequestException)
-                {
-                }
+        var failures = new List<Exception>();
+        await CaptureCleanupFailureAsync(
+            () => Aria2TlsProcessCleanup.RunAsync(
+                CreateCleanupOperations(
+                    _process,
+                    _standardOutput,
+                    _standardError,
+                    _outputCancellation,
+                    token => Client.ForceShutdownAsync(token)),
+                TimeSpan.FromSeconds(5)),
+            "aria2 process cleanup",
+            failures).ConfigureAwait(false);
+        CaptureCleanupFailure(_process.Dispose, "aria2 process disposal", failures);
+        _outputCancellation.Dispose();
+        await CaptureCleanupFailureAsync(
+            () => _trustedRoot.DisposeAsync().AsTask(),
+            "aria2 trusted-root cleanup",
+            failures).ConfigureAwait(false);
+        CaptureCleanupFailure(
+            () => DeleteDirectory(_workingDirectory),
+            "aria2 directory cleanup",
+            failures);
 
-                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                try
-                {
-                    await _process.WaitForExitAsync(timeout.Token).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (timeout.IsCancellationRequested)
-                {
-                    _process.Kill(entireProcessTree: true);
-                    await _process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
-                }
-            }
-
-            await Task.WhenAll(_standardOutput, _standardError).ConfigureAwait(false);
-        }
-        finally
+        if (failures.Count > 0)
         {
-            _process.Dispose();
-            await _trustedRoot.DisposeAsync().ConfigureAwait(false);
-            DeleteDirectory(_workingDirectory);
+            ThrowFailures(failures);
         }
     }
 }
