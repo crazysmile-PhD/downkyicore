@@ -6,6 +6,8 @@ internal sealed class CleanupDeadline(TimeSpan budget)
 {
     private readonly Stopwatch clock = Stopwatch.StartNew();
 
+    public TimeSpan Elapsed => clock.Elapsed;
+
     public TimeSpan Remaining => budget > clock.Elapsed ? budget - clock.Elapsed : TimeSpan.Zero;
 
     public TimeSpan SnapshotWindow => TimeSpan.FromTicks(Math.Min(

@@ -131,8 +131,15 @@ public sealed class CentralTestRunnerCancellationComponentTests
                     .ConfigureAwait(true);
                 clock.Stop();
 
-                Assert.True(failure is TimeoutException,
-                    $"cleanup result={failure?.GetType().Name ?? "success"}, elapsed={clock.Elapsed}, host exited={scope.Host.HasExited}");
+                var timeout = Assert.IsType<TimeoutException>(failure);
+                Assert.Contains(
+                    "cleanup phase=snapshot",
+                    Program.FormatExceptionDiagnostic(timeout),
+                    StringComparison.Ordinal);
+                Assert.Contains(
+                    $"rootPid={scope.RootPid}",
+                    Program.FormatExceptionDiagnostic(timeout),
+                    StringComparison.Ordinal);
                 Assert.True(clock.Elapsed < TimeSpan.FromMilliseconds(2500));
                 Assert.True(scope.Host.HasExited);
             },
@@ -216,6 +223,26 @@ public sealed class CentralTestRunnerCancellationComponentTests
     }
 
     [Fact]
+    public void ExceptionDiagnosticRetainsTheExceptionChainAndRedactsSensitiveValues()
+    {
+        var sensitivePath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            "private-fixture");
+        var exception = CaptureExceptionWithStack(
+            new IOException($"fixture={sensitivePath} token=secret-value"));
+
+        var diagnostic = Program.FormatExceptionDiagnostic(exception);
+
+        Assert.Contains(typeof(InvalidOperationException).FullName!, diagnostic, StringComparison.Ordinal);
+        Assert.Contains(typeof(IOException).FullName!, diagnostic, StringComparison.Ordinal);
+        Assert.Contains(nameof(CaptureExceptionWithStack), diagnostic, StringComparison.Ordinal);
+        Assert.Contains("<user-profile>", diagnostic, StringComparison.Ordinal);
+        Assert.Contains("token=<redacted>", diagnostic, StringComparison.Ordinal);
+        Assert.DoesNotContain(sensitivePath, diagnostic, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("secret-value", diagnostic, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task FilesystemTeardownDeletesFixtureDirectoryAfterProcessCleanup()
     {
         var fixtureDirectory = Path.Combine(
@@ -267,9 +294,29 @@ public sealed class CentralTestRunnerCancellationComponentTests
                     .ConfigureAwait(true);
 
                 Assert.Same(snapshotFailure, observedFailure);
+                Assert.Contains(
+                    "cleanup phase=snapshot",
+                    Program.FormatExceptionDiagnostic(observedFailure!),
+                    StringComparison.Ordinal);
+                Assert.Contains(
+                    $"rootPid={scope.RootPid}",
+                    Program.FormatExceptionDiagnostic(observedFailure!),
+                    StringComparison.Ordinal);
                 Assert.True(scope.Host.HasExited);
             },
             () => StopScopeAsync(scope)).ConfigureAwait(true);
+    }
+
+    private static InvalidOperationException CaptureExceptionWithStack(Exception innerException)
+    {
+        try
+        {
+            throw new InvalidOperationException("outer diagnostic failure", innerException);
+        }
+        catch (InvalidOperationException exception)
+        {
+            return exception;
+        }
     }
 
     private static Task<Process> StartHoldingFixtureAsync()

@@ -222,6 +222,9 @@ public sealed class TargetedResourceForensicsWindowsTests
                     cleanupResourceDirectory: targetDirectory)).ConfigureAwait(true);
 
             Assert.Equal(targetDirectory, exception.ResourcePath);
+            var diagnostic = Program.FormatExceptionDiagnostic(exception);
+            Assert.Contains("cleanup phase=directory-rundown", diagnostic, StringComparison.Ordinal);
+            Assert.Contains($"rootPid={rootScope.RootPid}", diagnostic, StringComparison.Ordinal);
             Assert.True(root.HasExited);
             Assert.False(blocker.HasExited);
         }
@@ -268,6 +271,10 @@ public sealed class TargetedResourceForensicsWindowsTests
             var aggregate = Assert.IsType<AggregateException>(exception);
             Assert.Same(snapshotFailure, aggregate.InnerExceptions[0]);
             Assert.IsType<DirectoryResourceRundownTimeoutException>(aggregate.InnerExceptions[1]);
+            var diagnostic = Program.FormatExceptionDiagnostic(aggregate);
+            Assert.Contains("cleanup phase=snapshot", diagnostic, StringComparison.Ordinal);
+            Assert.Contains("cleanup phase=directory-rundown", diagnostic, StringComparison.Ordinal);
+            Assert.Contains($"rootPid={rootScope.RootPid}", diagnostic, StringComparison.Ordinal);
             Assert.True(root.HasExited);
             Assert.False(blocker.HasExited);
         }
