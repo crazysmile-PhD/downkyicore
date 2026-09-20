@@ -128,4 +128,47 @@ public sealed class Aria2TlsProcessCleanupTests
         Assert.True(output.Task.IsCompletedSuccessfully);
         Assert.True(clock.Elapsed >= TimeSpan.FromMilliseconds(150));
     }
+
+    [Fact]
+    public async Task KillFailureAndExpiredDeadlineDoNotReleaseOwnershipBeforeProcessIsReaped()
+    {
+        var exit = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Task? terminalExit = null;
+        var clock = Stopwatch.StartNew();
+
+        var exception = await Assert.ThrowsAsync<AggregateException>(
+            () => Aria2TlsProcessCleanup.RunAsync(
+                new Aria2TlsProcessCleanupOperations(
+                    () => exit.Task.IsCompleted,
+                    RequestShutdownAsync: null,
+                    token => exit.Task.WaitAsync(token),
+                    () =>
+                    {
+                        terminalExit = CompleteExitAsync();
+                        throw new InvalidOperationException("Simulated kill failure.");
+                    },
+                    Task.CompletedTask,
+                    Task.CompletedTask,
+                    () => Task.CompletedTask),
+                TimeSpan.FromMilliseconds(100))).ConfigureAwait(true);
+
+        Assert.Contains(
+            exception.InnerExceptions,
+            failure => failure is InvalidOperationException &&
+                       failure.Message.Contains("kill failure", StringComparison.Ordinal));
+        Assert.Contains(
+            exception.InnerExceptions,
+            failure => failure is TimeoutException &&
+                       failure.Message.Contains("could not be reaped", StringComparison.Ordinal));
+        Assert.NotNull(terminalExit);
+        Assert.True(terminalExit.IsCompletedSuccessfully);
+        Assert.True(exit.Task.IsCompletedSuccessfully);
+        Assert.True(clock.Elapsed >= TimeSpan.FromMilliseconds(150));
+
+        async Task CompleteExitAsync()
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(150)).ConfigureAwait(false);
+            exit.TrySetResult();
+        }
+    }
 }

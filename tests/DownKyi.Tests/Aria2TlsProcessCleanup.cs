@@ -79,7 +79,7 @@ internal static class Aria2TlsProcessCleanup
                 }
             }
 
-            exit = operations.WaitForExitAsync(deadline.Token);
+            exit = operations.WaitForExitAsync(CancellationToken.None);
             if (!forceKill && primaryFailure is null)
             {
                 try
@@ -112,11 +112,26 @@ internal static class Aria2TlsProcessCleanup
             }
         }
 
-        exit ??= operations.WaitForExitAsync(deadline.Token);
-        await CaptureCleanupFailureAsync(
-            () => exit.WaitAsync(deadline.Remaining, deadline.Token),
-            "The aria2 process could not be reaped before the cleanup deadline.",
-            cleanupFailures).ConfigureAwait(false);
+        exit ??= operations.WaitForExitAsync(CancellationToken.None);
+        try
+        {
+            await exit.WaitAsync(deadline.Remaining, deadline.Token).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (
+            exception is TimeoutException or OperationCanceledException)
+        {
+            cleanupFailures.Add(new TimeoutException(
+                "The aria2 process could not be reaped before the cleanup deadline.",
+                exception));
+            await CaptureCleanupFailureAsync(
+                () => exit,
+                "The aria2 process wait did not reach a terminal state after the cleanup deadline.",
+                cleanupFailures).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            cleanupFailures.Add(exception);
+        }
 
         var ownedTasks = !shutdownNeedsJoin
             ? new[] { operations.StandardOutput, operations.StandardError }
