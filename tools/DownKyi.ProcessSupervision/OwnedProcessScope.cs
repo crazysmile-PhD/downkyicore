@@ -14,6 +14,7 @@ internal sealed class OwnedProcessScope : IDisposable
 {
     internal const string FailedHostPidDataKey = "DownKyi.ProcessSupervision.FailedHostPid";
     private const int SigKill = 9;
+    private const int OperationNotPermitted = 1;
     private const int NoSuchProcess = 3;
     private readonly SafeFileHandle? job;
     private bool terminationAttempted;
@@ -395,7 +396,16 @@ internal sealed class OwnedProcessScope : IDisposable
         {
             if (terminateMembers)
             {
-                _ = SignalUnixProcessGroupIfPresent(groupId, SigKill);
+                try
+                {
+                    _ = SignalUnixProcessGroupIfPresent(groupId, SigKill);
+                }
+                catch (Win32Exception exception) when (
+                    exception.NativeErrorCode == OperationNotPermitted)
+                {
+                    // Darwin reports EPERM when libproc can still see only zombie
+                    // members. Keep libproc authoritative and wait for them to clear.
+                }
             }
 
             var remaining = deadline.WorkWindow;
