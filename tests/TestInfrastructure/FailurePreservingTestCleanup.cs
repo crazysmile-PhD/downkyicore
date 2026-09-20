@@ -3,8 +3,109 @@ using System.Runtime.ExceptionServices;
 
 namespace DownKyi.TestInfrastructure;
 
+public sealed record FailurePreservingTestFailure(
+    string Stage,
+    ExceptionDispatchInfo DispatchInfo)
+{
+    public Exception Exception => DispatchInfo.SourceException;
+}
+
+public sealed class FailurePreservingTestCollector
+{
+    private readonly List<FailurePreservingTestFailure> _failures = [];
+
+    public IReadOnlyList<FailurePreservingTestFailure> Failures => _failures;
+
+    public void Capture(string stage, Exception exception)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(stage);
+        ArgumentNullException.ThrowIfNull(exception);
+        _failures.Add(new FailurePreservingTestFailure(
+            stage,
+            ExceptionDispatchInfo.Capture(exception)));
+    }
+
+    public void Run(string stage, Action action)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(stage);
+        ArgumentNullException.ThrowIfNull(action);
+        var exception = FailurePreservingTestCleanup.CaptureException(action);
+        if (exception != null)
+        {
+            Capture(stage, exception);
+        }
+    }
+
+    public async Task RunAsync(string stage, Func<Task> action)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(stage);
+        ArgumentNullException.ThrowIfNull(action);
+        var exception = await FailurePreservingTestCleanup
+            .CaptureExceptionAsync(action)
+            .ConfigureAwait(false);
+        if (exception != null)
+        {
+            Capture(stage, exception);
+        }
+    }
+
+    public void ThrowIfAny()
+    {
+        if (_failures.Count == 0)
+        {
+            return;
+        }
+
+        if (_failures.Count == 1)
+        {
+            _failures[0].DispatchInfo.Throw();
+        }
+
+        throw new AggregateException(
+            $"Multiple test stages failed: "
+            + $"{string.Join(", ", _failures.Select(failure => failure.Stage))}.",
+            _failures.Select(failure => failure.Exception));
+    }
+}
+
 public static class FailurePreservingTestCleanup
 {
+    [SuppressMessage(
+        "Design",
+        "CA1031:Do not catch general exception types",
+        Justification = "This test-only boundary records every stage failure for later aggregation.")]
+    public static Exception? CaptureException(Action action)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        try
+        {
+            action();
+            return null;
+        }
+        catch (Exception exception)
+        {
+            return exception;
+        }
+    }
+
+    [SuppressMessage(
+        "Design",
+        "CA1031:Do not catch general exception types",
+        Justification = "This test-only boundary records every stage failure for later aggregation.")]
+    public static async Task<Exception?> CaptureExceptionAsync(Func<Task> action)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        try
+        {
+            await action().ConfigureAwait(false);
+            return null;
+        }
+        catch (Exception exception)
+        {
+            return exception;
+        }
+    }
+
     [SuppressMessage(
         "Design",
         "CA1031:Do not catch general exception types",

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
@@ -53,203 +54,225 @@ public sealed partial class Aria2TlsIntegrationTests
         using var incompleteChainCertificate = trustedAuthority.IssueServerCertificate(
             issuer: intermediateCertificate);
 
-        var runtime = await Aria2TlsTestRuntime.StartAsync(
-            binaryPath,
-            trustedAuthority.RootCertificate,
-            cancellationToken).ConfigureAwait(true);
-        await using var runtimeLifetime = runtime.ConfigureAwait(false);
-        var results = new List<Aria2TlsCaseResult>();
-        try
-        {
-            await RunTrustedSplitDownloadAsync(
-                runtime,
-                trustedCertificate,
-                payload,
-                results,
-                cancellationToken).ConfigureAwait(true);
-            await RunHttpsRedirectToHttpRejectedAsync(
-                runtime,
-                trustedCertificate,
-                payload,
-                results,
-                cancellationToken).ConfigureAwait(true);
-            await RunPreflightThenActualDowngradeRejectedAsync(
-                runtime,
-                trustedCertificate,
+        var failures = new FailurePreservingTestCollector();
+        Aria2TlsTestRuntime? startedRuntime = null;
+        await failures.RunAsync(
+            "runtime-startup",
+            async () => startedRuntime = await Aria2TlsTestRuntime.StartAsync(
+                binaryPath,
                 trustedAuthority.RootCertificate,
-                payload,
-                results,
-                cancellationToken).ConfigureAwait(true);
-            await RunHeadSafeGetDowngradeRejectedAsync(
-                runtime,
-                trustedCertificate,
-                payload,
-                results,
-                cancellationToken).ConfigureAwait(true);
-            await RunRangeDowngradeRejectedAsync(
-                runtime,
-                trustedCertificate,
-                payload,
-                results,
-                cancellationToken).ConfigureAwait(true);
-            await RunSecondRoundDowngradeRejectedAsync(
-                runtime,
-                trustedCertificate,
-                payload,
-                results,
-                cancellationToken).ConfigureAwait(true);
-            await RunSensitiveCrossOriginRedirectsRejectedAsync(
-                runtime,
-                trustedCertificate,
-                payload,
-                results,
-                cancellationToken).ConfigureAwait(true);
-            await RunSameOriginHttpsRedirectAsync(
-                runtime,
-                trustedCertificate,
-                payload,
-                results,
-                cancellationToken).ConfigureAwait(true);
-            await RunCrossOriginHttpsRedirectAsync(
-                runtime,
-                trustedCertificate,
-                payload,
-                results,
-                cancellationToken).ConfigureAwait(true);
-            await RunTrustedConnectProxyDownloadAsync(
-                runtime,
-                trustedCertificate,
-                payload,
-                results,
-                cancellationToken).ConfigureAwait(true);
-            await RunProxyInterceptionRejectedAsync(
-                runtime,
-                unknownCertificate,
-                payload,
-                results,
-                cancellationToken).ConfigureAwait(true);
-            await RunTrustedResumeAsync(
-                runtime,
-                trustedCertificate,
-                payload,
-                results,
-                cancellationToken).ConfigureAwait(true);
-            await RunRpcRemovalAsync(
-                runtime,
-                trustedCertificate,
-                payload,
-                results,
-                cancellationToken).ConfigureAwait(true);
+                cancellationToken).ConfigureAwait(false)).ConfigureAwait(true);
+        if (startedRuntime == null)
+        {
+            failures.ThrowIfAny();
+            throw new UnreachableException();
+        }
 
-            await RunRejectedCertificateAsync(
-                runtime,
-                "unknown-ca",
-                unknownCertificate,
-                payload,
-                [
-                    "download.transfer.tls.untrusted",
+        var runtime = startedRuntime;
+        var results = new List<Aria2TlsCaseResult>();
+        await failures.RunAsync(
+            "test-execution",
+            async () =>
+            {
+                await RunTrustedSplitDownloadAsync(
+                    runtime,
+                    trustedCertificate,
+                    payload,
+                    results,
+                    cancellationToken).ConfigureAwait(true);
+                await RunHttpsRedirectToHttpRejectedAsync(
+                    runtime,
+                    trustedCertificate,
+                    payload,
+                    results,
+                    cancellationToken).ConfigureAwait(true);
+                await RunPreflightThenActualDowngradeRejectedAsync(
+                    runtime,
+                    trustedCertificate,
+                    trustedAuthority.RootCertificate,
+                    payload,
+                    results,
+                    cancellationToken).ConfigureAwait(true);
+                await RunHeadSafeGetDowngradeRejectedAsync(
+                    runtime,
+                    trustedCertificate,
+                    payload,
+                    results,
+                    cancellationToken).ConfigureAwait(true);
+                await RunRangeDowngradeRejectedAsync(
+                    runtime,
+                    trustedCertificate,
+                    payload,
+                    results,
+                    cancellationToken).ConfigureAwait(true);
+                await RunSecondRoundDowngradeRejectedAsync(
+                    runtime,
+                    trustedCertificate,
+                    payload,
+                    results,
+                    cancellationToken).ConfigureAwait(true);
+                await RunSensitiveCrossOriginRedirectsRejectedAsync(
+                    runtime,
+                    trustedCertificate,
+                    payload,
+                    results,
+                    cancellationToken).ConfigureAwait(true);
+                await RunSameOriginHttpsRedirectAsync(
+                    runtime,
+                    trustedCertificate,
+                    payload,
+                    results,
+                    cancellationToken).ConfigureAwait(true);
+                await RunCrossOriginHttpsRedirectAsync(
+                    runtime,
+                    trustedCertificate,
+                    payload,
+                    results,
+                    cancellationToken).ConfigureAwait(true);
+                await RunTrustedConnectProxyDownloadAsync(
+                    runtime,
+                    trustedCertificate,
+                    payload,
+                    results,
+                    cancellationToken).ConfigureAwait(true);
+                await RunProxyInterceptionRejectedAsync(
+                    runtime,
+                    unknownCertificate,
+                    payload,
+                    results,
+                    cancellationToken).ConfigureAwait(true);
+                await RunTrustedResumeAsync(
+                    runtime,
+                    trustedCertificate,
+                    payload,
+                    results,
+                    cancellationToken).ConfigureAwait(true);
+                await RunRpcRemovalAsync(
+                    runtime,
+                    trustedCertificate,
+                    payload,
+                    results,
+                    cancellationToken).ConfigureAwait(true);
+
+                await RunRejectedCertificateAsync(
+                    runtime,
+                    "unknown-ca",
+                    unknownCertificate,
+                    payload,
+                    [
+                        "download.transfer.tls.untrusted",
                     "download.transfer.tls.handshake",
                     "download.transfer.tls.chain"
-                ],
-                results,
-                cancellationToken).ConfigureAwait(true);
-            await RunRejectedCertificateAsync(
-                runtime,
-                "self-signed",
-                selfSignedCertificate,
-                payload,
-                [
-                    "download.transfer.tls.untrusted",
+                    ],
+                    results,
+                    cancellationToken).ConfigureAwait(true);
+                await RunRejectedCertificateAsync(
+                    runtime,
+                    "self-signed",
+                    selfSignedCertificate,
+                    payload,
+                    [
+                        "download.transfer.tls.untrusted",
                     "download.transfer.tls.handshake",
                     "download.transfer.tls.chain"
-                ],
-                results,
-                cancellationToken).ConfigureAwait(true);
-            await RunRejectedCertificateAsync(
-                runtime,
-                "expired",
-                expiredCertificate,
-                payload,
-                [
+                    ],
+                    results,
+                    cancellationToken).ConfigureAwait(true);
+                await RunRejectedCertificateAsync(
+                    runtime,
+                    "expired",
+                    expiredCertificate,
+                    payload,
+                    [
+                        "download.transfer.tls.expired",
+                    "download.transfer.tls.handshake",
+                    "download.transfer.tls.chain"
+                    ],
+                    results,
+                    cancellationToken).ConfigureAwait(true);
+                await RunRejectedCertificateAsync(
+                    runtime,
+                    "not-yet-valid",
+                    notYetValidCertificate,
+                    payload,
+                    [
+                        "download.transfer.tls.not-yet-valid",
                     "download.transfer.tls.expired",
                     "download.transfer.tls.handshake",
                     "download.transfer.tls.chain"
-                ],
-                results,
-                cancellationToken).ConfigureAwait(true);
-            await RunRejectedCertificateAsync(
-                runtime,
-                "not-yet-valid",
-                notYetValidCertificate,
-                payload,
-                [
-                    "download.transfer.tls.not-yet-valid",
-                    "download.transfer.tls.expired",
+                    ],
+                    results,
+                    cancellationToken).ConfigureAwait(true);
+                await RunRejectedCertificateAsync(
+                    runtime,
+                    "hostname-mismatch",
+                    hostnameMismatchCertificate,
+                    payload,
+                    [
+                        "download.transfer.tls.hostname",
                     "download.transfer.tls.handshake",
                     "download.transfer.tls.chain"
-                ],
-                results,
-                cancellationToken).ConfigureAwait(true);
-            await RunRejectedCertificateAsync(
-                runtime,
-                "hostname-mismatch",
-                hostnameMismatchCertificate,
-                payload,
-                [
-                    "download.transfer.tls.hostname",
+                    ],
+                    results,
+                    cancellationToken).ConfigureAwait(true);
+                await RunRejectedCertificateAsync(
+                    runtime,
+                    "missing-san-wrong-common-name",
+                    missingSanCertificate,
+                    payload,
+                    [
+                        "download.transfer.tls.hostname",
                     "download.transfer.tls.handshake",
                     "download.transfer.tls.chain"
-                ],
-                results,
-                cancellationToken).ConfigureAwait(true);
-            await RunRejectedCertificateAsync(
-                runtime,
-                "missing-san-wrong-common-name",
-                missingSanCertificate,
-                payload,
-                [
-                    "download.transfer.tls.hostname",
-                    "download.transfer.tls.handshake",
-                    "download.transfer.tls.chain"
-                ],
-                results,
-                cancellationToken).ConfigureAwait(true);
-            await RunRejectedCertificateAsync(
-                runtime,
-                "incomplete-chain",
-                incompleteChainCertificate,
-                payload,
-                [
-                    "download.transfer.tls.chain",
+                    ],
+                    results,
+                    cancellationToken).ConfigureAwait(true);
+                await RunRejectedCertificateAsync(
+                    runtime,
+                    "incomplete-chain",
+                    incompleteChainCertificate,
+                    payload,
+                    [
+                        "download.transfer.tls.chain",
                     "download.transfer.tls.untrusted",
                     "download.transfer.tls.handshake"
-                ],
-                results,
-                cancellationToken).ConfigureAwait(true);
-            await RunRedirectToUntrustedAsync(
-                runtime,
-                trustedCertificate,
-                unknownCertificate,
-                payload,
-                results,
-                cancellationToken).ConfigureAwait(true);
-            await RunResumeToUntrustedAsync(
-                runtime,
-                trustedCertificate,
-                unknownCertificate,
-                payload,
-                results,
-                cancellationToken).ConfigureAwait(true);
+                    ],
+                    results,
+                    cancellationToken).ConfigureAwait(true);
+                await RunRedirectToUntrustedAsync(
+                    runtime,
+                    trustedCertificate,
+                    unknownCertificate,
+                    payload,
+                    results,
+                    cancellationToken).ConfigureAwait(true);
+                await RunResumeToUntrustedAsync(
+                    runtime,
+                    trustedCertificate,
+                    unknownCertificate,
+                    payload,
+                    results,
+                    cancellationToken).ConfigureAwait(true);
 
-            Assert.All(results, result => Assert.True(result.Passed, result.Name));
-        }
-        finally
+                Assert.All(results, result => Assert.True(result.Passed, result.Name));
+            }).ConfigureAwait(true);
+        foreach (var failure in runtime.LocalServiceFailures.Failures)
         {
-            await WriteReportAsync(
+            failures.Capture(
+                $"local-service-cleanup:{failure.Service}:{failure.Stage}",
+                failure.Exception);
+        }
+
+        await failures.RunAsync(
+            "report",
+            () => WriteReportAsync(
                 runtime,
                 results,
-                CancellationToken.None).ConfigureAwait(true);
-        }
+                CancellationToken.None)).ConfigureAwait(true);
+        await failures.RunAsync(
+            "runtime-disposal",
+            () => runtime.DisposeAsync().AsTask()).ConfigureAwait(true);
+        failures.ThrowIfAny();
     }
 
     private static async Task RunTrustedSplitDownloadAsync(
@@ -262,7 +285,8 @@ public sealed partial class Aria2TlsIntegrationTests
         var server = new LoopbackTlsFileServer(
             _ => certificate,
             payload,
-            chunkDelay: TimeSpan.FromMilliseconds(10));
+            chunkDelay: TimeSpan.FromMilliseconds(10),
+            failureSink: runtime.LocalServiceFailures);
         await using var serverLifetime = server.ConfigureAwait(false);
         const string outputName = "trusted-split.bin";
         var gid = await runtime.AddDownloadAsync(
@@ -296,9 +320,13 @@ public sealed partial class Aria2TlsIntegrationTests
         List<Aria2TlsCaseResult> results,
         CancellationToken cancellationToken)
     {
-        var server = new LoopbackTlsFileServer(_ => certificate, payload);
+        var server = new LoopbackTlsFileServer(
+            _ => certificate,
+            payload,
+            failureSink: runtime.LocalServiceFailures);
         await using var serverLifetime = server.ConfigureAwait(false);
-        var proxy = new LoopbackHttpConnectProxy();
+        var proxy = new LoopbackHttpConnectProxy(
+            failureSink: runtime.LocalServiceFailures);
         await using var proxyLifetime = proxy.ConfigureAwait(false);
         const string outputName = "trusted-connect-proxy.bin";
         var url = new UriBuilder(server.Url)
@@ -344,7 +372,10 @@ public sealed partial class Aria2TlsIntegrationTests
         List<Aria2TlsCaseResult> results,
         CancellationToken cancellationToken)
     {
-        var proxy = new LoopbackHttpConnectProxy(unknownCertificate);
+        var proxy = new LoopbackHttpConnectProxy(
+            unknownCertificate,
+            expectInterceptRejection: true,
+            failureSink: runtime.LocalServiceFailures);
         await using var proxyLifetime = proxy.ConfigureAwait(false);
         const string outputName = "proxy-untrusted-interception.bin";
         var gid = await runtime.AddDownloadAsync(
@@ -390,7 +421,8 @@ public sealed partial class Aria2TlsIntegrationTests
         var server = new LoopbackTlsFileServer(
             _ => certificate,
             payload,
-            truncateFirstResponse: true);
+            truncateFirstResponse: true,
+            failureSink: runtime.LocalServiceFailures);
         await using var serverLifetime = server.ConfigureAwait(false);
         const string outputName = "trusted-resume.bin";
         var gid = await runtime.AddDownloadAsync(
@@ -420,7 +452,8 @@ public sealed partial class Aria2TlsIntegrationTests
         var server = new LoopbackTlsFileServer(
             _ => certificate,
             payload,
-            chunkDelay: TimeSpan.FromMilliseconds(100));
+            chunkDelay: TimeSpan.FromMilliseconds(100),
+            failureSink: runtime.LocalServiceFailures);
         await using var serverLifetime = server.ConfigureAwait(false);
         var gid = await runtime.AddDownloadAsync(
             server.Url,
@@ -451,7 +484,10 @@ public sealed partial class Aria2TlsIntegrationTests
         List<Aria2TlsCaseResult> results,
         CancellationToken cancellationToken)
     {
-        var server = new LoopbackTlsFileServer(_ => certificate, payload);
+        var server = new LoopbackTlsFileServer(
+            _ => certificate,
+            payload,
+            failureSink: runtime.LocalServiceFailures);
         await using var serverLifetime = server.ConfigureAwait(false);
         var outputName = $"rejected-{name}.bin";
         var gid = await runtime.AddDownloadAsync(
@@ -481,12 +517,16 @@ public sealed partial class Aria2TlsIntegrationTests
         List<Aria2TlsCaseResult> results,
         CancellationToken cancellationToken)
     {
-        var target = new LoopbackTlsFileServer(_ => unknownCertificate, payload);
+        var target = new LoopbackTlsFileServer(
+            _ => unknownCertificate,
+            payload,
+            failureSink: runtime.LocalServiceFailures);
         await using var targetLifetime = target.ConfigureAwait(false);
         var redirect = new LoopbackTlsFileServer(
             _ => trustedCertificate,
             [],
-            redirectTarget: target.Url);
+            redirectTarget: target.Url,
+            failureSink: runtime.LocalServiceFailures);
         await using var redirectLifetime = redirect.ConfigureAwait(false);
         const string outputName = "redirect-to-untrusted.bin";
         var gid = await runtime.AddDownloadAsync(
@@ -527,7 +567,8 @@ public sealed partial class Aria2TlsIntegrationTests
         var server = new LoopbackTlsFileServer(
             connection => connection == 1 ? trustedCertificate : unknownCertificate,
             payload,
-            truncateFirstResponse: true);
+            truncateFirstResponse: true,
+            failureSink: runtime.LocalServiceFailures);
         await using var serverLifetime = server.ConfigureAwait(false);
         const string outputName = "resume-to-untrusted.bin";
         var gid = await runtime.AddDownloadAsync(

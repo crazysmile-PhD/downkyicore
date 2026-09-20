@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
@@ -8,11 +9,17 @@ using System.Text;
 
 namespace DownKyi.TestInfrastructure;
 
+[SuppressMessage(
+    "Usage",
+    "CA2213:Disposable fields should be disposed",
+    Justification = "The shutdown source is disposed through the failure-preserving cleanup sink.")]
 public sealed class LoopbackHttpConnectProxy : IAsyncDisposable
 {
     private const int MaximumHeaderBytes = 16 * 1024;
     private readonly ConcurrentDictionary<int, TcpClient> _clients = new();
     private readonly ConcurrentQueue<string> _connectAuthorities = new();
+    private readonly bool _expectInterceptRejection;
+    private readonly LoopbackServiceFailureSink? _failureSink;
     private readonly X509Certificate2? _interceptCertificate;
     private readonly CancellationTokenSource _shutdown = new();
     private readonly TcpListener _listener;
@@ -22,10 +29,23 @@ public sealed class LoopbackHttpConnectProxy : IAsyncDisposable
     private int _cookieHeaderCount;
     private int _nonConnectRequestCount;
     private int _proxyAuthorizationHeaderCount;
+    private int _disposed;
 
-    public LoopbackHttpConnectProxy(X509Certificate2? interceptCertificate = null)
+    public LoopbackHttpConnectProxy(
+        X509Certificate2? interceptCertificate = null,
+        bool expectInterceptRejection = false,
+        LoopbackServiceFailureSink? failureSink = null)
     {
+        if (expectInterceptRejection && interceptCertificate == null)
+        {
+            throw new ArgumentException(
+                "An interception certificate is required when rejection is expected.",
+                nameof(interceptCertificate));
+        }
+
         _interceptCertificate = interceptCertificate;
+        _expectInterceptRejection = expectInterceptRejection;
+        _failureSink = failureSink;
         _listener = new TcpListener(IPAddress.Loopback, 0);
         _listener.Start();
         var endpoint = (IPEndPoint)_listener.LocalEndpoint;
@@ -105,10 +125,23 @@ public sealed class LoopbackHttpConnectProxy : IAsyncDisposable
                 _connectAuthorities.Enqueue(request.Target);
                 if (_interceptCertificate != null)
                 {
-                    await InterceptAsync(
-                        clientStream,
-                        _interceptCertificate,
-                        cancellationToken).ConfigureAwait(false);
+                    try
+                    {
+                        await InterceptAsync(
+                            clientStream,
+                            _interceptCertificate,
+                            cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (AuthenticationException) when (_expectInterceptRejection)
+                    {
+                    }
+                    catch (IOException) when (_expectInterceptRejection)
+                    {
+                    }
+                    catch (SocketException) when (_expectInterceptRejection)
+                    {
+                    }
+
                     return;
                 }
 
@@ -313,6 +346,44 @@ public sealed class LoopbackHttpConnectProxy : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        if (_failureSink != null)
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            {
+                return;
+            }
+
+            await _failureSink.RunAsync(
+                nameof(LoopbackHttpConnectProxy),
+                "cancel-shutdown",
+                () => _shutdown.CancelAsync()).ConfigureAwait(false);
+            _failureSink.Run(
+                nameof(LoopbackHttpConnectProxy),
+                "stop-listener",
+                _listener.Stop);
+            foreach (var client in _clients.Values)
+            {
+                _failureSink.Run(
+                    nameof(LoopbackHttpConnectProxy),
+                    "dispose-client",
+                    client.Dispose);
+            }
+
+            await _failureSink.RunAsync(
+                nameof(LoopbackHttpConnectProxy),
+                "await-server",
+                () => _serverTask).ConfigureAwait(false);
+            _failureSink.Run(
+                nameof(LoopbackHttpConnectProxy),
+                "dispose-listener",
+                _listener.Dispose);
+            _failureSink.Run(
+                nameof(LoopbackHttpConnectProxy),
+                "dispose-cancellation-source",
+                _shutdown.Dispose);
+            return;
+        }
+
         await _shutdown.CancelAsync().ConfigureAwait(false);
         _listener.Stop();
         foreach (var client in _clients.Values)
