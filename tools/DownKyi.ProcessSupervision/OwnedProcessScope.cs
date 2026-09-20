@@ -127,11 +127,18 @@ internal sealed class OwnedProcessScope : IDisposable
                 new Dictionary<string, string?>(testStartInfo.Environment));
             var serializedLaunch = JsonSerializer.Serialize(launch);
 
+            var launchWindow = CurrentStartupWindow();
+            if (launchWindow == TimeSpan.Zero)
+            {
+                throw new TimeoutException(
+                    "The process supervision startup deadline expired before launch.");
+            }
+
             // A timed-out write may still have delivered the request. From this
             // point forward, cleanup must assume that the OS scope has a target.
             lifecycleState = ScopeLifecycleState.ScopeMayContainTarget;
             await host.StandardInput.WriteLineAsync(serializedLaunch)
-                .WaitAsync(CurrentStartupWindow()).ConfigureAwait(false);
+                .WaitAsync(launchWindow).ConfigureAwait(false);
             host.StandardInput.Close();
             await control.WaitForConnectionAsync()
                 .WaitAsync(CurrentStartupWindow()).ConfigureAwait(false);
@@ -314,10 +321,11 @@ internal sealed class OwnedProcessScope : IDisposable
     {
         try
         {
-            await host.WaitForExitAsync().WaitAsync(window).ConfigureAwait(false);
+            using var hostExit = new CancellationTokenSource(window);
+            await host.WaitForExitAsync(hostExit.Token).ConfigureAwait(false);
         }
         catch (Exception exception) when (
-            exception is InvalidOperationException or TimeoutException)
+            exception is InvalidOperationException or OperationCanceledException)
         {
             failures.Add(exception);
         }
