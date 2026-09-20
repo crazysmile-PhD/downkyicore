@@ -609,6 +609,10 @@ internal sealed class OwnedProcessScope : IDisposable
                 return;
             }
 
+            // The host can join an initially empty Job after the first
+            // termination request. Reapply termination to any later members.
+            TerminateWindowsJob(handle);
+
             var remaining = deadline.WorkWindow;
             if (remaining == TimeSpan.Zero)
             {

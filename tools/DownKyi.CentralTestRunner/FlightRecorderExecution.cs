@@ -245,7 +245,9 @@ internal static class FlightRecorderExecution
             recorder.RecordInMemory("cleanup_completed", pid: scope.RootPid);
             return true;
         }
-        catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception or OperationCanceledException or TimeoutException)
+        catch (Exception exception) when (
+            exception is InvalidOperationException or System.ComponentModel.Win32Exception or
+                OperationCanceledException or TimeoutException or AggregateException)
         {
             TracePhase(recorder, scope.RootPid, "cleanup_failed");
             recorder.RecordInMemory(
