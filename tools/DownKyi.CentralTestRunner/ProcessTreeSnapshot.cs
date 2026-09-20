@@ -64,11 +64,16 @@ internal static class ProcessTreeSnapshot
     {
         if (OperatingSystem.IsWindows())
         {
-            return Task.FromResult(WindowsProcessRelationshipSnapshot.ReadParentIds());
+            return ReadWindowsParentIdsAsync(timeout, CreateWindowsSnapshotStartInfo);
         }
 
         return ReadParentIdsAsync(CreateUnixSnapshotStartInfo(), timeout);
     }
+
+    internal static Task<Dictionary<int, int>> ReadWindowsParentIdsAsync(
+        TimeSpan timeout,
+        Func<ProcessStartInfo> createSnapshotStartInfo) =>
+        ReadParentIdsAsync(createSnapshotStartInfo(), timeout);
 
     internal static async Task<Dictionary<int, int>> ReadParentIdsAsync(
         ProcessStartInfo startInfo,
@@ -140,6 +145,22 @@ internal static class ProcessTreeSnapshot
         };
         startInfo.ArgumentList.Add("-axo");
         startInfo.ArgumentList.Add("pid=,ppid=");
+        return startInfo;
+    }
+
+    private static ProcessStartInfo CreateWindowsSnapshotStartInfo()
+    {
+        var executable = Path.ChangeExtension(
+            typeof(ProcessTreeSnapshot).Assembly.Location,
+            ".exe");
+        var startInfo = new ProcessStartInfo(executable)
+        {
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true
+        };
+        startInfo.ArgumentList.Add("fixture-windows-process-snapshot");
         return startInfo;
     }
 }

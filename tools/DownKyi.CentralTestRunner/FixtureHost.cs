@@ -26,6 +26,8 @@ internal static class FixtureHost
             "fixture-tree-child" => await RunTreeChildAsync(args).ConfigureAwait(false),
             "fixture-sensitive-hold" => await RunSensitiveHoldAsync(args).ConfigureAwait(false),
             "fixture-long-line" => await RunLongLineAsync(args).ConfigureAwait(false),
+            "fixture-dual-output" => await RunDualOutputAsync().ConfigureAwait(false),
+            "fixture-windows-process-snapshot" => RunWindowsProcessSnapshot(),
             _ => null
         };
     }
@@ -202,6 +204,29 @@ internal static class FixtureHost
             await Task.Delay(Timeout.InfiniteTimeSpan).ConfigureAwait(false);
         }
         return 1;
+    }
+
+    private static int RunWindowsProcessSnapshot()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return 2;
+        }
+
+        foreach (var pair in WindowsProcessRelationshipSnapshot.ReadParentIds())
+        {
+            Console.WriteLine($"{pair.Key}|{pair.Value}");
+        }
+
+        return 0;
+    }
+
+    private static async Task<int> RunDualOutputAsync()
+    {
+        var payload = new string('x', 128 * 1024);
+        await Console.Out.WriteAsync(payload).ConfigureAwait(false);
+        await Console.Error.WriteAsync(payload).ConfigureAwait(false);
+        return 0;
     }
 
     private static ProcessStartInfo CreateFixtureChild(string runtimeConfig, string mode, params string[] arguments)

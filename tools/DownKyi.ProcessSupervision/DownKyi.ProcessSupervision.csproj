@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="DownKyi.CentralTestRunner" />
+    <InternalsVisibleTo Include="DownKyi.TestInfrastructure" />
     <InternalsVisibleTo Include="DownKyi.Architecture.Tests" />
     <InternalsVisibleTo Include="DownKyi.Windows.Tests" />
     <InternalsVisibleTo Include="DownKyi.MacOS.Tests" />
