@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
@@ -298,6 +299,101 @@ public sealed class OwnedProcessScopePlatformTests
     }
 
     [Fact]
+    public async Task WindowsAssignmentFailureReapsHostWithoutLaunchingTarget()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var marker = Path.Combine(Path.GetTempPath(), $"downkyi-scope-start-{Guid.NewGuid():N}.txt");
+        try
+        {
+            var failure = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => OwnedProcessScope.StartAsync(
+                    CreateFixtureStartInfo("fixture-hold-marker", marker),
+                    TimeSpan.FromSeconds(5),
+                    $"Local\\downkyi-missing-job-{Guid.NewGuid():N}")).ConfigureAwait(true);
+
+            Assert.Contains("did not launch", failure.Message, StringComparison.Ordinal);
+            var hostPid = Assert.IsType<int>(failure.Data[OwnedProcessScope.FailedHostPidDataKey]);
+            Assert.False(IsAlive(hostPid));
+            Assert.False(File.Exists(marker));
+        }
+        finally
+        {
+            File.Delete(marker);
+        }
+    }
+
+    [Fact]
+    public async Task ElapsedStartupDeadlinePreventsTargetLaunch()
+    {
+        var marker = Path.Combine(Path.GetTempPath(), $"downkyi-scope-expired-{Guid.NewGuid():N}.txt");
+        try
+        {
+            var failure = await Assert.ThrowsAsync<TimeoutException>(
+                () => OwnedProcessScope.StartAsync(
+                    CreateFixtureStartInfo("fixture-hold-marker", marker),
+                    new CleanupDeadline(TimeSpan.Zero))).ConfigureAwait(true);
+
+            Assert.Contains("deadline expired before launch", failure.Message, StringComparison.Ordinal);
+            Assert.False(File.Exists(marker));
+        }
+        finally
+        {
+            File.Delete(marker);
+        }
+    }
+
+    [Fact]
+    public async Task FailureBeforeHostStartsPreservesOriginalException()
+    {
+        var missingHost = Path.Combine(
+            Path.GetTempPath(),
+            $"missing-supervision-host-{Guid.NewGuid():N}.exe");
+
+        var failure = await Assert.ThrowsAsync<Win32Exception>(
+            () => OwnedProcessScope.StartAsync(
+                CreateFixtureStartInfo("fixture-hold"),
+                TimeSpan.FromSeconds(5),
+                hostJobNameOverride: null,
+                hostExecutableOverride: missingHost)).ConfigureAwait(true);
+
+        Assert.DoesNotContain(
+            "No process is associated",
+            failure.Message,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task UnixLiveScopeTerminationReapsHostBeforeCheckingGroup()
+    {
+        if (!OperatingSystem.IsLinux() && !OperatingSystem.IsMacOS())
+        {
+            return;
+        }
+
+        using var scope = await OwnedProcessScope.StartAsync(
+            CreateFixtureStartInfo("fixture-hold"),
+            TimeSpan.FromSeconds(5)).ConfigureAwait(true);
+        await scope.TerminateAsync(
+            new CleanupDeadline(TimeSpan.FromSeconds(5))).ConfigureAwait(true);
+
+        Assert.True(scope.Host.HasExited);
+        if (OperatingSystem.IsMacOS())
+        {
+            await scope.WaitForMacProcessGroupToEmptyAsync(
+                new CleanupDeadline(TimeSpan.FromMilliseconds(100))).ConfigureAwait(true);
+        }
+        else
+        {
+            await scope.WaitForLinuxProcessGroupToEmptyAsync(
+                new CleanupDeadline(TimeSpan.FromMilliseconds(100))).ConfigureAwait(true);
+        }
+    }
+
+    [Fact]
     public async Task LinuxGroupProbeDoesNotHideLiveGrandchild()
     {
         if (!OperatingSystem.IsLinux())
@@ -580,6 +676,24 @@ public sealed class OwnedProcessScopePlatformTests
         using var process = Process.GetProcessById(pid);
         Assert.True(NativeMethods.IsProcessInJob(process.Handle, job, out var inJob));
         return inJob;
+    }
+
+    private static ProcessStartInfo CreateFixtureStartInfo(params string[] arguments)
+    {
+        var runtimeConfig = Path.Combine(
+            AppContext.BaseDirectory,
+            $"{Path.GetFileNameWithoutExtension(typeof(OwnedProcessScopePlatformTests).Assembly.Location)}.runtimeconfig.json");
+        var startInfo = new ProcessStartInfo("dotnet") { UseShellExecute = false };
+        startInfo.ArgumentList.Add("exec");
+        startInfo.ArgumentList.Add("--runtimeconfig");
+        startInfo.ArgumentList.Add(runtimeConfig);
+        startInfo.ArgumentList.Add(typeof(FlightRecorderExecution).Assembly.Location);
+        foreach (var argument in arguments)
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        return startInfo;
     }
 
     private static class NativeMethods
