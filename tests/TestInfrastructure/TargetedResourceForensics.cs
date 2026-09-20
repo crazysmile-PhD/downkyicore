@@ -49,12 +49,18 @@ public sealed class TargetedResourceForensics : IDisposable
         string directory,
         string testIdentity,
         int testhostProcessId)
+        : this(
+            directory,
+            WindowsEtwResourceFlightRecorder.Start(directory, testIdentity, testhostProcessId))
+    {
+    }
+
+    private TargetedResourceForensics(
+        string directory,
+        WindowsEtwResourceFlightRecorder flightRecorder)
     {
         this.directory = Path.GetFullPath(directory);
-        flightRecorder = WindowsEtwResourceFlightRecorder.Start(
-            this.directory,
-            testIdentity,
-            testhostProcessId);
+        this.flightRecorder = flightRecorder;
         worker = new Thread(Run)
         {
             IsBackground = true,
@@ -75,10 +81,48 @@ public sealed class TargetedResourceForensics : IDisposable
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(directory);
         ArgumentException.ThrowIfNullOrWhiteSpace(testIdentity);
-        var probe = new TargetedResourceForensics(
+        return WaitForFirstSample(new TargetedResourceForensics(
             directory,
             testIdentity,
+            testhostProcessId));
+    }
+
+    internal static async Task<TargetedResourceForensics> StartAfterRecorderAsync(
+        string directory,
+        string testIdentity,
+        int testhostProcessId,
+        Func<Task> initializeTargetAsync)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(directory);
+        ArgumentException.ThrowIfNullOrWhiteSpace(testIdentity);
+        ArgumentNullException.ThrowIfNull(initializeTargetAsync);
+        var recorder = WindowsEtwResourceFlightRecorder.Start(
+            Path.GetFullPath(directory),
+            testIdentity,
             testhostProcessId);
+        TargetedResourceForensics? probe = null;
+        try
+        {
+            await initializeTargetAsync().ConfigureAwait(false);
+            probe = new TargetedResourceForensics(
+                directory,
+                recorder);
+            return WaitForFirstSample(probe);
+        }
+        catch
+        {
+            if (probe is null)
+            {
+                recorder.Dispose();
+            }
+
+            throw;
+        }
+    }
+
+    private static TargetedResourceForensics WaitForFirstSample(
+        TargetedResourceForensics probe)
+    {
         if (!probe.firstSample.Wait(TimeSpan.FromSeconds(2)))
         {
             probe.Dispose();
