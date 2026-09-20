@@ -133,15 +133,11 @@ internal static class Aria2TlsProcessCleanup
                 "The aria2 stdout/stderr drain exceeded the cleanup deadline.",
                 exception);
             await CaptureCleanupFailureAsync(
-                () => operations.CancelOutputAsync()
-                    .WaitAsync(deadline.Remaining, deadline.Token),
+                operations.CancelOutputAsync,
                 "The aria2 output cancellation did not complete before the cleanup deadline.",
                 cleanupFailures).ConfigureAwait(false);
             await CaptureCleanupFailureAsync(
-                () => ObserveCanceledDrainAsync(
-                    drain,
-                    deadline.Remaining,
-                    deadline.Token),
+                () => ObserveCanceledDrainAsync(drain),
                 "The aria2 stdout/stderr readers did not stop before the cleanup deadline.",
                 cleanupFailures).ConfigureAwait(false);
         }
@@ -191,14 +187,11 @@ internal static class Aria2TlsProcessCleanup
         }
     }
 
-    private static async Task ObserveCanceledDrainAsync(
-        Task drain,
-        TimeSpan timeout,
-        CancellationToken cancellationToken)
+    private static async Task ObserveCanceledDrainAsync(Task drain)
     {
         try
         {
-            await drain.WaitAsync(timeout, cancellationToken).ConfigureAwait(false);
+            await drain.ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (drain.IsCanceled)
         {

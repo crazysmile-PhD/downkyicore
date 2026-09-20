@@ -101,4 +101,31 @@ public sealed class Aria2TlsProcessCleanupTests
         Assert.True(outputCanceled);
         Assert.True(output.Task.IsCompletedSuccessfully);
     }
+
+    [Fact]
+    public async Task ExpiredDeadlineDoesNotReleaseOwnershipBeforeCanceledDrainIsTerminal()
+    {
+        var output = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var clock = Stopwatch.StartNew();
+
+        var exception = await Assert.ThrowsAsync<TimeoutException>(
+            () => Aria2TlsProcessCleanup.RunAsync(
+                new Aria2TlsProcessCleanupOperations(
+                    () => true,
+                    RequestShutdownAsync: null,
+                    _ => Task.CompletedTask,
+                    () => throw new InvalidOperationException("An exited process must not be killed."),
+                    output.Task,
+                    Task.CompletedTask,
+                    async () =>
+                    {
+                        await Task.Delay(TimeSpan.FromMilliseconds(150)).ConfigureAwait(false);
+                        output.TrySetResult();
+                    }),
+                TimeSpan.FromMilliseconds(100))).ConfigureAwait(true);
+
+        Assert.Contains("stdout/stderr drain", exception.Message, StringComparison.Ordinal);
+        Assert.True(output.Task.IsCompletedSuccessfully);
+        Assert.True(clock.Elapsed >= TimeSpan.FromMilliseconds(150));
+    }
 }
