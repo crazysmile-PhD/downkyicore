@@ -90,6 +90,33 @@ jobs:
             echo "::error::The supplied run is not a successful manual Build workflow run."
             exit 1
           fi
+          jobs_json="$(gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${{ inputs.validated_build_run_id }}/jobs?filter=latest&per_page=100")"
+          jobs="$(jq '[.[].jobs[]]' <<<"$jobs_json")"
+          require_successful_jobs() {
+            local prefix="$1"
+            local expected_count="$2"
+            local matching
+            matching="$(jq --arg prefix "$prefix" \
+              '[.[] | select(.name | startswith($prefix))]' <<<"$jobs")"
+            local actual_count
+            actual_count="$(jq 'length' <<<"$matching")"
+            if [ "$actual_count" -ne "$expected_count" ]; then
+              echo "::error::Validated Build run has $actual_count '$prefix' jobs; expected $expected_count."
+              exit 1
+            fi
+            if jq -e '.[] | select(.conclusion != "success")' <<<"$matching" >/dev/null; then
+              echo "::error::Validated Build run has a non-successful '$prefix' job."
+              jq -r '.[] | "::error::\(.name): \(.conclusion // .status)"' <<<"$matching"
+              exit 1
+            fi
+          }
+          require_successful_jobs 'Release gate (' 3
+          require_successful_jobs 'build-windows (' 2
+          require_successful_jobs 'build-linux-publish (' 2
+          require_successful_jobs 'build-linux (' 5
+          require_successful_jobs 'validate-linux-arm64 (' 2
+          require_successful_jobs 'build-macos (' 2
           if ! git -C tooling merge-base --is-ancestor "$run_head" "$GITHUB_SHA"; then
             echo "::error::Validated Build head $run_head is not an ancestor of recovery tooling $GITHUB_SHA."
             exit 1

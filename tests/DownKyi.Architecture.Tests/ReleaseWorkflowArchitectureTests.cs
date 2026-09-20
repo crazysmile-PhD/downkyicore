@@ -688,6 +688,21 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.Contains("script/test-project-runner.ps1", criticalPaths, StringComparison.Ordinal);
         Assert.Contains("docs/testing/test-runner-policy.json", criticalPaths, StringComparison.Ordinal);
         Assert.Contains("tools/DownKyi.CentralTestRunner", criticalPaths, StringComparison.Ordinal);
+        Assert.Contains("jobs?filter=latest&per_page=100", workflow, StringComparison.Ordinal);
+        Assert.Contains("gh api --paginate --slurp", workflow, StringComparison.Ordinal);
+        foreach (var requiredJobFamily in new[]
+                 {
+                     "require_successful_jobs 'Release gate (' 3",
+                     "require_successful_jobs 'build-windows (' 2",
+                     "require_successful_jobs 'build-linux-publish (' 2",
+                     "require_successful_jobs 'build-linux (' 5",
+                     "require_successful_jobs 'validate-linux-arm64 (' 2",
+                     "require_successful_jobs 'build-macos (' 2"
+                 })
+        {
+            Assert.Contains(requiredJobFamily, workflow, StringComparison.Ordinal);
+        }
+
         Assert.Contains("Resolve macOS release trust mode", workflow, StringComparison.Ordinal);
         Assert.Contains("macos_trust_mode: ${{ steps.macos_trust.outputs.macos_trust_mode }}", workflow, StringComparison.Ordinal);
         Assert.Contains("HAS_MACOS_SIGNING: ${{ needs.authority.outputs.has_macos_signing }}", workflow, StringComparison.Ordinal);
