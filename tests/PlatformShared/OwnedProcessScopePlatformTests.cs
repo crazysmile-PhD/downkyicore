@@ -1,5 +1,7 @@
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using DownKyi.CentralTestRunner;
@@ -75,73 +77,145 @@ public sealed class OwnedProcessScopePlatformTests
 
     [Theory]
     [MemberData(nameof(OwnershipStressIterations))]
+    [SuppressMessage(
+        "Design",
+        "CA1031:Do not catch general exception types",
+        Justification = "The test must retain the run failure while fallback cleanup continues.")]
     public async Task SnapshotFailureStillTerminatesRootChildAndGrandchild(int iteration)
     {
         var directory = Path.Combine(Path.GetTempPath(), $"downkyi-scope-{Guid.NewGuid():N}");
         Directory.CreateDirectory(directory);
         var childMarker = Path.Combine(directory, "child.pid");
         var grandchildMarker = Path.Combine(directory, "grandchild.pid");
+        int? rootPid = null;
         int? childPid = null;
         int? grandchildPid = null;
-        try
-        {
-            var runtimeConfig = Path.Combine(AppContext.BaseDirectory,
-                $"{Path.GetFileNameWithoutExtension(typeof(OwnedProcessScopePlatformTests).Assembly.Location)}.runtimeconfig.json");
-            var startInfo = new ProcessStartInfo("dotnet")
+        using var cancellation = new CancellationTokenSource();
+        Task<ProcessExecutionResult>? run = null;
+        ProcessExecutionResult? result = null;
+        await RunWithFailurePreservingCleanupAsync(
+            async () =>
             {
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true
-            };
-            startInfo.ArgumentList.Add("exec");
-            startInfo.ArgumentList.Add("--runtimeconfig");
-            startInfo.ArgumentList.Add(runtimeConfig);
-            startInfo.ArgumentList.Add(typeof(FlightRecorderExecution).Assembly.Location);
-            startInfo.ArgumentList.Add("fixture-tree-root");
-            startInfo.ArgumentList.Add(runtimeConfig);
-            startInfo.ArgumentList.Add(directory);
+                var runtimeConfig = Path.Combine(AppContext.BaseDirectory,
+                    $"{Path.GetFileNameWithoutExtension(typeof(OwnedProcessScopePlatformTests).Assembly.Location)}.runtimeconfig.json");
+                var startInfo = new ProcessStartInfo("dotnet")
+                {
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true
+                };
+                startInfo.ArgumentList.Add("exec");
+                startInfo.ArgumentList.Add("--runtimeconfig");
+                startInfo.ArgumentList.Add(runtimeConfig);
+                startInfo.ArgumentList.Add(typeof(FlightRecorderExecution).Assembly.Location);
+                startInfo.ArgumentList.Add("fixture-tree-root");
+                startInfo.ArgumentList.Add(runtimeConfig);
+                startInfo.ArgumentList.Add(directory);
 
-            using var cancellation = new CancellationTokenSource();
-            var run = FlightRecorderExecution.RunAsync(
-                new ProcessExecutionRequest(
-                    $"scope.snapshot-failure.{iteration}", "root-child-grandchild", startInfo,
-                    TimeSpan.FromSeconds(20), TimeSpan.FromSeconds(5), directory,
-                    (_, _) => Task.FromException<FinalProcessSnapshot>(new IOException("snapshot unavailable"))),
-                cancellation.Token);
+                run = FlightRecorderExecution.RunAsync(
+                    new ProcessExecutionRequest(
+                        $"scope.snapshot-failure.{iteration}", "root-child-grandchild", startInfo,
+                        TimeSpan.FromSeconds(20), TimeSpan.FromSeconds(5), directory,
+                        (_, _) => Task.FromException<FinalProcessSnapshot>(new IOException("snapshot unavailable"))),
+                    cancellation.Token);
 
-            childPid = await ReadMarkerAsync(childMarker).ConfigureAwait(true);
-            grandchildPid = await ReadMarkerAsync(grandchildMarker).ConfigureAwait(true);
-            if (!OperatingSystem.IsWindows())
+                rootPid = await ReadMarkerAsync(
+                    Path.Combine(directory, "root.pid")).ConfigureAwait(true);
+                childPid = await ReadMarkerAsync(childMarker).ConfigureAwait(true);
+                grandchildPid = await ReadMarkerAsync(grandchildMarker).ConfigureAwait(true);
+                if (!OperatingSystem.IsWindows())
+                {
+                    var rootGroup = GetProcessGroup(rootPid.Value);
+                    Assert.True(rootGroup > 0);
+                    Assert.Equal(rootGroup, GetProcessGroup(childPid.Value));
+                    Assert.Equal(rootGroup, GetProcessGroup(grandchildPid.Value));
+                    Assert.NotEqual(GetProcessGroup(0), rootGroup);
+                }
+
+                await cancellation.CancelAsync().ConfigureAwait(true);
+                result = await run.WaitAsync(TimeSpan.FromSeconds(8),
+                    TestContext.Current.CancellationToken).ConfigureAwait(true);
+                Assert.Equal(130, result.ExitCode);
+                AssertStopped(result.RootPid);
+                AssertStopped(childPid.Value);
+                AssertStopped(grandchildPid.Value);
+                using var report = JsonDocument.Parse(await File.ReadAllTextAsync(
+                    result.EvidencePath, TestContext.Current.CancellationToken).ConfigureAwait(true));
+                Assert.Contains(report.RootElement.GetProperty("Events").EnumerateArray(),
+                    item => item.GetProperty("Event").GetString() == "final_snapshot_failed");
+            },
+            async () =>
             {
-                var rootGroup = GetProcessGroup(await ReadMarkerAsync(Path.Combine(directory, "root.pid")));
-                Assert.True(rootGroup > 0);
-                Assert.Equal(rootGroup, GetProcessGroup(childPid.Value));
-                Assert.Equal(rootGroup, GetProcessGroup(grandchildPid.Value));
-                Assert.NotEqual(GetProcessGroup(0), rootGroup);
-            }
-            await cancellation.CancelAsync().ConfigureAwait(true);
-            var result = await run.WaitAsync(TimeSpan.FromSeconds(8),
-                TestContext.Current.CancellationToken).ConfigureAwait(true);
-            Assert.Equal(130, result.ExitCode);
-            AssertStopped(result.RootPid);
-            AssertStopped(childPid.Value);
-            AssertStopped(grandchildPid.Value);
-            using var report = JsonDocument.Parse(await File.ReadAllTextAsync(
-                result.EvidencePath, TestContext.Current.CancellationToken).ConfigureAwait(true));
-            Assert.Contains(report.RootElement.GetProperty("Events").EnumerateArray(),
-                item => item.GetProperty("Event").GetString() == "final_snapshot_failed");
-        }
-        finally
-        {
-            StopIfAlive(childPid);
-            StopIfAlive(grandchildPid);
-            if (OperatingSystem.IsWindows())
-            {
-                await WindowsDirectoryResourceRundown.WaitForDeleteAccessAsync(
-                    directory, TimeSpan.FromSeconds(3)).ConfigureAwait(true);
-            }
-            Directory.Delete(directory, recursive: true);
-        }
+                Exception? runCleanupFailure = null;
+                try
+                {
+                    if (run is not null && result is null)
+                    {
+                        await cancellation.CancelAsync().ConfigureAwait(true);
+                        result = await run.WaitAsync(TimeSpan.FromSeconds(8)).ConfigureAwait(true);
+                        Assert.Equal(130, result.ExitCode);
+                    }
+                }
+                catch (Exception exception)
+                {
+                    runCleanupFailure = exception;
+                }
+                finally
+                {
+                    StopIfAlive(rootPid);
+                    StopIfAlive(childPid);
+                    StopIfAlive(grandchildPid);
+                }
+
+                try
+                {
+                    if (OperatingSystem.IsWindows())
+                    {
+                        await WindowsDirectoryResourceRundown.WaitForDeleteAccessAsync(
+                            directory, TimeSpan.FromSeconds(3)).ConfigureAwait(true);
+                    }
+
+                    Directory.Delete(directory, recursive: true);
+                }
+                catch (Exception resourceCleanupFailure) when (runCleanupFailure is not null)
+                {
+                    throw new AggregateException(
+                        "The fixture run and resource cleanup both failed.",
+                        runCleanupFailure,
+                        resourceCleanupFailure);
+                }
+
+                if (runCleanupFailure is not null)
+                {
+                    ExceptionDispatchInfo.Capture(runCleanupFailure).Throw();
+                }
+            }).ConfigureAwait(true);
+    }
+
+    [Fact]
+    public async Task FixtureCleanupAwaitsStartedRunBeforeDeletingItsResources()
+    {
+        var primaryFailure = new InvalidOperationException("intentional marker failure");
+        using var cancellation = new CancellationTokenSource();
+        var runCompletion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var registration = cancellation.Token.Register(runCompletion.SetResult);
+        var resourcesDeleted = false;
+
+        var observedFailure = await Record.ExceptionAsync(
+            () => RunWithFailurePreservingCleanupAsync(
+                () => Task.FromException(primaryFailure),
+                async () =>
+                {
+                    await cancellation.CancelAsync().ConfigureAwait(true);
+                    await runCompletion.Task.WaitAsync(
+                        TimeSpan.FromSeconds(1),
+                        TestContext.Current.CancellationToken).ConfigureAwait(true);
+                    Assert.True(runCompletion.Task.IsCompletedSuccessfully);
+                    resourcesDeleted = true;
+                })).ConfigureAwait(true);
+
+        Assert.Same(primaryFailure, observedFailure);
+        Assert.True(resourcesDeleted);
     }
 
     [Fact]
@@ -296,6 +370,47 @@ public sealed class OwnedProcessScopePlatformTests
             StopIfAlive(childPid);
             StopIfAlive(grandchildPid);
             Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [SuppressMessage(
+        "Design",
+        "CA1031:Do not catch general exception types",
+        Justification = "The test boundary must preserve any primary failure while fixture cleanup completes.")]
+    private static async Task RunWithFailurePreservingCleanupAsync(
+        Func<Task> operation,
+        Func<Task> cleanup)
+    {
+        Exception? primaryFailure = null;
+        try
+        {
+            await operation().ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            primaryFailure = exception;
+        }
+
+        try
+        {
+            await cleanup().ConfigureAwait(false);
+        }
+        catch (Exception cleanupFailure)
+        {
+            if (primaryFailure is not null)
+            {
+                throw new AggregateException(
+                    "The fixture operation and its cleanup both failed.",
+                    primaryFailure,
+                    cleanupFailure);
+            }
+
+            throw;
+        }
+
+        if (primaryFailure is not null)
+        {
+            ExceptionDispatchInfo.Capture(primaryFailure).Throw();
         }
     }
 
