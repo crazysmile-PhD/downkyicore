@@ -46,13 +46,21 @@ internal sealed class DownloadListState
     public void AddDownloaded(DownloadedItem item)
     {
         ArgumentNullException.ThrowIfNull(item);
+        if (_downloaded.Any(candidate => candidate.HistoryRecord.Id == item.HistoryRecord.Id))
+        {
+            return;
+        }
+
         _downloaded.Add(item);
     }
 
     public void AddDownloadedRange(IEnumerable<DownloadedItem> items)
     {
         ArgumentNullException.ThrowIfNull(items);
-        _downloaded.AddRange(items);
+        var loadedIds = _downloaded
+            .Select(item => item.HistoryRecord.Id)
+            .ToHashSet();
+        _downloaded.AddRange(items.Where(item => loadedIds.Add(item.HistoryRecord.Id)));
     }
 
     public bool RemoveDownloaded(DownloadedItem item)

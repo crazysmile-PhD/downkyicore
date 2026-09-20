@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using DownKyi.Application.Desktop;
 using DownKyi.Application.Downloads;
+using DownKyi.Application.Lifetime;
 using DownKyi.Core.BiliApi.VideoStream.Models;
 using DownKyi.Domain.Downloads;
 using DownKyi.Domain.Results;
@@ -508,8 +509,10 @@ public sealed class DownloadManagerCoordinatorTests
             "history-second", "media", "history-second.mp4");
 
         await context.Coordinator.LoadDownloadedHistoryAsync();
+        context.State.AddDownloaded(first);
 
         Assert.True(context.State.IsDownloadedHistoryLoaded);
+        Assert.Equal(2, context.State.Downloaded.Count);
         Assert.Equal(
             ["history-first", "history-second"],
             context.State.Downloaded
@@ -523,6 +526,20 @@ public sealed class DownloadManagerCoordinatorTests
         Assert.DoesNotContain(
             context.State.Downloaded,
             item => item.HistoryRecord.Id == new DownloadTaskId("history-after-load"));
+    }
+
+    [Fact]
+    public async Task CompleteHistoryLoadStopsBeforeUiMutationDuringShutdown()
+    {
+        using var context = new CoordinatorContext();
+        await context.CreateCompletedItemAsync(
+            "history-during-shutdown", "media", "history-during-shutdown.mp4");
+        await context.ApplicationCancellation.RequestShutdownAsync();
+
+        await context.Coordinator.LoadDownloadedHistoryAsync();
+
+        Assert.False(context.State.IsDownloadedHistoryLoaded);
+        Assert.Empty(context.State.Downloaded);
     }
 
     private sealed class CoordinatorContext : IDisposable
@@ -558,6 +575,7 @@ public sealed class DownloadManagerCoordinatorTests
             StateWriter = new DownloadTaskStateWriter(TaskService);
             Queue = new RecordingDownloadTaskQueue();
             State = new DownloadListState();
+            ApplicationCancellation = new ApplicationCancellation();
             Launcher = new RecordingPlatformLauncher();
             Staging = useStaging
                 ? new DownloadTaskStaging(NullLogger<DownloadTaskStaging>.Instance)
@@ -566,6 +584,7 @@ public sealed class DownloadManagerCoordinatorTests
                 new AriaRuntimeClientRegistry(),
                 NullLogger<DownloadTaskFileService>.Instance, Staging, StateWriter);
             Coordinator = new DownloadManagerCoordinator(
+                ApplicationCancellation,
                 Storage,
                 StateWriter,
                 taskQueue ?? Queue,
@@ -576,6 +595,8 @@ public sealed class DownloadManagerCoordinatorTests
         }
 
         public SqliteDownloadTaskStore Store { get; private set; }
+
+        public ApplicationCancellation ApplicationCancellation { get; }
 
         public DownloadTaskProjectionStore Storage { get; private set; }
 
@@ -621,7 +642,8 @@ public sealed class DownloadManagerCoordinatorTests
                 clock);
             StateWriter = new DownloadTaskStateWriter(TaskService);
             Coordinator = new DownloadManagerCoordinator(
-                Storage, StateWriter, Queue, new ReadyDownloadRuntimeAvailability(),
+                ApplicationCancellation, Storage, StateWriter, Queue,
+                new ReadyDownloadRuntimeAvailability(),
                 new DownloadTaskFileService(
                     new AriaRuntimeClientRegistry(), NullLogger<DownloadTaskFileService>.Instance),
                 State, Launcher);
@@ -682,6 +704,7 @@ public sealed class DownloadManagerCoordinatorTests
         public void Dispose()
         {
             Coordinator.Dispose();
+            ApplicationCancellation.Dispose();
             Storage.Dispose();
             TaskService.Dispose();
             Store.Dispose();

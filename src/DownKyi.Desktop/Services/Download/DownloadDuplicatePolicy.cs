@@ -33,12 +33,64 @@ internal sealed class DownloadDuplicatePolicy
         VideoPage page,
         VideoQuality videoQuality,
         RepeatDownloadStrategy strategy,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IList<DownloadedItem>? completedCandidates = null)
     {
         ArgumentNullException.ThrowIfNull(page);
         ArgumentNullException.ThrowIfNull(videoQuality);
         cancellationToken.ThrowIfCancellationRequested();
 
+        if (ShouldSkipActiveDownload(page, videoQuality))
+        {
+            return true;
+        }
+
+        completedCandidates ??= await LoadCompletedCandidatesAsync(strategy, cancellationToken)
+            .ConfigureAwait(true);
+        foreach (var item in completedCandidates)
+        {
+            if (!IsSameVideo(item, page, videoQuality))
+            {
+                continue;
+            }
+
+            var shouldSkip = strategy switch
+            {
+                RepeatDownloadStrategy.Ask => await ResolveAskAsync(item, cancellationToken)
+                    .ConfigureAwait(true),
+                RepeatDownloadStrategy.ReDownload => false,
+                RepeatDownloadStrategy.JumpOver => true,
+                _ => true
+            };
+            if (!shouldSkip)
+            {
+                completedCandidates.Remove(item);
+            }
+
+            return shouldSkip;
+        }
+
+        return false;
+    }
+
+    public async Task<List<DownloadedItem>> LoadCompletedCandidatesAsync(
+        RepeatDownloadStrategy strategy,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (strategy == RepeatDownloadStrategy.ReDownload)
+        {
+            return [];
+        }
+
+        var downloadedItems = await _projectionStore
+            .GetDownloadedAsync(cancellationToken)
+            .ConfigureAwait(true);
+        return new List<DownloadedItem>(downloadedItems);
+    }
+
+    private bool ShouldSkipActiveDownload(VideoPage page, VideoQuality videoQuality)
+    {
         foreach (var item in _downloadLists.Downloading)
         {
             if (!IsSameVideo(item, page, videoQuality))
@@ -49,26 +101,6 @@ internal sealed class DownloadDuplicatePolicy
             _notificationService.Show(
                 $"{page.Name}{DictionaryResource.GetString("TipAlreadyToAddDownloading")}");
             return true;
-        }
-
-        var downloadedItems = await _projectionStore
-            .GetDownloadedAsync(cancellationToken)
-            .ConfigureAwait(true);
-        foreach (var item in downloadedItems)
-        {
-            if (!IsSameVideo(item, page, videoQuality))
-            {
-                continue;
-            }
-
-            return strategy switch
-            {
-                RepeatDownloadStrategy.Ask => await ResolveAskAsync(item, cancellationToken)
-                    .ConfigureAwait(true),
-                RepeatDownloadStrategy.ReDownload => false,
-                RepeatDownloadStrategy.JumpOver => true,
-                _ => true
-            };
         }
 
         return false;

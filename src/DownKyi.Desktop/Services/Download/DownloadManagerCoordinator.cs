@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Desktop;
+using DownKyi.Application.Lifetime;
 using DownKyi.Domain.Downloads;
 using DownKyi.Models;
 using DownKyi.ViewModels;
@@ -53,8 +54,9 @@ internal interface IDownloadManagerCoordinator
         CancellationToken cancellationToken = default);
 }
 
-internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator, IDisposable
+internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator, IDisposable, IAsyncDisposable
 {
+    private readonly ApplicationCancellation _applicationCancellation;
     private readonly DownloadTaskProjectionStore _storage;
     private readonly DownloadTaskStateWriter _stateWriter;
     private readonly IDownloadTaskQueue _taskQueue;
@@ -72,6 +74,7 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator, 
     private int _disposed;
 
     public DownloadManagerCoordinator(
+        ApplicationCancellation applicationCancellation,
         DownloadTaskProjectionStore storage,
         DownloadTaskStateWriter stateWriter,
         IDownloadTaskQueue taskQueue,
@@ -80,6 +83,8 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator, 
         DownloadListState downloadLists,
         IPlatformLauncher platformLauncher)
     {
+        _applicationCancellation = applicationCancellation
+            ?? throw new ArgumentNullException(nameof(applicationCancellation));
         _storage = storage ?? throw new ArgumentNullException(nameof(storage));
         _stateWriter = stateWriter ?? throw new ArgumentNullException(nameof(stateWriter));
         _taskQueue = taskQueue ?? throw new ArgumentNullException(nameof(taskQueue));
@@ -296,8 +301,19 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator, 
 
     private async Task LoadDownloadedHistoryCoreAsync()
     {
-        var items = await _storage.GetDownloadedAsync().ConfigureAwait(true);
-        _downloadLists.LoadDownloadedHistory(items);
+        var cancellationToken = _applicationCancellation.ShutdownToken;
+        try
+        {
+            var items = await _storage
+                .GetDownloadedAsync(cancellationToken)
+                .ConfigureAwait(true);
+            cancellationToken.ThrowIfCancellationRequested();
+            _downloadLists.LoadDownloadedHistory(items);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
     }
 
     private void ResetDownloadedHistoryLoadAfterFailure(Task completed)
@@ -452,6 +468,23 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator, 
         {
             _pauseResumeItemGate.Dispose();
         }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Task? historyLoadTask;
+        lock (_downloadedHistoryLoadGate)
+        {
+            historyLoadTask = _downloadedHistoryLoadTask;
+        }
+
+        if (historyLoadTask != null)
+        {
+            await historyLoadTask.ConfigureAwait(false);
+        }
+
+        Dispose();
+        GC.SuppressFinalize(this);
     }
 
     private (int Version, Task Superseded) BeginPauseResumeBatch()

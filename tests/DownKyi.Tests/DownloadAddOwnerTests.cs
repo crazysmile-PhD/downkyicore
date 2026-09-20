@@ -67,7 +67,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
         Assert.False(shouldSkip);
         Assert.Empty(context.ListState.Downloaded);
         Assert.NotNull(context.Store.History);
-        Assert.Equal(1, context.Store.HistoryPageRequestCount);
+        Assert.Equal(0, context.Store.HistoryPageRequestCount);
         Assert.Equal(0, context.Store.UpdateCount);
         Assert.Equal(0, context.Dialogs.ShowCount);
     }
