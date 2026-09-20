@@ -426,7 +426,8 @@ jobs:
           PUBLISH_OUTPUT_DIRECTORY: ${{ github.workspace }}/subject/DownKyi/bin/Release/net10.0/osx-${{ matrix.cpu }}/publish/.
         run: |
           chmod +x package.sh prepare-app-layout.sh codesign-common.sh
-          ./package.sh ${{ matrix.cpu }}
+          release_version="${EXPECTED_RELEASE_VERSION#v}"
+          ./package.sh ${{ matrix.cpu }} "$release_version"
       - name: Validate packaged runtime
         shell: pwsh
         run: >
@@ -440,7 +441,7 @@ jobs:
         env:
           MACOS_ADHOC_SIGNING: ${{ env.HAS_MACOS_SIGNING != 'true' }}
         run: |
-          chmod +x sign.sh verify-app.sh verify-app-launch.sh sign-dmg.sh verify-dmg.sh verify-dmg-contents.sh
+          chmod +x sign.sh verify-app.sh verify-app-launch.sh verify-runtime-architecture.sh sign-dmg.sh verify-dmg.sh verify-dmg-contents.sh
           ./sign.sh
       - name: Strictly verify final app
         working-directory: tooling/script/macos
@@ -479,7 +480,12 @@ jobs:
         working-directory: tooling/script/macos
         env:
           MACOS_VERIFY_GATEKEEPER: ${{ env.HAS_MACOS_SIGNING == 'true' }}
-        run: ./verify-dmg-contents.sh DownKyi-1.1.2-osx-${{ matrix.cpu }}.dmg
+        run: |
+          release_version="${EXPECTED_RELEASE_VERSION#v}"
+          ./verify-dmg-contents.sh \
+            DownKyi-1.1.2-osx-${{ matrix.cpu }}.dmg \
+            "$release_version" \
+            osx-${{ matrix.cpu }}
       - name: Hash DMG and revalidate subject
         shell: pwsh
         run: |

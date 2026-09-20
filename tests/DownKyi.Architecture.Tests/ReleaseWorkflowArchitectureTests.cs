@@ -731,6 +731,30 @@ public sealed class ReleaseWorkflowArchitectureTests
         AssertStepCondition(macSteps, "Sign, notarize, and verify DMG", "${{ env.HAS_MACOS_SIGNING == 'true' }}");
         AssertStepHasNoCondition(macSteps, "Strictly verify final app");
         AssertStepHasNoCondition(macSteps, "Remount DMG, strictly verify, and launch app");
+        var signAppStep = FindWorkflowStep(macSteps, "Sign app");
+        Assert.Contains(
+            signAppStep,
+            line => line.TrimStart().StartsWith("chmod +x ", StringComparison.Ordinal) &&
+                    line.Contains("verify-runtime-architecture.sh", StringComparison.Ordinal));
+        var packageStep = FindWorkflowStep(macSteps, "Package app with recovery tooling");
+        Assert.Contains(
+            packageStep,
+            line => line.Trim() == "release_version=\"${EXPECTED_RELEASE_VERSION#v}\"");
+        Assert.Contains(
+            packageStep,
+            line => line.Trim() == "./package.sh ${{ matrix.cpu }} \"$release_version\"");
+        var verifyDmgStep = FindWorkflowStep(
+            macSteps,
+            "Remount DMG, strictly verify, and launch app");
+        Assert.Contains(
+            verifyDmgStep,
+            line => line.Trim() == "DownKyi-1.1.2-osx-${{ matrix.cpu }}.dmg \\");
+        Assert.Contains(
+            verifyDmgStep,
+            line => line.Trim() == "\"$release_version\" \\");
+        Assert.Contains(
+            verifyDmgStep,
+            line => line.Trim() == "osx-${{ matrix.cpu }}");
         Assert.Contains("tag: v1.1.2", workflow, StringComparison.Ordinal);
         Assert.Contains("commit: 16c690d8719f86eb6eecb56c24efabc1afc41d55", workflow, StringComparison.Ordinal);
         Assert.Contains("prerelease: false", workflow, StringComparison.Ordinal);
