@@ -5,6 +5,7 @@ using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using DownKyi.CentralTestRunner;
+using DownKyi.TestInfrastructure;
 using Microsoft.Win32.SafeHandles;
 
 namespace DownKyi.PlatformShared.Tests;
@@ -93,7 +94,7 @@ public sealed class OwnedProcessScopePlatformTests
         using var cancellation = new CancellationTokenSource();
         Task<ProcessExecutionResult>? run = null;
         ProcessExecutionResult? result = null;
-        await RunWithFailurePreservingCleanupAsync(
+        await FailurePreservingTestCleanup.RunAsync(
             async () =>
             {
                 var runtimeConfig = Path.Combine(AppContext.BaseDirectory,
@@ -147,45 +148,27 @@ public sealed class OwnedProcessScopePlatformTests
             async () =>
             {
                 Exception? runCleanupFailure = null;
-                try
-                {
-                    if (run is not null && result is null)
-                    {
-                        await cancellation.CancelAsync().ConfigureAwait(true);
-                        result = await run.WaitAsync(TimeSpan.FromSeconds(8)).ConfigureAwait(true);
-                        Assert.Equal(130, result.ExitCode);
-                    }
-                }
-                catch (Exception exception)
-                {
-                    runCleanupFailure = exception;
-                }
-                finally
-                {
-                    StopIfAlive(rootPid);
-                    StopIfAlive(childPid);
-                    StopIfAlive(grandchildPid);
-                }
-
                 if (run is not null && result is null)
                 {
                     try
                     {
+                        await FailurePreservingTestCleanup.CancelStopAndJoinAsync(
+                            run,
+                            async () => await cancellation.CancelAsync().ConfigureAwait(false),
+                            TimeSpan.FromSeconds(8),
+                            () => StopIfAlive(rootPid),
+                            () => StopIfAlive(childPid),
+                            () => StopIfAlive(grandchildPid)).ConfigureAwait(true);
                         result = await run.ConfigureAwait(true);
                         Assert.Equal(130, result.ExitCode);
                     }
-                    catch (Exception terminalFailure)
+                    catch (Exception exception)
                     {
-                        if (runCleanupFailure is null)
+                        runCleanupFailure = exception;
+                        if (run.IsCompletedSuccessfully)
                         {
-                            runCleanupFailure = terminalFailure;
-                        }
-                        else if (!ReferenceEquals(runCleanupFailure, terminalFailure))
-                        {
-                            runCleanupFailure = new AggregateException(
-                                "The fixture run exceeded its cleanup wait and then failed while joining.",
-                                runCleanupFailure,
-                                terminalFailure);
+                            result = await run.ConfigureAwait(true);
+                            Assert.Equal(130, result.ExitCode);
                         }
                     }
                 }
@@ -216,29 +199,60 @@ public sealed class OwnedProcessScopePlatformTests
     }
 
     [Fact]
-    public async Task FixtureCleanupAwaitsStartedRunBeforeDeletingItsResources()
+    public async Task FixtureCleanupJoinsTimedOutRunAfterFallbackStopFailureBeforeDeletingResources()
     {
-        var primaryFailure = new InvalidOperationException("intentional marker failure");
-        using var cancellation = new CancellationTokenSource();
         var runCompletion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        using var registration = cancellation.Token.Register(runCompletion.SetResult);
+        Task? terminalCompletion = null;
+        var cancellationRequested = false;
         var resourcesDeleted = false;
+        var runWasTerminalAtDeletion = false;
+        var clock = Stopwatch.StartNew();
 
         var observedFailure = await Record.ExceptionAsync(
-            () => RunWithFailurePreservingCleanupAsync(
-                () => Task.FromException(primaryFailure),
-                async () =>
+            async () =>
+            {
+                try
                 {
-                    await cancellation.CancelAsync().ConfigureAwait(true);
-                    await runCompletion.Task.WaitAsync(
-                        TimeSpan.FromSeconds(1),
-                        TestContext.Current.CancellationToken).ConfigureAwait(true);
-                    Assert.True(runCompletion.Task.IsCompletedSuccessfully);
+                    await FailurePreservingTestCleanup.CancelStopAndJoinAsync(
+                        runCompletion.Task,
+                        () =>
+                        {
+                            cancellationRequested = true;
+                            return Task.CompletedTask;
+                        },
+                        TimeSpan.FromMilliseconds(50),
+                        () =>
+                        {
+                            terminalCompletion = CompleteRunAsync();
+                            throw new InvalidOperationException("Simulated fallback stop failure.");
+                        }).ConfigureAwait(true);
+                }
+                finally
+                {
+                    runWasTerminalAtDeletion = runCompletion.Task.IsCompleted;
                     resourcesDeleted = true;
-                })).ConfigureAwait(true);
+                }
+            }).ConfigureAwait(true);
 
-        Assert.Same(primaryFailure, observedFailure);
+        var aggregate = Assert.IsType<AggregateException>(observedFailure);
+        Assert.Contains(aggregate.InnerExceptions, failure => failure is TimeoutException);
+        Assert.Contains(
+            aggregate.InnerExceptions,
+            failure => failure is InvalidOperationException &&
+                       failure.Message.Contains("fallback stop failure", StringComparison.Ordinal));
+        Assert.True(cancellationRequested);
+        Assert.NotNull(terminalCompletion);
+        Assert.True(terminalCompletion.IsCompletedSuccessfully);
+        Assert.True(runCompletion.Task.IsCompletedSuccessfully);
         Assert.True(resourcesDeleted);
+        Assert.True(runWasTerminalAtDeletion);
+        Assert.True(clock.Elapsed >= TimeSpan.FromMilliseconds(150));
+
+        async Task CompleteRunAsync()
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(150)).ConfigureAwait(false);
+            runCompletion.TrySetResult();
+        }
     }
 
     [Fact]
@@ -393,47 +407,6 @@ public sealed class OwnedProcessScopePlatformTests
             StopIfAlive(childPid);
             StopIfAlive(grandchildPid);
             Directory.Delete(directory, recursive: true);
-        }
-    }
-
-    [SuppressMessage(
-        "Design",
-        "CA1031:Do not catch general exception types",
-        Justification = "The test boundary must preserve any primary failure while fixture cleanup completes.")]
-    private static async Task RunWithFailurePreservingCleanupAsync(
-        Func<Task> operation,
-        Func<Task> cleanup)
-    {
-        Exception? primaryFailure = null;
-        try
-        {
-            await operation().ConfigureAwait(false);
-        }
-        catch (Exception exception)
-        {
-            primaryFailure = exception;
-        }
-
-        try
-        {
-            await cleanup().ConfigureAwait(false);
-        }
-        catch (Exception cleanupFailure)
-        {
-            if (primaryFailure is not null)
-            {
-                throw new AggregateException(
-                    "The fixture operation and its cleanup both failed.",
-                    primaryFailure,
-                    cleanupFailure);
-            }
-
-            throw;
-        }
-
-        if (primaryFailure is not null)
-        {
-            ExceptionDispatchInfo.Capture(primaryFailure).Throw();
         }
     }
 
