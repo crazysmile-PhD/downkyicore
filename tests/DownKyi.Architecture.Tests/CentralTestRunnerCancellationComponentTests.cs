@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using DownKyi.CentralTestRunner;
+using DownKyi.ProcessSupervision;
 using DownKyi.TestInfrastructure;
 
 namespace DownKyi.Architecture.Tests;
