@@ -3,6 +3,7 @@ using DownKyi.Application.Desktop;
 using DownKyi.Application.Downloads;
 using DownKyi.Core.BiliApi.VideoStream.Models;
 using DownKyi.Domain.Downloads;
+using DownKyi.Domain.Results;
 using DownKyi.Infrastructure.Downloads;
 using DownKyi.Infrastructure.Time;
 using DownKyi.Models;
@@ -16,7 +17,78 @@ namespace DownKyi.Tests;
 public sealed class DownloadManagerCoordinatorTests
 {
     [Fact]
-    public async Task PauseAndResumeAllArePersistedForNextLaunch()
+    public async Task ResumeBatchSupersedesPauseBeforePauseProcessesRemainingItems()
+    {
+        using var context = new CoordinatorContext(blockTaskUpdates: true);
+        var first = context.CreateDownloadingItem("pause-first", DownloadStatus.WaitForDownload);
+        var remaining = context.CreateDownloadingItem("pause-remaining", DownloadStatus.WaitForDownload);
+        context.State.AddDownloadingRange([first, remaining]);
+        await context.Storage.AddDownloadingAsync(first, TestContext.Current.CancellationToken);
+        await context.Storage.AddDownloadingAsync(remaining, TestContext.Current.CancellationToken);
+        var blocker = Assert.IsType<BlockingUpdateTaskStore>(context.BlockingTaskStore);
+        blocker.BlockNextUpdate();
+
+        var pause = context.Coordinator.PauseAllAsync(
+            context.State.Downloading,
+            TestContext.Current.CancellationToken);
+        await blocker.UpdateStarted.Task.WaitAsync(TestContext.Current.CancellationToken);
+
+        var resume = context.Coordinator.ResumeAllAsync(
+            context.State.Downloading,
+            TestContext.Current.CancellationToken);
+        Assert.False(resume.IsCompleted);
+        blocker.AllowUpdate.TrySetResult();
+        await Task.WhenAll(pause, resume).WaitAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(DownloadPhase.Queued, (await context.GetTaskAsync(first)).Phase);
+        Assert.Equal(DownloadPhase.Queued, (await context.GetTaskAsync(remaining)).Phase);
+        Assert.DoesNotContain(
+            blocker.Updates,
+            update => update.TaskId == new DownloadTaskId(remaining.DownloadBase.Id)
+                && update.Phase is DownloadPhase.Paused or DownloadPhase.Pausing);
+        Assert.Equal(
+            [first.DownloadBase.Id, remaining.DownloadBase.Id],
+            context.Queue.Enqueued.Select(taskId => taskId.Value));
+    }
+
+    [Fact]
+    public async Task PauseBatchSupersedesResumeBeforeResumeProcessesRemainingItems()
+    {
+        using var context = new CoordinatorContext(blockTaskUpdates: true);
+        var first = context.CreateDownloadingItem("resume-first", DownloadStatus.WaitForDownload);
+        var remaining = context.CreateDownloadingItem("resume-remaining", DownloadStatus.WaitForDownload);
+        context.State.AddDownloadingRange([first, remaining]);
+        await context.Storage.AddDownloadingAsync(first, TestContext.Current.CancellationToken);
+        await context.Storage.AddDownloadingAsync(remaining, TestContext.Current.CancellationToken);
+        await context.Coordinator.PauseAllAsync(
+            context.State.Downloading,
+            TestContext.Current.CancellationToken);
+        var blocker = Assert.IsType<BlockingUpdateTaskStore>(context.BlockingTaskStore);
+        blocker.Updates.Clear();
+        blocker.BlockNextUpdate();
+
+        var resume = context.Coordinator.ResumeAllAsync(
+            context.State.Downloading,
+            TestContext.Current.CancellationToken);
+        await blocker.UpdateStarted.Task.WaitAsync(TestContext.Current.CancellationToken);
+
+        var pause = context.Coordinator.PauseAllAsync(
+            context.State.Downloading,
+            TestContext.Current.CancellationToken);
+        Assert.False(pause.IsCompleted);
+        blocker.AllowUpdate.TrySetResult();
+        await Task.WhenAll(resume, pause).WaitAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(DownloadPhase.Paused, (await context.GetTaskAsync(first)).Phase);
+        Assert.Equal(DownloadPhase.Paused, (await context.GetTaskAsync(remaining)).Phase);
+        Assert.DoesNotContain(
+            blocker.Updates,
+            update => update.TaskId == new DownloadTaskId(remaining.DownloadBase.Id)
+                && update.Phase == DownloadPhase.Queued);
+    }
+
+    [Fact]
+    public async Task ResumeAllWaitsForPauseAcknowledgementBeforeRequeueing()
     {
         using var context = new CoordinatorContext();
         var item = context.CreateDownloadingItem("pause-resume", DownloadStatus.WaitForDownload);
@@ -36,9 +108,15 @@ public sealed class DownloadManagerCoordinatorTests
             TestContext.Current.CancellationToken);
         Assert.Equal(DownloadPhase.Pausing, Assert.IsType<DownloadTask>(paused).Phase);
 
-        await context.Coordinator.ResumeAllAsync(
+        var resume = context.Coordinator.ResumeAllAsync(
             context.State.Downloading,
             TestContext.Current.CancellationToken);
+        Assert.False(resume.IsCompleted);
+
+        await context.StateWriter.ConfirmPausedAsync(
+            new DownloadTaskId(item.DownloadBase.Id),
+            TestContext.Current.CancellationToken);
+        await resume.WaitAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(DownloadStatus.WaitForDownload, item.Downloading.DownloadStatus);
         var resumed = await context.Store.FindAsync(
@@ -48,6 +126,131 @@ public sealed class DownloadManagerCoordinatorTests
         Assert.Equal(
             item.DownloadBase.Id,
             Assert.Single(context.Queue.Enqueued).Value);
+    }
+
+    [Fact]
+    public async Task LaterPauseSupersedesResumeWaitingForPauseAcknowledgement()
+    {
+        using var context = new CoordinatorContext();
+        var item = context.CreateDownloadingItem("pause-resume-pause", DownloadStatus.WaitForDownload);
+        context.State.AddDownloading(item);
+        await context.Storage.AddDownloadingAsync(item, TestContext.Current.CancellationToken);
+        var taskId = new DownloadTaskId(item.DownloadBase.Id);
+        await context.StateWriter.StartAsync(taskId, TestContext.Current.CancellationToken);
+        await context.Coordinator.PauseAllAsync(
+            context.State.Downloading,
+            TestContext.Current.CancellationToken);
+
+        var resume = context.Coordinator.ResumeAllAsync(
+            context.State.Downloading,
+            TestContext.Current.CancellationToken);
+        Assert.False(resume.IsCompleted);
+
+        var pause = context.Coordinator.PauseAllAsync(
+            context.State.Downloading,
+            TestContext.Current.CancellationToken);
+        await Task.WhenAll(resume, pause).WaitAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(DownloadPhase.Pausing, (await context.GetTaskAsync(item)).Phase);
+        Assert.Empty(context.Queue.Enqueued);
+        await context.StateWriter.ConfirmPausedAsync(
+            taskId,
+            TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task PauseBatchSkipsCompletedItemAndProcessesRemainingItems()
+    {
+        using var context = new CoordinatorContext(blockTaskUpdates: true);
+        var first = context.CreateDownloadingItem("pause-before-completion", DownloadStatus.WaitForDownload);
+        var completed = context.CreateDownloadingItem("completed-during-pause", DownloadStatus.WaitForDownload);
+        var remaining = context.CreateDownloadingItem("pause-after-completion", DownloadStatus.WaitForDownload);
+        context.State.AddDownloadingRange([first, completed, remaining]);
+        await context.Storage.AddDownloadingAsync(first, TestContext.Current.CancellationToken);
+        await context.Storage.AddDownloadingAsync(completed, TestContext.Current.CancellationToken);
+        await context.Storage.AddDownloadingAsync(remaining, TestContext.Current.CancellationToken);
+        var completedId = new DownloadTaskId(completed.DownloadBase.Id);
+        await context.StateWriter.StartAsync(completedId, TestContext.Current.CancellationToken);
+        var blocker = Assert.IsType<BlockingUpdateTaskStore>(context.BlockingTaskStore);
+        blocker.BlockNextUpdate();
+
+        var pause = context.Coordinator.PauseAllAsync(
+            context.State.Downloading,
+            TestContext.Current.CancellationToken);
+        await blocker.UpdateStarted.Task.WaitAsync(TestContext.Current.CancellationToken);
+        await context.StateWriter.CompleteAsync(
+            completedId,
+            new DownloadCompletion(1, "completed", null),
+            TestContext.Current.CancellationToken);
+        blocker.AllowUpdate.TrySetResult();
+        await pause.WaitAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(DownloadPhase.Paused, (await context.GetTaskAsync(first)).Phase);
+        Assert.Null(await context.Store.FindAsync(
+            completedId,
+            TestContext.Current.CancellationToken));
+        Assert.Equal(DownloadPhase.Paused, (await context.GetTaskAsync(remaining)).Phase);
+    }
+
+    [Fact]
+    public async Task ResumeBatchSkipsCompletedItemAndProcessesRemainingItems()
+    {
+        using var context = new CoordinatorContext(blockTaskUpdates: true);
+        var first = context.CreateDownloadingItem("resume-before-completion", DownloadStatus.WaitForDownload);
+        var completed = context.CreateDownloadingItem("completed-during-resume", DownloadStatus.WaitForDownload);
+        var remaining = context.CreateDownloadingItem("resume-after-completion", DownloadStatus.WaitForDownload);
+        context.State.AddDownloadingRange([first, completed, remaining]);
+        await context.Storage.AddDownloadingAsync(first, TestContext.Current.CancellationToken);
+        await context.Storage.AddDownloadingAsync(completed, TestContext.Current.CancellationToken);
+        await context.Storage.AddDownloadingAsync(remaining, TestContext.Current.CancellationToken);
+        await context.Coordinator.PauseAllAsync(
+            context.State.Downloading,
+            TestContext.Current.CancellationToken);
+        var completedId = new DownloadTaskId(completed.DownloadBase.Id);
+        await context.StateWriter.ResumeAsync(completedId, TestContext.Current.CancellationToken);
+        await context.StateWriter.StartAsync(completedId, TestContext.Current.CancellationToken);
+        var blocker = Assert.IsType<BlockingUpdateTaskStore>(context.BlockingTaskStore);
+        blocker.BlockNextUpdate();
+
+        var resume = context.Coordinator.ResumeAllAsync(
+            context.State.Downloading,
+            TestContext.Current.CancellationToken);
+        await blocker.UpdateStarted.Task.WaitAsync(TestContext.Current.CancellationToken);
+        await context.StateWriter.CompleteAsync(
+            completedId,
+            new DownloadCompletion(1, "completed", null),
+            TestContext.Current.CancellationToken);
+        blocker.AllowUpdate.TrySetResult();
+        await resume.WaitAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(DownloadPhase.Queued, (await context.GetTaskAsync(first)).Phase);
+        Assert.Null(await context.Store.FindAsync(
+            completedId,
+            TestContext.Current.CancellationToken));
+        Assert.Equal(DownloadPhase.Queued, (await context.GetTaskAsync(remaining)).Phase);
+        Assert.Equal(
+            [first.DownloadBase.Id, remaining.DownloadBase.Id],
+            context.Queue.Enqueued.Select(taskId => taskId.Value));
+    }
+
+    [Fact]
+    public async Task ResumeAllKeepsDownloadingItemsAsNoOpWhenRuntimeIsUnavailable()
+    {
+        using var context = new CoordinatorContext(
+            runtimeAvailability: new UnavailableDownloadRuntimeAvailability());
+        var item = context.CreateDownloadingItem("already-downloading", DownloadStatus.WaitForDownload);
+        context.State.AddDownloading(item);
+        await context.Storage.AddDownloadingAsync(item, TestContext.Current.CancellationToken);
+        await context.StateWriter.StartAsync(
+            new DownloadTaskId(item.DownloadBase.Id),
+            TestContext.Current.CancellationToken);
+
+        await context.Coordinator.ResumeAllAsync(
+            context.State.Downloading,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(DownloadPhase.Downloading, (await context.GetTaskAsync(item)).Phase);
+        Assert.Empty(context.Queue.Enqueued);
     }
 
     [Fact]
@@ -305,7 +508,8 @@ public sealed class DownloadManagerCoordinatorTests
         public CoordinatorContext(
             IDownloadTaskQueue? taskQueue = null,
             IDownloadRuntimeAvailability? runtimeAvailability = null,
-            bool useStaging = false)
+            bool useStaging = false,
+            bool blockTaskUpdates = false)
         {
             Directory.CreateDirectory(_directory);
             _databasePath = Path.Combine(_directory, "download.db");
@@ -314,7 +518,11 @@ public sealed class DownloadManagerCoordinatorTests
                 new SystemClock());
             var clock = new SystemClock();
             var historyService = DownloadHistoryService.CreateForSharedStore(Store);
-            TaskService = new DownloadTaskApplicationService(Store, historyService, clock);
+            BlockingTaskStore = blockTaskUpdates ? new BlockingUpdateTaskStore(Store) : null;
+            TaskService = new DownloadTaskApplicationService(
+                (IDownloadTaskStore?)BlockingTaskStore ?? Store,
+                historyService,
+                clock);
             Storage = new DownloadTaskProjectionStore(
                 TaskService,
                 historyService,
@@ -347,6 +555,8 @@ public sealed class DownloadManagerCoordinatorTests
 
         public DownloadTaskStateWriter StateWriter { get; private set; }
 
+        public BlockingUpdateTaskStore? BlockingTaskStore { get; }
+
         public DownloadTaskStaging? Staging { get; }
 
         public RecordingDownloadTaskQueue Queue { get; }
@@ -359,8 +569,16 @@ public sealed class DownloadManagerCoordinatorTests
 
         public string DirectoryPath => _directory;
 
+        public async Task<DownloadTask> GetTaskAsync(DownloadingItem item)
+        {
+            return Assert.IsType<DownloadTask>(await Store.FindAsync(
+                new DownloadTaskId(item.DownloadBase.Id),
+                TestContext.Current.CancellationToken).ConfigureAwait(true));
+        }
+
         public void ReopenStorage()
         {
+            Coordinator.Dispose();
             Storage.Dispose();
             TaskService.Dispose();
             Store.Dispose();
@@ -432,6 +650,7 @@ public sealed class DownloadManagerCoordinatorTests
 
         public void Dispose()
         {
+            Coordinator.Dispose();
             Storage.Dispose();
             TaskService.Dispose();
             Store.Dispose();
@@ -475,6 +694,96 @@ public sealed class DownloadManagerCoordinatorTests
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult(true);
         }
+    }
+
+    private sealed class BlockingUpdateTaskStore(IDownloadTaskStore inner) : IDownloadTaskStore
+    {
+        private int _blockNextUpdate;
+
+        public TaskCompletionSource UpdateStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource AllowUpdate { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public List<(DownloadTaskId TaskId, DownloadPhase Phase)> Updates { get; } = [];
+
+        public void BlockNextUpdate()
+        {
+            Volatile.Write(ref _blockNextUpdate, 1);
+        }
+
+        public Task InitializeAsync(CancellationToken cancellationToken) =>
+            inner.InitializeAsync(cancellationToken);
+
+        public Task<OperationResult> AddAsync(
+            DownloadTask task,
+            CancellationToken cancellationToken) =>
+            inner.AddAsync(task, cancellationToken);
+
+        public async Task<OperationResult> UpdateAsync(
+            DownloadTask task,
+            long expectedVersion,
+            CancellationToken cancellationToken)
+        {
+            if (Interlocked.Exchange(ref _blockNextUpdate, 0) == 1)
+            {
+                UpdateStarted.TrySetResult();
+                await AllowUpdate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            var result = await inner
+                .UpdateAsync(task, expectedVersion, cancellationToken)
+                .ConfigureAwait(false);
+            if (result.IsSuccess)
+            {
+                Updates.Add((task.Id, task.Phase));
+            }
+
+            return result;
+        }
+
+        public Task<OperationResult> UpdateProgressAsync(
+            DownloadProgressWrite progressWrite,
+            CancellationToken cancellationToken) =>
+            inner.UpdateProgressAsync(progressWrite, cancellationToken);
+
+        public Task<DownloadTask?> FindAsync(
+            DownloadTaskId taskId,
+            CancellationToken cancellationToken) =>
+            inner.FindAsync(taskId, cancellationToken);
+
+        public Task<IReadOnlyList<DownloadTask>> GetUnfinishedAsync(
+            CancellationToken cancellationToken) =>
+            inner.GetUnfinishedAsync(cancellationToken);
+
+        public Task<bool> IsOutputPathReservedAsync(
+            string basePath,
+            bool ignoreCase,
+            CancellationToken cancellationToken) =>
+            inner.IsOutputPathReservedAsync(basePath, ignoreCase, cancellationToken);
+
+        public Task<IReadOnlyList<string>> GetActiveOutputReservationKeysAsync(
+            bool ignoreCase,
+            CancellationToken cancellationToken) =>
+            inner.GetActiveOutputReservationKeysAsync(ignoreCase, cancellationToken);
+
+        public Task<bool> IsLegacyUpgradeAdmissionBlockedAsync(
+            CancellationToken cancellationToken) =>
+            inner.IsLegacyUpgradeAdmissionBlockedAsync(cancellationToken);
+
+        public Task<OperationResult> ConfirmLegacyRemoteTasksStoppedAsync(
+            CancellationToken cancellationToken) =>
+            inner.ConfirmLegacyRemoteTasksStoppedAsync(cancellationToken);
+
+        public Task<OperationResult> DeleteAsync(
+            DownloadTaskId taskId,
+            CancellationToken cancellationToken) =>
+            inner.DeleteAsync(taskId, cancellationToken);
+
+        public Task<IReadOnlyList<QuarantinedDownloadRecord>> GetQuarantinedRecordsAsync(
+            CancellationToken cancellationToken) =>
+            inner.GetQuarantinedRecordsAsync(cancellationToken);
     }
 
     private sealed class RuntimeUnavailableTaskQueue : IDownloadTaskQueue

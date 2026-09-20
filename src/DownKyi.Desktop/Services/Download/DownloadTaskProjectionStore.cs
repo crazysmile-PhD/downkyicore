@@ -153,9 +153,59 @@ internal sealed class DownloadTaskProjectionStore : IDisposable
     public DownloadTask GetRequiredSnapshot(DownloadTaskId taskId)
     {
         ArgumentNullException.ThrowIfNull(taskId);
-        return _snapshots.TryGetValue(taskId, out var task)
+        return TryGetSnapshot(taskId, out var task)
             ? task
             : throw new InvalidOperationException($"Download task '{taskId.Value}' is not loaded.");
+    }
+
+    public bool TryGetSnapshot(
+        DownloadTaskId taskId,
+        [NotNullWhen(true)] out DownloadTask? task)
+    {
+        ArgumentNullException.ThrowIfNull(taskId);
+        return _snapshots.TryGetValue(taskId, out task);
+    }
+
+    public async Task<DownloadTask?> WaitForSnapshotPhaseChangeAsync(
+        DownloadTaskId taskId,
+        DownloadPhase phase,
+        Task stopWaiting,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(taskId);
+        ArgumentNullException.ThrowIfNull(stopWaiting);
+        var phaseChanged = new TaskCompletionSource<DownloadTask?>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        void OnTaskChanged(object? sender, DownloadTaskChangedEventArgs args)
+        {
+            if (args.TaskId.Equals(taskId)
+                && (args.Snapshot == null || args.Snapshot.Phase != phase))
+            {
+                phaseChanged.TrySetResult(args.Snapshot);
+            }
+        }
+
+        _tasks.TaskChanged += OnTaskChanged;
+        try
+        {
+            if (!TryGetSnapshot(taskId, out var current) || current.Phase != phase)
+            {
+                return current;
+            }
+
+            var completed = await Task
+                .WhenAny(phaseChanged.Task, stopWaiting)
+                .WaitAsync(cancellationToken)
+                .ConfigureAwait(true);
+            return ReferenceEquals(completed, phaseChanged.Task)
+                ? await phaseChanged.Task.ConfigureAwait(true)
+                : null;
+        }
+        finally
+        {
+            _tasks.TaskChanged -= OnTaskChanged;
+        }
     }
 
     public DownloadingItem GetRequiredDownloadingProjection(DownloadTaskId taskId)

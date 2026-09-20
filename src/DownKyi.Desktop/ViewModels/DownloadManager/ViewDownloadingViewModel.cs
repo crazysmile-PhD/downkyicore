@@ -1,6 +1,7 @@
 using System;
 using System.Collections.ObjectModel;
 using System.Threading.Tasks;
+using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Commands;
 using DownKyi.Services;
@@ -39,35 +40,37 @@ namespace DownKyi.ViewModels.DownloadManager
         #region 命令申明
 
         // 暂停所有下载事件
-        private DownKyiAsyncDelegateCommand? _pauseAllDownloadingCommand;
+        private RelayCommand? _pauseAllDownloadingCommand;
 
-        public DownKyiAsyncDelegateCommand PauseAllDownloadingCommand =>
-            _pauseAllDownloadingCommand ??= new DownKyiAsyncDelegateCommand(
-                ExecutePauseAllDownloadingCommand,
-                _logger);
+        public RelayCommand PauseAllDownloadingCommand =>
+            _pauseAllDownloadingCommand ??= new RelayCommand(ExecutePauseAllDownloadingCommand);
 
         /// <summary>
         /// 暂停所有下载事件
         /// </summary>
-        private Task ExecutePauseAllDownloadingCommand()
+        private void ExecutePauseAllDownloadingCommand()
         {
-            return _downloadManagerCoordinator.PauseAllAsync(DownloadingList);
+            RunFireAndForget(
+                _downloadManagerCoordinator.PauseAllAsync(DownloadingList),
+                nameof(ExecutePauseAllDownloadingCommand),
+                _logger);
         }
 
         // 继续所有下载事件
-        private DownKyiAsyncDelegateCommand? _continueAllDownloadingCommand;
+        private RelayCommand? _continueAllDownloadingCommand;
 
-        public DownKyiAsyncDelegateCommand ContinueAllDownloadingCommand =>
-            _continueAllDownloadingCommand ??= new DownKyiAsyncDelegateCommand(
-                ExecuteContinueAllDownloadingCommand,
-                _logger);
+        public RelayCommand ContinueAllDownloadingCommand =>
+            _continueAllDownloadingCommand ??= new RelayCommand(ExecuteContinueAllDownloadingCommand);
 
         /// <summary>
         /// 继续所有下载事件
         /// </summary>
-        private Task ExecuteContinueAllDownloadingCommand()
+        private void ExecuteContinueAllDownloadingCommand()
         {
-            return _downloadManagerCoordinator.ResumeAllAsync(DownloadingList);
+            RunFireAndForget(
+                _downloadManagerCoordinator.ResumeAllAsync(DownloadingList),
+                nameof(ExecuteContinueAllDownloadingCommand),
+                _logger);
         }
 
         private DownKyiAsyncDelegateCommand<DownloadingItem>? _toggleDownloadingCommand;

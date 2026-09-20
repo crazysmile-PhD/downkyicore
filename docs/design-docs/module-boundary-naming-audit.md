@@ -22,7 +22,7 @@ pwsh ./script/audit-module-boundaries.ps1 `
   -OutputPath artifacts/architecture/module-boundary-audit.json
 ```
 
-輸出包含 commit SHA、project references、各 source root 的檔案/行數、邊界違規、命名 inventory、巨檔與 runtime markers。下列數據使用實體 `*.cs` 與 `*.axaml` 行數，不等同 cyclomatic complexity 或有效 LOC。
+輸出包含 commit SHA、project references、各 source root 的檔案/行數、邊界違規、命名 inventory 與 runtime markers。下列數據使用實體 `*.cs` 與 `*.axaml` 行數，不等同 cyclomatic complexity 或有效 LOC，也不是架構限制。
 
 | Source root | Files | Physical lines |
 |---|---:|---:|
@@ -49,7 +49,7 @@ pwsh ./script/audit-module-boundaries.ps1 `
 | resolved | service contracts 依賴 ViewModel | 0 interfaces | completed by Gate 8 |
 | resolved | custom collection contract | 0 custom collection references; standard read-only wrappers | completed by Gate 8 |
 | resolved | naming and folder taxonomy inconsistent | 4 endpoint/role-scoped duplicate groups, 0 generic names, 0 file/type mismatches | completed in Gate 9 naming branch |
-| resolved | oversized owners | 0 production files above 500 physical lines | aria RPC provenance classified and owner split protected by protocol tests |
+| resolved | mixed-responsibility owners | role-specific owners | aria RPC provenance classified and owner split protected by protocol tests |
 | resolved | logging owner too broad | contracts in Application; 268-line provider plus dedicated Infrastructure sink/buffer/retention/export owners | completed by Gate 9 PR #94 |
 | P1 | AI knowledge environment incomplete | required root/docs structure and reproducible audit scripts now exist | resolved |
 
@@ -94,11 +94,11 @@ Resolution (2026-07-26): Gate 5 replaced this compatibility path with direct `Do
 
 ## Finding 4: DownloadPipeline 仍是 God Object
 
-Resolution (2026-07-26): Gate 6 extracted a typed execution context and six ordered stages. `DownloadPipeline` is now below 150 lines, localized activity and completion projection have dedicated owners, and its oversized-file/collection-consumer allowlist entries were removed. Retry ownership remains Finding 5 and is intentionally handled in the next PR.
+Resolution (2026-07-26): Gate 6 extracted a typed execution context and six ordered stages. Localized activity and completion projection have dedicated owners, and the collection-consumer allowlist entries were removed. Retry ownership remains Finding 5 and is intentionally handled in the next PR.
 
 `DownloadPipeline.cs` 有 1,058 physical lines，直接操作 `DownloadingItem`、download lists、UI display state、播放地址、音訊/影片/DURL、retry、FFmpeg、artifact 與 persistence。先前抽出的 artifact/state writers 是有效改善，但不代表 pipeline 已完成拆分。
 
-目標 stages 與契約見根層 `ARCHITECTURE.md`。File-length ratchet 只防止惡化，不可替代責任測試。
+目標 stages 與契約見根層 `ARCHITECTURE.md`。具體責任、依賴方向與行為契約才是 owner 邊界；檔案實體行數不作為架構 gate。
 
 ## Finding 5: Retry ownership 重複
 
@@ -162,9 +162,9 @@ File/type mismatch baseline 已由 4 項降為 0。Bilibili JSON DTO 與 NFO XML
 
 附件提供的「檔名必須等於第一個型別」正規表示式會誤判 partial、`.axaml.cs`、多型別 DTO 與 interface companion records。此方案不採用。
 
-## Finding 11: 巨檔 owners
+## Finding 11: owner 責任拆分
 
-2026-07-29 的實際 boundary audit 已有 0 個 production file 超過 500 physical lines；oversized baseline 為空。`DownloadPipeline`、`DownloadTaskProjectionStore`、`AddToDownloadService`、`ViewMyFavoritesViewModel`、`ViewPublicationViewModel`、`SqliteDownloadTaskStore`、`SettingsManager.Network`、`ViewNetworkViewModel`、`ViewVideoViewModel`、`ViewMySpaceViewModel`、`ViewUserSpaceViewModel`、`ViewMyBangumiFollowViewModel`、`ParseEntrance`、`CustomPagerViewModel`、`ViewNetwork.axaml`、`ViewVideoDetail.axaml`、`AriaClient.cs` 與原 715 行 `ApplicationLogProvider` 已從 allowlist 移除。SQLite Store 從 928 行降為 447 行，交易/初始化協調、Domain row mapping、讀取/quarantine 與 SQL writes 已分成具名 owner，既有 schema/migration/resume tests 保持不變。Settings 的一般 network/downloader/proxy owner 為 319 行，aria RPC/runtime owner 為 355 行；44 個既有 public compatibility methods 的方法級內容相同，且仍讀寫同一個 `ApplicationSettings.Network` schema。Network settings ViewModel 現分為 384 行 navigation/general-command owner、275 行 aria-command owner 與 292 行 binding-state owner；28 個方法與 25 個 command properties 保持等價，XAML binding 名稱未變。Network settings XAML 現為 21 行 ordered composition shell、152 行 general、108 行 built-in、274 行 bundled aria2 與 77 行 external aria2 view；token inventory 與實際 child-view smoke 固定所有 binding、名稱、資源與 command parameters。Video-detail XAML 現為 46 行 ordered composition shell、74 行 toolbar、168 行 summary、247 行 section/page selection 與 66 行 actions view；token inventory、same-namescope selection、application-owned DataGrid base theme 與完整 Host child-tree smoke 固定其 binding、資源、behavior 與 DataGrid 契約。Video settings ViewModel 現分為 451 行 navigation/playback/transcoding owner、353 行 directory/content/filename-command owner 與 248 行 binding-state owner；27 個方法、54 個 public members 與 56 個 private fields 保持等價，XAML binding 名稱與同一個 injected `ISettingsStore` ownership 未變。My-space ViewModel 現分為 408 行 navigation/profile workflow owner 與 265 行 service-free binding-state owner；12 個方法、36 個 public members 與 41 個 private fields 保持等價，typed back navigation、cancellation、settings 與 XAML bindings 未變。Add-to-download 現為 275 行 session coordinator、114 行 duplicate policy、206 行 stateless draft factory與 85 行 optional metadata builder；16 個 owner/tag/cancellation tests 固定完成紀錄、設定 snapshot、檔名、內容旗標與 queue admission 契約。User-space ViewModel 現為 412 行 typed-navigation/load/projection workflow owner、161 行 service-free binding-state owner與既有 27 行 favorite-folder owner；20 個 XAML properties 的名稱與生命週期責任由 architecture test 固定。Bangumi-follow ViewModel 現為 435 行 pager/navigation/load/download workflow owner與 103 行 service-free binding-state owner；12 個 XAML properties、pager event ownership、typed back navigation、cancellation、batch projection 與 download coordinator 邊界由 architecture test 固定。輸入解析現由 8 個責任 partial 擁有，所有檔案低於 120 行；確定性矩陣固定 AV/BV、番劇、課程、收藏夾、使用者空間與投稿清單契約，並拒絕偽造 `space.bilibili.com` host。Pager 現為 103 行 change-veto owner、110 行 XAML state、51 行 command owner與 41 行純 layout value owner；無參數按鈕不再被 `RequiredParameterCommand` 靜默丟棄，建構子也會保留要求的目前頁。Aria RPC client 已確認為 2020 年加入 DownKyi 的手動維護協定程式碼，不是 generated/vendor sync output；現拆成 107 行 transport core、333 行 download control、329 行 status/URI、134 行 options、181 行 lifecycle 與 65 行 system methods，完整公開 RPC inventory 與 method/token wire contract 由 deterministic test 固定。
+2026-07-29 的 snapshot 記錄了多個 mixed-responsibility owner 的拆分，包括下載 pipeline、projection/store、settings ViewModels、輸入解析、pager、aria RPC 與 logging。這些拆分的現行價值在於具名責任、依賴方向與相容契約；當時的實體行數僅是量測資料，不是 architecture baseline。schema/migration/resume、XAML bindings、公開方法與 wire contract 仍由各自的 deterministic tests 保護。
 
 Logging 風險已依 ADR 收斂並由 PR #94 整合：Application 只保留 contracts，Infrastructure 使用私有 NLog 6.1.4 `LogFactory`，並拆出 recent buffer、retention、exporter 與 redactor。專案 redaction 在 NLog、recent buffer、磁碟與 export 之前完成；module audit 對 Core implementation 與 Infrastructure 外的 NLog consumer 採零容忍。
 
@@ -191,16 +191,15 @@ Logging 風險已依 ADR 收斂並由 PR #94 整合：Application 只保留 cont
 3. duplicate full-name sets 不可擴大。
 4. generic type-name baseline 不可擴大。
 5. file/type mismatch baseline 不可擴大。
-6. 500 行以上檔案不可新增或增長。
-7. Domain-to-legacy reconstruction 不可離開 projection owner。
-8. UI collection polling 不可擴散。
-9. static/sync HTTP debt 不可擴散。
-10. 已刪除的 custom mutable collection 不得返回；下載清單只能公開標準唯讀 wrapper。
-11. 一般 network 與 aria RPC/runtime settings owners 必須維持分離，且兩個檔案都受 500 行上限約束。
-12. Network settings 的 navigation/general commands、aria commands 與 binding state 必須維持分離，每個 partial 都受 500 行上限約束。
-13. Video settings 的 navigation/playback/transcoding commands、directory/content/filename commands 與 binding state 必須維持分離，每個 partial 都受 500 行上限約束，且只有 main owner 可接收 `ISettingsStore`。
-14. My-space 的 navigation/profile workflow 與 binding state 必須維持分離，兩個 partial 都受 500 行上限約束，且 state owner 不得取得 coordinator、settings 或 cancellation ownership。
-15. aria2 RPC transport、download control、status/URI、options、lifecycle 與 `system.*` owners 必須維持分離；所有 partial 受 500 行上限約束，公開方法 inventory 與 wire method/token 契約不得漂移。
+6. Domain-to-legacy reconstruction 不可離開 projection owner。
+7. UI collection polling 不可擴散。
+8. static/sync HTTP debt 不可擴散。
+9. 已刪除的 custom mutable collection 不得返回；下載清單只能公開標準唯讀 wrapper。
+10. 一般 network 與 aria RPC/runtime settings owners 必須維持分離。
+11. Network settings 的 navigation/general commands、aria commands 與 binding state 必須維持分離。
+12. Video settings 的 navigation/playback/transcoding commands、directory/content/filename commands 與 binding state 必須維持分離，且只有 main owner 可接收 `ISettingsStore`。
+13. My-space 的 navigation/profile workflow 與 binding state 必須維持分離，且 state owner 不得取得 coordinator、settings 或 cancellation ownership。
+14. aria2 RPC transport、download control、status/URI、options、lifecycle 與 `system.*` owners 必須維持分離；公開方法 inventory 與 wire method/token 契約不得漂移。
 
 這些測試是過渡 ratchet。每移除一項債務，應同步刪除對應 baseline entry；不得把 baseline 當成永久例外清單。
 

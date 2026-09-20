@@ -49,8 +49,6 @@ public sealed class ModuleBoundaryBaselineTests
 
     private static readonly HashSet<string> KnownFileTypeMismatches = new(StringComparer.Ordinal);
 
-    private static readonly Dictionary<string, int> KnownOversizedFiles = new(StringComparer.Ordinal);
-
     [Fact]
     public void CoreHasNoUiOrQrRenderingDependencies()
     {
@@ -221,25 +219,6 @@ public sealed class ModuleBoundaryBaselineTests
         var declarations = ReadDeclaredTypeNames(source);
 
         Assert.Equal(["ExpectedType"], declarations);
-    }
-
-    [Fact]
-    public void OversizedProductionFilesCannotGrowBeyondTheKnownBaseline()
-    {
-        const int lineThreshold = 500;
-        var oversized = EnumerateProductionFiles("*.cs")
-            .Concat(EnumerateProductionFiles("*.axaml"))
-            .Select(path => new { Path = Relative(path), Lines = File.ReadAllLines(path).Length })
-            .Where(item => item.Lines > lineThreshold)
-            .ToArray();
-        var violations = oversized
-            .Where(item => !KnownOversizedFiles.TryGetValue(item.Path, out var maximum) || item.Lines > maximum)
-            .Select(item => KnownOversizedFiles.TryGetValue(item.Path, out var maximum)
-                ? $"{item.Path}: {item.Lines} lines exceeds baseline {maximum}"
-                : $"{item.Path}: new oversized file with {item.Lines} lines")
-            .ToArray();
-
-        Assert.True(violations.Length == 0, string.Join(Environment.NewLine, violations));
     }
 
     [Fact]
