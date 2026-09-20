@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.ExceptionServices;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
@@ -115,17 +116,36 @@ internal static class Program
 
         using var process = Process.Start(startInfo)
             ?? throw new InvalidOperationException($"Could not start the {scenario} benchmark process.");
-        var standardOutputTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
-        var standardErrorTask = process.StandardError.ReadToEndAsync(cancellationToken);
+        using var outputCancellation = new CancellationTokenSource();
+        var standardOutputTask = process.StandardOutput.ReadToEndAsync(outputCancellation.Token);
+        var standardErrorTask = process.StandardError.ReadToEndAsync(outputCancellation.Token);
         try
         {
             await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException cancellationFailure)
         {
-            TryKillProcessTree(process);
-            await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
-            throw;
+            try
+            {
+                await SystemBenchmarkProcessCleanup.RunAsync(
+                    new SystemBenchmarkProcessCleanupOperations(
+                        () => process.HasExited,
+                        () => process.Kill(entireProcessTree: true),
+                        token => process.WaitForExitAsync(token),
+                        standardOutputTask,
+                        standardErrorTask,
+                        () => outputCancellation.CancelAsync()),
+                    TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+            }
+            catch (Exception cleanupFailure)
+            {
+                throw new InvalidOperationException(
+                    $"The {scenario} benchmark was canceled and child cleanup failed.",
+                    new AggregateException(cancellationFailure, cleanupFailure));
+            }
+
+            ExceptionDispatchInfo.Capture(cancellationFailure).Throw();
+            throw new InvalidOperationException("Unreachable benchmark cancellation path.");
         }
 
         var standardOutput = await standardOutputTask.ConfigureAwait(false);
@@ -239,21 +259,6 @@ internal static class Program
     private static bool IsSelected(string selectedScenario, string scenario)
     {
         return string.Equals(selectedScenario, scenario, StringComparison.Ordinal);
-    }
-
-    private static void TryKillProcessTree(Process process)
-    {
-        try
-        {
-            if (!process.HasExited)
-            {
-                process.Kill(entireProcessTree: true);
-            }
-        }
-        catch (Exception exception) when (exception is InvalidOperationException
-            or System.ComponentModel.Win32Exception)
-        {
-        }
     }
 
     private static async Task DeleteDataRootAsync(string dataRoot)

@@ -26,4 +26,8 @@
     <ProjectReference Include="..\..\tools\DownKyi.CentralTestRunner\DownKyi.CentralTestRunner.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="..\..\benchmarks\DownKyi.SystemBenchmarks\SystemBenchmarkProcessCleanup.cs" Link="SystemBenchmarkProcessCleanup.cs" />
+  </ItemGroup>
+
 </Project>
