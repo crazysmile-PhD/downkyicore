@@ -298,6 +298,42 @@ public sealed class OwnedProcessScopePlatformTests
     }
 
     [Fact]
+    public async Task UnixLiveScopeTerminationReapsHostBeforeCheckingGroup()
+    {
+        if (!OperatingSystem.IsLinux() && !OperatingSystem.IsMacOS())
+        {
+            return;
+        }
+
+        var runtimeConfig = Path.Combine(
+            AppContext.BaseDirectory,
+            $"{Path.GetFileNameWithoutExtension(typeof(OwnedProcessScopePlatformTests).Assembly.Location)}.runtimeconfig.json");
+        var startInfo = new ProcessStartInfo("dotnet") { UseShellExecute = false };
+        startInfo.ArgumentList.Add("exec");
+        startInfo.ArgumentList.Add("--runtimeconfig");
+        startInfo.ArgumentList.Add(runtimeConfig);
+        startInfo.ArgumentList.Add(typeof(FlightRecorderExecution).Assembly.Location);
+        startInfo.ArgumentList.Add("fixture-hold");
+
+        using var scope = await OwnedProcessScope.StartAsync(
+            startInfo, TimeSpan.FromSeconds(5)).ConfigureAwait(true);
+        await scope.TerminateAsync(
+            new CleanupDeadline(TimeSpan.FromSeconds(5))).ConfigureAwait(true);
+
+        Assert.True(scope.Host.HasExited);
+        if (OperatingSystem.IsMacOS())
+        {
+            await scope.WaitForMacProcessGroupToEmptyAsync(
+                new CleanupDeadline(TimeSpan.FromMilliseconds(100))).ConfigureAwait(true);
+        }
+        else
+        {
+            await scope.WaitForLinuxProcessGroupToEmptyAsync(
+                new CleanupDeadline(TimeSpan.FromMilliseconds(100))).ConfigureAwait(true);
+        }
+    }
+
+    [Fact]
     public async Task LinuxGroupProbeDoesNotHideLiveGrandchild()
     {
         if (!OperatingSystem.IsLinux())

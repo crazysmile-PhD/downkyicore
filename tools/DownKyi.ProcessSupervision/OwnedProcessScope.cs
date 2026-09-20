@@ -258,8 +258,17 @@ internal sealed class OwnedProcessScope : IDisposable
             failures.Add(exception);
         }
 
-        // Reap the OS scope before the host so a host exit cannot hide a live
-        // target. Both waits consume the same bounded deadline.
+        // Unix group membership retains a dead host until its parent reaps it,
+        // so waitpid must precede the group-empty probe there. Windows Job
+        // accounting has no corresponding zombie state and remains scope-first.
+        var reapHostBeforeScope =
+            lifecycleState is ScopeLifecycleState.ScopeMayContainTarget &&
+            (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS());
+        if (reapHostBeforeScope)
+        {
+            await ReapHostAsync(host, deadline.WorkWindow, failures).ConfigureAwait(false);
+        }
+
         if (lifecycleState is ScopeLifecycleState.ScopeMayContainTarget)
         {
             try
@@ -290,18 +299,28 @@ internal sealed class OwnedProcessScope : IDisposable
             }
         }
 
+        if (!reapHostBeforeScope)
+        {
+            await ReapHostAsync(host, deadline.Remaining, failures).ConfigureAwait(false);
+        }
+
+        ThrowPreservingPrimaryFailure(primaryFailure, failures);
+    }
+
+    private static async Task ReapHostAsync(
+        Process host,
+        TimeSpan window,
+        List<Exception> failures)
+    {
         try
         {
-            await host.WaitForExitAsync()
-                .WaitAsync(deadline.Remaining).ConfigureAwait(false);
+            await host.WaitForExitAsync().WaitAsync(window).ConfigureAwait(false);
         }
         catch (Exception exception) when (
             exception is InvalidOperationException or TimeoutException)
         {
             failures.Add(exception);
         }
-
-        ThrowPreservingPrimaryFailure(primaryFailure, failures);
     }
 
     private static void ThrowPreservingPrimaryFailure(
