@@ -23,6 +23,8 @@ internal sealed class DownloadListState
 
     public ReadOnlyObservableCollection<DownloadedItem> Downloaded { get; }
 
+    public bool IsDownloadedHistoryLoaded { get; private set; }
+
     public void AddDownloading(DownloadingItem item)
     {
         ArgumentNullException.ThrowIfNull(item);
@@ -56,7 +58,9 @@ internal sealed class DownloadListState
     public bool RemoveDownloaded(DownloadedItem item)
     {
         ArgumentNullException.ThrowIfNull(item);
-        return _downloaded.Remove(item);
+        var loadedItem = _downloaded.FirstOrDefault(candidate =>
+            candidate.HistoryRecord.Id == item.HistoryRecord.Id);
+        return loadedItem != null && _downloaded.Remove(loadedItem);
     }
 
     public void ClearDownloaded()
@@ -68,6 +72,23 @@ internal sealed class DownloadListState
     {
         ArgumentNullException.ThrowIfNull(items);
         ReplaceDownloadedCore(items.ToList());
+    }
+
+    public void LoadDownloadedHistory(IEnumerable<DownloadedItem> items)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+        if (IsDownloadedHistoryLoaded)
+        {
+            return;
+        }
+
+        var loadedItems = items.ToList();
+        var loadedIds = loadedItems
+            .Select(item => item.HistoryRecord.Id)
+            .ToHashSet();
+        loadedItems.AddRange(_downloaded.Where(item => loadedIds.Add(item.HistoryRecord.Id)));
+        ReplaceDownloadedCore(loadedItems);
+        IsDownloadedHistoryLoaded = true;
     }
 
     public void SortDownloaded(DownloadFinishedSort finishedSort)

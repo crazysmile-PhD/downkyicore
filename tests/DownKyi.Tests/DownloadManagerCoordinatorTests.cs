@@ -497,6 +497,34 @@ public sealed class DownloadManagerCoordinatorTests
         Assert.Null(context.Launcher.OpenedFolder);
     }
 
+    [Fact]
+    public async Task CompleteHistoryLoadMergesCurrentItemsAndDoesNotReadAgain()
+    {
+        using var context = new CoordinatorContext();
+        var first = await context.CreateCompletedItemAsync(
+            "history-first", "media", "history-first.mp4");
+        context.State.AddDownloaded(first);
+        await context.CreateCompletedItemAsync(
+            "history-second", "media", "history-second.mp4");
+
+        await context.Coordinator.LoadDownloadedHistoryAsync();
+
+        Assert.True(context.State.IsDownloadedHistoryLoaded);
+        Assert.Equal(
+            ["history-first", "history-second"],
+            context.State.Downloaded
+                .Select(item => item.HistoryRecord.Id.Value)
+                .Order(StringComparer.Ordinal));
+
+        await context.CreateCompletedItemAsync(
+            "history-after-load", "media", "history-after-load.mp4");
+        await context.Coordinator.LoadDownloadedHistoryAsync();
+
+        Assert.DoesNotContain(
+            context.State.Downloaded,
+            item => item.HistoryRecord.Id == new DownloadTaskId("history-after-load"));
+    }
+
     private sealed class CoordinatorContext : IDisposable
     {
         private readonly string _directory = Path.Combine(
@@ -637,8 +665,11 @@ public sealed class DownloadManagerCoordinatorTests
             await StateWriter.CompleteAsync(taskId,
                 new DownloadCompletion(1, "completed", null), TestContext.Current.CancellationToken)
                 .ConfigureAwait(true);
-            return Assert.Single(await Storage.GetRecentDownloadedAsync(
-                10, TestContext.Current.CancellationToken).ConfigureAwait(true));
+            return Assert.Single(
+                await Storage.GetRecentDownloadedAsync(
+                    10,
+                    TestContext.Current.CancellationToken).ConfigureAwait(true),
+                item => item.HistoryRecord.Id == taskId);
         }
 
         public string CreateFile(string name, string contents)

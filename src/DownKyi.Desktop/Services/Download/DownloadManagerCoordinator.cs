@@ -5,7 +5,6 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Desktop;
-using DownKyi.Application.Downloads;
 using DownKyi.Domain.Downloads;
 using DownKyi.Models;
 using DownKyi.ViewModels;
@@ -41,10 +40,7 @@ internal interface IDownloadManagerCoordinator
 
     Task ClearDownloadedAsync(CancellationToken cancellationToken = default);
 
-    Task<DownloadHistoryPage> GetDownloadedPageAsync(
-        DownloadHistoryCursor? cursor,
-        int pageSize,
-        CancellationToken cancellationToken = default);
+    Task LoadDownloadedHistoryAsync();
 
     Task RemoveDownloadedAsync(DownloadedItem item, CancellationToken cancellationToken = default);
 
@@ -66,7 +62,9 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator, 
     private readonly DownloadTaskFileService _fileService;
     private readonly DownloadListState _downloadLists;
     private readonly IPlatformLauncher _platformLauncher;
+    private readonly object _downloadedHistoryLoadGate = new();
     private readonly SemaphoreSlim _pauseResumeItemGate = new(1, 1);
+    private Task? _downloadedHistoryLoadTask;
     private readonly object _pauseResumeLifecycleGate = new();
     private TaskCompletionSource? _activePauseResumeBatch;
     private int _pauseResumeBatchVersion;
@@ -181,11 +179,30 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator, 
         _downloadLists.ClearDownloaded();
     }
 
-    public Task<DownloadHistoryPage> GetDownloadedPageAsync(
-        DownloadHistoryCursor? cursor,
-        int pageSize,
-        CancellationToken cancellationToken = default) =>
-        _storage.GetDownloadedPageAsync(cursor, pageSize, cancellationToken);
+    public Task LoadDownloadedHistoryAsync()
+    {
+        lock (_downloadedHistoryLoadGate)
+        {
+            if (_downloadLists.IsDownloadedHistoryLoaded)
+            {
+                return Task.CompletedTask;
+            }
+
+            if (_downloadedHistoryLoadTask != null)
+            {
+                return _downloadedHistoryLoadTask;
+            }
+
+            var loadTask = LoadDownloadedHistoryCoreAsync();
+            _downloadedHistoryLoadTask = loadTask;
+            _ = loadTask.ContinueWith(
+                completed => ResetDownloadedHistoryLoadAfterFailure(completed),
+                CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
+            return loadTask;
+        }
+    }
 
     public async Task RemoveDownloadedAsync(
         DownloadedItem item,
@@ -274,6 +291,28 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator, 
                 resumed.Id,
                 CancellationToken.None).ConfigureAwait(true);
             throw;
+        }
+    }
+
+    private async Task LoadDownloadedHistoryCoreAsync()
+    {
+        var items = await _storage.GetDownloadedAsync().ConfigureAwait(true);
+        _downloadLists.LoadDownloadedHistory(items);
+    }
+
+    private void ResetDownloadedHistoryLoadAfterFailure(Task completed)
+    {
+        if (completed.IsCompletedSuccessfully)
+        {
+            return;
+        }
+
+        lock (_downloadedHistoryLoadGate)
+        {
+            if (ReferenceEquals(_downloadedHistoryLoadTask, completed))
+            {
+                _downloadedHistoryLoadTask = null;
+            }
         }
     }
 

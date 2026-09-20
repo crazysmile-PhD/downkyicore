@@ -51,7 +51,10 @@ internal sealed class DownloadDuplicatePolicy
             return true;
         }
 
-        foreach (var item in _downloadLists.Downloaded)
+        var downloadedItems = await _projectionStore
+            .GetDownloadedAsync(cancellationToken)
+            .ConfigureAwait(true);
+        foreach (var item in downloadedItems)
         {
             if (!IsSameVideo(item, page, videoQuality))
             {

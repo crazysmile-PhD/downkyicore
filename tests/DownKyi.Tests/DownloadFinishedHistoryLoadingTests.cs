@@ -8,88 +8,94 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DownKyi.Tests;
 
-public sealed class DownloadFinishedPagingTests
+public sealed class DownloadFinishedHistoryLoadingTests
 {
     [Fact]
-    public void EnteringPageLoadsPagesAndDeduplicatesByTaskId()
+    public void FirstEntryLoadsAllHistoryOnceAndUsesExistingListSorting()
     {
-        var firstCursor = new DownloadHistoryCursor(20, new DownloadTaskId("task-b"));
-        var coordinator = new RecordingCoordinator(
-            _ => Task.FromResult(new DownloadHistoryPage(
-                [CreateHistory("task-a", 30), CreateHistory("task-b", 20)],
-                firstCursor)),
-            _ => Task.FromResult(new DownloadHistoryPage(
-                [CreateHistory("task-b", 20), CreateHistory("task-c", 10)],
-                null)));
-        var state = new DownloadListState();
-        using var settings = new TestSettingsStore();
-        using var viewModel = CreateViewModel(
-            new TestDesktopInteractionContext(), state, settings.Store, coordinator);
-
-        viewModel.OnNavigatedTo(CreateNavigationContext());
-
-        Assert.Equal(["task-b", "task-a"],
-            state.Downloaded.Select(item => item.HistoryRecord.Id.Value));
-        Assert.Single(coordinator.PageRequests);
-        Assert.Null(coordinator.PageRequests[0].Cursor);
-        Assert.Equal(100, coordinator.PageRequests[0].PageSize);
-
-        viewModel.LoadMoreCommand.Execute(null);
-
-        Assert.Equal(["task-c", "task-b", "task-a"],
-            state.Downloaded.Select(item => item.HistoryRecord.Id.Value));
-        Assert.Equal(2, coordinator.PageRequests.Count);
-        Assert.Equal(firstCursor, coordinator.PageRequests[1].Cursor);
-    }
-
-    [Fact]
-    public void LeavingPageCancelsReadAndRejectsItsLateResult()
-    {
-        var pendingPage = new TaskCompletionSource<DownloadHistoryPage>();
-        var coordinator = new RecordingCoordinator(_ => pendingPage.Task);
-        var state = new DownloadListState();
-        using var settings = new TestSettingsStore();
-        using var viewModel = CreateViewModel(
-            new TestDesktopInteractionContext(), state, settings.Store, coordinator);
-
-        var navigationContext = CreateNavigationContext();
-        viewModel.OnNavigatedTo(navigationContext);
-        var request = Assert.Single(coordinator.PageRequests);
-
-        viewModel.OnNavigatedFrom(navigationContext);
-        pendingPage.SetResult(new DownloadHistoryPage([CreateHistory("late", 1)], null));
-
-        Assert.True(request.CancellationToken.IsCancellationRequested);
-        Assert.Empty(state.Downloaded);
-        viewModel.LoadMoreCommand.Execute(null);
-        Assert.Single(coordinator.PageRequests);
-    }
-
-    [Fact]
-    public void ClearCancelsReadResetsPagingAndRejectsItsLateResult()
-    {
-        var pendingPage = new TaskCompletionSource<DownloadHistoryPage>();
         var state = new DownloadListState();
         state.AddDownloaded(DownloadTaskProjectionMapper.ToDownloadedItem(
-            CreateHistory("already-loaded", 2)));
+            CreateHistory("task-live", 20)));
         var coordinator = new RecordingCoordinator(
-            _ => pendingPage.Task,
-            clearDownloaded: () => state.ClearDownloaded());
+            state,
+            () => Task.FromResult<IReadOnlyList<DownloadedItem>>(
+            [
+                DownloadTaskProjectionMapper.ToDownloadedItem(CreateHistory("task-new", 30)),
+                DownloadTaskProjectionMapper.ToDownloadedItem(CreateHistory("task-live", 20)),
+                DownloadTaskProjectionMapper.ToDownloadedItem(CreateHistory("task-old", 10))
+            ]));
+        using var settings = new TestSettingsStore();
+        using (var firstViewModel = CreateViewModel(
+                   new TestDesktopInteractionContext(), state, settings.Store, coordinator))
+        {
+            firstViewModel.OnNavigatedTo(CreateNavigationContext());
+        }
+
+        using (var secondViewModel = CreateViewModel(
+                   new TestDesktopInteractionContext(), state, settings.Store, coordinator))
+        {
+            secondViewModel.OnNavigatedTo(CreateNavigationContext());
+        }
+
+        Assert.Equal(
+            ["task-old", "task-live", "task-new"],
+            state.Downloaded.Select(item => item.HistoryRecord.Id.Value));
+        Assert.True(state.IsDownloadedHistoryLoaded);
+        Assert.Equal(2, coordinator.LoadCalls);
+        Assert.Equal(1, coordinator.HistoryReads);
+    }
+
+    [Fact]
+    public async Task LeavingPageDoesNotCancelTheInitialCompleteHistoryLoad()
+    {
+        var history = new TaskCompletionSource<IReadOnlyList<DownloadedItem>>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var state = new DownloadListState();
+        var coordinator = new RecordingCoordinator(state, () => history.Task);
+        using var settings = new TestSettingsStore();
+        using var viewModel = CreateViewModel(
+            new TestDesktopInteractionContext(), state, settings.Store, coordinator);
+        var navigationContext = CreateNavigationContext();
+
+        viewModel.OnNavigatedTo(navigationContext);
+        viewModel.OnNavigatedFrom(navigationContext);
+        history.SetResult(
+        [
+            DownloadTaskProjectionMapper.ToDownloadedItem(CreateHistory("loaded-after-leave", 1))
+        ]);
+        await coordinator.LastLoad.WaitAsync(TestContext.Current.CancellationToken);
+
+        Assert.True(state.IsDownloadedHistoryLoaded);
+        Assert.Equal(
+            "loaded-after-leave",
+            Assert.Single(state.Downloaded).HistoryRecord.Id.Value);
+    }
+
+    [Fact]
+    public async Task ClearWaitsForInitialHistoryLoadAndDoesNotEnableAReload()
+    {
+        var history = new TaskCompletionSource<IReadOnlyList<DownloadedItem>>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var state = new DownloadListState();
+        var coordinator = new RecordingCoordinator(state, () => history.Task);
         using var settings = new TestSettingsStore();
         using var viewModel = CreateViewModel(
             new AcceptingDesktopInteractionContext(), state, settings.Store, coordinator);
 
         viewModel.OnNavigatedTo(CreateNavigationContext());
-        var request = Assert.Single(coordinator.PageRequests);
-
         viewModel.ClearAllDownloadedCommand.Execute(null);
-        pendingPage.SetResult(new DownloadHistoryPage([CreateHistory("late", 1)], null));
+        Assert.Equal(0, coordinator.ClearCount);
 
-        Assert.True(request.CancellationToken.IsCancellationRequested);
-        Assert.Equal(1, coordinator.ClearCount);
+        history.SetResult(
+        [
+            DownloadTaskProjectionMapper.ToDownloadedItem(CreateHistory("to-clear", 1))
+        ]);
+        await coordinator.ClearCalled.Task.WaitAsync(TestContext.Current.CancellationToken);
+
         Assert.Empty(state.Downloaded);
-        viewModel.LoadMoreCommand.Execute(null);
-        Assert.Single(coordinator.PageRequests);
+        Assert.True(state.IsDownloadedHistoryLoaded);
+        await coordinator.LoadDownloadedHistoryAsync();
+        Assert.Equal(1, coordinator.HistoryReads);
     }
 
     private static ViewDownloadFinishedViewModel CreateViewModel(
@@ -131,29 +137,20 @@ public sealed class DownloadFinishedPagingTests
             "finished",
             null);
 
-    private sealed class RecordingCoordinator : IDownloadManagerCoordinator
+    private sealed class RecordingCoordinator(
+        DownloadListState state,
+        Func<Task<IReadOnlyList<DownloadedItem>>> readHistory) : IDownloadManagerCoordinator
     {
-        private readonly Queue<Func<CancellationToken, Task<DownloadHistoryPage>>> _pages;
-        private readonly Action? _clearDownloaded;
+        public int LoadCalls { get; private set; }
 
-        public RecordingCoordinator(
-            Func<CancellationToken, Task<DownloadHistoryPage>> firstPage,
-            Func<CancellationToken, Task<DownloadHistoryPage>>? secondPage = null,
-            Action? clearDownloaded = null)
-        {
-            _pages = new Queue<Func<CancellationToken, Task<DownloadHistoryPage>>>();
-            _pages.Enqueue(firstPage);
-            if (secondPage != null)
-            {
-                _pages.Enqueue(secondPage);
-            }
-
-            _clearDownloaded = clearDownloaded;
-        }
-
-        public List<PageRequest> PageRequests { get; } = [];
+        public int HistoryReads { get; private set; }
 
         public int ClearCount { get; private set; }
+
+        public Task LastLoad { get; private set; } = Task.CompletedTask;
+
+        public TaskCompletionSource ClearCalled { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public Task PauseAllAsync(
             IEnumerable<DownloadingItem> items,
@@ -179,17 +176,27 @@ public sealed class DownloadFinishedPagingTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             ClearCount++;
-            _clearDownloaded?.Invoke();
+            state.ClearDownloaded();
+            ClearCalled.TrySetResult();
             return Task.CompletedTask;
         }
 
-        public Task<DownloadHistoryPage> GetDownloadedPageAsync(
-            DownloadHistoryCursor? cursor,
-            int pageSize,
-            CancellationToken cancellationToken = default)
+        public Task LoadDownloadedHistoryAsync()
         {
-            PageRequests.Add(new PageRequest(cursor, pageSize, cancellationToken));
-            return _pages.Dequeue()(cancellationToken);
+            LoadCalls++;
+            if (state.IsDownloadedHistoryLoaded)
+            {
+                return Task.CompletedTask;
+            }
+
+            if (!LastLoad.IsCompleted)
+            {
+                return LastLoad;
+            }
+
+            HistoryReads++;
+            LastLoad = LoadCoreAsync();
+            return LastLoad;
         }
 
         public Task RemoveDownloadedAsync(
@@ -205,12 +212,12 @@ public sealed class DownloadFinishedPagingTests
             DownloadedItem item,
             CancellationToken cancellationToken = default) =>
             Task.FromResult(DownloadArtifactOpenResult.Opened);
-    }
 
-    private sealed record PageRequest(
-        DownloadHistoryCursor? Cursor,
-        int PageSize,
-        CancellationToken CancellationToken);
+        private async Task LoadCoreAsync()
+        {
+            state.LoadDownloadedHistory(await readHistory().ConfigureAwait(true));
+        }
+    }
 
     private sealed class AcceptingDesktopInteractionContext : IDesktopInteractionContext
     {

@@ -46,7 +46,9 @@ public sealed class DownloadAddOwnerTests : IDisposable
             TestContext.Current.CancellationToken);
 
         Assert.True(shouldSkip);
-        Assert.Single(context.ListState.Downloaded);
+        Assert.Empty(context.ListState.Downloaded);
+        Assert.NotNull(context.Store.History);
+        Assert.Equal(1, context.Store.HistoryPageRequestCount);
         Assert.Equal(0, context.Store.UpdateCount);
         Assert.Equal(0, context.Dialogs.ShowCount);
     }
@@ -63,7 +65,9 @@ public sealed class DownloadAddOwnerTests : IDisposable
             TestContext.Current.CancellationToken);
 
         Assert.False(shouldSkip);
-        Assert.Single(context.ListState.Downloaded);
+        Assert.Empty(context.ListState.Downloaded);
+        Assert.NotNull(context.Store.History);
+        Assert.Equal(1, context.Store.HistoryPageRequestCount);
         Assert.Equal(0, context.Store.UpdateCount);
         Assert.Equal(0, context.Dialogs.ShowCount);
     }
@@ -80,7 +84,9 @@ public sealed class DownloadAddOwnerTests : IDisposable
             TestContext.Current.CancellationToken);
 
         Assert.True(shouldSkip);
-        Assert.Single(context.ListState.Downloaded);
+        Assert.Empty(context.ListState.Downloaded);
+        Assert.NotNull(context.Store.History);
+        Assert.Equal(1, context.Store.HistoryPageRequestCount);
         Assert.Equal(0, context.Store.UpdateCount);
         Assert.Equal(1, context.Dialogs.ShowCount);
     }
@@ -88,7 +94,9 @@ public sealed class DownloadAddOwnerTests : IDisposable
     [Fact]
     public async Task AcceptedDuplicateConfirmationDeletesPersistedRecordBeforeAllowingTask()
     {
-        using var context = DuplicatePolicyContext.WithCompleted(AppDialogOutcome.Accepted);
+        using var context = DuplicatePolicyContext.WithCompleted(
+            AppDialogOutcome.Accepted,
+            loadUi: true);
         Assert.NotNull(context.Store.History);
         var historyId = context.Store.History.Id;
 
@@ -105,6 +113,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
         Assert.Equal(0, context.Store.UpdateCount);
         Assert.Equal(1, context.Store.DeleteHistoryCount);
         Assert.Equal(historyId, context.Store.DeletedHistoryId);
+        Assert.Equal(1, context.Store.HistoryPageRequestCount);
         Assert.Equal(1, context.Dialogs.ShowCount);
     }
 
@@ -330,7 +339,9 @@ public sealed class DownloadAddOwnerTests : IDisposable
 
         public StubDialogService Dialogs { get; }
 
-        public static DuplicatePolicyContext WithCompleted(AppDialogOutcome outcome)
+        public static DuplicatePolicyContext WithCompleted(
+            AppDialogOutcome outcome,
+            bool loadUi = false)
         {
             var queued = DownloadTaskProjectionMapper.CreateNewTask(
                 CreateDownloadingItem(),
@@ -343,8 +354,12 @@ public sealed class DownloadAddOwnerTests : IDisposable
                 .TryGetValue(out var completed));
             var history = DownloadHistoryRecord.FromCompletedTask(completed);
             var context = new DuplicatePolicyContext(outcome, history: history);
-            context.ListState.AddDownloaded(DownloadTaskProjectionMapper.ToDownloadedItem(
-                history));
+            if (loadUi)
+            {
+                context.ListState.AddDownloaded(
+                    DownloadTaskProjectionMapper.ToDownloadedItem(history));
+            }
+
             return context;
         }
 
@@ -399,6 +414,8 @@ public sealed class DownloadAddOwnerTests : IDisposable
 
         public int DeleteHistoryCount { get; private set; }
 
+        public int HistoryPageRequestCount { get; private set; }
+
         public DownloadTaskId? DeletedHistoryId { get; private set; }
 
         public Task<OperationResult> AddAsync(
@@ -450,6 +467,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            HistoryPageRequestCount++;
             IReadOnlyList<DownloadHistoryRecord> items = History == null
                 ? []
                 : [History];
