@@ -50,16 +50,18 @@ public static class FailurePreservingTestCleanup
     [SuppressMessage(
         "Design",
         "CA1031:Do not catch general exception types",
-        Justification = "Every fallback failure must be retained without releasing a still-running test operation.")]
-    public static async Task CancelStopAndJoinAsync(
-        Task operation,
+        Justification = "Every cleanup phase must complete and retain its failures before resources are released.")]
+    public static async Task CancelStopJoinValidateAndCleanupAsync<TResult>(
+        Task<TResult> operation,
         Func<Task> requestCancellationAsync,
         TimeSpan boundedWait,
-        params Action[] fallbackStops)
+        Action<TResult> validateResult,
+        params Action[] cleanupActions)
     {
         ArgumentNullException.ThrowIfNull(operation);
         ArgumentNullException.ThrowIfNull(requestCancellationAsync);
-        ArgumentNullException.ThrowIfNull(fallbackStops);
+        ArgumentNullException.ThrowIfNull(validateResult);
+        ArgumentNullException.ThrowIfNull(cleanupActions);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(boundedWait, TimeSpan.Zero);
 
         var failures = new List<Exception>();
@@ -74,11 +76,9 @@ public static class FailurePreservingTestCleanup
             fallbackRequired = true;
         }
 
-        var operationObserved = false;
         try
         {
             await operation.WaitAsync(boundedWait).ConfigureAwait(false);
-            operationObserved = true;
         }
         catch (Exception exception)
         {
@@ -88,31 +88,35 @@ public static class FailurePreservingTestCleanup
 
         if (fallbackRequired)
         {
-            CaptureFailures(fallbackStops, failures);
+            CaptureFailures(cleanupActions, failures);
         }
 
-        if (!operationObserved)
+        TResult? result = default;
+        var resultAvailable = false;
+        try
+        {
+            result = await operation.ConfigureAwait(false);
+            resultAvailable = true;
+        }
+        catch (Exception exception)
+        {
+            AddFailure(failures, exception);
+        }
+
+        if (resultAvailable)
         {
             try
             {
-                await operation.ConfigureAwait(false);
+                validateResult(result!);
             }
             catch (Exception exception)
             {
-                AddFailure(failures, exception);
+                failures.Add(exception);
             }
         }
 
-        ThrowFailures("The started test operation and its cleanup both failed.", failures);
-    }
-
-    public static void RunCleanupActions(params Action[] cleanupActions)
-    {
-        ArgumentNullException.ThrowIfNull(cleanupActions);
-
-        var failures = new List<Exception>();
         CaptureFailures(cleanupActions, failures);
-        ThrowFailures("One or more cleanup actions failed.", failures);
+        ThrowFailures("The started test operation and its cleanup both failed.", failures);
     }
 
     private static void AddFailure(List<Exception> failures, Exception failure)

@@ -93,7 +93,6 @@ public sealed class OwnedProcessScopePlatformTests
         int? grandchildPid = null;
         using var cancellation = new CancellationTokenSource();
         Task<ProcessExecutionResult>? run = null;
-        ProcessExecutionResult? result = null;
         await FailurePreservingTestCleanup.RunAsync(
             async () =>
             {
@@ -134,7 +133,7 @@ public sealed class OwnedProcessScopePlatformTests
                 }
 
                 await cancellation.CancelAsync().ConfigureAwait(true);
-                result = await run.WaitAsync(TimeSpan.FromSeconds(8),
+                var result = await run.WaitAsync(TimeSpan.FromSeconds(8),
                     TestContext.Current.CancellationToken).ConfigureAwait(true);
                 Assert.Equal(130, result.ExitCode);
                 AssertStopped(result.RootPid);
@@ -147,101 +146,42 @@ public sealed class OwnedProcessScopePlatformTests
             },
             async () =>
             {
-                Exception? runCleanupFailure = null;
-                var resultRecoveredDuringCleanup = false;
-                if (run is not null && result is null)
-                {
-                    try
+                await FailurePreservingTestCleanup.RunAsync(
+                    async () =>
                     {
-                        await FailurePreservingTestCleanup.CancelStopAndJoinAsync(
-                            run,
-                            async () => await cancellation.CancelAsync().ConfigureAwait(false),
-                            TimeSpan.FromSeconds(8),
-                            () => StopIfAlive(rootPid),
-                            () => StopIfAlive(childPid),
-                            () => StopIfAlive(grandchildPid)).ConfigureAwait(true);
-                        result = await run.ConfigureAwait(true);
-                        resultRecoveredDuringCleanup = true;
-                    }
-                    catch (Exception exception)
-                    {
-                        runCleanupFailure = exception;
-                        if (run.IsCompletedSuccessfully)
+                        if (run is not null)
                         {
-                            result = await run.ConfigureAwait(true);
-                            resultRecoveredDuringCleanup = true;
+                            await FailurePreservingTestCleanup.CancelStopJoinValidateAndCleanupAsync(
+                                run,
+                                async () => await cancellation.CancelAsync().ConfigureAwait(false),
+                                TimeSpan.FromSeconds(8),
+                                terminalResult => Assert.Equal(130, terminalResult.ExitCode),
+                                () => StopIfAlive(rootPid),
+                                () => StopIfAlive(childPid),
+                                () => StopIfAlive(grandchildPid)).ConfigureAwait(true);
                         }
-                    }
-                }
-
-                if (result is { ExitCode: not 130 })
-                {
-                    if (resultRecoveredDuringCleanup)
+                    },
+                    async () =>
                     {
-                        try
+                        if (OperatingSystem.IsWindows())
                         {
-                            Assert.Equal(130, result.ExitCode);
+                            await WindowsDirectoryResourceRundown.WaitForDeleteAccessAsync(
+                                directory, TimeSpan.FromSeconds(3)).ConfigureAwait(true);
                         }
-                        catch (Exception resultFailure)
-                        {
-                            runCleanupFailure = runCleanupFailure is null
-                                ? resultFailure
-                                : new AggregateException(
-                                    "The fixture run cleanup and terminal result validation both failed.",
-                                    runCleanupFailure,
-                                    resultFailure);
-                        }
-                    }
-                }
 
-                try
-                {
-                    FailurePreservingTestCleanup.RunCleanupActions(
-                        () => StopIfAlive(rootPid),
-                        () => StopIfAlive(childPid),
-                        () => StopIfAlive(grandchildPid));
-                }
-                catch (Exception residualStopFailure)
-                {
-                    runCleanupFailure = runCleanupFailure is null
-                        ? residualStopFailure
-                        : new AggregateException(
-                            "The fixture run cleanup and residual process stops both failed.",
-                            runCleanupFailure,
-                            residualStopFailure);
-                }
-
-                try
-                {
-                    if (OperatingSystem.IsWindows())
-                    {
-                        await WindowsDirectoryResourceRundown.WaitForDeleteAccessAsync(
-                            directory, TimeSpan.FromSeconds(3)).ConfigureAwait(true);
-                    }
-
-                    Directory.Delete(directory, recursive: true);
-                }
-                catch (Exception resourceCleanupFailure) when (runCleanupFailure is not null)
-                {
-                    throw new AggregateException(
-                        "The fixture run and resource cleanup both failed.",
-                        runCleanupFailure,
-                        resourceCleanupFailure);
-                }
-
-                if (runCleanupFailure is not null)
-                {
-                    ExceptionDispatchInfo.Capture(runCleanupFailure).Throw();
-                }
+                        Directory.Delete(directory, recursive: true);
+                    }).ConfigureAwait(true);
             }).ConfigureAwait(true);
     }
 
     [Fact]
     public async Task FixtureCleanupJoinsTimedOutRunAfterFallbackStopFailureBeforeDeletingResources()
     {
-        var runCompletion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var runCompletion = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
         Task? terminalCompletion = null;
         var cancellationRequested = false;
+        var cleanupAttempts = 0;
+        var resultValidated = false;
         var resourcesDeleted = false;
         var runWasTerminalAtDeletion = false;
         var clock = Stopwatch.StartNew();
@@ -251,7 +191,7 @@ public sealed class OwnedProcessScopePlatformTests
             {
                 try
                 {
-                    await FailurePreservingTestCleanup.CancelStopAndJoinAsync(
+                    await FailurePreservingTestCleanup.CancelStopJoinValidateAndCleanupAsync(
                         runCompletion.Task,
                         () =>
                         {
@@ -259,10 +199,19 @@ public sealed class OwnedProcessScopePlatformTests
                             return Task.CompletedTask;
                         },
                         TimeSpan.FromMilliseconds(50),
+                        result =>
+                        {
+                            Assert.Equal(130, result);
+                            resultValidated = true;
+                        },
                         () =>
                         {
-                            terminalCompletion = CompleteRunAsync();
-                            throw new InvalidOperationException("Simulated fallback stop failure.");
+                            cleanupAttempts++;
+                            if (cleanupAttempts == 1)
+                            {
+                                terminalCompletion = CompleteRunAsync();
+                                throw new InvalidOperationException("Simulated fallback stop failure.");
+                            }
                         }).ConfigureAwait(true);
                 }
                 finally
@@ -279,6 +228,8 @@ public sealed class OwnedProcessScopePlatformTests
             failure => failure is InvalidOperationException &&
                        failure.Message.Contains("fallback stop failure", StringComparison.Ordinal));
         Assert.True(cancellationRequested);
+        Assert.True(resultValidated);
+        Assert.Equal(2, cleanupAttempts);
         Assert.NotNull(terminalCompletion);
         await terminalCompletion.ConfigureAwait(true);
         Assert.True(terminalCompletion.IsCompletedSuccessfully);
@@ -290,7 +241,7 @@ public sealed class OwnedProcessScopePlatformTests
         async Task CompleteRunAsync()
         {
             await Task.Delay(TimeSpan.FromMilliseconds(150)).ConfigureAwait(false);
-            runCompletion.TrySetResult();
+            runCompletion.TrySetResult(130);
         }
     }
 
