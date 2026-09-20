@@ -688,6 +688,7 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.Contains("script/test-project-runner.ps1", criticalPaths, StringComparison.Ordinal);
         Assert.Contains("docs/testing/test-runner-policy.json", criticalPaths, StringComparison.Ordinal);
         Assert.Contains("tools/DownKyi.CentralTestRunner", criticalPaths, StringComparison.Ordinal);
+        Assert.Contains("tools/DownKyi.ProcessSupervision", criticalPaths, StringComparison.Ordinal);
         Assert.Contains("Resolve macOS release trust mode", workflow, StringComparison.Ordinal);
         Assert.Contains("macos_trust_mode: ${{ steps.macos_trust.outputs.macos_trust_mode }}", workflow, StringComparison.Ordinal);
         Assert.Contains("HAS_MACOS_SIGNING: ${{ needs.authority.outputs.has_macos_signing }}", workflow, StringComparison.Ordinal);
