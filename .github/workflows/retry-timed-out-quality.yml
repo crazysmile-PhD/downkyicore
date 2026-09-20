@@ -23,7 +23,7 @@ jobs:
         github.event.workflow_run.run_attempt == 1 &&
         github.event.workflow_run.conclusion != 'success'
       }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - name: Retry eligible job
@@ -34,7 +34,7 @@ jobs:
             const eventRun = context.payload.workflow_run;
             const expectedBuildTests = [
               "Build and test (windows-latest)",
-              "Build and test (ubuntu-latest)",
+              "Build and test (ubuntu-26.04)",
               "Build and test (macos-latest)",
             ];
             const readRun = async () => (await github.request(
