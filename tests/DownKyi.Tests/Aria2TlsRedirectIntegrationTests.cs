@@ -8,6 +8,115 @@ namespace DownKyi.Tests;
 
 public sealed partial class Aria2TlsIntegrationTests
 {
+    [Theory]
+    [InlineData("https-to-http-redirect")]
+    [InlineData("preflight-safe-actual-downgrade")]
+    [InlineData("head-safe-get-downgrade")]
+    [InlineData("range-downgrade")]
+    [InlineData("second-round-downgrade")]
+    [Trait("Category", "Aria2TlsIntegration")]
+    [Trait("Aria2TlsFamily", "insecure-redirect")]
+    public async Task PackagedAria2RejectsInsecureRedirect(string caseName)
+    {
+        await RunPackagedCaseAsync(
+            caseName,
+            context => caseName switch
+            {
+                "https-to-http-redirect" => RunHttpsRedirectToHttpRejectedAsync(
+                    context.Runtime,
+                    context.TrustedCertificate,
+                    context.Payload,
+                    context.Results,
+                    context.CancellationToken),
+                "preflight-safe-actual-downgrade" =>
+                    RunPreflightThenActualDowngradeRejectedAsync(
+                        context.Runtime,
+                        context.TrustedCertificate,
+                        context.TrustedAuthority.RootCertificate,
+                        context.Payload,
+                        context.Results,
+                        context.CancellationToken),
+                "head-safe-get-downgrade" => RunHeadSafeGetDowngradeRejectedAsync(
+                    context.Runtime,
+                    context.TrustedCertificate,
+                    context.Payload,
+                    context.Results,
+                    context.CancellationToken),
+                "range-downgrade" => RunRangeDowngradeRejectedAsync(
+                    context.Runtime,
+                    context.TrustedCertificate,
+                    context.Payload,
+                    context.Results,
+                    context.CancellationToken),
+                "second-round-downgrade" => RunSecondRoundDowngradeRejectedAsync(
+                    context.Runtime,
+                    context.TrustedCertificate,
+                    context.Payload,
+                    context.Results,
+                    context.CancellationToken),
+                _ => throw new ArgumentOutOfRangeException(
+                    nameof(caseName),
+                    caseName,
+                    "Unknown insecure-redirect integration case.")
+            }).ConfigureAwait(true);
+    }
+
+    [Theory]
+    [InlineData("sensitive-cross-origin-cookie", "Cookie: test-session=fixture")]
+    [InlineData("sensitive-cross-origin-authorization", "Authorization: Bearer fixture")]
+    [InlineData(
+        "sensitive-cross-origin-proxy-authorization",
+        "Proxy-Authorization: Basic Zml4dHVyZQ==")]
+    [InlineData("sensitive-cross-origin-token", "X-Access-Token: fixture")]
+    [InlineData("sensitive-cross-origin-api-key", "X-API-Key: fixture")]
+    [Trait("Category", "Aria2TlsIntegration")]
+    [Trait("Aria2TlsFamily", "credential-redirect")]
+    public async Task PackagedAria2RejectsSensitiveCrossOriginRedirect(
+        string caseName,
+        string header)
+    {
+        await RunPackagedCaseAsync(
+            caseName,
+            context => RunSensitiveCrossOriginRedirectRejectedAsync(
+                context.Runtime,
+                context.TrustedCertificate,
+                context.Payload,
+                caseName,
+                header,
+                context.Results,
+                context.CancellationToken)).ConfigureAwait(true);
+    }
+
+    [Fact]
+    [Trait("Category", "Aria2TlsIntegration")]
+    [Trait("Aria2TlsFamily", "https-redirect")]
+    public async Task PackagedAria2AllowsSameOriginHttpsRedirectWithCredentials()
+    {
+        await RunPackagedCaseAsync(
+            "same-origin-https-redirect",
+            context => RunSameOriginHttpsRedirectAsync(
+                context.Runtime,
+                context.TrustedCertificate,
+                context.Payload,
+                context.Results,
+                context.CancellationToken)).ConfigureAwait(true);
+    }
+
+    [Fact]
+    [Trait("Category", "Aria2TlsIntegration")]
+    [Trait("Aria2TlsFamily", "https-redirect")]
+    public async Task PackagedAria2AllowsCredentiallessCrossOriginHttpsRedirect()
+    {
+        await RunPackagedCaseAsync(
+            "cross-origin-https-redirect",
+            context => RunCrossOriginHttpsRedirectAsync(
+                context.Runtime,
+                context.TrustedCertificate,
+                context.Payload,
+                context.Results,
+                context.CancellationToken)).ConfigureAwait(true);
+    }
+
     private static async Task RunHttpsRedirectToHttpRejectedAsync(
         Aria2TlsTestRuntime runtime,
         X509Certificate2 certificate,
@@ -287,56 +396,46 @@ public sealed partial class Aria2TlsIntegrationTests
             "zero-http-requests"));
     }
 
-    private static async Task RunSensitiveCrossOriginRedirectsRejectedAsync(
+    private static async Task RunSensitiveCrossOriginRedirectRejectedAsync(
         Aria2TlsTestRuntime runtime,
         X509Certificate2 certificate,
         byte[] payload,
+        string caseName,
+        string header,
         List<Aria2TlsCaseResult> results,
         CancellationToken cancellationToken)
     {
-        var cases = new (string ReportName, string Header)[]
-        {
-            ("sensitive-cross-origin-cookie", "Cookie: test-session=fixture"),
-            ("sensitive-cross-origin-authorization", "Authorization: Bearer fixture"),
-            ("sensitive-cross-origin-proxy-authorization", "Proxy-Authorization: Basic Zml4dHVyZQ=="),
-            ("sensitive-cross-origin-token", "X-Access-Token: fixture"),
-            ("sensitive-cross-origin-api-key", "X-API-Key: fixture")
-        };
+        var target = new LoopbackTlsFileServer(
+            _ => certificate,
+            payload,
+            failureSink: runtime.LocalServiceFailures);
+        await using var targetLifetime = target.ConfigureAwait(false);
+        var redirect = new LoopbackTlsFileServer(
+            _ => certificate,
+            [],
+            redirectTarget: target.Url,
+            failureSink: runtime.LocalServiceFailures);
+        await using var redirectLifetime = redirect.ConfigureAwait(false);
+        var outputName = $"{caseName}.bin";
+        var status = await DownloadToTerminalStatusAsync(
+            runtime,
+            redirect.Url,
+            outputName,
+            maximumTries: 1,
+            headers: [header],
+            cancellationToken).ConfigureAwait(false);
 
-        foreach (var testCase in cases)
-        {
-            var target = new LoopbackTlsFileServer(
-                _ => certificate,
-                payload,
-                failureSink: runtime.LocalServiceFailures);
-            await using var targetLifetime = target.ConfigureAwait(false);
-            var redirect = new LoopbackTlsFileServer(
-                _ => certificate,
-                [],
-                redirectTarget: target.Url,
-                failureSink: runtime.LocalServiceFailures);
-            await using var redirectLifetime = redirect.ConfigureAwait(false);
-            var outputName = $"{testCase.ReportName}.bin";
-            var status = await DownloadToTerminalStatusAsync(
-                runtime,
-                redirect.Url,
-                outputName,
-                maximumTries: 1,
-                headers: [testCase.Header],
-                cancellationToken).ConfigureAwait(false);
-
-            AssertRedirectRejected(
-                status,
-                runtime.GetOutputPath(outputName),
-                payload,
-                "download.transfer.credentialed-redirect");
-            Assert.Equal(0, target.ConnectionCount);
-            Assert.Empty(target.Requests);
-            results.Add(new Aria2TlsCaseResult(
-                testCase.ReportName,
-                true,
-                "zero-cross-origin-requests"));
-        }
+        AssertRedirectRejected(
+            status,
+            runtime.GetOutputPath(outputName),
+            payload,
+            "download.transfer.credentialed-redirect");
+        Assert.Equal(0, target.ConnectionCount);
+        Assert.Empty(target.Requests);
+        results.Add(new Aria2TlsCaseResult(
+            caseName,
+            true,
+            "zero-cross-origin-requests"));
     }
 
     private static async Task RunSameOriginHttpsRedirectAsync(
