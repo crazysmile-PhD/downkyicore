@@ -122,6 +122,8 @@ internal static class Program
         try
         {
             await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+            await Task.WhenAll(standardOutputTask, standardErrorTask)
+                .WaitAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException cancellationFailure)
         {
@@ -139,9 +141,10 @@ internal static class Program
             }
             catch (Exception cleanupFailure)
             {
-                throw new InvalidOperationException(
+                throw new OperationCanceledException(
                     $"The {scenario} benchmark was canceled and child cleanup failed.",
-                    new AggregateException(cancellationFailure, cleanupFailure));
+                    new AggregateException(cancellationFailure, cleanupFailure),
+                    cancellationFailure.CancellationToken);
             }
 
             ExceptionDispatchInfo.Capture(cancellationFailure).Throw();

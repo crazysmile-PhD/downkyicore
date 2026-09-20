@@ -28,7 +28,17 @@ internal static class SystemBenchmarkProcessCleanup
         using var deadline = new CancellationTokenSource(timeout);
         var clock = Stopwatch.StartNew();
         var failures = new List<Exception>();
-        if (!operations.HasExited())
+        var shouldKill = true;
+        try
+        {
+            shouldKill = !operations.HasExited();
+        }
+        catch (Exception exception)
+        {
+            failures.Add(exception);
+        }
+
+        if (shouldKill)
         {
             try
             {
@@ -41,10 +51,17 @@ internal static class SystemBenchmarkProcessCleanup
         }
 
         var exit = operations.WaitForExitAsync(deadline.Token);
-        await CaptureFailureAsync(
+        var exitJoined = await CaptureFailureAsync(
             () => exit.WaitAsync(WorkWindow(timeout, clock), deadline.Token),
             "The benchmark child did not exit before the cleanup deadline.",
             failures).ConfigureAwait(false);
+        if (!exitJoined)
+        {
+            await CaptureFailureAsync(
+                () => operations.WaitForExitAsync(CancellationToken.None),
+                "The benchmark child could not be reaped after the cleanup deadline.",
+                failures).ConfigureAwait(false);
+        }
 
         var drain = Task.WhenAll(operations.StandardOutput, operations.StandardError);
         try
@@ -58,12 +75,11 @@ internal static class SystemBenchmarkProcessCleanup
                 "The benchmark child output did not drain before the cleanup deadline.",
                 exception));
             await CaptureFailureAsync(
-                () => operations.CancelOutputAsync()
-                    .WaitAsync(Remaining(timeout, clock), deadline.Token),
+                operations.CancelOutputAsync,
                 "The benchmark child output cancellation failed.",
                 failures).ConfigureAwait(false);
             await CaptureFailureAsync(
-                () => ObserveCanceledDrainAsync(drain, Remaining(timeout, clock), deadline.Token),
+                () => ObserveCanceledDrainAsync(drain),
                 "The benchmark child output readers did not stop before the cleanup deadline.",
                 failures).ConfigureAwait(false);
         }
@@ -89,7 +105,7 @@ internal static class SystemBenchmarkProcessCleanup
         "Design",
         "CA1031:Do not catch general exception types",
         Justification = "Every cleanup failure is retained and reported after the remaining owners run.")]
-    private static async Task CaptureFailureAsync(
+    private static async Task<bool> CaptureFailureAsync(
         Func<Task> operation,
         string timeoutMessage,
         List<Exception> failures)
@@ -97,6 +113,7 @@ internal static class SystemBenchmarkProcessCleanup
         try
         {
             await operation().ConfigureAwait(false);
+            return true;
         }
         catch (TimeoutException exception)
         {
@@ -110,16 +127,15 @@ internal static class SystemBenchmarkProcessCleanup
         {
             failures.Add(exception);
         }
+
+        return false;
     }
 
-    private static async Task ObserveCanceledDrainAsync(
-        Task drain,
-        TimeSpan timeout,
-        CancellationToken cancellationToken)
+    private static async Task ObserveCanceledDrainAsync(Task drain)
     {
         try
         {
-            await drain.WaitAsync(timeout, cancellationToken).ConfigureAwait(false);
+            await drain.ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (drain.IsCanceled)
         {
