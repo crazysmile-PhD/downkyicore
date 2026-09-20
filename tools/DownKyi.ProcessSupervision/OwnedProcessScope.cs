@@ -1,16 +1,18 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO.Pipes;
+using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using Microsoft.Win32.SafeHandles;
 
-namespace DownKyi.CentralTestRunner;
+namespace DownKyi.ProcessSupervision;
 
 // One test invocation owns one OS group. The small child host joins that group
 // before it launches the test, so no test code can run outside the scope.
 internal sealed class OwnedProcessScope : IDisposable
 {
+    internal const string FailedHostPidDataKey = "DownKyi.ProcessSupervision.FailedHostPid";
     private const int SigKill = 9;
     private const int NoSuchProcess = 3;
     private readonly SafeFileHandle? job;
@@ -29,7 +31,15 @@ internal sealed class OwnedProcessScope : IDisposable
     internal DateTimeOffset? RootStartTimeUtc { get; }
     internal SafeFileHandle? WindowsJobHandle => job;
 
-    internal static async Task<OwnedProcessScope> StartAsync(ProcessStartInfo testStartInfo, TimeSpan startupWindow)
+    internal static Task<OwnedProcessScope> StartAsync(
+        ProcessStartInfo testStartInfo,
+        TimeSpan startupWindow) =>
+        StartAsync(testStartInfo, startupWindow, hostJobNameOverride: null);
+
+    internal static async Task<OwnedProcessScope> StartAsync(
+        ProcessStartInfo testStartInfo,
+        TimeSpan startupWindow,
+        string? hostJobNameOverride)
     {
         // Unix named pipes include the temporary directory in a short socket path.
         var pipeName = Guid.NewGuid().ToString("N");
@@ -53,10 +63,10 @@ internal sealed class OwnedProcessScope : IDisposable
                 RedirectStandardError = true,
                 CreateNoWindow = true
             };
-            hostInfo.ArgumentList.Add(typeof(Program).Assembly.Location);
+            hostInfo.ArgumentList.Add(typeof(ProcessSupervisionHost).Assembly.Location);
             hostInfo.ArgumentList.Add("owned-scope-host");
             hostInfo.ArgumentList.Add(pipeName);
-            hostInfo.ArgumentList.Add(jobName ?? "-");
+            hostInfo.ArgumentList.Add(hostJobNameOverride ?? jobName ?? "-");
             host = new Process { StartInfo = hostInfo };
             if (!host.Start())
             {
@@ -85,22 +95,24 @@ internal sealed class OwnedProcessScope : IDisposable
             job = null;
             return scope;
         }
-        catch
+        catch (Exception primaryFailure)
         {
-            if (job is not null)
+            if (host is not null)
             {
-                TerminateWindowsJob(job);
-            }
-            else if (host is { HasExited: false })
-            {
-                // The host may already have created its group and launched the test.
-                var groupTerminated = NativeMethods.KillProcessGroup(host.Id, SigKill) == 0;
-                if (!groupTerminated && !host.HasExited)
-                {
-                    host.Kill();
-                }
+                primaryFailure.Data[FailedHostPidDataKey] = host.Id;
             }
 
+            var cleanupFailure = await CleanupFailedStartAsync(host, job, startupWindow)
+                .ConfigureAwait(false);
+            if (cleanupFailure is not null)
+            {
+                throw new AggregateException(
+                    "Process supervision startup and cleanup both failed.",
+                    primaryFailure,
+                    cleanupFailure);
+            }
+
+            ExceptionDispatchInfo.Capture(primaryFailure).Throw();
             throw;
         }
         finally
@@ -108,6 +120,60 @@ internal sealed class OwnedProcessScope : IDisposable
             host?.Dispose();
             job?.Dispose();
         }
+    }
+
+    private static async Task<Exception?> CleanupFailedStartAsync(
+        Process? host,
+        SafeFileHandle? job,
+        TimeSpan cleanupWindow)
+    {
+        var failures = new List<Exception>();
+        try
+        {
+            if (job is not null)
+            {
+                TerminateWindowsJob(job);
+            }
+            else if (host is { HasExited: false })
+            {
+                // The host may already have created its group and launched the target.
+                var groupTerminated = NativeMethods.KillProcessGroup(host.Id, SigKill) == 0;
+                if (!groupTerminated && !host.HasExited)
+                {
+                    host.Kill(entireProcessTree: true);
+                }
+            }
+
+            if (OperatingSystem.IsWindows() && host is { HasExited: false })
+            {
+                host.Kill(entireProcessTree: true);
+            }
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or Win32Exception)
+        {
+            failures.Add(exception);
+        }
+
+        if (host is not null)
+        {
+            try
+            {
+                await host.WaitForExitAsync().WaitAsync(cleanupWindow).ConfigureAwait(false);
+            }
+            catch (Exception exception) when (
+                exception is InvalidOperationException or TimeoutException)
+            {
+                failures.Add(exception);
+            }
+        }
+
+        return failures.Count switch
+        {
+            0 => null,
+            1 => failures[0],
+            _ => new AggregateException("Process supervision startup cleanup had multiple failures.", failures)
+        };
     }
 
     internal async Task TerminateAsync(CleanupDeadline deadline)

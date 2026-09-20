@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using DownKyi.CentralTestRunner;
+using DownKyi.ProcessSupervision;
 using DownKyi.TestInfrastructure;
 
 namespace DownKyi.Windows.Tests;
@@ -87,31 +88,34 @@ public sealed class WindowsEtwResourceFlightRecorderTests
     }
 
     [Fact]
-    public void JobAssignmentFailurePreservesPrimaryAndDoesNotLaunchTool()
+    public async Task SharedSupervisorAssignmentFailureIsReapedAndDoesNotLaunchTool()
     {
         var marker = Path.Combine(Path.GetTempPath(), $"downkyi-etw-tool-start-{Guid.NewGuid():N}.txt");
-        var expected = new InvalidOperationException("fixture assignment failure");
-        int? hostPid = null;
         try
         {
-            var actual = Assert.Throws<InvalidOperationException>(
-                () => WindowsEtwResourceFlightRecorder.RunTool(
-                    "pwsh.exe",
-                    TestTimeout,
-                    process =>
-                    {
-                        hostPid = process.Id;
-                        throw expected;
-                    },
-                    "-NoLogo",
-                    "-NoProfile",
-                    "-NonInteractive",
-                    "-Command",
-                    $"Set-Content -LiteralPath '{marker.Replace("'", "''", StringComparison.Ordinal)}' -Value launched"));
+            var startInfo = new ProcessStartInfo("pwsh.exe")
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            };
+            startInfo.ArgumentList.Add("-NoLogo");
+            startInfo.ArgumentList.Add("-NoProfile");
+            startInfo.ArgumentList.Add("-NonInteractive");
+            startInfo.ArgumentList.Add("-Command");
+            startInfo.ArgumentList.Add(
+                $"Set-Content -LiteralPath '{marker.Replace("'", "''", StringComparison.Ordinal)}' -Value launched");
 
-            Assert.Same(expected, actual);
-            Assert.NotNull(hostPid);
-            Assert.False(IsAlive(hostPid.Value));
+            var failure = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => OwnedProcessScope.StartAsync(
+                    startInfo,
+                    TestTimeout,
+                    $"Local\\downkyi-missing-job-{Guid.NewGuid():N}")).ConfigureAwait(true);
+
+            Assert.Contains("did not launch", failure.Message, StringComparison.Ordinal);
+            var hostPid = Assert.IsType<int>(failure.Data[OwnedProcessScope.FailedHostPidDataKey]);
+            Assert.False(IsAlive(hostPid));
             Assert.False(File.Exists(marker));
         }
         finally

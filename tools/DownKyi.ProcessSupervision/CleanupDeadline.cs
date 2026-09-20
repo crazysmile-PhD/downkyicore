@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-namespace DownKyi.CentralTestRunner;
+namespace DownKyi.ProcessSupervision;
 
 internal sealed class CleanupDeadline(TimeSpan budget)
 {

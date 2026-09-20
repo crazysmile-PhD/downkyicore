@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.ExceptionServices;
 using System.Runtime.Versioning;
+using DownKyi.ProcessSupervision;
 
 namespace DownKyi.CentralTestRunner;
 
