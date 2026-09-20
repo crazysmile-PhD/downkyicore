@@ -1,7 +1,10 @@
+using System.Net;
 using Bilibili.Community.Service.Dm.V1;
+using DownKyi.Application.Bilibili;
 using DownKyi.Application.Downloads;
 using DownKyi.Domain.Downloads;
 using DownKyi.Domain.Results;
+using DownKyi.Infrastructure.Bilibili;
 using DownKyi.Infrastructure.Downloads;
 using DownKyi.Infrastructure.Time;
 using DownKyi.Models;
@@ -9,6 +12,7 @@ using DownKyi.Services.Download;
 using DownKyi.ViewModels.DownloadManager;
 using Google.Protobuf;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DownKyi.Tests;
@@ -207,6 +211,56 @@ public sealed class DownloadArtifactStageTests
         Assert.False(run.Result.IsSuccess);
         Assert.Equal("download.artifact.cover.http", run.Result.Error?.Code);
         Assert.False(finalized);
+    }
+
+    [Fact]
+    public async Task CoverUrlsUseHttpsThroughProductionDownloadPath()
+    {
+        using var productionClient = ProductionBilibiliClientContext.Create();
+        using var context = await ArtifactTestContext.CreateAsync(
+            productionClient.Client,
+            cover: true,
+            coverUrl: "http://i0.hdslb.com/bfs/archive/main%2Fcover.jpg?token=%2f%2B",
+            pageCoverUrl: "//i1.hdslb.com/bfs/archive/page%2Fcover.jpg?token=%2B%2f")
+            .ConfigureAwait(true);
+
+        var result = await context.Stage.ExecuteAsync(
+            context.Execution,
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.True(result.IsSuccess, result.Error?.Message);
+        Assert.Collection(
+            productionClient.Requests,
+            request => Assert.Equal(
+                "https://i1.hdslb.com/bfs/archive/page%2Fcover.jpg?token=%2B%2f",
+                request.OriginalString),
+            request => Assert.Equal(
+                "https://i0.hdslb.com/bfs/archive/main%2Fcover.jpg?token=%2f%2B",
+                request.OriginalString));
+        Assert.All(
+            productionClient.Requests,
+            request => Assert.Equal(Uri.UriSchemeHttps, request.Scheme));
+    }
+
+    [Theory]
+    [InlineData("file://server/share/cover.jpg")]
+    [InlineData("ftp://i0.hdslb.com/cover.jpg")]
+    [InlineData("data:image/png;base64,AA==")]
+    public async Task UnsupportedCoverUrlStopsBeforeProductionHttpClient(string address)
+    {
+        using var productionClient = ProductionBilibiliClientContext.Create();
+        using var context = await ArtifactTestContext.CreateAsync(
+            productionClient.Client,
+            cover: true,
+            coverUrl: address).ConfigureAwait(true);
+
+        var result = await context.Stage.ExecuteAsync(
+            context.Execution,
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("download.artifact.cover.http", result.Error?.Code);
+        Assert.Empty(productionClient.Requests);
     }
 
     [Fact]
@@ -810,7 +864,7 @@ public sealed class DownloadArtifactStageTests
         }
 
         public static async Task<ArtifactTestContext> CreateAsync(
-            TestBilibiliApiClient client,
+            IBilibiliApiClient client,
             bool cover = false,
             bool subtitle = false,
             bool danmaku = false,
@@ -921,6 +975,104 @@ public sealed class DownloadArtifactStageTests
             {
                 Directory.Delete(_directory, recursive: true);
             }
+        }
+    }
+
+    private sealed class ProductionBilibiliClientContext : IDisposable
+    {
+        private readonly ServiceProvider _services;
+        private readonly CapturingHttpClientFactory _httpClientFactory;
+
+        private ProductionBilibiliClientContext(
+            ServiceProvider services,
+            CapturingHttpClientFactory httpClientFactory,
+            IBilibiliApiClient client,
+            List<Uri> requests)
+        {
+            _services = services;
+            _httpClientFactory = httpClientFactory;
+            Client = client;
+            Requests = requests;
+        }
+
+        public IBilibiliApiClient Client { get; }
+
+        public IReadOnlyList<Uri> Requests { get; }
+
+        public static ProductionBilibiliClientContext Create()
+        {
+            var requests = new List<Uri>();
+            var httpClientFactory = new CapturingHttpClientFactory(requests);
+            var services = new ServiceCollection();
+            services.AddDownKyiBilibiliInfrastructure(_ => new BilibiliNetworkOptions(
+                "DownKyi.Tests",
+                UseProxy: false,
+                ProxyAddress: null));
+            services.AddSingleton<IBilibiliCookieProvider>(new EmptyCookieProvider());
+            services.AddSingleton<IBuvidProvider>(new StubBuvidProvider());
+            services.AddSingleton<IHttpClientFactory>(httpClientFactory);
+            var provider = services.BuildServiceProvider();
+            return new ProductionBilibiliClientContext(
+                provider,
+                httpClientFactory,
+                provider.GetRequiredService<IBilibiliApiClient>(),
+                requests);
+        }
+
+        public void Dispose()
+        {
+            _services.Dispose();
+            _httpClientFactory.Dispose();
+        }
+    }
+
+    private sealed class CapturingHttpClientFactory : IHttpClientFactory, IDisposable
+    {
+        private readonly CapturingHttpMessageHandler _handler;
+        private readonly HttpClient _client;
+
+        public CapturingHttpClientFactory(List<Uri> requests)
+        {
+            _handler = new CapturingHttpMessageHandler(requests);
+            _client = new HttpClient(_handler, disposeHandler: false);
+        }
+
+        public HttpClient CreateClient(string name) => _client;
+
+        public void Dispose()
+        {
+            _client.Dispose();
+            _handler.Dispose();
+        }
+    }
+
+    private sealed class CapturingHttpMessageHandler(List<Uri> requests) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            requests.Add(request.RequestUri
+                         ?? throw new InvalidOperationException("Request URI was missing."));
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent([0xFF, 0xD8, 0xFF])
+            });
+        }
+    }
+
+    private sealed class EmptyCookieProvider : IBilibiliCookieProvider
+    {
+        public string GetCookieHeader() => string.Empty;
+    }
+
+    private sealed class StubBuvidProvider : IBuvidProvider
+    {
+        public Task<BilibiliBuvid> GetAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(new BilibiliBuvid("synthetic-3", "synthetic-4"));
         }
     }
 

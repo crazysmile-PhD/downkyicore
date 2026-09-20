@@ -56,13 +56,20 @@ internal sealed partial class DownloadArtifactWriter
                 return OperationResult.Success(DownloadArtifactWriteResult.NotAvailable());
             }
 
+            if (!BilibiliResourceAddress.TryNormalizeHttps(coverUrl, out var normalizedAddress))
+            {
+                return ArtifactFailure(
+                    "download.artifact.cover.http",
+                    "The requested cover URL is invalid.");
+            }
+
             await _stateWriter.ClaimTransferFileAsync(
                 taskId,
                 transferKey,
                 fileName,
                 cancellationToken).ConfigureAwait(false);
             await _client.DownloadFileAsync(
-                new BilibiliHttpRequest(coverUrl),
+                new BilibiliHttpRequest(normalizedAddress),
                 fileName,
                 cancellationToken).ConfigureAwait(false);
             var integrity = DownloadFileIntegrity.Check(fileName);
