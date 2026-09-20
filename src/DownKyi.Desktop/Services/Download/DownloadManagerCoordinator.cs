@@ -51,7 +51,7 @@ internal interface IDownloadManagerCoordinator
         CancellationToken cancellationToken = default);
 }
 
-internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator
+internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator, IDisposable
 {
     private readonly DownloadTaskProjectionStore _storage;
     private readonly DownloadTaskStateWriter _stateWriter;
@@ -60,6 +60,12 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator
     private readonly DownloadTaskFileService _fileService;
     private readonly DownloadListState _downloadLists;
     private readonly IPlatformLauncher _platformLauncher;
+    private readonly SemaphoreSlim _pauseResumeItemGate = new(1, 1);
+    private readonly object _pauseResumeLifecycleGate = new();
+    private TaskCompletionSource? _activePauseResumeBatch;
+    private int _pauseResumeBatchVersion;
+    private int _activePauseResumeBatches;
+    private int _disposed;
 
     public DownloadManagerCoordinator(
         DownloadTaskProjectionStore storage,
@@ -80,42 +86,24 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator
         _platformLauncher = platformLauncher ?? throw new ArgumentNullException(nameof(platformLauncher));
     }
 
-    public async Task PauseAllAsync(
+    public Task PauseAllAsync(
         IEnumerable<DownloadingItem> items,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(items);
-        foreach (var item in items.ToArray())
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (item.Downloading.DownloadStatus is DownloadStatus.NotStarted
-                or DownloadStatus.WaitForDownload
-                or DownloadStatus.Downloading)
-            {
-                await _stateWriter.PauseAsync(
-                    GetTaskId(item),
-                    cancellationToken).ConfigureAwait(true);
-            }
-        }
+        return RunLatestPauseResumeBatchAsync(
+            items,
+            PauseBatchItemAsync,
+            cancellationToken);
     }
 
-    public async Task ResumeAllAsync(
+    public Task ResumeAllAsync(
         IEnumerable<DownloadingItem> items,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(items);
-        foreach (var item in items.ToArray())
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (item.Downloading.DownloadStatus is DownloadStatus.NotStarted
-                or DownloadStatus.WaitForDownload
-                or DownloadStatus.PauseStarted
-                or DownloadStatus.Pause
-                or DownloadStatus.DownloadFailed)
-            {
-                await ResumeAndEnqueueAsync(GetTaskId(item), cancellationToken).ConfigureAwait(true);
-            }
-        }
+        return RunLatestPauseResumeBatchAsync(
+            items,
+            ResumeBatchItemAsync,
+            cancellationToken);
     }
 
     public async Task ToggleAsync(
@@ -274,6 +262,174 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator
                 resumed.Id,
                 CancellationToken.None).ConfigureAwait(true);
             throw;
+        }
+    }
+
+    private async Task ResumeBatchItemAsync(
+        DownloadingItem item,
+        Task superseded,
+        CancellationToken cancellationToken)
+    {
+        var taskId = GetTaskId(item);
+        if (!_storage.TryGetSnapshot(taskId, out var snapshot)
+            || snapshot.Phase is not (
+            DownloadPhase.Queued
+            or DownloadPhase.Pausing
+            or DownloadPhase.Paused
+            or DownloadPhase.Failed))
+        {
+            return;
+        }
+
+        _runtimeAvailability.EnsureAcceptingTasks();
+        if (snapshot.Phase == DownloadPhase.Pausing)
+        {
+            snapshot = await _storage
+                .WaitForSnapshotPhaseChangeAsync(
+                    taskId,
+                    DownloadPhase.Pausing,
+                    superseded,
+                    cancellationToken)
+                .ConfigureAwait(true);
+            if (snapshot == null || superseded.IsCompleted)
+            {
+                return;
+            }
+        }
+
+        if (snapshot.Phase is not (
+            DownloadPhase.Queued or DownloadPhase.Paused or DownloadPhase.Failed))
+        {
+            return;
+        }
+
+        var resumed = await _stateWriter
+            .ResumeAsync(taskId, cancellationToken)
+            .ConfigureAwait(true);
+        if (resumed.Phase != DownloadPhase.Queued)
+        {
+            return;
+        }
+
+        try
+        {
+            await _taskQueue.EnqueueAsync(resumed.Id, CancellationToken.None).ConfigureAwait(true);
+        }
+        catch (DownloadRuntimeUnavailableException)
+        {
+            await _stateWriter.FailRuntimeUnavailableAsync(
+                resumed.Id,
+                CancellationToken.None).ConfigureAwait(true);
+            throw;
+        }
+    }
+
+    private async Task PauseBatchItemAsync(
+        DownloadingItem item,
+        Task superseded,
+        CancellationToken cancellationToken)
+    {
+        _ = superseded;
+        var taskId = GetTaskId(item);
+        if (!_storage.TryGetSnapshot(taskId, out var snapshot)
+            || snapshot.Phase is not (
+            DownloadPhase.Queued or DownloadPhase.Downloading))
+        {
+            return;
+        }
+
+        await _stateWriter.PauseAsync(taskId, cancellationToken).ConfigureAwait(true);
+    }
+
+    private async Task RunLatestPauseResumeBatchAsync(
+        IEnumerable<DownloadingItem> items,
+        Func<DownloadingItem, Task, CancellationToken, Task> applyAsync,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+        ArgumentNullException.ThrowIfNull(applyAsync);
+        var (batchVersion, superseded) = BeginPauseResumeBatch();
+        try
+        {
+            foreach (var item in items.ToArray())
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (batchVersion != Volatile.Read(ref _pauseResumeBatchVersion))
+                {
+                    return;
+                }
+
+                await _pauseResumeItemGate.WaitAsync(cancellationToken).ConfigureAwait(true);
+                try
+                {
+                    if (batchVersion != Volatile.Read(ref _pauseResumeBatchVersion))
+                    {
+                        return;
+                    }
+
+                    await applyAsync(item, superseded, cancellationToken).ConfigureAwait(true);
+                }
+                finally
+                {
+                    _pauseResumeItemGate.Release();
+                }
+            }
+        }
+        finally
+        {
+            EndPauseResumeBatch();
+        }
+    }
+
+    public void Dispose()
+    {
+        var disposeItemGate = false;
+        lock (_pauseResumeLifecycleGate)
+        {
+            if (_disposed != 0)
+            {
+                return;
+            }
+
+            _disposed = 1;
+            Interlocked.Increment(ref _pauseResumeBatchVersion);
+            _activePauseResumeBatch?.TrySetResult();
+            disposeItemGate = _activePauseResumeBatches == 0;
+        }
+
+        if (disposeItemGate)
+        {
+            _pauseResumeItemGate.Dispose();
+        }
+    }
+
+    private (int Version, Task Superseded) BeginPauseResumeBatch()
+    {
+        lock (_pauseResumeLifecycleGate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed != 0, this);
+            _activePauseResumeBatch?.TrySetResult();
+            _activePauseResumeBatch = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            _activePauseResumeBatches++;
+            return (
+                Interlocked.Increment(ref _pauseResumeBatchVersion),
+                _activePauseResumeBatch.Task);
+        }
+    }
+
+    private void EndPauseResumeBatch()
+    {
+        var disposeItemGate = false;
+        lock (_pauseResumeLifecycleGate)
+        {
+            _activePauseResumeBatches--;
+            disposeItemGate = _disposed != 0 && _activePauseResumeBatches == 0;
+        }
+
+        if (disposeItemGate)
+        {
+            _pauseResumeItemGate.Dispose();
         }
     }
 
