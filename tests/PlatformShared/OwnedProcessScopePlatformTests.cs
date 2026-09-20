@@ -167,6 +167,29 @@ public sealed class OwnedProcessScopePlatformTests
                     StopIfAlive(grandchildPid);
                 }
 
+                if (run is not null && result is null)
+                {
+                    try
+                    {
+                        result = await run.ConfigureAwait(true);
+                        Assert.Equal(130, result.ExitCode);
+                    }
+                    catch (Exception terminalFailure)
+                    {
+                        if (runCleanupFailure is null)
+                        {
+                            runCleanupFailure = terminalFailure;
+                        }
+                        else if (!ReferenceEquals(runCleanupFailure, terminalFailure))
+                        {
+                            runCleanupFailure = new AggregateException(
+                                "The fixture run exceeded its cleanup wait and then failed while joining.",
+                                runCleanupFailure,
+                                terminalFailure);
+                        }
+                    }
+                }
+
                 try
                 {
                     if (OperatingSystem.IsWindows())
