@@ -3,9 +3,9 @@
 `ModuleBoundaryBaselineTests` 不是 suppression。它把 2026-07-22 已確認的邊界與命名債務設為最大集合：
 
 - 現有 violation 被刪除：pass。
-- 現有巨檔縮小：pass。
 - 新增 violation：fail。
-- 已知巨檔增長：fail。
+
+檔案實體行數不是 module-boundary ratchet。責任切分由具體依賴、type ownership 與行為契約保護，不以固定行數推導。
 
 ## 為何不用「現況先紅」
 
