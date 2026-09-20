@@ -60,7 +60,7 @@ public sealed class AgentEnvironmentArchitectureTests
 
         Assert.Contains("pull_request:", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("windows-latest", qualityWorkflow, StringComparison.Ordinal);
-        Assert.Contains("ubuntu-latest", qualityWorkflow, StringComparison.Ordinal);
+        Assert.Contains("vars.UBUNTU_X64_RUNNER", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("macos-latest", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("--no-incremental", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("AnalysisMode=All", qualityWorkflow, StringComparison.Ordinal);
@@ -161,7 +161,7 @@ public sealed class AgentEnvironmentArchitectureTests
             @"(?m)^    timeout-minutes: 20\r?$"));
         Assert.Contains("fail-fast: false", buildTest, StringComparison.Ordinal);
         Assert.Contains("- windows-latest", buildTest, StringComparison.Ordinal);
-        Assert.Contains("- ubuntu-latest", buildTest, StringComparison.Ordinal);
+        Assert.Contains("- ${{ vars.UBUNTU_X64_RUNNER }}", buildTest, StringComparison.Ordinal);
         Assert.Contains("- macos-latest", buildTest, StringComparison.Ordinal);
         Assert.DoesNotMatch(
             new System.Text.RegularExpressions.Regex(@"(?m)^\s+needs\s*:", System.Text.RegularExpressions.RegexOptions.CultureInvariant),
@@ -188,7 +188,8 @@ public sealed class AgentEnvironmentArchitectureTests
         Assert.Contains("run.run_attempt === 1", retryWorkflow, StringComparison.Ordinal);
         Assert.Equal(2, System.Text.RegularExpressions.Regex.Count(retryWorkflow, @"await readRun\(\)"));
         Assert.Contains("Build and test (windows-latest)", retryWorkflow, StringComparison.Ordinal);
-        Assert.Contains("Build and test (ubuntu-latest)", retryWorkflow, StringComparison.Ordinal);
+        Assert.Contains("UBUNTU_X64_RUNNER: ${{ vars.UBUNTU_X64_RUNNER }}", retryWorkflow, StringComparison.Ordinal);
+        Assert.Contains("Build and test (${process.env.UBUNTU_X64_RUNNER})", retryWorkflow, StringComparison.Ordinal);
         Assert.Contains("Build and test (macos-latest)", retryWorkflow, StringComparison.Ordinal);
         Assert.Contains("buildJobs.length === expectedBuildTests.length", retryWorkflow, StringComparison.Ordinal);
         Assert.Contains("job.conclusion === \"cancelled\"", retryWorkflow, StringComparison.Ordinal);

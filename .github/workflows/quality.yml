@@ -17,7 +17,7 @@ env:
 jobs:
   format:
     name: Format check
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -37,7 +37,7 @@ jobs:
 
   legacy-ca-audit:
     name: Legacy CA and code metrics audit
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
     timeout-minutes: 20
     steps:
       - name: Checkout
@@ -68,7 +68,7 @@ jobs:
       matrix:
         os:
           - windows-latest
-          - ubuntu-latest
+          - ${{ vars.UBUNTU_X64_RUNNER }}
           - macos-latest
     steps:
       - name: Checkout
@@ -231,7 +231,7 @@ jobs:
 
   package-audit:
     name: Package audit
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7

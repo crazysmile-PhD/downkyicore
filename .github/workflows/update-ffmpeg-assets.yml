@@ -32,7 +32,7 @@ env:
 jobs:
   discover:
     name: Discover fixed upstream candidate
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
     outputs:
       no_op: ${{ steps.candidate.outputs.no_op }}
       matrix: ${{ steps.candidate.outputs.matrix }}
@@ -68,7 +68,8 @@ jobs:
             --output .ffmpeg-update/candidates.json \
             "${bootstrap_args[@]}"
           python script/ffmpeg-assets.py workflow-output \
-            --candidates .ffmpeg-update/candidates.json >> "$GITHUB_OUTPUT"
+            --candidates .ffmpeg-update/candidates.json \
+            --linux-x64-runner '${{ vars.UBUNTU_X64_RUNNER }}' >> "$GITHUB_OUTPUT"
       - name: Upload candidate metadata
         if: steps.candidate.outputs.no_op != 'true'
         uses: actions/upload-artifact@v7
@@ -121,7 +122,7 @@ jobs:
     name: Mirror validated candidate and open PR
     needs: [discover, validate]
     if: needs.discover.outputs.no_op != 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
     env:
       RUNTIME_ASSETS_REPOSITORY: crazysmile-PhD/downkyi-runtime-assets
       RUNTIME_ASSETS_TOKEN: ${{ secrets.RUNTIME_ASSETS_TOKEN }}
