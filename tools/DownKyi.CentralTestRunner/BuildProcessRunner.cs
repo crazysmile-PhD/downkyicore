@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.ExceptionServices;
+using System.Runtime.Versioning;
 
 namespace DownKyi.CentralTestRunner;
 
@@ -124,6 +125,11 @@ internal static class BuildProcessRunner
         }
         catch (Exception exception)
         {
+            BuildProcessCleanupDiagnostics.Attach(
+                exception,
+                BuildProcessCleanupPhase.Snapshot,
+                scope.RootPid,
+                deadline.Elapsed);
             snapshotFailure = ExceptionDispatchInfo.Capture(exception);
         }
 
@@ -155,18 +161,60 @@ internal static class BuildProcessRunner
         Task? outputTask,
         Task? errorTask)
     {
-        await scope.TerminateAsync(deadline).ConfigureAwait(false);
+        await RunCleanupPhaseAsync(
+            () => scope.TerminateAsync(deadline),
+            BuildProcessCleanupPhase.ScopeTermination,
+            scope,
+            deadline).ConfigureAwait(false);
         if (outputTask is not null && errorTask is not null)
         {
-            await Task.WhenAll(outputTask, errorTask)
-                .WaitAsync(deadline.Remaining).ConfigureAwait(false);
+            await RunCleanupPhaseAsync(
+                () => Task.WhenAll(outputTask, errorTask).WaitAsync(deadline.Remaining),
+                BuildProcessCleanupPhase.OutputDrain,
+                scope,
+                deadline).ConfigureAwait(false);
         }
 
         if (OperatingSystem.IsWindows() && cleanupResourceDirectory is not null)
         {
-            await WindowsDirectoryResourceRundown.WaitForDeleteAccessAsync(
-                cleanupResourceDirectory,
-                deadline.Remaining).ConfigureAwait(false);
+            await RunDirectoryRundownPhaseAsync(scope, deadline, cleanupResourceDirectory)
+                .ConfigureAwait(false);
+        }
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static Task RunDirectoryRundownPhaseAsync(
+        OwnedProcessScope scope,
+        CleanupDeadline deadline,
+        string resourceDirectory)
+    {
+        return RunCleanupPhaseAsync(
+            () => WindowsDirectoryResourceRundown.WaitForDeleteAccessAsync(
+                resourceDirectory,
+                deadline.Remaining),
+            BuildProcessCleanupPhase.DirectoryResourceRundown,
+            scope,
+            deadline);
+    }
+
+    private static async Task RunCleanupPhaseAsync(
+        Func<Task> operation,
+        BuildProcessCleanupPhase phase,
+        OwnedProcessScope scope,
+        CleanupDeadline deadline)
+    {
+        try
+        {
+            await operation().ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            BuildProcessCleanupDiagnostics.Attach(
+                exception,
+                phase,
+                scope.RootPid,
+                deadline.Elapsed);
+            throw;
         }
     }
 
