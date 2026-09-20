@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using DownKyi.CentralTestRunner;
 using DownKyi.ProcessSupervision;
@@ -132,6 +133,23 @@ public sealed class WindowsEtwResourceFlightRecorderTests
         {
             File.Delete(marker);
         }
+    }
+
+    [Fact]
+    public async Task SharedSupervisorPreservesFailureBeforeHostStarts()
+    {
+        var missingHost = Path.Combine(
+            Path.GetTempPath(),
+            $"missing-supervision-host-{Guid.NewGuid():N}.exe");
+
+        var failure = await Assert.ThrowsAsync<Win32Exception>(
+            () => OwnedProcessScope.StartAsync(
+                CreateMarkerStartInfo(Path.Combine(Path.GetTempPath(), $"unused-{Guid.NewGuid():N}")),
+                TestTimeout,
+                hostJobNameOverride: null,
+                hostExecutableOverride: missingHost)).ConfigureAwait(true);
+
+        Assert.DoesNotContain("No process is associated", failure.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     private static ProcessStartInfo CreateMarkerStartInfo(string marker)

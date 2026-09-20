@@ -710,22 +710,9 @@ internal sealed class WindowsEtwResourceFlightRecorder : IDisposable
             failures.Add(exception);
         }
 
-        var process = scope.Host;
-        try
-        {
-            if (!process.HasExited && !process.WaitForExit(deadline.Remaining))
-            {
-                failures.Add(new TimeoutException(
-                    $"{executable} did not exit before the diagnostic deadline."));
-            }
-        }
-        catch (Exception exception)
-        {
-            failures.Add(exception);
-        }
-
         if (!JoinReaders(outputReader, errorReader, deadline.Remaining))
         {
+            var process = scope.Host;
             process.StandardOutput.Dispose();
             process.StandardError.Dispose();
             if (!JoinReaders(outputReader, errorReader, deadline.Remaining))

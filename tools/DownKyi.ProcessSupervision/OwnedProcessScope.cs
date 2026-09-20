@@ -18,6 +18,13 @@ internal sealed class OwnedProcessScope : IDisposable
     private readonly SafeFileHandle? job;
     private bool terminationAttempted;
 
+    private enum ScopeLifecycleState
+    {
+        HostNotStarted,
+        HostStarted,
+        ScopeMayContainTarget
+    }
+
     private OwnedProcessScope(Process host, SafeFileHandle? job, ScopeHandshake handshake)
     {
         Host = host;
@@ -38,7 +45,8 @@ internal sealed class OwnedProcessScope : IDisposable
             testStartInfo,
             startupWindow,
             sharedStartupDeadline: null,
-            hostJobNameOverride: null);
+            hostJobNameOverride: null,
+            hostExecutableOverride: null);
 
     internal static Task<OwnedProcessScope> StartAsync(
         ProcessStartInfo testStartInfo,
@@ -47,23 +55,27 @@ internal sealed class OwnedProcessScope : IDisposable
             testStartInfo,
             startupWindow: default,
             sharedStartupDeadline: startupDeadline,
-            hostJobNameOverride: null);
+            hostJobNameOverride: null,
+            hostExecutableOverride: null);
 
     internal static Task<OwnedProcessScope> StartAsync(
         ProcessStartInfo testStartInfo,
         TimeSpan startupWindow,
-        string? hostJobNameOverride) =>
+        string? hostJobNameOverride,
+        string? hostExecutableOverride = null) =>
         StartAsync(
             testStartInfo,
             startupWindow,
             sharedStartupDeadline: null,
-            hostJobNameOverride: hostJobNameOverride);
+            hostJobNameOverride: hostJobNameOverride,
+            hostExecutableOverride: hostExecutableOverride);
 
     private static async Task<OwnedProcessScope> StartAsync(
         ProcessStartInfo testStartInfo,
         TimeSpan startupWindow,
         CleanupDeadline? sharedStartupDeadline,
-        string? hostJobNameOverride)
+        string? hostJobNameOverride,
+        string? hostExecutableOverride)
     {
         TimeSpan CurrentStartupWindow() =>
             sharedStartupDeadline?.WorkWindow ?? startupWindow;
@@ -81,6 +93,7 @@ internal sealed class OwnedProcessScope : IDisposable
         var jobName = OperatingSystem.IsWindows() ? $"Local\\downkyi-test-{Guid.NewGuid():N}" : null;
         SafeFileHandle? job = null;
         Process? host = null;
+        var lifecycleState = ScopeLifecycleState.HostNotStarted;
         try
         {
             if (jobName is not null)
@@ -88,7 +101,7 @@ internal sealed class OwnedProcessScope : IDisposable
                 job = CreateWindowsJob(jobName);
             }
 
-            var hostInfo = new ProcessStartInfo("dotnet")
+            var hostInfo = new ProcessStartInfo(hostExecutableOverride ?? "dotnet")
             {
                 UseShellExecute = false,
                 RedirectStandardInput = true,
@@ -105,13 +118,19 @@ internal sealed class OwnedProcessScope : IDisposable
             {
                 throw new InvalidOperationException("The ownership host did not start.");
             }
+            lifecycleState = ScopeLifecycleState.HostStarted;
 
             var launch = new ScopeLaunch(
                 testStartInfo.FileName,
                 [.. testStartInfo.ArgumentList],
                 testStartInfo.WorkingDirectory,
                 new Dictionary<string, string?>(testStartInfo.Environment));
-            await host.StandardInput.WriteLineAsync(JsonSerializer.Serialize(launch))
+            var serializedLaunch = JsonSerializer.Serialize(launch);
+
+            // A timed-out write may still have delivered the request. From this
+            // point forward, cleanup must assume that the OS scope has a target.
+            lifecycleState = ScopeLifecycleState.ScopeMayContainTarget;
+            await host.StandardInput.WriteLineAsync(serializedLaunch)
                 .WaitAsync(CurrentStartupWindow()).ConfigureAwait(false);
             host.StandardInput.Close();
             await control.WaitForConnectionAsync()
@@ -132,22 +151,19 @@ internal sealed class OwnedProcessScope : IDisposable
         }
         catch (Exception primaryFailure)
         {
-            if (host is not null)
+            if (lifecycleState is not ScopeLifecycleState.HostNotStarted && host is not null)
             {
                 primaryFailure.Data[FailedHostPidDataKey] = host.Id;
             }
 
             var cleanupDeadline = sharedStartupDeadline ?? new CleanupDeadline(startupWindow);
-            var cleanupFailure = await CleanupFailedStartAsync(host, job, cleanupDeadline)
+            await TerminateAndReapAsync(
+                    lifecycleState,
+                    host,
+                    job,
+                    cleanupDeadline,
+                    primaryFailure)
                 .ConfigureAwait(false);
-            if (cleanupFailure is not null)
-            {
-                throw new InvalidOperationException(
-                    "Process supervision startup and cleanup both failed.",
-                    new AggregateException(primaryFailure, cleanupFailure));
-            }
-
-            ExceptionDispatchInfo.Capture(primaryFailure).Throw();
             throw;
         }
         finally
@@ -157,106 +173,209 @@ internal sealed class OwnedProcessScope : IDisposable
         }
     }
 
-    private static async Task<Exception?> CleanupFailedStartAsync(
+    private static async Task TerminateAndReapAsync(
+        ScopeLifecycleState lifecycleState,
         Process? host,
         SafeFileHandle? job,
-        CleanupDeadline cleanupDeadline)
+        CleanupDeadline deadline,
+        Exception? primaryFailure)
     {
         var failures = new List<Exception>();
-        try
+        if (lifecycleState is ScopeLifecycleState.HostNotStarted)
         {
-            if (job is not null)
-            {
-                TerminateWindowsJob(job);
-            }
-            else if (host is { HasExited: false })
-            {
-                // The host may already have created its group and launched the target.
-                var groupTerminated = NativeMethods.KillProcessGroup(host.Id, SigKill) == 0;
-                if (!groupTerminated && !host.HasExited)
-                {
-                    host.Kill(entireProcessTree: true);
-                }
-            }
-
-            if (OperatingSystem.IsWindows() && host is { HasExited: false })
-            {
-                host.Kill(entireProcessTree: true);
-            }
-        }
-        catch (Exception exception) when (
-            exception is InvalidOperationException or Win32Exception)
-        {
-            failures.Add(exception);
+            ThrowPreservingPrimaryFailure(primaryFailure, failures);
+            return;
         }
 
-        if (host is not null)
+        if (host is null)
+        {
+            failures.Add(new InvalidOperationException(
+                $"Process supervision entered {lifecycleState} without an ownership host."));
+            ThrowPreservingPrimaryFailure(primaryFailure, failures);
+            return;
+        }
+
+        var entireScopeTerminationSucceeded = false;
+        if (lifecycleState is ScopeLifecycleState.ScopeMayContainTarget)
         {
             try
             {
-                await host.WaitForExitAsync()
-                    .WaitAsync(cleanupDeadline.Remaining).ConfigureAwait(false);
+                if (OperatingSystem.IsWindows())
+                {
+                    if (job is null)
+                    {
+                        throw new InvalidOperationException(
+                            "The Windows process scope has no Job handle.");
+                    }
+
+                    TerminateWindowsJob(job);
+                    entireScopeTerminationSucceeded = true;
+                }
+                else if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
+                {
+                    if (NativeMethods.KillProcessGroup(host.Id, SigKill) != 0)
+                    {
+                        var error = Marshal.GetLastPInvokeError();
+                        if (error != NoSuchProcess)
+                        {
+                            throw new Win32Exception(error);
+                        }
+                    }
+                    else
+                    {
+                        entireScopeTerminationSucceeded = true;
+                    }
+                }
             }
             catch (Exception exception) when (
-                exception is InvalidOperationException or TimeoutException)
+                exception is InvalidOperationException or Win32Exception)
             {
                 failures.Add(exception);
             }
         }
 
-        return failures.Count switch
+        try
+        {
+            // Before the request, only the host exists. Once a request may have
+            // arrived, a failed scope termination falls back to the host tree.
+            // A successful Job termination can leave only a not-yet-joined host;
+            // that host cannot have launched a target under the host protocol.
+            if (!entireScopeTerminationSucceeded)
+            {
+                KillIfRunning(
+                    host,
+                    entireProcessTree:
+                        lifecycleState is ScopeLifecycleState.ScopeMayContainTarget);
+            }
+            else if (OperatingSystem.IsWindows())
+            {
+                KillIfRunning(host, entireProcessTree: false);
+            }
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or Win32Exception or AggregateException)
+        {
+            failures.Add(exception);
+        }
+
+        // Reap the OS scope before the host so a host exit cannot hide a live
+        // target. Both waits consume the same bounded deadline.
+        if (lifecycleState is ScopeLifecycleState.ScopeMayContainTarget)
+        {
+            try
+            {
+                if (OperatingSystem.IsWindows())
+                {
+                    if (job is null)
+                    {
+                        throw new InvalidOperationException(
+                            "The Windows process scope has no Job handle.");
+                    }
+
+                    await WaitForWindowsJobToEmptyAsync(job, deadline).ConfigureAwait(false);
+                }
+                else if (OperatingSystem.IsMacOS())
+                {
+                    await WaitForMacProcessGroupToEmptyAsync(host.Id, deadline).ConfigureAwait(false);
+                }
+                else if (OperatingSystem.IsLinux())
+                {
+                    await WaitForLinuxProcessGroupToEmptyAsync(host.Id, deadline).ConfigureAwait(false);
+                }
+            }
+            catch (Exception exception) when (
+                exception is InvalidOperationException or Win32Exception or TimeoutException)
+            {
+                failures.Add(exception);
+            }
+        }
+
+        try
+        {
+            await host.WaitForExitAsync()
+                .WaitAsync(deadline.Remaining).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or TimeoutException)
+        {
+            failures.Add(exception);
+        }
+
+        ThrowPreservingPrimaryFailure(primaryFailure, failures);
+    }
+
+    private static void ThrowPreservingPrimaryFailure(
+        Exception? primaryFailure,
+        List<Exception> cleanupFailures)
+    {
+        var cleanupFailure = cleanupFailures.Count switch
         {
             0 => null,
-            1 => failures[0],
-            _ => new AggregateException("Process supervision startup cleanup had multiple failures.", failures)
+            1 => cleanupFailures[0],
+            _ => new AggregateException(
+                "Process scope termination and reap had multiple failures.",
+                cleanupFailures)
         };
+
+        if (primaryFailure is not null && cleanupFailure is not null)
+        {
+            throw new InvalidOperationException(
+                "Process supervision startup and cleanup both failed.",
+                new AggregateException(primaryFailure, cleanupFailure));
+        }
+
+        if (primaryFailure is not null)
+        {
+            ExceptionDispatchInfo.Capture(primaryFailure).Throw();
+        }
+
+        if (cleanupFailure is not null)
+        {
+            ExceptionDispatchInfo.Capture(cleanupFailure).Throw();
+        }
+    }
+
+    private static void KillIfRunning(Process process, bool entireProcessTree)
+    {
+        try
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree);
+            }
+        }
+        catch (InvalidOperationException) when (process.HasExited)
+        {
+            // Exiting between the state check and Kill already satisfies this step.
+        }
     }
 
     internal async Task TerminateAsync(CleanupDeadline deadline)
     {
         terminationAttempted = true;
-        if (OperatingSystem.IsWindows())
-        {
-            await Task.Run(() => TerminateWindowsJob(job!))
-                .WaitAsync(deadline.Remaining).ConfigureAwait(false);
-            await WaitForWindowsJobToEmptyAsync(job!, deadline).ConfigureAwait(false);
-            return;
-        }
-
-        if (NativeMethods.KillProcessGroup(Host.Id, SigKill) != 0 &&
-            Marshal.GetLastPInvokeError() != NoSuchProcess)
-        {
-            throw new Win32Exception(Marshal.GetLastPInvokeError());
-        }
-
-        if (!OperatingSystem.IsLinux() && !OperatingSystem.IsMacOS())
-        {
-            return;
-        }
-
-        using (var hostExit = new CancellationTokenSource(deadline.WorkWindow))
-        {
-            await Host.WaitForExitAsync(hostExit.Token).ConfigureAwait(false);
-        }
-        if (OperatingSystem.IsMacOS())
-        {
-            await WaitForMacProcessGroupToEmptyAsync(deadline).ConfigureAwait(false);
-        }
-        else
-        {
-            await WaitForLinuxProcessGroupToEmptyAsync(deadline).ConfigureAwait(false);
-        }
+        await TerminateAndReapAsync(
+                ScopeLifecycleState.ScopeMayContainTarget,
+                Host,
+                job,
+                deadline,
+                primaryFailure: null)
+            .ConfigureAwait(false);
     }
 
-    internal async Task WaitForMacProcessGroupToEmptyAsync(CleanupDeadline deadline)
+    internal Task WaitForMacProcessGroupToEmptyAsync(CleanupDeadline deadline) =>
+        WaitForMacProcessGroupToEmptyAsync(Host.Id, deadline);
+
+    private static async Task WaitForMacProcessGroupToEmptyAsync(
+        int groupId,
+        CleanupDeadline deadline)
     {
-        while (MacProcessGroupHasMembers(Host.Id))
+        while (MacProcessGroupHasMembers(groupId))
         {
             var remaining = deadline.WorkWindow;
             if (remaining == TimeSpan.Zero)
             {
                 throw new TimeoutException(
-                    $"The owned macOS process group {Host.Id} is still active.");
+                    $"The owned macOS process group {groupId} is still active.");
             }
 
             await Task.Delay(TimeSpan.FromTicks(Math.Min(
@@ -275,11 +394,16 @@ internal sealed class OwnedProcessScope : IDisposable
             : throw new Win32Exception(Marshal.GetLastPInvokeError());
     }
 
-    internal async Task WaitForLinuxProcessGroupToEmptyAsync(CleanupDeadline deadline)
+    internal Task WaitForLinuxProcessGroupToEmptyAsync(CleanupDeadline deadline) =>
+        WaitForLinuxProcessGroupToEmptyAsync(Host.Id, deadline);
+
+    private static async Task WaitForLinuxProcessGroupToEmptyAsync(
+        int groupId,
+        CleanupDeadline deadline)
     {
         while (true)
         {
-            if (NativeMethods.KillProcessGroup(Host.Id, 0) != 0)
+            if (NativeMethods.KillProcessGroup(groupId, 0) != 0)
             {
                 var error = Marshal.GetLastPInvokeError();
                 if (error == NoSuchProcess)
@@ -294,7 +418,7 @@ internal sealed class OwnedProcessScope : IDisposable
             if (remaining == TimeSpan.Zero)
             {
                 throw new TimeoutException(
-                    $"The owned Linux process group {Host.Id} is still active.");
+                    $"The owned Linux process group {groupId} is still active.");
             }
 
             await Task.Delay(TimeSpan.FromTicks(Math.Min(

@@ -237,9 +237,6 @@ internal static class FlightRecorderExecution
             recorder.RecordInMemory(requestEvent, pid: scope.RootPid);
             await scope.TerminateAsync(deadline).ConfigureAwait(false);
             TracePhase(recorder, scope.RootPid, "terminate_returned");
-            TracePhase(recorder, scope.RootPid, "root_wait_begin");
-            await process.WaitForExitAsync().WaitAsync(deadline.WorkWindow).ConfigureAwait(false);
-            TracePhase(recorder, scope.RootPid, "wait_returned");
 
             recorder.RecordInMemory(
                 "process_exit",
