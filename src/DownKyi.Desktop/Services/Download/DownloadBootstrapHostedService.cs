@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -9,7 +8,6 @@ using DownKyi.Application.Downloads;
 using DownKyi.Domain.Downloads;
 using DownKyi.Platform;
 using DownKyi.ViewModels.DownloadManager;
-using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -27,7 +25,6 @@ internal sealed class DownloadBootstrapHostedService : IHostedService, IDisposab
     private readonly DownloadTaskStaging? _staging;
     private readonly DownloadTaskFileService? _fileService;
     private IDownloadRuntime? _downloadRuntime;
-    private Task? _historyLoadTask;
     private bool _disposed;
 
     public DownloadBootstrapHostedService(
@@ -98,10 +95,8 @@ internal sealed class DownloadBootstrapHostedService : IHostedService, IDisposab
             await _uiDispatcher.InvokeAsync(() =>
             {
                 _downloadLists.AddDownloadingRange(state.DownloadingItems);
-                _downloadLists.AddDownloadedRange(state.DownloadedItems);
             }).ConfigureAwait(false);
 
-            _historyLoadTask = LoadRemainingHistoryAsync(cancellationToken);
             _downloadRuntime = _downloadRuntimeFactory.Create()
                 ?? throw new InvalidOperationException("The download runtime factory returned no runtime.");
             await _downloadRuntime.StartAsync(cancellationToken).ConfigureAwait(false);
@@ -156,16 +151,11 @@ internal sealed class DownloadBootstrapHostedService : IHostedService, IDisposab
 
     public async Task StopAsync(CancellationToken cancellationToken)
     {
-        var stopTasks = new List<Task>(2);
+        var stopTasks = new List<Task>(1);
         if (_downloadRuntime != null)
         {
             _queueGateway.Detach(_downloadRuntime);
             stopTasks.Add(_downloadRuntime.StopAsync(cancellationToken));
-        }
-
-        if (_historyLoadTask != null)
-        {
-            stopTasks.Add(_historyLoadTask);
         }
 
         if (stopTasks.Count > 0)
@@ -202,49 +192,18 @@ internal sealed class DownloadBootstrapHostedService : IHostedService, IDisposab
 
     private async Task<DownloadStartupState> LoadStartupStateAsync(CancellationToken cancellationToken)
     {
-        var downloadingStateTask = _projectionStore.GetDownloadingStateAsync(cancellationToken);
-        var downloadedItemsTask = _projectionStore.GetRecentDownloadedAsync(100, cancellationToken);
-
-        await Task.WhenAll(downloadingStateTask, downloadedItemsTask).ConfigureAwait(false);
-        var downloadingState = await downloadingStateTask.ConfigureAwait(false);
+        var downloadingState = await _projectionStore
+            .GetDownloadingStateAsync(cancellationToken)
+            .ConfigureAwait(false);
         return new DownloadStartupState(
             downloadingState.Tasks,
-            downloadingState.Projections,
-            await downloadedItemsTask.ConfigureAwait(false));
+            downloadingState.Projections);
     }
 
     private static bool IsRecoverableBoundaryFailure(Exception exception) =>
         exception is not OutOfMemoryException
             and not StackOverflowException
             and not AccessViolationException;
-
-    private async Task LoadRemainingHistoryAsync(CancellationToken cancellationToken)
-    {
-        try
-        {
-            var allItems = await _projectionStore
-                .GetDownloadedAsync(cancellationToken)
-                .ConfigureAwait(false);
-            cancellationToken.ThrowIfCancellationRequested();
-            await _uiDispatcher.InvokeAsync(() =>
-            {
-                var loadedIds = _downloadLists.Downloaded
-                    .Select(item => item.DownloadBase.Id)
-                    .ToHashSet(StringComparer.Ordinal);
-                _downloadLists.AddDownloadedRange(
-                    allItems.Where(item => loadedIds.Add(item.DownloadBase.Id)));
-            }).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            return;
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
-            or InvalidOperationException or SqliteException)
-        {
-            _logger.LogErrorMessage("Remaining download history load failed.", exception);
-        }
-    }
 
     private async Task QueueStartupTasksAsync(
         IReadOnlyList<DownloadTask> tasks,
@@ -292,6 +251,5 @@ internal sealed class DownloadBootstrapHostedService : IHostedService, IDisposab
 
     private sealed record DownloadStartupState(
         IReadOnlyList<DownloadTask> UnfinishedTasks,
-        IReadOnlyList<DownloadingItem> DownloadingItems,
-        IReadOnlyList<DownloadedItem> DownloadedItems);
+        IReadOnlyList<DownloadingItem> DownloadingItems);
 }

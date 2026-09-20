@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Desktop;
+using DownKyi.Application.Downloads;
 using DownKyi.Domain.Downloads;
 using DownKyi.Models;
 using DownKyi.ViewModels;
@@ -39,6 +40,11 @@ internal interface IDownloadManagerCoordinator
         CancellationToken cancellationToken = default);
 
     Task ClearDownloadedAsync(CancellationToken cancellationToken = default);
+
+    Task<DownloadHistoryPage> GetDownloadedPageAsync(
+        DownloadHistoryCursor? cursor,
+        int pageSize,
+        CancellationToken cancellationToken = default);
 
     Task RemoveDownloadedAsync(DownloadedItem item, CancellationToken cancellationToken = default);
 
@@ -186,6 +192,12 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator
         await _storage.ClearDownloadedAsync(cancellationToken).ConfigureAwait(true);
         _downloadLists.ClearDownloaded();
     }
+
+    public Task<DownloadHistoryPage> GetDownloadedPageAsync(
+        DownloadHistoryCursor? cursor,
+        int pageSize,
+        CancellationToken cancellationToken = default) =>
+        _storage.GetDownloadedPageAsync(cursor, pageSize, cancellationToken);
 
     public async Task RemoveDownloadedAsync(
         DownloadedItem item,

@@ -1,11 +1,8 @@
 using DownKyi.Application.Desktop;
 using DownKyi.Application.Lifetime;
-using DownKyi.Models;
 using DownKyi.Platform;
-using DownKyi.Services.Download;
 using DownKyi.Services.Migration;
 using DownKyi.ViewModels.Dialogs;
-using DownKyi.ViewModels.DownloadManager;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DownKyi.Tests;
@@ -18,7 +15,6 @@ public sealed class LegacyUpgradeViewModelTests
         var coordinator = new BlockingLegacyUpgradeCoordinator();
         var viewModel = new ViewUpgradingDialogViewModel(
             coordinator,
-            new DownloadListState(),
             new StubApplicationLifecycle(),
             NullLogger<ViewUpgradingDialogViewModel>.Instance);
         await using var viewModelScope = viewModel.ConfigureAwait(true);
@@ -116,24 +112,16 @@ public sealed class LegacyUpgradeViewModelTests
     }
 
     [Fact]
-    public async Task CompletedMigrationReplacesDownloadedProjection()
+    public async Task CompletedMigrationLeavesHistoryForOnDemandPage()
     {
-        var item = new DownloadedItem
-        {
-            DownloadBase = new DownloadBase { Id = "migrated", MainTitle = "Migrated" },
-            Downloaded = new Downloaded { Id = "migrated" }
-        };
-        var state = new DownloadListState();
         var viewModel = new ViewUpgradingDialogViewModel(
-            new CompletedLegacyUpgradeCoordinator(item),
-            state,
+            new CompletedLegacyUpgradeCoordinator(),
             new StubApplicationLifecycle(),
             NullLogger<ViewUpgradingDialogViewModel>.Instance);
         await using var viewModelScope = viewModel.ConfigureAwait(true);
 
         viewModel.OnDialogOpened(new AppDialogRequest(AppDialog.LegacyUpgrade));
 
-        Assert.Same(item, Assert.Single(state.Downloaded));
         Assert.Equal(100, viewModel.Percent);
         Assert.True(viewModel.RestartVisible);
         Assert.False(viewModel.IsMigrationActive);
@@ -147,7 +135,6 @@ public sealed class LegacyUpgradeViewModelTests
         var coordinator = new FaultingLegacyUpgradeCoordinator();
         var viewModel = new ViewUpgradingDialogViewModel(
             coordinator,
-            new DownloadListState(),
             new StubApplicationLifecycle(),
             NullLogger<ViewUpgradingDialogViewModel>.Instance);
         await using var viewModelScope = viewModel.ConfigureAwait(true);
@@ -197,7 +184,6 @@ public sealed class LegacyUpgradeViewModelTests
     {
         return new ViewUpgradingDialogViewModel(
             coordinator,
-            new DownloadListState(),
             new StubApplicationLifecycle(),
             NullLogger<ViewUpgradingDialogViewModel>.Instance);
     }
@@ -230,16 +216,14 @@ public sealed class LegacyUpgradeViewModelTests
         }
     }
 
-    private sealed class CompletedLegacyUpgradeCoordinator(DownloadedItem item) : ILegacyUpgradeCoordinator
+    private sealed class CompletedLegacyUpgradeCoordinator : ILegacyUpgradeCoordinator
     {
         public Task<LegacyUpgradeResult> UpgradeAsync(
             IProgress<LegacyUpgradeProgress> progress,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(new LegacyUpgradeResult(
-                LegacyUpgradeOutcome.Completed,
-                [item]));
+            return Task.FromResult(new LegacyUpgradeResult(LegacyUpgradeOutcome.Completed));
         }
     }
 

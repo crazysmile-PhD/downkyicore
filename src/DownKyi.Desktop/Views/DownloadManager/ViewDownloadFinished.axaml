@@ -1,6 +1,7 @@
 ﻿<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="DownKyi.Views.DownloadManager.ViewDownloadFinished"
+             xmlns:customAction="clr-namespace:DownKyi.CustomAction"
              xmlns:vmdm="clr-namespace:DownKyi.ViewModels.DownloadManager"
              x:DataType="vmdm:ViewDownloadFinishedViewModel">
     <UserControl.Resources>
@@ -152,6 +153,9 @@
                 BorderThickness="0"
                 ItemContainerTheme="{StaticResource DownloadedStyle}"
                 ItemsSource="{Binding DownloadedList}">
+                <Interaction.Behaviors>
+                    <customAction:InfiniteScrollBehavior LoadMoreCommand="{Binding LoadMoreCommand}" />
+                </Interaction.Behaviors>
                 <ListBox.ItemsPanel>
                     <ItemsPanelTemplate>
                         <VirtualizingStackPanel />

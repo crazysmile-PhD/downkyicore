@@ -1,8 +1,13 @@
 using System;
 using System.Collections.ObjectModel;
+using System.IO;
+using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
+using DownKyi.Application.Diagnostics;
+using DownKyi.Application.Downloads;
 using DownKyi.Commands;
 using DownKyi.Core.Settings;
 using DownKyi.Services;
@@ -15,11 +20,17 @@ namespace DownKyi.ViewModels.DownloadManager;
 internal class ViewDownloadFinishedViewModel : ViewModelBase
 {
     public const string Tag = "PageDownloadManagerDownloadFinished";
+    private const int HistoryPageSize = 100;
 
     private readonly IDownloadManagerCoordinator _downloadManagerCoordinator;
     private readonly DownloadListState _downloadLists;
     private readonly ILogger<ViewDownloadFinishedViewModel> _logger;
     private readonly ISettingsStore _settingsStore;
+    private CancellationTokenSource? _pageLoadCancellation;
+    private DownloadHistoryCursor? _nextCursor;
+    private bool _hasMoreHistory;
+    private bool _isLoadingPage;
+    private int _pageLoadVersion;
 
     #region 页面属性申明
 
@@ -112,6 +123,61 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
         });
     }
 
+    private DownKyiAsyncDelegateCommand? _loadMoreCommand;
+
+    public DownKyiAsyncDelegateCommand LoadMoreCommand =>
+        _loadMoreCommand ??= new DownKyiAsyncDelegateCommand(LoadNextPageAsync, _logger);
+
+    private async Task LoadNextPageAsync()
+    {
+        var loadCancellation = _pageLoadCancellation;
+        if (_isLoadingPage || !_hasMoreHistory || loadCancellation == null)
+        {
+            return;
+        }
+
+        _isLoadingPage = true;
+        var loadVersion = Volatile.Read(ref _pageLoadVersion);
+        var cancellationToken = loadCancellation.Token;
+        try
+        {
+            var page = await _downloadManagerCoordinator
+                .GetDownloadedPageAsync(_nextCursor, HistoryPageSize, cancellationToken)
+                .ConfigureAwait(true);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (loadVersion != Volatile.Read(ref _pageLoadVersion))
+            {
+                return;
+            }
+
+            var loadedIds = DownloadedList
+                .Select(item => item.HistoryRecord.Id)
+                .ToHashSet();
+            _downloadLists.AddDownloadedRange(page.Items
+                .Where(history => loadedIds.Add(history.Id))
+                .Select(DownloadTaskProjectionMapper.ToDownloadedItem));
+            _downloadLists.SortDownloaded(_settingsStore.Current.Basic.DownloadFinishedSort);
+            _nextCursor = page.NextCursor;
+            _hasMoreHistory = page.NextCursor != null;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+            or InvalidOperationException or Microsoft.Data.Sqlite.SqliteException)
+        {
+            _logger.LogErrorMessage("Download history page load failed.", exception);
+        }
+        finally
+        {
+            if (loadVersion == Volatile.Read(ref _pageLoadVersion))
+            {
+                _isLoadingPage = false;
+            }
+        }
+    }
+
     // 清空下载完成列表事件
     private DownKyiAsyncDelegateCommand? _clearAllDownloadedCommand;
     public DownKyiAsyncDelegateCommand ClearAllDownloadedCommand => _clearAllDownloadedCommand ??= new DownKyiAsyncDelegateCommand(ExecuteClearAllDownloadedCommand, _logger);
@@ -130,10 +196,7 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
                 return;
             }
 
-
-            // 使用Clear()不能触发NotifyCollectionChangedAction.Remove事件
-            // 因此遍历删除
-            // DownloadingList中元素被删除后不能继续遍历
+            EndPageSession();
             await _downloadManagerCoordinator.ClearDownloadedAsync().ConfigureAwait(true);
         }
         catch (Exception e) when (e is Microsoft.Data.Sqlite.SqliteException or System.IO.IOException
@@ -224,4 +287,42 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
     }
 
     #endregion
+
+    public override void OnNavigatedTo(AppNavigationContext navigationContext)
+    {
+        ArgumentNullException.ThrowIfNull(navigationContext);
+        base.OnNavigatedTo(navigationContext);
+
+        ReplaceCancellationSource(ref _pageLoadCancellation);
+        Interlocked.Increment(ref _pageLoadVersion);
+        _nextCursor = null;
+        _hasMoreHistory = true;
+        _isLoadingPage = false;
+        RunFireAndForget(LoadNextPageAsync(), nameof(LoadNextPageAsync), _logger);
+    }
+
+    public override void OnNavigatedFrom(AppNavigationContext navigationContext)
+    {
+        EndPageSession();
+        base.OnNavigatedFrom(navigationContext);
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing && !IsDisposed)
+        {
+            EndPageSession();
+        }
+
+        base.Dispose(disposing);
+    }
+
+    private void EndPageSession()
+    {
+        Interlocked.Increment(ref _pageLoadVersion);
+        CancelAndDispose(ref _pageLoadCancellation);
+        _nextCursor = null;
+        _hasMoreHistory = false;
+        _isLoadingPage = false;
+    }
 }
