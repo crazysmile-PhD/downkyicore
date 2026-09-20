@@ -27,8 +27,7 @@ internal static class FixtureHost
             "fixture-sensitive-hold" => await RunSensitiveHoldAsync(args).ConfigureAwait(false),
             "fixture-long-line" => await RunLongLineAsync(args).ConfigureAwait(false),
             "fixture-dual-output" => await RunDualOutputAsync().ConfigureAwait(false),
-            "fixture-windows-process-snapshot" when OperatingSystem.IsWindows() =>
-                RunWindowsProcessSnapshot(),
+            "fixture-windows-process-snapshot" => RunWindowsProcessSnapshot(),
             _ => null
         };
     }

@@ -26,6 +26,7 @@ public sealed class CentralTestRunnerFixtureDispatchTests
         Assert.Equal(
             [
                 "fixture-directory-lock",
+                "fixture-dual-output",
                 "fixture-exit-with-pipe-holder",
                 "fixture-hold",
                 "fixture-hold-marker",
@@ -34,7 +35,8 @@ public sealed class CentralTestRunnerFixtureDispatchTests
                 "fixture-sensitive-hold",
                 "fixture-stderr-hold",
                 "fixture-tree-child",
-                "fixture-tree-root"
+                "fixture-tree-root",
+                "fixture-windows-process-snapshot"
             ],
             commands);
     }
