@@ -233,13 +233,20 @@ public sealed class DownloadArtifactStageTests
             productionClient.Requests,
             request => Assert.Equal(
                 "https://i1.hdslb.com/bfs/archive/page%2Fcover.jpg?token=%2B%2f",
-                request.OriginalString),
+                request.Address.OriginalString),
             request => Assert.Equal(
                 "https://i0.hdslb.com/bfs/archive/main%2Fcover.jpg?token=%2f%2B",
-                request.OriginalString));
+                request.Address.OriginalString));
         Assert.All(
             productionClient.Requests,
-            request => Assert.Equal(Uri.UriSchemeHttps, request.Scheme));
+            request =>
+            {
+                Assert.Equal(Uri.UriSchemeHttps, request.Address.Scheme);
+                Assert.False(request.HasCookie);
+                Assert.False(request.HasOrigin);
+            });
+        Assert.Equal(0, productionClient.CookieReads);
+        Assert.Equal(0, productionClient.BuvidReads);
     }
 
     [Theory]
@@ -982,39 +989,48 @@ public sealed class DownloadArtifactStageTests
     {
         private readonly ServiceProvider _services;
         private readonly CapturingHttpClientFactory _httpClientFactory;
+        private readonly CredentialProbe _credentialProbe;
 
         private ProductionBilibiliClientContext(
             ServiceProvider services,
             CapturingHttpClientFactory httpClientFactory,
+            CredentialProbe credentialProbe,
             IBilibiliApiClient client,
-            List<Uri> requests)
+            List<CapturedHttpRequest> requests)
         {
             _services = services;
             _httpClientFactory = httpClientFactory;
+            _credentialProbe = credentialProbe;
             Client = client;
             Requests = requests;
         }
 
         public IBilibiliApiClient Client { get; }
 
-        public IReadOnlyList<Uri> Requests { get; }
+        public IReadOnlyList<CapturedHttpRequest> Requests { get; }
+
+        public int CookieReads => _credentialProbe.CookieReads;
+
+        public int BuvidReads => _credentialProbe.BuvidReads;
 
         public static ProductionBilibiliClientContext Create()
         {
-            var requests = new List<Uri>();
+            var requests = new List<CapturedHttpRequest>();
             var httpClientFactory = new CapturingHttpClientFactory(requests);
+            var credentialProbe = new CredentialProbe();
             var services = new ServiceCollection();
             services.AddDownKyiBilibiliInfrastructure(_ => new BilibiliNetworkOptions(
                 "DownKyi.Tests",
                 UseProxy: false,
                 ProxyAddress: null));
-            services.AddSingleton<IBilibiliCookieProvider>(new EmptyCookieProvider());
-            services.AddSingleton<IBuvidProvider>(new StubBuvidProvider());
+            services.AddSingleton<IBilibiliCookieProvider>(credentialProbe);
+            services.AddSingleton<IBuvidProvider>(credentialProbe);
             services.AddSingleton<IHttpClientFactory>(httpClientFactory);
             var provider = services.BuildServiceProvider();
             return new ProductionBilibiliClientContext(
                 provider,
                 httpClientFactory,
+                credentialProbe,
                 provider.GetRequiredService<IBilibiliApiClient>(),
                 requests);
         }
@@ -1031,7 +1047,7 @@ public sealed class DownloadArtifactStageTests
         private readonly CapturingHttpMessageHandler _handler;
         private readonly HttpClient _client;
 
-        public CapturingHttpClientFactory(List<Uri> requests)
+        public CapturingHttpClientFactory(List<CapturedHttpRequest> requests)
         {
             _handler = new CapturingHttpMessageHandler(requests);
             _client = new HttpClient(_handler, disposeHandler: false);
@@ -1046,15 +1062,19 @@ public sealed class DownloadArtifactStageTests
         }
     }
 
-    private sealed class CapturingHttpMessageHandler(List<Uri> requests) : HttpMessageHandler
+    private sealed class CapturingHttpMessageHandler(List<CapturedHttpRequest> requests)
+        : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            requests.Add(request.RequestUri
-                         ?? throw new InvalidOperationException("Request URI was missing."));
+            requests.Add(new CapturedHttpRequest(
+                request.RequestUri
+                ?? throw new InvalidOperationException("Request URI was missing."),
+                request.Headers.Contains("cookie"),
+                request.Headers.Contains("origin")));
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new ByteArrayContent([0xFF, 0xD8, 0xFF])
@@ -1062,16 +1082,24 @@ public sealed class DownloadArtifactStageTests
         }
     }
 
-    private sealed class EmptyCookieProvider : IBilibiliCookieProvider
-    {
-        public string GetCookieHeader() => string.Empty;
-    }
+    private sealed record CapturedHttpRequest(Uri Address, bool HasCookie, bool HasOrigin);
 
-    private sealed class StubBuvidProvider : IBuvidProvider
+    private sealed class CredentialProbe : IBilibiliCookieProvider, IBuvidProvider
     {
+        public int CookieReads { get; private set; }
+
+        public int BuvidReads { get; private set; }
+
+        public string GetCookieHeader()
+        {
+            CookieReads++;
+            return "SESSDATA=synthetic-secret";
+        }
+
         public Task<BilibiliBuvid> GetAsync(CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            BuvidReads++;
             return Task.FromResult(new BilibiliBuvid("synthetic-3", "synthetic-4"));
         }
     }

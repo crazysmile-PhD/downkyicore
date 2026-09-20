@@ -69,7 +69,7 @@ internal sealed partial class DownloadArtifactWriter
                 fileName,
                 cancellationToken).ConfigureAwait(false);
             await _client.DownloadFileAsync(
-                new BilibiliHttpRequest(normalizedAddress),
+                new BilibiliHttpRequest(normalizedAddress, includeCredentials: false),
                 fileName,
                 cancellationToken).ConfigureAwait(false);
             var integrity = DownloadFileIntegrity.Check(fileName);
