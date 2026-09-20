@@ -37,7 +37,7 @@ env:
 jobs:
   authority:
     name: Validate recovery authority
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
     outputs:
       macos_trust_mode: ${{ steps.macos_trust.outputs.macos_trust_mode }}
       has_macos_signing: ${{ steps.macos_trust.outputs.has_macos_signing }}
@@ -509,7 +509,7 @@ jobs:
   validate-artifacts:
     name: Validate recovery artifacts and manifests
     needs: [build-windows, build-linux, build-macos]
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
     steps:
       - name: Checkout recovery tooling
         uses: actions/checkout@v7
@@ -535,7 +535,7 @@ jobs:
     name: Publish recovered v1.1.2 release
     needs: [authority, validate-artifacts]
     if: ${{ inputs.publish_release }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
     permissions:
       contents: write
     steps:

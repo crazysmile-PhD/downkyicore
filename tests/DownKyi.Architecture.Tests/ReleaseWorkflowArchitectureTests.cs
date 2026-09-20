@@ -18,7 +18,7 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.Contains("workflow_dispatch:", workflow, StringComparison.Ordinal);
         Assert.Contains("release-gate:", workflow, StringComparison.Ordinal);
         Assert.Contains("windows-latest", workflow, StringComparison.Ordinal);
-        Assert.Contains("ubuntu-latest", workflow, StringComparison.Ordinal);
+        Assert.Contains("vars.UBUNTU_X64_RUNNER", workflow, StringComparison.Ordinal);
         Assert.Contains("macos-15", workflow, StringComparison.Ordinal);
         Assert.Contains("-p:AnalysisMode=All", workflow, StringComparison.Ordinal);
         Assert.Contains("./script/test-solution.ps1", workflow, StringComparison.Ordinal);
@@ -137,7 +137,7 @@ public sealed class ReleaseWorkflowArchitectureTests
         const string validWorkflow = """
             jobs:
               detect-production-manifest-change:
-                runs-on: ubuntu-latest
+                runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
                 steps:
                   - name: Detect pull request changes
                     id: filter
@@ -147,8 +147,8 @@ public sealed class ReleaseWorkflowArchitectureTests
         string[] invalidMutations =
         [
             validWorkflow.Replace(
-                "    runs-on: ubuntu-latest",
-                "    if: github.event_name == 'pull_request'\n    runs-on: ubuntu-latest",
+                "    runs-on: ${{ vars.UBUNTU_X64_RUNNER }}",
+                "    if: github.event_name == 'pull_request'\n    runs-on: ${{ vars.UBUNTU_X64_RUNNER }}",
                 StringComparison.Ordinal),
             validWorkflow.Replace(
                 "if: github.event_name == 'pull_request'",

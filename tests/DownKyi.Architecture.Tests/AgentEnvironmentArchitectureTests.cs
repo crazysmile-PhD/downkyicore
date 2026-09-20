@@ -60,7 +60,7 @@ public sealed class AgentEnvironmentArchitectureTests
 
         Assert.Contains("pull_request:", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("windows-latest", qualityWorkflow, StringComparison.Ordinal);
-        Assert.Contains("ubuntu-latest", qualityWorkflow, StringComparison.Ordinal);
+        Assert.Contains("vars.UBUNTU_X64_RUNNER", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("macos-latest", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("--no-incremental", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("AnalysisMode=All", qualityWorkflow, StringComparison.Ordinal);
@@ -160,9 +160,9 @@ public sealed class AgentEnvironmentArchitectureTests
             buildTest,
             @"(?m)^    timeout-minutes: 20\r?$"));
         Assert.Contains("fail-fast: false", buildTest, StringComparison.Ordinal);
-        Assert.Contains("- windows-latest", buildTest, StringComparison.Ordinal);
-        Assert.Contains("- ubuntu-latest", buildTest, StringComparison.Ordinal);
-        Assert.Contains("- macos-latest", buildTest, StringComparison.Ordinal);
+        Assert.Contains("runner: windows-latest\n            check_name: windows", buildTest.Replace("\r\n", "\n", StringComparison.Ordinal), StringComparison.Ordinal);
+        Assert.Contains("runner: ${{ vars.UBUNTU_X64_RUNNER }}\n            check_name: ubuntu-x64", buildTest.Replace("\r\n", "\n", StringComparison.Ordinal), StringComparison.Ordinal);
+        Assert.Contains("runner: macos-latest\n            check_name: macos", buildTest.Replace("\r\n", "\n", StringComparison.Ordinal), StringComparison.Ordinal);
         Assert.DoesNotMatch(
             new System.Text.RegularExpressions.Regex(@"(?m)^\s+needs\s*:", System.Text.RegularExpressions.RegexOptions.CultureInvariant),
             qualityWorkflow);
@@ -187,9 +187,9 @@ public sealed class AgentEnvironmentArchitectureTests
         Assert.Contains("run.status === \"completed\"", retryWorkflow, StringComparison.Ordinal);
         Assert.Contains("run.run_attempt === 1", retryWorkflow, StringComparison.Ordinal);
         Assert.Equal(2, System.Text.RegularExpressions.Regex.Count(retryWorkflow, @"await readRun\(\)"));
-        Assert.Contains("Build and test (windows-latest)", retryWorkflow, StringComparison.Ordinal);
-        Assert.Contains("Build and test (ubuntu-latest)", retryWorkflow, StringComparison.Ordinal);
-        Assert.Contains("Build and test (macos-latest)", retryWorkflow, StringComparison.Ordinal);
+        Assert.Contains("Build and test (windows)", retryWorkflow, StringComparison.Ordinal);
+        Assert.Contains("Build and test (ubuntu-x64)", retryWorkflow, StringComparison.Ordinal);
+        Assert.Contains("Build and test (macos)", retryWorkflow, StringComparison.Ordinal);
         Assert.Contains("buildJobs.length === expectedBuildTests.length", retryWorkflow, StringComparison.Ordinal);
         Assert.Contains("job.conclusion === \"cancelled\"", retryWorkflow, StringComparison.Ordinal);
         Assert.Contains("/check-runs/{check_run_id}/annotations", retryWorkflow, StringComparison.Ordinal);

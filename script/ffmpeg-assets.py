@@ -39,7 +39,7 @@ SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 NATIVE_RUNNERS_BY_RID = {
     "win-x86": {"runner": "windows-latest", "architecture": "x64"},
     "win-x64": {"runner": "windows-latest", "architecture": "x64"},
-    "linux-x64": {"runner": "ubuntu-latest", "architecture": "x64"},
+    "linux-x64": {"architecture": "x64"},
     "linux-arm64": {"runner": "ubuntu-24.04-arm", "architecture": "arm64"},
     "osx-x64": {"runner": "macos-15-intel", "architecture": "x64"},
     "osx-arm64": {"runner": "macos-15", "architecture": "arm64"},
@@ -274,15 +274,18 @@ def candidate_tag(candidate: dict[str, Any]) -> str:
     return f"ffmpeg-{safe}"
 
 
-def candidate_matrix(candidate: dict[str, Any]) -> list[dict[str, str]]:
+def candidate_matrix(candidate: dict[str, Any], linux_x64_runner: str) -> list[dict[str, str]]:
     matrix: list[dict[str, str]] = []
     for rid in candidate["assets"]:
         runner = NATIVE_RUNNERS_BY_RID.get(rid)
         if runner is None:
             raise AssetError(f"Candidate has no native GitHub Actions runner mapping for {rid}.")
+        runner_name = linux_x64_runner if rid == "linux-x64" else runner["runner"]
+        if not runner_name:
+            raise AssetError(f"Candidate has no native GitHub Actions runner identity for {rid}.")
         matrix.append({
             "rid": rid,
-            "runner": runner["runner"],
+            "runner": runner_name,
             "runnerArchitecture": runner["architecture"],
             "requiredEncoder": "h264_nvenc" if rid.startswith(("win-", "linux-")) else "",
         })
@@ -763,7 +766,7 @@ def command_apply_update(args: argparse.Namespace) -> None:
 
 def command_matrix(args: argparse.Namespace) -> None:
     candidate = load_json(Path(args.candidates))
-    print(json.dumps({"include": candidate_matrix(candidate)}, separators=(",", ":")))
+    print(json.dumps({"include": candidate_matrix(candidate, args.linux_x64_runner)}, separators=(",", ":")))
 
 
 def command_workflow_output(args: argparse.Namespace) -> None:
@@ -773,7 +776,9 @@ def command_workflow_output(args: argparse.Namespace) -> None:
     if not isinstance(no_op, bool) or not isinstance(mirror_tag, str) or not mirror_tag:
         raise AssetError("Candidate is missing workflow output metadata.")
     print(f"no_op={str(no_op).lower()}")
-    print(f"matrix={json.dumps({'include': candidate_matrix(candidate)}, separators=(',', ':'))}")
+    print(
+        f"matrix={json.dumps({'include': candidate_matrix(candidate, args.linux_x64_runner)}, separators=(',', ':'))}"
+    )
     print(f"mirror_tag={mirror_tag}")
 
 
@@ -843,8 +848,10 @@ def parse_args() -> argparse.Namespace:
     updater.add_argument("--mirror", required=True)
     matrix = subparsers.add_parser("matrix")
     matrix.add_argument("--candidates", required=True)
+    matrix.add_argument("--linux-x64-runner", required=True)
     workflow_output = subparsers.add_parser("workflow-output")
     workflow_output.add_argument("--candidates", required=True)
+    workflow_output.add_argument("--linux-x64-runner", required=True)
     body = subparsers.add_parser("pr-body")
     body.add_argument("--candidates", required=True)
     body.add_argument("--mirror", required=True)

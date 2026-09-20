@@ -23,7 +23,7 @@ jobs:
       matrix:
         os:
           - windows-latest
-          - ubuntu-latest
+          - ${{ vars.UBUNTU_X64_RUNNER }}
           - macos-15
     steps:
       - name: Checkout

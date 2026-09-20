@@ -30,7 +30,7 @@ jobs:
     name: FFmpeg tooling / implementation gate
     needs: detect-production-manifest-change
     if: ${{ github.event_name != 'pull_request' || needs.detect-production-manifest-change.outputs.ffmpeg_related == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -60,7 +60,7 @@ jobs:
 
   detect-production-manifest-change:
     name: Detect production manifest change
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
     outputs:
       external_assets: ${{ steps.filter.outputs.external_assets }}
       ffmpeg_related: ${{ steps.filter.outputs.ffmpeg_related }}
@@ -88,7 +88,7 @@ jobs:
       - ffmpeg-tooling
       - detect-production-manifest-change
     if: ${{ always() && !inputs.update_ffmpeg_assets && needs.ffmpeg-tooling.result == 'success' && (github.event_name != 'pull_request' || needs.detect-production-manifest-change.outputs.external_assets == 'true') }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -108,7 +108,7 @@ jobs:
       - ffmpeg-tooling
       - external-assets-preflight
     if: ${{ always() && github.event_name == 'pull_request' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
     steps:
       - name: Report the FFmpeg validation result
         env:
@@ -140,7 +140,7 @@ jobs:
       matrix:
         os:
           - windows-latest
-          - ubuntu-latest
+          - ${{ vars.UBUNTU_X64_RUNNER }}
           - macos-15
     steps:
       - name: Checkout
@@ -186,7 +186,7 @@ jobs:
 
   changelog:
     name: Generate changelog
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
     needs: release-gate
     if: ${{ always() && needs.release-gate.result == 'success' }}
     outputs:
@@ -745,7 +745,7 @@ jobs:
             script/macos/publish-manifest-osx-${{ matrix.cpu }}.json
   release:
     name: Publish release
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
     permissions:
       contents: write
     needs: [changelog, build-windows, build-linux, validate-linux-arm64, build-macos]

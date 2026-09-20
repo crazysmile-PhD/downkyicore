@@ -17,7 +17,7 @@ env:
 jobs:
   format:
     name: Format check
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -37,7 +37,7 @@ jobs:
 
   legacy-ca-audit:
     name: Legacy CA and code metrics audit
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
     timeout-minutes: 20
     steps:
       - name: Checkout
@@ -60,16 +60,19 @@ jobs:
           if-no-files-found: error
 
   build-test:
-    name: Build and test (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+    name: Build and test (${{ matrix.check_name }})
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - windows-latest
-          - ubuntu-latest
-          - macos-latest
+        include:
+          - runner: windows-latest
+            check_name: windows
+          - runner: ${{ vars.UBUNTU_X64_RUNNER }}
+            check_name: ubuntu-x64
+          - runner: macos-latest
+            check_name: macos
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -231,7 +234,7 @@ jobs:
 
   package-audit:
     name: Package audit
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7

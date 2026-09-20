@@ -243,12 +243,24 @@ class FfmpegAssetsTests(unittest.TestCase):
 
     def test_macos_candidates_use_distinct_native_runners(self) -> None:
         candidate = {"assets": {"osx-x64": {}, "osx-arm64": {}}}
-        matrix = {entry["rid"]: entry for entry in ffmpeg_assets.candidate_matrix(candidate)}
+        matrix = {
+            entry["rid"]: entry
+            for entry in ffmpeg_assets.candidate_matrix(candidate, "unused-linux-x64-runner")
+        }
         self.assertEqual("macos-15-intel", matrix["osx-x64"]["runner"])
         self.assertEqual("x64", matrix["osx-x64"]["runnerArchitecture"])
         self.assertEqual("macos-15", matrix["osx-arm64"]["runner"])
         self.assertEqual("arm64", matrix["osx-arm64"]["runnerArchitecture"])
         self.assertNotEqual(matrix["osx-x64"]["runner"], matrix["osx-arm64"]["runner"])
+
+    def test_linux_x64_candidate_uses_injected_runner_identity(self) -> None:
+        candidate = {"assets": {"linux-x64": {}}}
+        matrix = ffmpeg_assets.candidate_matrix(candidate, "configured-linux-x64-runner")
+
+        self.assertEqual("configured-linux-x64-runner", matrix[0]["runner"])
+
+        with self.assertRaisesRegex(ffmpeg_assets.AssetError, "runner identity"):
+            ffmpeg_assets.candidate_matrix(candidate, "")
 
     def test_missing_mirror_readback_evidence_leaves_manifest_unchanged(self) -> None:
         manifest = valid_manifest()
