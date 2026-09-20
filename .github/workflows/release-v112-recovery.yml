@@ -440,7 +440,7 @@ jobs:
         env:
           MACOS_ADHOC_SIGNING: ${{ env.HAS_MACOS_SIGNING != 'true' }}
         run: |
-          chmod +x sign.sh verify-app.sh verify-app-launch.sh sign-dmg.sh verify-dmg.sh verify-dmg-contents.sh
+          chmod +x sign.sh verify-app.sh verify-app-launch.sh verify-runtime-architecture.sh sign-dmg.sh verify-dmg.sh verify-dmg-contents.sh
           ./sign.sh
       - name: Strictly verify final app
         working-directory: tooling/script/macos

@@ -706,6 +706,11 @@ public sealed class ReleaseWorkflowArchitectureTests
         AssertStepCondition(macSteps, "Sign, notarize, and verify DMG", "${{ env.HAS_MACOS_SIGNING == 'true' }}");
         AssertStepHasNoCondition(macSteps, "Strictly verify final app");
         AssertStepHasNoCondition(macSteps, "Remount DMG, strictly verify, and launch app");
+        var signAppStep = FindWorkflowStep(macSteps, "Sign app");
+        Assert.Contains(
+            signAppStep,
+            line => line.TrimStart().StartsWith("chmod +x ", StringComparison.Ordinal) &&
+                    line.Contains("verify-runtime-architecture.sh", StringComparison.Ordinal));
         var packageStep = FindWorkflowStep(macSteps, "Package app with recovery tooling");
         Assert.Contains(
             packageStep,
