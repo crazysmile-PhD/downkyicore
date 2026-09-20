@@ -72,6 +72,24 @@ public sealed class CentralTestRunnerCancellationComponentTests
     }
 
     [Fact]
+    public async Task WindowsRelationshipSnapshotTimeoutBoundsTheSynchronousHelper()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var clock = Stopwatch.StartNew();
+        var exception = await Assert.ThrowsAsync<TimeoutException>(
+            () => ProcessTreeSnapshot.ReadWindowsParentIdsAsync(
+                TimeSpan.FromMilliseconds(100),
+                () => CreateFixtureStartInfo("fixture-hold"))).ConfigureAwait(true);
+
+        Assert.Contains("bounded cleanup window", exception.Message, StringComparison.Ordinal);
+        Assert.InRange(clock.Elapsed, TimeSpan.Zero, TimeSpan.FromSeconds(2));
+    }
+
+    [Fact]
     public async Task RelationshipSnapshotCommandFailureIsTyped()
     {
         var startInfo = CreateDotNetStartInfo();
