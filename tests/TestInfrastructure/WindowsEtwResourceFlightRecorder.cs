@@ -224,7 +224,31 @@ internal sealed class WindowsEtwResourceFlightRecorder : IDisposable
         }
         catch (Exception exception)
         {
-            startStatus = $"{exception.GetType().FullName}: {exception.Message}";
+            startStatus =
+                $"{exception.GetType().FullName}: {exception.Message}; " +
+                $"uncertainStartCompensation={CancelUncertainStart()}";
+        }
+    }
+
+    [SuppressMessage(
+        "Design",
+        "CA1031:Do not catch general exception types",
+        Justification = "Best-effort compensation must report every failure without replacing the original start result.")]
+    private string CancelUncertainStart()
+    {
+        try
+        {
+            var cancel = RunTool(
+                "wpr.exe",
+                TimeSpan.FromSeconds(5),
+                "-cancel",
+                "-instancename",
+                instanceName);
+            return $"exitCode={cancel.ExitCode} output={cancel.Output}";
+        }
+        catch (Exception exception)
+        {
+            return $"failed type={exception.GetType().FullName} message={exception.Message}";
         }
     }
 
@@ -534,10 +558,25 @@ internal sealed class WindowsEtwResourceFlightRecorder : IDisposable
             startInfo.ArgumentList.Add(argument);
         }
 
+        using var job = OperatingSystem.IsWindows() ? WindowsToolProcessJob.Create() : null;
         using var process = new Process { StartInfo = startInfo };
         if (!process.Start())
         {
             throw new InvalidOperationException($"Unable to start {executable}.");
+        }
+
+        try
+        {
+            job?.Assign(process);
+        }
+        catch
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+
+            throw;
         }
 
         string standardOutput = string.Empty;
@@ -564,7 +603,7 @@ internal sealed class WindowsEtwResourceFlightRecorder : IDisposable
             primaryFailure = new TimeoutException(
                 $"{executable} did not finish within the diagnostic timeout.");
         }
-        else if (!JoinReaders(outputReader, errorReader, deadline.Remaining))
+        else if (!JoinReaders(outputReader, errorReader, deadline.WorkWindow))
         {
             primaryFailure = new TimeoutException(
                 $"{executable} output did not drain within the diagnostic timeout.");
@@ -574,6 +613,7 @@ internal sealed class WindowsEtwResourceFlightRecorder : IDisposable
         {
             var cleanupFailure = CompleteTimedOutToolCleanup(
                 process,
+                job,
                 outputReader,
                 errorReader,
                 executable,
@@ -645,6 +685,7 @@ internal sealed class WindowsEtwResourceFlightRecorder : IDisposable
         Justification = "The original tool timeout must be retained while every bounded cleanup step is attempted.")]
     private static Exception? CompleteTimedOutToolCleanup(
         Process process,
+        WindowsToolProcessJob? job,
         Thread outputReader,
         Thread errorReader,
         string executable,
@@ -653,18 +694,29 @@ internal sealed class WindowsEtwResourceFlightRecorder : IDisposable
         var failures = new List<Exception>();
         try
         {
-            if (!process.HasExited)
+            if (job is not null)
+            {
+                job.Terminate();
+            }
+            else if (!process.HasExited)
             {
                 process.Kill(entireProcessTree: true);
             }
         }
-        catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception)
+        catch (Exception exception) when (
+            exception is InvalidOperationException or System.ComponentModel.Win32Exception or AggregateException)
         {
             failures.Add(exception);
         }
 
         try
         {
+            if (job is not null && !job.WaitForEmpty(deadline.Remaining))
+            {
+                failures.Add(new TimeoutException(
+                    $"{executable} descendants did not exit before the diagnostic deadline."));
+            }
+
             if (!process.HasExited && !process.WaitForExit(deadline.Remaining))
             {
                 failures.Add(new TimeoutException(
