@@ -133,7 +133,28 @@ public sealed class CentralTestRunnerCancellationComponentTests
                     .ConfigureAwait(true);
                 clock.Stop();
 
-                var timeout = Assert.IsType<TimeoutException>(failure);
+                Assert.NotNull(failure);
+                var snapshotFailure = failure;
+                if (failure is AggregateException aggregate)
+                {
+                    Assert.Collection(
+                        aggregate.InnerExceptions,
+                        primary => snapshotFailure = Assert.IsType<TimeoutException>(primary),
+                        cleanup =>
+                        {
+                            var cleanupDiagnostic = Program.FormatExceptionDiagnostic(cleanup);
+                            Assert.Contains(
+                                "cleanup phase=scope-termination",
+                                cleanupDiagnostic,
+                                StringComparison.Ordinal);
+                            Assert.Contains(
+                                $"rootPid={scope.RootPid}",
+                                cleanupDiagnostic,
+                                StringComparison.Ordinal);
+                        });
+                }
+
+                var timeout = Assert.IsType<TimeoutException>(snapshotFailure);
                 Assert.Contains(
                     "cleanup phase=snapshot",
                     Program.FormatExceptionDiagnostic(timeout),
