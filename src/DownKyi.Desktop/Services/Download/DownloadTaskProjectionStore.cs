@@ -116,7 +116,7 @@ internal sealed class DownloadTaskProjectionStore : IDisposable
     {
         var page = await _history
             .GetPageAsync(cursor, pageSize, cancellationToken)
-            .ConfigureAwait(true);
+            .ConfigureAwait(false);
         return page;
     }
 
@@ -127,7 +127,8 @@ internal sealed class DownloadTaskProjectionStore : IDisposable
         DownloadHistoryCursor? cursor = null;
         do
         {
-            var page = await GetDownloadedPageAsync(cursor, 500, cancellationToken).ConfigureAwait(true);
+            var page = await GetDownloadedPageAsync(cursor, 500, cancellationToken)
+                .ConfigureAwait(false);
             items.AddRange(page.Items.Select(DownloadTaskProjectionMapper.ToDownloadedItem));
             cursor = page.NextCursor;
         }

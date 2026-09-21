@@ -47,7 +47,9 @@ internal sealed class DownloadListState
     public void AddDownloaded(DownloadedItem item)
     {
         ArgumentNullException.ThrowIfNull(item);
-        if (_downloaded.Any(candidate => GetTaskId(candidate) == GetTaskId(item)))
+        var taskId = GetTaskId(item);
+        if (_removedDownloadedIds.Contains(taskId)
+            || _downloaded.Any(candidate => GetTaskId(candidate) == taskId))
         {
             return;
         }
@@ -61,7 +63,9 @@ internal sealed class DownloadListState
         var loadedIds = _downloaded
             .Select(GetTaskId)
             .ToHashSet(StringComparer.Ordinal);
-        _downloaded.AddRange(items.Where(item => loadedIds.Add(GetTaskId(item))));
+        _downloaded.AddRange(items.Where(item =>
+            !_removedDownloadedIds.Contains(GetTaskId(item))
+            && loadedIds.Add(GetTaskId(item))));
     }
 
     public bool RemoveDownloaded(DownloadedItem item)

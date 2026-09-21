@@ -59,6 +59,20 @@ public sealed class DownloadListStateTests
             ((ICollection<DownloadedItem>)state.Downloaded).Add(item));
     }
 
+    [Fact]
+    public void RemovedDownloadedIdRejectsDelayedSingleAndRangeAdds()
+    {
+        var state = new DownloadListState();
+        var item = CreateDownloadedItem("A", order: 1, finishedTimestamp: 10);
+        state.AddDownloaded(item);
+
+        Assert.True(state.RemoveDownloaded(item));
+        state.AddDownloaded(item);
+        state.AddDownloadedRange([item]);
+
+        Assert.Empty(state.Downloaded);
+    }
+
     private static DownloadedItem CreateDownloadedItem(
         string title,
         int order,

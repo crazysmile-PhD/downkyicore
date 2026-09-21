@@ -203,6 +203,36 @@ public sealed class DownloadAddOwnerTests : IDisposable
     }
 
     [Fact]
+    public async Task DurableHistoryReadDoesNotCaptureTheCallingSynchronizationContext()
+    {
+        using var context = DuplicatePolicyContext.WithCompleted(AppDialogOutcome.Accepted);
+        var historyPage = new TaskCompletionSource<DownloadHistoryPage>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        context.Store.PendingHistoryPage = historyPage.Task;
+        var originalContext = SynchronizationContext.Current;
+        var blockedContext = new NonPumpingSynchronizationContext();
+        Task<IReadOnlyList<DownloadedItem>> read;
+        try
+        {
+            SynchronizationContext.SetSynchronizationContext(blockedContext);
+            read = context.ProjectionStore.GetDownloadedAsync(
+                TestContext.Current.CancellationToken);
+        }
+        finally
+        {
+            SynchronizationContext.SetSynchronizationContext(originalContext);
+        }
+
+        historyPage.SetResult(new DownloadHistoryPage([context.Store.History!], null));
+        var items = await read.WaitAsync(
+            TimeSpan.FromSeconds(2),
+            TestContext.Current.CancellationToken);
+
+        Assert.Single(items);
+        Assert.Equal(0, blockedContext.PostCount);
+    }
+
+    [Fact]
     public void DraftFactoryPreservesTaskIdentityQualityContentAndStreamType()
     {
         Directory.CreateDirectory(_directory);
@@ -400,6 +430,8 @@ public sealed class DownloadAddOwnerTests : IDisposable
 
         public DownloadDuplicatePolicy Policy { get; }
 
+        public DownloadTaskProjectionStore ProjectionStore => _projectionStore;
+
         public DownloadListState ListState { get; }
 
         public MutableDownloadTaskStore Store { get; }
@@ -441,6 +473,17 @@ public sealed class DownloadAddOwnerTests : IDisposable
         {
             _projectionStore.Dispose();
             _taskService.Dispose();
+        }
+    }
+
+    private sealed class NonPumpingSynchronizationContext : SynchronizationContext
+    {
+        public int PostCount { get; private set; }
+
+        public override void Post(SendOrPostCallback callback, object? state)
+        {
+            ArgumentNullException.ThrowIfNull(callback);
+            PostCount++;
         }
     }
 
@@ -489,6 +532,8 @@ public sealed class DownloadAddOwnerTests : IDisposable
         public int DeleteHistoryCount { get; private set; }
 
         public int HistoryPageRequestCount { get; private set; }
+
+        public Task<DownloadHistoryPage>? PendingHistoryPage { get; set; }
 
         public DownloadTaskId? DeletedHistoryId { get; private set; }
 
@@ -542,6 +587,11 @@ public sealed class DownloadAddOwnerTests : IDisposable
         {
             cancellationToken.ThrowIfCancellationRequested();
             HistoryPageRequestCount++;
+            if (PendingHistoryPage != null)
+            {
+                return PendingHistoryPage;
+            }
+
             IReadOnlyList<DownloadHistoryRecord> items = History == null
                 ? []
                 : [History];
