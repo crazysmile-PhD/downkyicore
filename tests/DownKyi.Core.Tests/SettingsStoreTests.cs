@@ -674,7 +674,7 @@ public sealed class SettingsStoreTests
     }
 
     [Fact]
-    public void SynchronousDisposeStopsPendingDebounceWithoutPersisting()
+    public async Task SynchronousDisposeStopsPendingDebounceWithoutPersisting()
     {
         var directory = CreateTestDirectory();
         var settingsPath = Path.Combine(directory, "settings.json");
@@ -688,12 +688,14 @@ public sealed class SettingsStoreTests
                 TimeSpan.FromDays(1),
                 delay.WaitAsync);
             manager.SetThemeMode(ThemeMode.Dark);
-            Assert.True(delay.Started.IsCompletedSuccessfully);
+            await delay.Started.WaitAsync(TestContext.Current.CancellationToken);
 
-            manager.Dispose();
+            DisposeSynchronously(manager);
 
-            Assert.True(delay.Canceled.IsCompletedSuccessfully);
+            Assert.True(delay.CancellationRequested);
+            await delay.Stopped.WaitAsync(TestContext.Current.CancellationToken);
             Assert.False(File.Exists(settingsPath));
+            Assert.Empty(Directory.GetFiles(directory));
         }
         finally
         {
@@ -716,19 +718,32 @@ public sealed class SettingsStoreTests
         }
     }
 
+    private static void DisposeSynchronously(SettingsManager manager)
+    {
+        manager.Dispose();
+    }
+
     private sealed class ControlledDelay
     {
         private readonly TaskCompletionSource _canceled = new(
             TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly TaskCompletionSource _started = new(
             TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _stopped = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        private CancellationToken _cancellationToken;
 
         public Task Started => _started.Task;
 
         public Task Canceled => _canceled.Task;
 
+        public bool CancellationRequested => _cancellationToken.IsCancellationRequested;
+
+        public Task Stopped => _stopped.Task;
+
         public async Task WaitAsync(TimeSpan _, CancellationToken cancellationToken)
         {
+            _cancellationToken = cancellationToken;
             _started.TrySetResult();
             using var registration = cancellationToken.Register(
                 static state => ((TaskCompletionSource)state!).TrySetResult(),
@@ -740,6 +755,10 @@ public sealed class SettingsStoreTests
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 throw;
+            }
+            finally
+            {
+                _stopped.TrySetResult();
             }
         }
     }
