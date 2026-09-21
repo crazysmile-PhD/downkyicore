@@ -124,14 +124,15 @@ public sealed class CentralTestRunnerCancellationComponentTests
             async () =>
             {
                 scope = await StartHoldingScopeAsync().ConfigureAwait(true);
-                var clock = Stopwatch.StartNew();
+                var snapshot = new TaskCompletionSource<FinalProcessSnapshot>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
                 var failure = await Record.ExceptionAsync(
                     () => BuildProcessRunner.CleanupAfterCancellationAsync(
                         scope,
                         TimeSpan.FromSeconds(2),
-                        (_, _) => new TaskCompletionSource<FinalProcessSnapshot>().Task))
+                        (_, _) => snapshot.Task)
+                        .WaitAsync(TestTimeout, TestContext.Current.CancellationToken))
                     .ConfigureAwait(true);
-                clock.Stop();
 
                 Assert.NotNull(failure);
                 var snapshotFailure = failure;
@@ -163,7 +164,7 @@ public sealed class CentralTestRunnerCancellationComponentTests
                     $"rootPid={scope.RootPid}",
                     Program.FormatExceptionDiagnostic(timeout),
                     StringComparison.Ordinal);
-                Assert.True(clock.Elapsed < TimeSpan.FromMilliseconds(2500));
+                Assert.False(snapshot.Task.IsCompleted);
                 Assert.True(scope.Host.HasExited);
             },
             () => StopScopeAsync(scope)).ConfigureAwait(true);
