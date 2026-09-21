@@ -29,6 +29,13 @@ internal static class Aria2TransferFailureClassifier
                 tlsErrorCode);
         }
 
+        if (TlsFailureClassifier.IsTlsHandshakeFailure(errorMessage))
+        {
+            return DownloadTransferResult.Failed(
+                DownloadTransferFailureKind.Tls,
+                "download.transfer.tls.handshake");
+        }
+
         if (TlsFailureClassifier.IsSecureConnectionFailure(errorMessage))
         {
             return Failed(

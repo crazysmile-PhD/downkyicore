@@ -671,18 +671,8 @@ public sealed partial class Aria2TlsIntegrationTests
         var classification = Aria2TransferFailureClassifier.Classify(
             status.ErrorCode,
             status.ErrorMessage);
-        if (classification.FailureKind == DownloadTransferFailureKind.Tls)
-        {
-            Assert.Contains(classification.ErrorCode, acceptedErrorCodes);
-        }
-        else
-        {
-            Assert.Equal(
-                DownloadTransferFailureKind.TransientNetwork,
-                classification.FailureKind);
-            Assert.Equal("download.transfer.aria2-1", classification.ErrorCode);
-        }
-
+        Assert.Equal(DownloadTransferFailureKind.Tls, classification.FailureKind);
+        Assert.Contains(classification.ErrorCode, acceptedErrorCodes);
         Assert.False(IsCompletePayload(payload, outputPath));
         return classification.ErrorCode;
     }

@@ -90,7 +90,6 @@ internal static class TlsFailureClassifier
 
         if (ContainsAny(message,
                 "untrusted",
-                "not trusted",
                 "unknown ca",
                 "self-signed",
                 "self signed",
@@ -99,7 +98,14 @@ internal static class TlsFailureClassifier
                 "unable to verify the first certificate",
                 "不受信任",
                 "80090325",
-                "800b0109"))
+                "800b0109") ||
+            ContainsAny(message, "not trusted") &&
+            ContainsAny(message,
+                "certificate",
+                "certificate authority",
+                "issuer",
+                "chain",
+                "root"))
         {
             errorCode = Prefix + "untrusted";
             return true;
@@ -138,15 +144,20 @@ internal static class TlsFailureClassifier
 
     public static bool IsSecureConnectionFailure(string? message)
     {
-        return ContainsAny(message,
-            "ssl/tls handshake",
-            "tls handshake",
-            "ssl handshake",
+        return IsTlsHandshakeFailure(message) || ContainsAny(message,
             "secure connection",
             "ssl connection",
             "tls connection",
             "transport stream",
             "transport connection");
+    }
+
+    public static bool IsTlsHandshakeFailure(string? message)
+    {
+        return ContainsAny(message,
+            "ssl/tls handshake",
+            "tls handshake",
+            "ssl handshake");
     }
 
     public static bool IsTlsErrorCode(string? errorCode)
