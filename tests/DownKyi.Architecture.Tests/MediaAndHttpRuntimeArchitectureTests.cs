@@ -775,6 +775,7 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
         Assert.DoesNotContain("SqliteDatabase", viewModelSource, StringComparison.Ordinal);
         Assert.DoesNotContain("ApplicationStorage", viewModelSource, StringComparison.Ordinal);
         Assert.DoesNotContain("Dispatcher.UIThread", viewModelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("DownloadListState", viewModelSource, StringComparison.Ordinal);
 
         Assert.Contains("await CompleteViewModelLifecycleAsync(viewModel)", dialogServiceSource,
             StringComparison.Ordinal);
@@ -789,6 +790,7 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
         Assert.Contains("LegacyDownloadHistoryTaskFactory.Create", coordinatorSource, StringComparison.Ordinal);
         Assert.Contains("AddMigratedHistoryAsync", coordinatorSource, StringComparison.Ordinal);
         Assert.Contains("ILogger<LegacyUpgradeCoordinator>", coordinatorSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("GetDownloadedAsync", coordinatorSource, StringComparison.Ordinal);
         Assert.DoesNotContain("LogManager.", coordinatorSource, StringComparison.Ordinal);
         Assert.DoesNotContain("Console.", coordinatorSource, StringComparison.Ordinal);
 

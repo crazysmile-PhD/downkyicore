@@ -35,6 +35,28 @@ public sealed class DownloadAddOwnerTests : IDisposable
     }
 
     [Fact]
+    public async Task ActiveDuplicateIsSkippedBeforeCompletedHistoryIsRead()
+    {
+        using var context = DuplicatePolicyContext.WithCompleted(AppDialogOutcome.Accepted);
+        context.ListState.AddDownloading(CreateDownloadingItem());
+        var completedCandidates = new Lazy<Task<List<DownloadedItem>>>(() =>
+            context.Policy.LoadCompletedCandidatesAsync(
+                DownKyi.Core.Settings.RepeatDownloadStrategy.JumpOver,
+                TestContext.Current.CancellationToken));
+
+        var shouldSkip = await context.Policy.ShouldSkipAsync(
+            CreatePage(),
+            CreateVideoQuality(),
+            DownKyi.Core.Settings.RepeatDownloadStrategy.JumpOver,
+            TestContext.Current.CancellationToken,
+            completedCandidates);
+
+        Assert.True(shouldSkip);
+        Assert.False(completedCandidates.IsValueCreated);
+        Assert.Equal(0, context.Store.HistoryPageRequestCount);
+    }
+
+    [Fact]
     public async Task CompletedDuplicateJumpOverPreservesHistory()
     {
         using var context = DuplicatePolicyContext.WithCompleted(AppDialogOutcome.Accepted);
@@ -46,7 +68,9 @@ public sealed class DownloadAddOwnerTests : IDisposable
             TestContext.Current.CancellationToken);
 
         Assert.True(shouldSkip);
-        Assert.Single(context.ListState.Downloaded);
+        Assert.Empty(context.ListState.Downloaded);
+        Assert.NotNull(context.Store.History);
+        Assert.Equal(1, context.Store.HistoryPageRequestCount);
         Assert.Equal(0, context.Store.UpdateCount);
         Assert.Equal(0, context.Dialogs.ShowCount);
     }
@@ -63,7 +87,9 @@ public sealed class DownloadAddOwnerTests : IDisposable
             TestContext.Current.CancellationToken);
 
         Assert.False(shouldSkip);
-        Assert.Single(context.ListState.Downloaded);
+        Assert.Empty(context.ListState.Downloaded);
+        Assert.NotNull(context.Store.History);
+        Assert.Equal(0, context.Store.HistoryPageRequestCount);
         Assert.Equal(0, context.Store.UpdateCount);
         Assert.Equal(0, context.Dialogs.ShowCount);
     }
@@ -80,7 +106,9 @@ public sealed class DownloadAddOwnerTests : IDisposable
             TestContext.Current.CancellationToken);
 
         Assert.True(shouldSkip);
-        Assert.Single(context.ListState.Downloaded);
+        Assert.Empty(context.ListState.Downloaded);
+        Assert.NotNull(context.Store.History);
+        Assert.Equal(1, context.Store.HistoryPageRequestCount);
         Assert.Equal(0, context.Store.UpdateCount);
         Assert.Equal(1, context.Dialogs.ShowCount);
     }
@@ -88,7 +116,9 @@ public sealed class DownloadAddOwnerTests : IDisposable
     [Fact]
     public async Task AcceptedDuplicateConfirmationDeletesPersistedRecordBeforeAllowingTask()
     {
-        using var context = DuplicatePolicyContext.WithCompleted(AppDialogOutcome.Accepted);
+        using var context = DuplicatePolicyContext.WithCompleted(
+            AppDialogOutcome.Accepted,
+            loadUi: true);
         Assert.NotNull(context.Store.History);
         var historyId = context.Store.History.Id;
 
@@ -105,7 +135,55 @@ public sealed class DownloadAddOwnerTests : IDisposable
         Assert.Equal(0, context.Store.UpdateCount);
         Assert.Equal(1, context.Store.DeleteHistoryCount);
         Assert.Equal(historyId, context.Store.DeletedHistoryId);
+        Assert.Equal(1, context.Store.HistoryPageRequestCount);
         Assert.Equal(1, context.Dialogs.ShowCount);
+    }
+
+    [Fact]
+    public async Task AcceptedDuplicateConfirmationSuppressesAStalePendingHistorySnapshot()
+    {
+        using var context = DuplicatePolicyContext.WithCompleted(AppDialogOutcome.Accepted);
+        var staleSnapshot = DownloadTaskProjectionMapper.ToDownloadedItem(context.Store.History!);
+        var completedCandidates = new Lazy<Task<List<DownloadedItem>>>(() =>
+            context.Policy.LoadCompletedCandidatesAsync(
+                DownKyi.Core.Settings.RepeatDownloadStrategy.Ask,
+                TestContext.Current.CancellationToken));
+
+        var shouldSkip = await context.Policy.ShouldSkipAsync(
+            CreatePage(),
+            CreateVideoQuality(),
+            DownKyi.Core.Settings.RepeatDownloadStrategy.Ask,
+            TestContext.Current.CancellationToken,
+            completedCandidates);
+        context.ListState.LoadDownloadedHistory([staleSnapshot]);
+
+        Assert.False(shouldSkip);
+        Assert.Empty(context.ListState.Downloaded);
+        Assert.True(context.ListState.IsDownloadedHistoryLoaded);
+    }
+
+    [Fact]
+    public async Task CachedCandidatesIncludeACompletionProjectedDuringTheBatch()
+    {
+        using var context = new DuplicatePolicyContext(AppDialogOutcome.Accepted);
+        var candidateList = await context.Policy.LoadCompletedCandidatesAsync(
+            DownKyi.Core.Settings.RepeatDownloadStrategy.JumpOver,
+            TestContext.Current.CancellationToken);
+        var completedCandidates = new Lazy<Task<List<DownloadedItem>>>(() =>
+            Task.FromResult(candidateList));
+        context.ListState.AddDownloaded(DownloadTaskProjectionMapper.ToDownloadedItem(
+            DuplicatePolicyContext.CreateCompletedHistory()));
+
+        var shouldSkip = await context.Policy.ShouldSkipAsync(
+            CreatePage(),
+            CreateVideoQuality(),
+            DownKyi.Core.Settings.RepeatDownloadStrategy.JumpOver,
+            TestContext.Current.CancellationToken,
+            completedCandidates);
+
+        Assert.True(shouldSkip);
+        Assert.Single(candidateList);
+        Assert.Equal(1, context.Store.HistoryPageRequestCount);
     }
 
     [Fact]
@@ -122,6 +200,36 @@ public sealed class DownloadAddOwnerTests : IDisposable
                 DownKyi.Core.Settings.RepeatDownloadStrategy.Ask,
                 cancellation.Token));
         Assert.Equal(0, context.Dialogs.ShowCount);
+    }
+
+    [Fact]
+    public async Task DurableHistoryReadDoesNotCaptureTheCallingSynchronizationContext()
+    {
+        using var context = DuplicatePolicyContext.WithCompleted(AppDialogOutcome.Accepted);
+        var historyPage = new TaskCompletionSource<DownloadHistoryPage>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        context.Store.PendingHistoryPage = historyPage.Task;
+        var originalContext = SynchronizationContext.Current;
+        var blockedContext = new NonPumpingSynchronizationContext();
+        Task<IReadOnlyList<DownloadedItem>> read;
+        try
+        {
+            SynchronizationContext.SetSynchronizationContext(blockedContext);
+            read = context.ProjectionStore.GetDownloadedAsync(
+                TestContext.Current.CancellationToken);
+        }
+        finally
+        {
+            SynchronizationContext.SetSynchronizationContext(originalContext);
+        }
+
+        historyPage.SetResult(new DownloadHistoryPage([context.Store.History!], null));
+        var items = await read.WaitAsync(
+            TimeSpan.FromSeconds(2),
+            TestContext.Current.CancellationToken);
+
+        Assert.Single(items);
+        Assert.Equal(0, blockedContext.PostCount);
     }
 
     [Fact]
@@ -322,6 +430,8 @@ public sealed class DownloadAddOwnerTests : IDisposable
 
         public DownloadDuplicatePolicy Policy { get; }
 
+        public DownloadTaskProjectionStore ProjectionStore => _projectionStore;
+
         public DownloadListState ListState { get; }
 
         public MutableDownloadTaskStore Store { get; }
@@ -330,7 +440,22 @@ public sealed class DownloadAddOwnerTests : IDisposable
 
         public StubDialogService Dialogs { get; }
 
-        public static DuplicatePolicyContext WithCompleted(AppDialogOutcome outcome)
+        public static DuplicatePolicyContext WithCompleted(
+            AppDialogOutcome outcome,
+            bool loadUi = false)
+        {
+            var history = CreateCompletedHistory();
+            var context = new DuplicatePolicyContext(outcome, history: history);
+            if (loadUi)
+            {
+                context.ListState.AddDownloaded(
+                    DownloadTaskProjectionMapper.ToDownloadedItem(history));
+            }
+
+            return context;
+        }
+
+        public static DownloadHistoryRecord CreateCompletedHistory()
         {
             var queued = DownloadTaskProjectionMapper.CreateNewTask(
                 CreateDownloadingItem(),
@@ -341,17 +466,24 @@ public sealed class DownloadAddOwnerTests : IDisposable
                 new DownloadCompletion(2, "finished", null),
                 DateTimeOffset.UnixEpoch.AddSeconds(2))
                 .TryGetValue(out var completed));
-            var history = DownloadHistoryRecord.FromCompletedTask(completed);
-            var context = new DuplicatePolicyContext(outcome, history: history);
-            context.ListState.AddDownloaded(DownloadTaskProjectionMapper.ToDownloadedItem(
-                history));
-            return context;
+            return DownloadHistoryRecord.FromCompletedTask(completed);
         }
 
         public void Dispose()
         {
             _projectionStore.Dispose();
             _taskService.Dispose();
+        }
+    }
+
+    private sealed class NonPumpingSynchronizationContext : SynchronizationContext
+    {
+        public int PostCount { get; private set; }
+
+        public override void Post(SendOrPostCallback callback, object? state)
+        {
+            ArgumentNullException.ThrowIfNull(callback);
+            PostCount++;
         }
     }
 
@@ -398,6 +530,10 @@ public sealed class DownloadAddOwnerTests : IDisposable
         public int UpdateCount { get; private set; }
 
         public int DeleteHistoryCount { get; private set; }
+
+        public int HistoryPageRequestCount { get; private set; }
+
+        public Task<DownloadHistoryPage>? PendingHistoryPage { get; set; }
 
         public DownloadTaskId? DeletedHistoryId { get; private set; }
 
@@ -450,6 +586,12 @@ public sealed class DownloadAddOwnerTests : IDisposable
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            HistoryPageRequestCount++;
+            if (PendingHistoryPage != null)
+            {
+                return PendingHistoryPage;
+            }
+
             IReadOnlyList<DownloadHistoryRecord> items = History == null
                 ? []
                 : [History];

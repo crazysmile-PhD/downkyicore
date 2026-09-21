@@ -17,7 +17,6 @@ using DownKyi.Core.Storage.Database;
 using DownKyi.Domain.Downloads;
 using DownKyi.Models;
 using DownKyi.Services.Download;
-using DownKyi.ViewModels.DownloadManager;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 
@@ -34,7 +33,6 @@ internal sealed record LegacyUpgradeProgress(string Message, double? Percent = n
 
 internal sealed record LegacyUpgradeResult(
     LegacyUpgradeOutcome Outcome,
-    IReadOnlyList<DownloadedItem> DownloadedItems,
     string? ErrorMessage = null);
 
 internal interface ILegacyUpgradeCoordinator
@@ -80,7 +78,7 @@ internal sealed class LegacyUpgradeCoordinator : ILegacyUpgradeCoordinator
         var oldDatabasePath = FindLegacyDatabase();
         if (oldDatabasePath == null)
         {
-            return new LegacyUpgradeResult(LegacyUpgradeOutcome.NoMigration, Array.Empty<DownloadedItem>());
+            return new LegacyUpgradeResult(LegacyUpgradeOutcome.NoMigration);
         }
 
         progress.Report(new LegacyUpgradeProgress("正在迁移下载信息"));
@@ -92,7 +90,6 @@ internal sealed class LegacyUpgradeCoordinator : ILegacyUpgradeCoordinator
                 var backupMessage = BackupFailedDatabase(oldDatabasePath);
                 return new LegacyUpgradeResult(
                     LegacyUpgradeOutcome.Failed,
-                    Array.Empty<DownloadedItem>(),
                     backupMessage);
             }
 
@@ -100,11 +97,8 @@ internal sealed class LegacyUpgradeCoordinator : ILegacyUpgradeCoordinator
             cancellationToken.ThrowIfCancellationRequested();
             File.Delete(oldDatabasePath);
 
-            var downloadedItems = await _projectionStore
-                .GetDownloadedAsync(cancellationToken)
-                .ConfigureAwait(false);
             progress.Report(new LegacyUpgradeProgress("下载信息迁移完成", 100));
-            return new LegacyUpgradeResult(LegacyUpgradeOutcome.Completed, downloadedItems);
+            return new LegacyUpgradeResult(LegacyUpgradeOutcome.Completed);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -121,7 +115,6 @@ internal sealed class LegacyUpgradeCoordinator : ILegacyUpgradeCoordinator
                 : $"数据迁移失败: {e.Message}; {backupMessage}";
             return new LegacyUpgradeResult(
                 LegacyUpgradeOutcome.Failed,
-                Array.Empty<DownloadedItem>(),
                 message);
         }
     }

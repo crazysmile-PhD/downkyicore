@@ -309,6 +309,24 @@ public sealed class VideoTagLoadingTests : IDisposable
         Assert.Single(context.Dialogs.Requests);
     }
 
+    [Fact]
+    public async Task MultiPageAdmissionReadsCompletedHistoryOnce()
+    {
+        using var context = CreateContext(generateMetadata: false);
+        var first = CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]));
+        first.Cid = 1;
+        var second = CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]));
+        second.Cid = 2;
+        context.Prepare(first, second);
+
+        var added = await context.Service.AddToDownload(
+            _directory,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, added);
+        Assert.Equal(1, context.Store.HistoryPageRequestCount);
+    }
+
     private DownloadTestContext CreateContext(
         bool generateMetadata,
         IPhysicalOutputPathResolver? resolver = null,
@@ -563,6 +581,8 @@ public sealed class VideoTagLoadingTests : IDisposable
     {
         public int AddCount { get; private set; }
 
+        public int HistoryPageRequestCount { get; private set; }
+
         public Func<Task>? AfterAddAsync { get; set; }
 
         public async Task<OperationResult> AddAsync(
@@ -607,8 +627,11 @@ public sealed class VideoTagLoadingTests : IDisposable
         public Task<DownloadHistoryPage> GetHistoryPageAsync(
             DownloadHistoryCursor? cursor,
             int pageSize,
-            CancellationToken cancellationToken) => Task.FromResult(
-                new DownloadHistoryPage([], null));
+            CancellationToken cancellationToken)
+        {
+            HistoryPageRequestCount++;
+            return Task.FromResult(new DownloadHistoryPage([], null));
+        }
 
         public Task<IReadOnlyList<QuarantinedDownloadRecord>> GetQuarantinedRecordsAsync(
             CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<QuarantinedDownloadRecord>>(

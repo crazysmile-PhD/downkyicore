@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Desktop;
@@ -33,12 +34,66 @@ internal sealed class DownloadDuplicatePolicy
         VideoPage page,
         VideoQuality videoQuality,
         RepeatDownloadStrategy strategy,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Lazy<Task<List<DownloadedItem>>>? completedCandidates = null)
     {
         ArgumentNullException.ThrowIfNull(page);
         ArgumentNullException.ThrowIfNull(videoQuality);
         cancellationToken.ThrowIfCancellationRequested();
 
+        if (ShouldSkipActiveDownload(page, videoQuality))
+        {
+            return true;
+        }
+
+        var candidates = completedCandidates == null
+            ? await LoadCompletedCandidatesAsync(strategy, cancellationToken).ConfigureAwait(true)
+            : await completedCandidates.Value.ConfigureAwait(true);
+        MergeLiveCompletedCandidates(candidates);
+        foreach (var item in candidates)
+        {
+            if (!IsSameVideo(item, page, videoQuality))
+            {
+                continue;
+            }
+
+            var shouldSkip = strategy switch
+            {
+                RepeatDownloadStrategy.Ask => await ResolveAskAsync(item, cancellationToken)
+                    .ConfigureAwait(true),
+                RepeatDownloadStrategy.ReDownload => false,
+                RepeatDownloadStrategy.JumpOver => true,
+                _ => true
+            };
+            if (!shouldSkip)
+            {
+                candidates.Remove(item);
+            }
+
+            return shouldSkip;
+        }
+
+        return false;
+    }
+
+    public async Task<List<DownloadedItem>> LoadCompletedCandidatesAsync(
+        RepeatDownloadStrategy strategy,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (strategy == RepeatDownloadStrategy.ReDownload)
+        {
+            return [];
+        }
+
+        var downloadedItems = await _projectionStore
+            .GetDownloadedAsync(cancellationToken)
+            .ConfigureAwait(true);
+        return new List<DownloadedItem>(downloadedItems);
+    }
+
+    private bool ShouldSkipActiveDownload(VideoPage page, VideoQuality videoQuality)
+    {
         foreach (var item in _downloadLists.Downloading)
         {
             if (!IsSameVideo(item, page, videoQuality))
@@ -51,25 +106,25 @@ internal sealed class DownloadDuplicatePolicy
             return true;
         }
 
-        foreach (var item in _downloadLists.Downloaded)
-        {
-            if (!IsSameVideo(item, page, videoQuality))
-            {
-                continue;
-            }
-
-            return strategy switch
-            {
-                RepeatDownloadStrategy.Ask => await ResolveAskAsync(item, cancellationToken)
-                    .ConfigureAwait(true),
-                RepeatDownloadStrategy.ReDownload => false,
-                RepeatDownloadStrategy.JumpOver => true,
-                _ => true
-            };
-        }
-
         return false;
     }
+
+    private void MergeLiveCompletedCandidates(List<DownloadedItem> completedCandidates)
+    {
+        var candidateIds = completedCandidates
+            .Select(GetTaskId)
+            .ToHashSet(StringComparer.Ordinal);
+        foreach (var item in _downloadLists.Downloaded)
+        {
+            if (candidateIds.Add(GetTaskId(item)))
+            {
+                completedCandidates.Add(item);
+            }
+        }
+    }
+
+    private static string GetTaskId(DownloadedItem item) =>
+        item.HistoryRecord?.Id.Value ?? item.DownloadBase.Id;
 
     private async Task<bool> ResolveAskAsync(
         DownloadedItem item,

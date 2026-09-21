@@ -208,13 +208,14 @@ public sealed class DownloadBootstrapHostedServiceTests
     }
 
     [Fact]
-    public async Task HostLifecycleOwnsDownloadRuntimeAndUiProjection()
+    public async Task StartupRestoresOnlyUnfinishedDownloads()
     {
         using var runtime = new RecordingDownloadRuntime();
         var dispatcher = new ImmediateUiDispatcher();
         var listState = new DownloadListState();
         var clock = new FixedClock();
-        var taskStore = new EmptyDownloadTaskStore();
+        var taskStore = new EmptyDownloadTaskStore(
+            history: [CreateHistoryRecord("completed-at-startup")]);
         var historyService = DownloadHistoryService.CreateForSharedStore(taskStore);
         using var tasks = new DownloadTaskApplicationService(taskStore, historyService, clock);
         using var storage = new DownloadTaskProjectionStore(
@@ -237,7 +238,8 @@ public sealed class DownloadBootstrapHostedServiceTests
 
         Assert.True(runtime.Started);
         Assert.True(runtime.Ended);
-        Assert.True(dispatcher.InvocationCount >= 2);
+        Assert.Equal(1, dispatcher.InvocationCount);
+        Assert.Equal(0, taskStore.HistoryPageRequestCount);
         Assert.Empty(listState.Downloading);
         Assert.Empty(listState.Downloaded);
     }
@@ -673,6 +675,27 @@ public sealed class DownloadBootstrapHostedServiceTests
             DateTimeOffset.UnixEpoch);
     }
 
+    private static DownloadHistoryRecord CreateHistoryRecord(string id)
+    {
+        return new DownloadHistoryRecord(
+            new DownloadTaskId(id),
+            1,
+            0,
+            1,
+            "title",
+            id,
+            "00:01",
+            "avc1",
+            80,
+            "1080P",
+            "AAC",
+            null,
+            [],
+            1,
+            "finished",
+            null);
+    }
+
     private static void ClearOwnedSqlitePool(string databasePath)
     {
         using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
@@ -888,13 +911,17 @@ public sealed class DownloadBootstrapHostedServiceTests
     }
 
     private sealed class EmptyDownloadTaskStore(
-        IReadOnlyList<DownloadTask>? unfinished = null) :
+        IReadOnlyList<DownloadTask>? unfinished = null,
+        IReadOnlyList<DownloadHistoryRecord>? history = null) :
         IDownloadTaskStore,
         IDownloadHistoryStore,
         IDownloadCompletionStore
     {
         private readonly Dictionary<DownloadTaskId, DownloadTask> _tasks =
             (unfinished ?? []).ToDictionary(task => task.Id);
+        private readonly IReadOnlyList<DownloadHistoryRecord> _history = history ?? [];
+
+        public int HistoryPageRequestCount { get; private set; }
 
         public Task InitializeAsync(CancellationToken cancellationToken)
         {
@@ -964,7 +991,8 @@ public sealed class DownloadBootstrapHostedServiceTests
             int pageSize,
             CancellationToken cancellationToken)
         {
-            return Task.FromResult(new DownloadHistoryPage([], null));
+            HistoryPageRequestCount++;
+            return Task.FromResult(new DownloadHistoryPage(_history, null));
         }
 
         public Task<OperationResult> DeleteAsync(DownloadTaskId taskId, CancellationToken cancellationToken)

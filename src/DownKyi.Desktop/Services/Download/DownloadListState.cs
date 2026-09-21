@@ -12,6 +12,7 @@ internal sealed class DownloadListState
 {
     private readonly RangeObservableCollection<DownloadingItem> _downloading = new();
     private readonly RangeObservableCollection<DownloadedItem> _downloaded = new();
+    private readonly HashSet<string> _removedDownloadedIds = new(StringComparer.Ordinal);
 
     public DownloadListState()
     {
@@ -22,6 +23,8 @@ internal sealed class DownloadListState
     public ReadOnlyObservableCollection<DownloadingItem> Downloading { get; }
 
     public ReadOnlyObservableCollection<DownloadedItem> Downloaded { get; }
+
+    public bool IsDownloadedHistoryLoaded { get; private set; }
 
     public void AddDownloading(DownloadingItem item)
     {
@@ -44,19 +47,34 @@ internal sealed class DownloadListState
     public void AddDownloaded(DownloadedItem item)
     {
         ArgumentNullException.ThrowIfNull(item);
+        var taskId = GetTaskId(item);
+        if (_removedDownloadedIds.Contains(taskId)
+            || _downloaded.Any(candidate => GetTaskId(candidate) == taskId))
+        {
+            return;
+        }
+
         _downloaded.Add(item);
     }
 
     public void AddDownloadedRange(IEnumerable<DownloadedItem> items)
     {
         ArgumentNullException.ThrowIfNull(items);
-        _downloaded.AddRange(items);
+        var loadedIds = _downloaded
+            .Select(GetTaskId)
+            .ToHashSet(StringComparer.Ordinal);
+        _downloaded.AddRange(items.Where(item =>
+            !_removedDownloadedIds.Contains(GetTaskId(item))
+            && loadedIds.Add(GetTaskId(item))));
     }
 
     public bool RemoveDownloaded(DownloadedItem item)
     {
         ArgumentNullException.ThrowIfNull(item);
-        return _downloaded.Remove(item);
+        var taskId = GetTaskId(item);
+        _removedDownloadedIds.Add(taskId);
+        var loadedItem = _downloaded.FirstOrDefault(candidate => GetTaskId(candidate) == taskId);
+        return loadedItem != null && _downloaded.Remove(loadedItem);
     }
 
     public void ClearDownloaded()
@@ -68,6 +86,25 @@ internal sealed class DownloadListState
     {
         ArgumentNullException.ThrowIfNull(items);
         ReplaceDownloadedCore(items.ToList());
+    }
+
+    public void LoadDownloadedHistory(IEnumerable<DownloadedItem> items)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+        if (IsDownloadedHistoryLoaded)
+        {
+            return;
+        }
+
+        var loadedItems = items
+            .Where(item => !_removedDownloadedIds.Contains(GetTaskId(item)))
+            .ToList();
+        var loadedIds = loadedItems
+            .Select(GetTaskId)
+            .ToHashSet(StringComparer.Ordinal);
+        loadedItems.AddRange(_downloaded.Where(item => loadedIds.Add(GetTaskId(item))));
+        ReplaceDownloadedCore(loadedItems);
+        IsDownloadedHistoryLoaded = true;
     }
 
     public void SortDownloaded(DownloadFinishedSort finishedSort)
@@ -86,6 +123,11 @@ internal sealed class DownloadListState
     private static int CompareFinishedAscending(DownloadedItem left, DownloadedItem right)
     {
         return left.Downloaded.FinishedTimestamp.CompareTo(right.Downloaded.FinishedTimestamp);
+    }
+
+    private static string GetTaskId(DownloadedItem item)
+    {
+        return item.HistoryRecord?.Id.Value ?? item.DownloadBase.Id;
     }
 
     private static int CompareFinishedDescending(DownloadedItem left, DownloadedItem right)

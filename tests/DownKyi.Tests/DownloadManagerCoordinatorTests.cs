@@ -1,12 +1,14 @@
 using System.Security.Cryptography;
 using DownKyi.Application.Desktop;
 using DownKyi.Application.Downloads;
+using DownKyi.Application.Lifetime;
 using DownKyi.Core.BiliApi.VideoStream.Models;
 using DownKyi.Domain.Downloads;
 using DownKyi.Domain.Results;
 using DownKyi.Infrastructure.Downloads;
 using DownKyi.Infrastructure.Time;
 using DownKyi.Models;
+using DownKyi.Platform;
 using DownKyi.Services.Download;
 using DownKyi.ViewModels.DownloadManager;
 using Microsoft.Data.Sqlite;
@@ -497,6 +499,71 @@ public sealed class DownloadManagerCoordinatorTests
         Assert.Null(context.Launcher.OpenedFolder);
     }
 
+    [Fact]
+    public async Task CompleteHistoryLoadMergesCurrentItemsAndDoesNotReadAgain()
+    {
+        using var context = new CoordinatorContext();
+        var first = await context.CreateCompletedItemAsync(
+            "history-first", "media", "history-first.mp4");
+        context.State.AddDownloaded(first);
+        await context.CreateCompletedItemAsync(
+            "history-second", "media", "history-second.mp4");
+
+        await context.Coordinator.LoadDownloadedHistoryAsync();
+        context.State.AddDownloaded(first);
+
+        Assert.True(context.State.IsDownloadedHistoryLoaded);
+        Assert.Equal(2, context.State.Downloaded.Count);
+        Assert.Equal(
+            ["history-first", "history-second"],
+            context.State.Downloaded
+                .Select(item => item.HistoryRecord.Id.Value)
+                .Order(StringComparer.Ordinal));
+
+        await context.CreateCompletedItemAsync(
+            "history-after-load", "media", "history-after-load.mp4");
+        await context.Coordinator.LoadDownloadedHistoryAsync();
+
+        Assert.DoesNotContain(
+            context.State.Downloaded,
+            item => item.HistoryRecord.Id == new DownloadTaskId("history-after-load"));
+    }
+
+    [Fact]
+    public async Task CompleteHistoryLoadStopsBeforeUiMutationDuringShutdown()
+    {
+        using var context = new CoordinatorContext();
+        await context.CreateCompletedItemAsync(
+            "history-during-shutdown", "media", "history-during-shutdown.mp4");
+        await context.ApplicationCancellation.RequestShutdownAsync();
+
+        await context.Coordinator.LoadDownloadedHistoryAsync();
+
+        Assert.False(context.State.IsDownloadedHistoryLoaded);
+        Assert.Empty(context.State.Downloaded);
+    }
+
+    [Fact]
+    public async Task CoordinatorDisposalWaitsOnlyForTheBackgroundHistoryRead()
+    {
+        var dispatcher = new BlockingUiDispatcher();
+        using var context = new CoordinatorContext(uiDispatcher: dispatcher);
+        await context.CreateCompletedItemAsync(
+            "history-before-shutdown", "media", "history-before-shutdown.mp4");
+
+        var load = context.Coordinator.LoadDownloadedHistoryAsync();
+        await dispatcher.Invoked.WaitAsync(TestContext.Current.CancellationToken);
+        await context.ApplicationCancellation.RequestShutdownAsync();
+
+        await context.Coordinator.DisposeAsync().AsTask()
+            .WaitAsync(TestContext.Current.CancellationToken);
+        Assert.False(load.IsCompleted);
+
+        dispatcher.Release();
+        await load.WaitAsync(TestContext.Current.CancellationToken);
+        Assert.False(context.State.IsDownloadedHistoryLoaded);
+    }
+
     private sealed class CoordinatorContext : IDisposable
     {
         private readonly string _directory = Path.Combine(
@@ -509,7 +576,8 @@ public sealed class DownloadManagerCoordinatorTests
             IDownloadTaskQueue? taskQueue = null,
             IDownloadRuntimeAvailability? runtimeAvailability = null,
             bool useStaging = false,
-            bool blockTaskUpdates = false)
+            bool blockTaskUpdates = false,
+            IUiDispatcher? uiDispatcher = null)
         {
             Directory.CreateDirectory(_directory);
             _databasePath = Path.Combine(_directory, "download.db");
@@ -530,6 +598,7 @@ public sealed class DownloadManagerCoordinatorTests
             StateWriter = new DownloadTaskStateWriter(TaskService);
             Queue = new RecordingDownloadTaskQueue();
             State = new DownloadListState();
+            ApplicationCancellation = new ApplicationCancellation();
             Launcher = new RecordingPlatformLauncher();
             Staging = useStaging
                 ? new DownloadTaskStaging(NullLogger<DownloadTaskStaging>.Instance)
@@ -538,16 +607,20 @@ public sealed class DownloadManagerCoordinatorTests
                 new AriaRuntimeClientRegistry(),
                 NullLogger<DownloadTaskFileService>.Instance, Staging, StateWriter);
             Coordinator = new DownloadManagerCoordinator(
+                ApplicationCancellation,
                 Storage,
                 StateWriter,
                 taskQueue ?? Queue,
                 runtimeAvailability ?? new ReadyDownloadRuntimeAvailability(),
                 fileService,
                 State,
-                Launcher);
+                Launcher,
+                uiDispatcher ?? new ImmediateUiDispatcher());
         }
 
         public SqliteDownloadTaskStore Store { get; private set; }
+
+        public ApplicationCancellation ApplicationCancellation { get; }
 
         public DownloadTaskProjectionStore Storage { get; private set; }
 
@@ -593,10 +666,11 @@ public sealed class DownloadManagerCoordinatorTests
                 clock);
             StateWriter = new DownloadTaskStateWriter(TaskService);
             Coordinator = new DownloadManagerCoordinator(
-                Storage, StateWriter, Queue, new ReadyDownloadRuntimeAvailability(),
+                ApplicationCancellation, Storage, StateWriter, Queue,
+                new ReadyDownloadRuntimeAvailability(),
                 new DownloadTaskFileService(
                     new AriaRuntimeClientRegistry(), NullLogger<DownloadTaskFileService>.Instance),
-                State, Launcher);
+                State, Launcher, new ImmediateUiDispatcher());
         }
 
         public DownloadingItem CreateDownloadingItem(string id, DownloadStatus status)
@@ -637,8 +711,11 @@ public sealed class DownloadManagerCoordinatorTests
             await StateWriter.CompleteAsync(taskId,
                 new DownloadCompletion(1, "completed", null), TestContext.Current.CancellationToken)
                 .ConfigureAwait(true);
-            return Assert.Single(await Storage.GetRecentDownloadedAsync(
-                10, TestContext.Current.CancellationToken).ConfigureAwait(true));
+            return Assert.Single(
+                await Storage.GetRecentDownloadedAsync(
+                    10,
+                    TestContext.Current.CancellationToken).ConfigureAwait(true),
+                item => item.HistoryRecord.Id == taskId);
         }
 
         public string CreateFile(string name, string contents)
@@ -651,6 +728,7 @@ public sealed class DownloadManagerCoordinatorTests
         public void Dispose()
         {
             Coordinator.Dispose();
+            ApplicationCancellation.Dispose();
             Storage.Dispose();
             TaskService.Dispose();
             Store.Dispose();
@@ -667,6 +745,38 @@ public sealed class DownloadManagerCoordinatorTests
                 Directory.Delete(_directory, recursive: true);
             }
         }
+
+        private sealed class ImmediateUiDispatcher : IUiDispatcher
+        {
+            public Task InvokeAsync(Action action)
+            {
+                ArgumentNullException.ThrowIfNull(action);
+                action();
+                return Task.CompletedTask;
+            }
+        }
+    }
+
+    private sealed class BlockingUiDispatcher : IUiDispatcher
+    {
+        private readonly TaskCompletionSource _invoked =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _release =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private Action? _action;
+
+        public Task Invoked => _invoked.Task;
+
+        public async Task InvokeAsync(Action action)
+        {
+            ArgumentNullException.ThrowIfNull(action);
+            _action = action;
+            _invoked.TrySetResult();
+            await _release.Task.ConfigureAwait(false);
+            _action();
+        }
+
+        public void Release() => _release.TrySetResult();
     }
 
     private sealed class RecordingPlatformLauncher : IPlatformLauncher

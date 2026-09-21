@@ -123,6 +123,7 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
     {
         try
         {
+            await EnsureDownloadedHistoryLoadedAsync().ConfigureAwait(true);
             var alertService = new AlertService(AppDialogs);
             var result = await alertService.ShowWarning(DictionaryResource.GetString("ConfirmDelete")).ConfigureAwait(true);
             if (result != AppDialogOutcome.Accepted)
@@ -130,10 +131,6 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
                 return;
             }
 
-
-            // 使用Clear()不能触发NotifyCollectionChangedAction.Remove事件
-            // 因此遍历删除
-            // DownloadingList中元素被删除后不能继续遍历
             await _downloadManagerCoordinator.ClearDownloadedAsync().ConfigureAwait(true);
         }
         catch (Exception e) when (e is Microsoft.Data.Sqlite.SqliteException or System.IO.IOException
@@ -197,6 +194,8 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
             return;
         }
 
+        await EnsureDownloadedHistoryLoadedAsync().ConfigureAwait(true);
+
         var alertService = new AlertService(AppDialogs);
         var result = await alertService.ShowWarning(DictionaryResource.GetString("ConfirmDelete"), 2).ConfigureAwait(true);
         if (result != AppDialogOutcome.Accepted)
@@ -224,4 +223,21 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
     }
 
     #endregion
+
+    public override void OnNavigatedTo(AppNavigationContext navigationContext)
+    {
+        ArgumentNullException.ThrowIfNull(navigationContext);
+        base.OnNavigatedTo(navigationContext);
+
+        RunFireAndForget(
+            EnsureDownloadedHistoryLoadedAsync(),
+            nameof(EnsureDownloadedHistoryLoadedAsync),
+            _logger);
+    }
+
+    private async Task EnsureDownloadedHistoryLoadedAsync()
+    {
+        await _downloadManagerCoordinator.LoadDownloadedHistoryAsync().ConfigureAwait(true);
+        _downloadLists.SortDownloaded(_settingsStore.Current.Basic.DownloadFinishedSort);
+    }
 }

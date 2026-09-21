@@ -13,6 +13,7 @@ using DownKyi.Domain.Downloads;
 using DownKyi.Presentation;
 using DownKyi.Services.Video;
 using DownKyi.Utils;
+using DownKyi.ViewModels.DownloadManager;
 using Microsoft.Extensions.Logging;
 
 namespace DownKyi.Services.Download;
@@ -216,6 +217,7 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
 
         var settings = _settingsStore.Current;
         var addedCount = 0;
+        Lazy<Task<List<DownloadedItem>>>? completedCandidates = null;
         foreach (var section in _videoSections)
         {
             foreach (var page in section.VideoPages)
@@ -241,12 +243,17 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
                 }
 
                 var videoQuality = page.VideoQuality;
+                completedCandidates ??= new Lazy<Task<List<DownloadedItem>>>(() =>
+                    _duplicatePolicy.LoadCompletedCandidatesAsync(
+                        settings.Basic.RepeatDownloadStrategy,
+                        cancellationToken));
                 if (await _duplicatePolicy
                     .ShouldSkipAsync(
                         page,
                         videoQuality,
                         settings.Basic.RepeatDownloadStrategy,
-                        cancellationToken)
+                        cancellationToken,
+                        completedCandidates)
                     .ConfigureAwait(true))
                 {
                     continue;
