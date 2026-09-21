@@ -584,6 +584,37 @@ public sealed class DownloadRetryPolicyTests
 
         Assert.Equal(DownloadTransferFailureKind.Tls, result.FailureKind);
         Assert.Equal("download.transfer.tls.untrusted", result.ErrorCode);
+        var decision = new DownloadRetryPolicy().Decide(
+            result,
+            attempt: 1,
+            attemptsForAddress: 1,
+            hasNextAddress: true,
+            canRefreshAddresses: true);
+        Assert.Equal(DownloadRetryAction.Stop, decision.Action);
+    }
+
+    [Fact]
+    public void BuiltinBackendTreatsSecureConnectionInterruptionAsRetryable()
+    {
+        var exception = new HttpRequestException(
+            HttpRequestError.SecureConnectionError,
+            "The SSL connection could not be established.",
+            new AuthenticationException(
+                "Authentication failed because the transport stream ended."),
+            statusCode: null);
+
+        var result = BuiltinTransferBackend.ClassifyFailure(
+            exception,
+            reportedCanceled: false);
+
+        Assert.Equal(DownloadTransferFailureKind.TransientNetwork, result.FailureKind);
+        var decision = new DownloadRetryPolicy().Decide(
+            result,
+            attempt: 1,
+            attemptsForAddress: 1,
+            hasNextAddress: true,
+            canRefreshAddresses: true);
+        Assert.Equal(DownloadRetryAction.RetrySameAddress, decision.Action);
     }
 
     [Theory]
@@ -592,7 +623,7 @@ public sealed class DownloadRetryPolicyTests
     [InlineData("certificate is not yet valid", "download.transfer.tls.not-yet-valid")]
     [InlineData("certificate hostname does not match", "download.transfer.tls.hostname")]
     [InlineData("certificate chain building failed", "download.transfer.tls.chain")]
-    [InlineData("SSL/TLS handshake failure", "download.transfer.tls.handshake")]
+    [InlineData("The remote certificate is invalid.", "download.transfer.tls.handshake")]
     [InlineData("SSL/TLS handshake failure (80090325)", "download.transfer.tls.untrusted")]
     [InlineData("SSL/TLS handshake failure (80090322)", "download.transfer.tls.hostname")]
     public void AriaBackendClassifiesTlsFailuresWithoutExposingRawMessages(
@@ -604,6 +635,31 @@ public sealed class DownloadRetryPolicyTests
         Assert.Equal(DownloadTransferFailureKind.Tls, result.FailureKind);
         Assert.Equal(expectedCode, result.ErrorCode);
         Assert.DoesNotContain(errorMessage, result.ErrorCode, StringComparison.Ordinal);
+        var decision = new DownloadRetryPolicy().Decide(
+            result,
+            attempt: 1,
+            attemptsForAddress: 1,
+            hasNextAddress: true,
+            canRefreshAddresses: true);
+        Assert.Equal(DownloadRetryAction.Stop, decision.Action);
+    }
+
+    [Theory]
+    [InlineData("SSL/TLS handshake failure")]
+    [InlineData("The secure connection failed because the transport stream ended.")]
+    public void AriaBackendTreatsSecureConnectionInterruptionAsRetryable(
+        string errorMessage)
+    {
+        var result = Aria2TransferFailureClassifier.Classify("1", errorMessage);
+
+        Assert.Equal(DownloadTransferFailureKind.TransientNetwork, result.FailureKind);
+        var decision = new DownloadRetryPolicy().Decide(
+            result,
+            attempt: 1,
+            attemptsForAddress: 1,
+            hasNextAddress: true,
+            canRefreshAddresses: true);
+        Assert.Equal(DownloadRetryAction.RetrySameAddress, decision.Action);
     }
 
     [Theory]

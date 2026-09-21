@@ -29,6 +29,13 @@ internal static class Aria2TransferFailureClassifier
                 tlsErrorCode);
         }
 
+        if (TlsFailureClassifier.IsSecureConnectionFailure(errorMessage))
+        {
+            return Failed(
+                DownloadTransferFailureKind.TransientNetwork,
+                errorCode);
+        }
+
         if (errorMessage?.Contains(
                 "HTTPS redirect downgrade rejected by DownKyi policy",
                 StringComparison.Ordinal) == true)

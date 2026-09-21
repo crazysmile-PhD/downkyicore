@@ -435,7 +435,7 @@ public sealed partial class Aria2TlsIntegrationTests
             gid,
             DownloadTimeout,
             cancellationToken).ConfigureAwait(false);
-        var classification = AssertRejectedTlsStatus(
+        var classification = AssertRejectedCertificateStatus(
             status,
             runtime.GetOutputPath(outputName),
             payload,
@@ -546,7 +546,7 @@ public sealed partial class Aria2TlsIntegrationTests
             gid,
             DownloadTimeout,
             cancellationToken).ConfigureAwait(false);
-        var classification = AssertRejectedTlsStatus(
+        var classification = AssertRejectedCertificateStatus(
             status,
             runtime.GetOutputPath(outputName),
             payload,
@@ -585,7 +585,7 @@ public sealed partial class Aria2TlsIntegrationTests
             gid,
             DownloadTimeout,
             cancellationToken).ConfigureAwait(false);
-        var classification = AssertRejectedTlsStatus(
+        var classification = AssertRejectedCertificateStatus(
             status,
             runtime.GetOutputPath(outputName),
             payload,
@@ -644,7 +644,7 @@ public sealed partial class Aria2TlsIntegrationTests
             retryGid,
             DownloadTimeout,
             cancellationToken).ConfigureAwait(false);
-        var classification = AssertRejectedTlsStatus(
+        var classification = AssertRejectedCertificateStatus(
             status,
             runtime.GetOutputPath(outputName),
             payload,
@@ -660,7 +660,7 @@ public sealed partial class Aria2TlsIntegrationTests
             classification));
     }
 
-    private static string AssertRejectedTlsStatus(
+    private static string AssertRejectedCertificateStatus(
         AriaTellStatusResult status,
         string outputPath,
         byte[] payload,
@@ -668,12 +668,23 @@ public sealed partial class Aria2TlsIntegrationTests
     {
         Assert.Equal("error", status.Status);
         Assert.Equal("1", status.ErrorCode);
-        Assert.True(
-            TlsFailureClassifier.TryClassify(status.ErrorMessage, out var errorCode),
-            "aria2 TLS failure was not classified as a safe TLS diagnostic.");
-        Assert.Contains(errorCode, acceptedErrorCodes);
+        var classification = Aria2TransferFailureClassifier.Classify(
+            status.ErrorCode,
+            status.ErrorMessage);
+        if (classification.FailureKind == DownloadTransferFailureKind.Tls)
+        {
+            Assert.Contains(classification.ErrorCode, acceptedErrorCodes);
+        }
+        else
+        {
+            Assert.Equal(
+                DownloadTransferFailureKind.TransientNetwork,
+                classification.FailureKind);
+            Assert.Equal("download.transfer.aria2-1", classification.ErrorCode);
+        }
+
         Assert.False(IsCompletePayload(payload, outputPath));
-        return errorCode;
+        return classification.ErrorCode;
     }
 
     private static void AssertCompleted(

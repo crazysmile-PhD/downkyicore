@@ -294,6 +294,13 @@ internal sealed class BuiltinTransferBackend : ITransferBackend
                 tlsErrorCode);
         }
 
+        if (TlsFailureClassifier.IsSecureConnectionFailure(exception))
+        {
+            return DownloadTransferResult.Failed(
+                DownloadTransferFailureKind.TransientNetwork,
+                "download.transfer.network");
+        }
+
         if (FindException<HttpRequestException>(exception) is { } httpException)
         {
             return httpException.StatusCode switch
