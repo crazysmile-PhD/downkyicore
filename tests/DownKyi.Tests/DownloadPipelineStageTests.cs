@@ -10,6 +10,7 @@ using DownKyi.Services.Download;
 using DownKyi.ViewModels.DownloadManager;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
+using Newtonsoft.Json;
 
 namespace DownKyi.Tests;
 
@@ -209,6 +210,37 @@ public sealed class DownloadPipelineStageTests
         Assert.True(result.IsSuccess);
         Assert.Null(fixture.Context.AudioFile);
         Assert.NotNull(fixture.Context.VideoFile);
+        var request = Assert.Single(fixture.Backend.Requests);
+        Assert.Equal("https://example.invalid/video", Assert.Single(request.Urls));
+    }
+
+    [Fact]
+    public async Task MediaStageUsesBaseAddressWhenDashBackupUrlsAreNull()
+    {
+        var playUrl = JsonConvert.DeserializeObject<PlayUrl>("""
+            {
+              "dash": {
+                "video": [{
+                  "id": 80,
+                  "codecid": 7,
+                  "codecs": "avc1",
+                  "base_url": "https://example.invalid/video",
+                  "backup_url": null
+                }]
+              }
+            }
+            """);
+        Assert.NotNull(playUrl);
+        using var fixture = await MediaStageFixture.CreateAsync(
+            playUrl,
+            downloadAudio: false,
+            downloadVideo: true).ConfigureAwait(true);
+
+        var result = await fixture.Stage.ExecuteAsync(
+            fixture.Context,
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsSuccess);
         var request = Assert.Single(fixture.Backend.Requests);
         Assert.Equal("https://example.invalid/video", Assert.Single(request.Urls));
     }
