@@ -5,10 +5,17 @@ namespace DownKyi.Core.BiliApi.VideoStream.Models;
 
 public class PlayUrlDashVideo : BaseModel
 {
+    private IReadOnlyList<string> _backupUrl = Array.Empty<string>();
+
     [JsonProperty("id")] public int Id { get; set; }
     [JsonProperty("base_url")] public string BaseAddress { get; set; } = string.Empty;
 
-    [JsonProperty("backup_url")] public IReadOnlyList<string> BackupUrl { get; set; } = Array.Empty<string>();
+    [JsonProperty("backup_url")]
+    public IReadOnlyList<string> BackupUrl
+    {
+        get => _backupUrl;
+        set => _backupUrl = value ?? Array.Empty<string>();
+    }
 
     // bandwidth
     [JsonProperty("mimeType")] public string MimeType { get; set; } = string.Empty;
