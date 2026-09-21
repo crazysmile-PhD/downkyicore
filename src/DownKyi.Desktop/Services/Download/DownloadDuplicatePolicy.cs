@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Desktop;
@@ -47,6 +48,7 @@ internal sealed class DownloadDuplicatePolicy
 
         completedCandidates ??= await LoadCompletedCandidatesAsync(strategy, cancellationToken)
             .ConfigureAwait(true);
+        MergeLiveCompletedCandidates(completedCandidates);
         foreach (var item in completedCandidates)
         {
             if (!IsSameVideo(item, page, videoQuality))
@@ -105,6 +107,23 @@ internal sealed class DownloadDuplicatePolicy
 
         return false;
     }
+
+    private void MergeLiveCompletedCandidates(IList<DownloadedItem> completedCandidates)
+    {
+        var candidateIds = completedCandidates
+            .Select(GetTaskId)
+            .ToHashSet(StringComparer.Ordinal);
+        foreach (var item in _downloadLists.Downloaded)
+        {
+            if (candidateIds.Add(GetTaskId(item)))
+            {
+                completedCandidates.Add(item);
+            }
+        }
+    }
+
+    private static string GetTaskId(DownloadedItem item) =>
+        item.HistoryRecord?.Id.Value ?? item.DownloadBase.Id;
 
     private async Task<bool> ResolveAskAsync(
         DownloadedItem item,

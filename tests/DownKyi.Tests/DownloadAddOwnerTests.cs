@@ -118,6 +118,50 @@ public sealed class DownloadAddOwnerTests : IDisposable
     }
 
     [Fact]
+    public async Task AcceptedDuplicateConfirmationSuppressesAStalePendingHistorySnapshot()
+    {
+        using var context = DuplicatePolicyContext.WithCompleted(AppDialogOutcome.Accepted);
+        var staleSnapshot = DownloadTaskProjectionMapper.ToDownloadedItem(context.Store.History!);
+        var completedCandidates = await context.Policy.LoadCompletedCandidatesAsync(
+            DownKyi.Core.Settings.RepeatDownloadStrategy.Ask,
+            TestContext.Current.CancellationToken);
+
+        var shouldSkip = await context.Policy.ShouldSkipAsync(
+            CreatePage(),
+            CreateVideoQuality(),
+            DownKyi.Core.Settings.RepeatDownloadStrategy.Ask,
+            TestContext.Current.CancellationToken,
+            completedCandidates);
+        context.ListState.LoadDownloadedHistory([staleSnapshot]);
+
+        Assert.False(shouldSkip);
+        Assert.Empty(context.ListState.Downloaded);
+        Assert.True(context.ListState.IsDownloadedHistoryLoaded);
+    }
+
+    [Fact]
+    public async Task CachedCandidatesIncludeACompletionProjectedDuringTheBatch()
+    {
+        using var context = new DuplicatePolicyContext(AppDialogOutcome.Accepted);
+        var completedCandidates = await context.Policy.LoadCompletedCandidatesAsync(
+            DownKyi.Core.Settings.RepeatDownloadStrategy.JumpOver,
+            TestContext.Current.CancellationToken);
+        context.ListState.AddDownloaded(DownloadTaskProjectionMapper.ToDownloadedItem(
+            DuplicatePolicyContext.CreateCompletedHistory()));
+
+        var shouldSkip = await context.Policy.ShouldSkipAsync(
+            CreatePage(),
+            CreateVideoQuality(),
+            DownKyi.Core.Settings.RepeatDownloadStrategy.JumpOver,
+            TestContext.Current.CancellationToken,
+            completedCandidates);
+
+        Assert.True(shouldSkip);
+        Assert.Single(completedCandidates);
+        Assert.Equal(1, context.Store.HistoryPageRequestCount);
+    }
+
+    [Fact]
     public async Task DuplicatePolicyPropagatesCancellationBeforeInspectingLists()
     {
         using var context = new DuplicatePolicyContext(AppDialogOutcome.Accepted);
@@ -343,6 +387,19 @@ public sealed class DownloadAddOwnerTests : IDisposable
             AppDialogOutcome outcome,
             bool loadUi = false)
         {
+            var history = CreateCompletedHistory();
+            var context = new DuplicatePolicyContext(outcome, history: history);
+            if (loadUi)
+            {
+                context.ListState.AddDownloaded(
+                    DownloadTaskProjectionMapper.ToDownloadedItem(history));
+            }
+
+            return context;
+        }
+
+        public static DownloadHistoryRecord CreateCompletedHistory()
+        {
             var queued = DownloadTaskProjectionMapper.CreateNewTask(
                 CreateDownloadingItem(),
                 DateTimeOffset.UnixEpoch);
@@ -352,15 +409,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
                 new DownloadCompletion(2, "finished", null),
                 DateTimeOffset.UnixEpoch.AddSeconds(2))
                 .TryGetValue(out var completed));
-            var history = DownloadHistoryRecord.FromCompletedTask(completed);
-            var context = new DuplicatePolicyContext(outcome, history: history);
-            if (loadUi)
-            {
-                context.ListState.AddDownloaded(
-                    DownloadTaskProjectionMapper.ToDownloadedItem(history));
-            }
-
-            return context;
+            return DownloadHistoryRecord.FromCompletedTask(completed);
         }
 
         public void Dispose()

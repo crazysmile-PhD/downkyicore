@@ -12,6 +12,7 @@ internal sealed class DownloadListState
 {
     private readonly RangeObservableCollection<DownloadingItem> _downloading = new();
     private readonly RangeObservableCollection<DownloadedItem> _downloaded = new();
+    private readonly HashSet<string> _removedDownloadedIds = new(StringComparer.Ordinal);
 
     public DownloadListState()
     {
@@ -66,8 +67,9 @@ internal sealed class DownloadListState
     public bool RemoveDownloaded(DownloadedItem item)
     {
         ArgumentNullException.ThrowIfNull(item);
-        var loadedItem = _downloaded.FirstOrDefault(candidate =>
-            GetTaskId(candidate) == GetTaskId(item));
+        var taskId = GetTaskId(item);
+        _removedDownloadedIds.Add(taskId);
+        var loadedItem = _downloaded.FirstOrDefault(candidate => GetTaskId(candidate) == taskId);
         return loadedItem != null && _downloaded.Remove(loadedItem);
     }
 
@@ -90,7 +92,9 @@ internal sealed class DownloadListState
             return;
         }
 
-        var loadedItems = items.ToList();
+        var loadedItems = items
+            .Where(item => !_removedDownloadedIds.Contains(GetTaskId(item)))
+            .ToList();
         var loadedIds = loadedItems
             .Select(GetTaskId)
             .ToHashSet(StringComparer.Ordinal);

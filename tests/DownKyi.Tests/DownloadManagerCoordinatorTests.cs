@@ -8,6 +8,7 @@ using DownKyi.Domain.Results;
 using DownKyi.Infrastructure.Downloads;
 using DownKyi.Infrastructure.Time;
 using DownKyi.Models;
+using DownKyi.Platform;
 using DownKyi.Services.Download;
 using DownKyi.ViewModels.DownloadManager;
 using Microsoft.Data.Sqlite;
@@ -542,6 +543,27 @@ public sealed class DownloadManagerCoordinatorTests
         Assert.Empty(context.State.Downloaded);
     }
 
+    [Fact]
+    public async Task CoordinatorDisposalWaitsOnlyForTheBackgroundHistoryRead()
+    {
+        var dispatcher = new BlockingUiDispatcher();
+        using var context = new CoordinatorContext(uiDispatcher: dispatcher);
+        await context.CreateCompletedItemAsync(
+            "history-before-shutdown", "media", "history-before-shutdown.mp4");
+
+        var load = context.Coordinator.LoadDownloadedHistoryAsync();
+        await dispatcher.Invoked.WaitAsync(TestContext.Current.CancellationToken);
+        await context.ApplicationCancellation.RequestShutdownAsync();
+
+        await context.Coordinator.DisposeAsync().AsTask()
+            .WaitAsync(TestContext.Current.CancellationToken);
+        Assert.False(load.IsCompleted);
+
+        dispatcher.Release();
+        await load.WaitAsync(TestContext.Current.CancellationToken);
+        Assert.False(context.State.IsDownloadedHistoryLoaded);
+    }
+
     private sealed class CoordinatorContext : IDisposable
     {
         private readonly string _directory = Path.Combine(
@@ -554,7 +576,8 @@ public sealed class DownloadManagerCoordinatorTests
             IDownloadTaskQueue? taskQueue = null,
             IDownloadRuntimeAvailability? runtimeAvailability = null,
             bool useStaging = false,
-            bool blockTaskUpdates = false)
+            bool blockTaskUpdates = false,
+            IUiDispatcher? uiDispatcher = null)
         {
             Directory.CreateDirectory(_directory);
             _databasePath = Path.Combine(_directory, "download.db");
@@ -591,7 +614,8 @@ public sealed class DownloadManagerCoordinatorTests
                 runtimeAvailability ?? new ReadyDownloadRuntimeAvailability(),
                 fileService,
                 State,
-                Launcher);
+                Launcher,
+                uiDispatcher ?? new ImmediateUiDispatcher());
         }
 
         public SqliteDownloadTaskStore Store { get; private set; }
@@ -646,7 +670,7 @@ public sealed class DownloadManagerCoordinatorTests
                 new ReadyDownloadRuntimeAvailability(),
                 new DownloadTaskFileService(
                     new AriaRuntimeClientRegistry(), NullLogger<DownloadTaskFileService>.Instance),
-                State, Launcher);
+                State, Launcher, new ImmediateUiDispatcher());
         }
 
         public DownloadingItem CreateDownloadingItem(string id, DownloadStatus status)
@@ -721,6 +745,38 @@ public sealed class DownloadManagerCoordinatorTests
                 Directory.Delete(_directory, recursive: true);
             }
         }
+
+        private sealed class ImmediateUiDispatcher : IUiDispatcher
+        {
+            public Task InvokeAsync(Action action)
+            {
+                ArgumentNullException.ThrowIfNull(action);
+                action();
+                return Task.CompletedTask;
+            }
+        }
+    }
+
+    private sealed class BlockingUiDispatcher : IUiDispatcher
+    {
+        private readonly TaskCompletionSource _invoked =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _release =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private Action? _action;
+
+        public Task Invoked => _invoked.Task;
+
+        public async Task InvokeAsync(Action action)
+        {
+            ArgumentNullException.ThrowIfNull(action);
+            _action = action;
+            _invoked.TrySetResult();
+            await _release.Task.ConfigureAwait(false);
+            _action();
+        }
+
+        public void Release() => _release.TrySetResult();
     }
 
     private sealed class RecordingPlatformLauncher : IPlatformLauncher
