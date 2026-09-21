@@ -11,22 +11,8 @@ internal static class TlsFailureClassifier
     public static bool TryClassify(Exception? exception, out string errorCode)
     {
         var current = exception;
-        var isSecureConnectionFailure = false;
         while (current != null)
         {
-            if (current is HttpRequestException
-                {
-                    HttpRequestError: HttpRequestError.SecureConnectionError
-                })
-            {
-                isSecureConnectionFailure = true;
-            }
-
-            if (current is AuthenticationException)
-            {
-                isSecureConnectionFailure = true;
-            }
-
             if (TryClassify(current.Message, out errorCode))
             {
                 return true;
@@ -35,27 +21,50 @@ internal static class TlsFailureClassifier
             current = current.InnerException;
         }
 
-        errorCode = isSecureConnectionFailure ? Prefix + "handshake" : string.Empty;
-        return isSecureConnectionFailure;
+        errorCode = string.Empty;
+        return false;
+    }
+
+    public static bool IsSecureConnectionFailure(Exception? exception)
+    {
+        var current = exception;
+        while (current != null)
+        {
+            if (current is HttpRequestException
+                {
+                    HttpRequestError: HttpRequestError.SecureConnectionError
+                } or AuthenticationException ||
+                IsSecureConnectionFailure(current.Message))
+            {
+                return true;
+            }
+
+            current = current.InnerException;
+        }
+
+        return false;
     }
 
     public static bool TryClassify(string? message, out string errorCode)
     {
         if (ContainsAny(message,
-                "not yet valid",
-                "not valid yet",
-                "尚未生效",
-                "尚未有效"))
+                "certificate is not yet valid",
+                "certificate not yet valid",
+                "certificate is not valid yet",
+                "证书尚未生效",
+                "憑證尚未生效"))
         {
             errorCode = Prefix + "not-yet-valid";
             return true;
         }
 
         if (ContainsAny(message,
-                "expired",
-                "validity period",
-                "已过期",
-                "已過期",
+                "certificate has expired",
+                "certificate is expired",
+                "certificate expired",
+                "certificate validity period",
+                "证书已过期",
+                "憑證已過期",
                 "800b0101"))
         {
             errorCode = Prefix + "expired";
@@ -63,10 +72,12 @@ internal static class TlsFailureClassifier
         }
 
         if (ContainsAny(message,
-                "hostname",
-                "host name",
-                "common name",
-                "does not match",
+                "certificate hostname",
+                "certificate host name",
+                "certificate common name",
+                "remote certificate name mismatch",
+                "certificate name does not match",
+                "no alternative certificate subject name matches",
                 "wrong principal",
                 "名称不匹配",
                 "名稱不匹配",
@@ -82,11 +93,19 @@ internal static class TlsFailureClassifier
                 "unknown ca",
                 "self-signed",
                 "self signed",
+                "untrustedroot",
                 "unable to get local issuer",
                 "unable to verify the first certificate",
                 "不受信任",
                 "80090325",
-                "800b0109"))
+                "800b0109") ||
+            ContainsAny(message, "not trusted") &&
+            ContainsAny(message,
+                "certificate",
+                "certificate authority",
+                "issuer",
+                "chain",
+                "root"))
         {
             errorCode = Prefix + "untrusted";
             return true;
@@ -97,8 +116,9 @@ internal static class TlsFailureClassifier
                 "chain building",
                 "issuer certificate",
                 "certificate verify failed",
-                "certificate verification failed",
+                "certificate verification",
                 "wrong chain",
+                "remotecertificatechainerrors",
                 "800b010a"))
         {
             errorCode = Prefix + "chain";
@@ -106,12 +126,13 @@ internal static class TlsFailureClassifier
         }
 
         if (ContainsAny(message,
-                "ssl/tls handshake",
-                "tls handshake",
-                "ssl handshake",
-                "secure connection",
-                "authentication failed",
-                "certificate"))
+                "remote certificate is invalid",
+                "certificate is invalid",
+                "certificate validation failed",
+                "certificate validation failure",
+                "certificate validation error",
+                "certificate was rejected",
+                "certificate rejected"))
         {
             errorCode = Prefix + "handshake";
             return true;
@@ -119,6 +140,24 @@ internal static class TlsFailureClassifier
 
         errorCode = string.Empty;
         return false;
+    }
+
+    public static bool IsSecureConnectionFailure(string? message)
+    {
+        return IsTlsHandshakeFailure(message) || ContainsAny(message,
+            "secure connection",
+            "ssl connection",
+            "tls connection",
+            "transport stream",
+            "transport connection");
+    }
+
+    public static bool IsTlsHandshakeFailure(string? message)
+    {
+        return ContainsAny(message,
+            "ssl/tls handshake",
+            "tls handshake",
+            "ssl handshake");
     }
 
     public static bool IsTlsErrorCode(string? errorCode)
