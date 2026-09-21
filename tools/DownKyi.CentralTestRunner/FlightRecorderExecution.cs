@@ -23,6 +23,8 @@ internal sealed record ProcessExecutionResult(
 
 internal static class FlightRecorderExecution
 {
+    private static readonly TimeSpan ScopeStartupTimeout = TimeSpan.FromSeconds(5);
+
     public static async Task<ProcessExecutionResult> RunAsync(
         ProcessExecutionRequest request,
         CancellationToken cancellationToken)
@@ -38,7 +40,7 @@ internal static class FlightRecorderExecution
 
         try
         {
-            using var scope = await OwnedProcessScope.StartAsync(request.StartInfo, request.CleanupTimeout)
+            using var scope = await OwnedProcessScope.StartAsync(request.StartInfo, ScopeStartupTimeout)
                 .ConfigureAwait(false);
             scopeStarted = true;
             var process = scope.Host;

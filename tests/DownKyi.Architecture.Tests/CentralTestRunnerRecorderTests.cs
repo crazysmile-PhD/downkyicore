@@ -297,14 +297,24 @@ public sealed class CentralTestRunnerRecorderTests
                 CancellationToken.None);
             clock.Stop();
 
-            childPid = int.Parse(await File.ReadAllTextAsync(markerPath, TestContext.Current.CancellationToken),
-                CultureInfo.InvariantCulture);
             Assert.Equal(2, result.ExitCode);
             Assert.True(clock.Elapsed < TimeSpan.FromSeconds(4));
             using var document = JsonDocument.Parse(await File.ReadAllTextAsync(
                 result.EvidencePath,
                 TestContext.Current.CancellationToken));
             Assert.Equal("stream_drain_failed", document.RootElement.GetProperty("Outcome").GetString());
+            var events = document.RootElement.GetProperty("Events")
+                .EnumerateArray()
+                .Select(item => item.GetProperty("Event").GetString())
+                .ToArray();
+            Assert.Contains("process_start", events);
+            Assert.Contains("post_exit_output_held", events);
+            Assert.Contains("bounded_stop_requested", events);
+            Assert.Contains("cleanup_completed", events);
+
+            childPid = int.Parse(await File.ReadAllTextAsync(markerPath, TestContext.Current.CancellationToken),
+                CultureInfo.InvariantCulture);
+            Assert.False(IsProcessAlive(childPid.Value));
         }
         finally
         {
