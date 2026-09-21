@@ -135,7 +135,7 @@ internal class BangumiInfoService : IInfoService
                 Avid = episode.Aid,
                 Bvid = episode.Bvid,
                 Cid = episode.Cid,
-                EpisodeId = episode.EpisodeId,
+                EpisodeId = ResolveEpisodeId(episode),
                 FirstFrame = episode.Cover,
                 Order = order,
                 Name = name,
@@ -231,7 +231,7 @@ internal class BangumiInfoService : IInfoService
                     Avid = episode.Aid,
                     Bvid = episode.Bvid,
                     Cid = episode.Cid,
-                    EpisodeId = episode.EpisodeId,
+                    EpisodeId = ResolveEpisodeId(episode),
                     FirstFrame = episode.Cover,
                     Order = order,
                     Name = name,
@@ -288,6 +288,11 @@ internal class BangumiInfoService : IInfoService
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult<IReadOnlyList<string>>(snapshot);
         };
+    }
+
+    private static long ResolveEpisodeId(BangumiEpisode episode)
+    {
+        return episode.Id > 0 ? episode.Id : episode.EpisodeId;
     }
 
     /// <summary>
