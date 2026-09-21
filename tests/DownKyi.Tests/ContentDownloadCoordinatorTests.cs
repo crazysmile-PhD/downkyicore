@@ -134,6 +134,35 @@ public sealed class ContentDownloadCoordinatorTests
         Assert.Equal(0, session.AddCount);
     }
 
+    [Fact]
+    public async Task CancelingAfterFirstQueuedItemPreservesCompletedDownload()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var session = new RecordingSession(
+            @"D:\Downloads",
+            afterAdd: addedCount =>
+            {
+                if (addedCount == 1)
+                {
+                    cancellation.Cancel();
+                }
+            });
+        var coordinator = new ContentDownloadCoordinator(
+            new RecordingFactory(session),
+            new RecordingInfoServiceFactory());
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => coordinator.AddAsync(
+            [
+                new ContentDownloadItem("BV17x411w7KC", DownloadInfoKind.Video, true),
+                new ContentDownloadItem("BV1xx411c7mD", DownloadInfoKind.Video, true)
+            ],
+            onlySelected: true,
+            cancellation.Token));
+
+        Assert.Equal(1, session.AddCount);
+        Assert.Equal(1, session.ParseCount);
+    }
+
     private sealed class RecordingFactory(IAddToDownloadSession session) : IAddToDownloadServiceFactory
     {
         public int CreateCount { get; private set; }
@@ -151,7 +180,8 @@ public sealed class ContentDownloadCoordinatorTests
 
     private sealed class RecordingSession(
         string? directory,
-        bool admissionAllowed = true) : IAddToDownloadSession
+        bool admissionAllowed = true,
+        Action<int>? afterAdd = null) : IAddToDownloadSession
     {
         public int AdmissionCheckCount { get; private set; }
 
@@ -214,6 +244,7 @@ public sealed class ContentDownloadCoordinatorTests
             Assert.Equal(directory, directoryPath);
             Assert.False(isAll);
             AddCount++;
+            afterAdd?.Invoke(AddCount);
             return Task.FromResult(1);
         }
     }

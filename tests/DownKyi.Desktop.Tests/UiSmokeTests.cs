@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
 using Avalonia.Media;
 using Avalonia.Styling;
+using Avalonia.VisualTree;
 using Avalonia.Xaml.Interactivity;
 using DownKyi.Application.Desktop;
 using DownKyi.Application.Diagnostics;
@@ -139,6 +140,111 @@ public sealed class UiSmokeTests
     }
 
     [AvaloniaFact]
+    public async Task FavoritesDownloadPreparationRejectsOverlapCancelsAndCanRestart()
+    {
+        await AvaloniaTestDispatcher.RunAsync(async () =>
+        {
+            var application = DesktopTestResources.EnsureProductThemeResources();
+            application.Resources["TipDownloadPreparationAlreadyRunning"] =
+                "当前正在准备下载，请先取消准备，再重新选择加入方式。";
+            var directory = Path.Combine(Path.GetTempPath(), $"downkyi-favorites-download-gate-{Guid.NewGuid():N}");
+            var settings = new SettingsStore(Path.Combine(directory, "settings.json"));
+            try
+            {
+                using var navigation = new AvaloniaNavigationService(
+                    _ => new NavigationProbe(AppRoute.MyFavorites),
+                    static action => action());
+                var downloadCoordinator = new ContentDownloadCoordinatorStub
+                {
+                    WaitForFirstCancellation = true
+                };
+                var interactions = new DesktopInteractionContextStub(navigation);
+                var notifications = Assert.IsType<NotificationServiceStub>(interactions.Notifications);
+                var conflictNotification = new TaskCompletionSource<string>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+                notifications.NotificationRaised += (_, args) => conflictNotification.TrySetResult(args.Message);
+                using var favorites = new ViewMyFavoritesViewModel(
+                    interactions,
+                    downloadCoordinator,
+                    new FavoritesCoordinatorStub(navigation, settings),
+                    NullLogger<ViewMyFavoritesViewModel>.Instance);
+                var view = new ViewMyFavorites { DataContext = favorites };
+                var window = new Window { Content = view };
+
+                try
+                {
+                    window.Show();
+                    var status = Assert.IsType<DownKyi.CustomControl.DownloadPreparationStatus>(
+                        view.FindControl<DownKyi.CustomControl.DownloadPreparationStatus>(
+                            "DownloadPreparationStatus"));
+                    Assert.False(status.IsActive);
+
+                    favorites.AddAllToDownloadCommand.Execute(null);
+                    await downloadCoordinator.FirstRequestStarted.Task
+                        .WaitAsync(TestContext.Current.CancellationToken)
+                        .ConfigureAwait(true);
+                    window.UpdateLayout();
+
+                    Assert.True(favorites.DownloadCommandGate.IsExecuting);
+                    Assert.True(status.IsActive);
+
+                    favorites.AddToDownloadCommand.Execute(null);
+                    Assert.Equal(
+                        "当前正在准备下载，请先取消准备，再重新选择加入方式。",
+                        await conflictNotification.Task
+                            .WaitAsync(TestContext.Current.CancellationToken)
+                            .ConfigureAwait(true));
+                    Assert.Equal(1, downloadCoordinator.RequestCount);
+                    Assert.False(downloadCoordinator.FirstRequestCancellationRequested);
+
+                    var firstCanceled = ObserveGateReleased(favorites.DownloadCommandGate);
+                    favorites.CancelDownloadPreparationCommand.Execute(null);
+                    await firstCanceled.WaitAsync(TestContext.Current.CancellationToken).ConfigureAwait(true);
+                    window.UpdateLayout();
+
+                    Assert.True(downloadCoordinator.FirstRequestCancellationRequested);
+                    Assert.False(favorites.DownloadCommandGate.IsExecuting);
+                    Assert.False(status.IsActive);
+
+                    var restarted = ObserveGateReleased(favorites.DownloadCommandGate);
+                    favorites.AddToDownloadCommand.Execute(null);
+                    await restarted.WaitAsync(TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+                    Assert.Equal(2, downloadCoordinator.RequestCount);
+                    Assert.False(favorites.DownloadCommandGate.IsExecuting);
+                    Assert.False(status.IsActive);
+                }
+                finally
+                {
+                    window.Close();
+                }
+            }
+            finally
+            {
+                await settings.DisposeAsync().ConfigureAwait(true);
+            }
+
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }).ConfigureAwait(true);
+    }
+
+    private static Task ObserveGateReleased(DownKyi.Commands.DownKyiAsyncCommandGate gate)
+    {
+        var released = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        gate.IsExecutingChanged += (_, _) =>
+        {
+            if (!gate.IsExecuting)
+            {
+                released.TrySetResult();
+            }
+        };
+        return released.Task;
+    }
+
+    [AvaloniaFact]
     public Task PublicFavoritesBackArrowRemainsVisibleInLightAndDarkThemes()
     {
         return AvaloniaTestDispatcher.RunAsync(() =>
@@ -170,6 +276,82 @@ public sealed class UiSmokeTests
             finally
             {
                 application.RequestedThemeVariant = originalTheme;
+                window.Close();
+            }
+        });
+    }
+
+    [AvaloniaFact]
+    public Task PublicFavoritesCancelPreparationStaysVisibleAtMinimumWindowSize()
+    {
+        return AvaloniaTestDispatcher.RunAsync(() =>
+        {
+            var application = DesktopTestResources.EnsureProductThemeResources();
+            application.Resources["PreparingDownloads"] = "正在准备下载";
+            application.Resources["CancelDownloadPreparation"] = "取消准备";
+            application.Styles.Add(new Avalonia.Markup.Xaml.Styling.StyleInclude(
+                new Uri("avares://DownKyi.Desktop.Tests/"))
+            {
+                Source = new Uri(
+                    "avares://DownKyi.Desktop/Themes/Styles/download-preparation-status.axaml")
+            });
+            var settingsPath = Path.Combine(
+                Path.GetTempPath(),
+                $"downkyi-public-favorites-layout-{Guid.NewGuid():N}.json");
+            using var settings = new SettingsStore(settingsPath);
+            using var navigation = new AvaloniaNavigationService(
+                _ => new NavigationProbe(AppRoute.PublicFavorites),
+                static action => action());
+            using var favorites = new ViewPublicFavoritesViewModel(
+                new DesktopInteractionContextStub(navigation),
+                new ClipboardServiceStub(),
+                new ContentDownloadCoordinatorStub(),
+                new FavoritesCoordinatorStub(navigation, settings),
+                settings,
+                NullLogger<ViewPublicFavoritesViewModel>.Instance)
+            {
+                Favorites = new FavoritesPageItem
+                {
+                    Title = "fixture favorites",
+                    Description = "fixture description",
+                    UpName = "fixture owner"
+                },
+                ContentVisibility = true
+            };
+            var view = new ViewPublicFavorites { DataContext = favorites };
+            var window = new Window
+            {
+                Content = view,
+                Width = 800,
+                Height = 550
+            };
+
+            Assert.True(favorites.DownloadCommandGate.TryEnter());
+            try
+            {
+                window.Show();
+                window.UpdateLayout();
+                var status = Assert.IsType<DownKyi.CustomControl.DownloadPreparationStatus>(
+                    view.FindControl<DownKyi.CustomControl.DownloadPreparationStatus>(
+                        "PublicFavoritesDownloadPreparationStatus"));
+                var cancelButton = Assert.Single(
+                    status.GetVisualDescendants().OfType<Button>(),
+                    button => ReferenceEquals(button.Command, favorites.CancelDownloadPreparationCommand));
+
+                Assert.True(status.IsActive);
+                Assert.True(cancelButton.IsVisible);
+                Assert.True(cancelButton.Bounds.Width > 0);
+                Assert.True(cancelButton.Bounds.Height > 0);
+                var origin = cancelButton.TranslatePoint(default, view);
+                Assert.NotNull(origin);
+                Assert.InRange(origin.Value.X, 0, view.Bounds.Width);
+                Assert.InRange(origin.Value.Y, 0, view.Bounds.Height);
+                Assert.True(origin.Value.X + cancelButton.Bounds.Width <= view.Bounds.Width + 0.5);
+                Assert.True(origin.Value.Y + cancelButton.Bounds.Height <= view.Bounds.Height + 0.5);
+            }
+            finally
+            {
+                favorites.DownloadCommandGate.Exit();
                 window.Close();
             }
         });
@@ -827,13 +1009,36 @@ public sealed class UiSmokeTests
 
     private sealed class ContentDownloadCoordinatorStub : IContentDownloadCoordinator
     {
-        public Task<int?> AddAsync(
+        private int _requestCount;
+        private CancellationToken _firstRequestToken;
+
+        public bool WaitForFirstCancellation { get; init; }
+
+        public int RequestCount => Volatile.Read(ref _requestCount);
+
+        public bool FirstRequestCancellationRequested => _firstRequestToken.IsCancellationRequested;
+
+        public TaskCompletionSource FirstRequestStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task<int?> AddAsync(
             IReadOnlyList<ContentDownloadItem> items,
             bool onlySelected,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult<int?>(0);
+            var requestCount = Interlocked.Increment(ref _requestCount);
+            if (requestCount == 1)
+            {
+                _firstRequestToken = cancellationToken;
+                FirstRequestStarted.TrySetResult();
+                if (WaitForFirstCancellation)
+                {
+                    await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(true);
+                }
+            }
+
+            return 0;
         }
     }
 
@@ -844,6 +1049,15 @@ public sealed class UiSmokeTests
         public IAppNavigationService Navigation { get; } = navigation;
 
         public IAppDialogService Dialogs { get; } = new DialogServiceStub();
+    }
+
+    private sealed class ClipboardServiceStub : IClipboardService
+    {
+        public Task SetTextAsync(string text, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class NotificationServiceStub : IUserNotificationService

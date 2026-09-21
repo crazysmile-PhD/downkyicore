@@ -112,6 +112,62 @@ public sealed class AsyncDelegateCommandTests
         Assert.Equal(1, Volatile.Read(ref executionCount));
     }
 
+    [Fact]
+    public async Task SharedGateRejectsSiblingAndReportsConflictWithoutStoppingFirstExecution()
+    {
+        var gate = new DownKyiAsyncCommandGate();
+        var firstStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFirst = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var gateReleased = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var firstExecutionCount = 0;
+        var secondExecutionCount = 0;
+        var rejectionCount = 0;
+        gate.IsExecutingChanged += (_, _) =>
+        {
+            if (!gate.IsExecuting)
+            {
+                gateReleased.TrySetResult();
+            }
+        };
+        var first = new DownKyiAsyncDelegateCommand(
+            async () =>
+            {
+                Interlocked.Increment(ref firstExecutionCount);
+                firstStarted.TrySetResult();
+                await releaseFirst.Task.ConfigureAwait(true);
+            },
+            new RecordingLogger(),
+            executionGate: gate,
+            executionRejected: () => Interlocked.Increment(ref rejectionCount));
+        var second = new DownKyiAsyncDelegateCommand(
+            () =>
+            {
+                Interlocked.Increment(ref secondExecutionCount);
+                return Task.CompletedTask;
+            },
+            new RecordingLogger(),
+            executionGate: gate,
+            executionRejected: () => Interlocked.Increment(ref rejectionCount));
+
+        first.Execute(null);
+        await firstStarted.Task.WaitAsync(TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.True(first.CanExecute(null));
+        Assert.True(second.CanExecute(null));
+        second.Execute(null);
+
+        Assert.True(gate.IsExecuting);
+        Assert.Equal(1, Volatile.Read(ref firstExecutionCount));
+        Assert.Equal(0, Volatile.Read(ref secondExecutionCount));
+        Assert.Equal(1, Volatile.Read(ref rejectionCount));
+
+        releaseFirst.TrySetResult();
+        await gateReleased.Task.WaitAsync(TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.False(gate.IsExecuting);
+        Assert.Equal(1, Volatile.Read(ref firstExecutionCount));
+    }
+
     private static Task ObserveCompletion(DownKyiAsyncDelegateCommand command)
     {
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
