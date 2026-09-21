@@ -35,6 +35,28 @@ public sealed class DownloadAddOwnerTests : IDisposable
     }
 
     [Fact]
+    public async Task ActiveDuplicateIsSkippedBeforeCompletedHistoryIsRead()
+    {
+        using var context = DuplicatePolicyContext.WithCompleted(AppDialogOutcome.Accepted);
+        context.ListState.AddDownloading(CreateDownloadingItem());
+        var completedCandidates = new Lazy<Task<List<DownloadedItem>>>(() =>
+            context.Policy.LoadCompletedCandidatesAsync(
+                DownKyi.Core.Settings.RepeatDownloadStrategy.JumpOver,
+                TestContext.Current.CancellationToken));
+
+        var shouldSkip = await context.Policy.ShouldSkipAsync(
+            CreatePage(),
+            CreateVideoQuality(),
+            DownKyi.Core.Settings.RepeatDownloadStrategy.JumpOver,
+            TestContext.Current.CancellationToken,
+            completedCandidates);
+
+        Assert.True(shouldSkip);
+        Assert.False(completedCandidates.IsValueCreated);
+        Assert.Equal(0, context.Store.HistoryPageRequestCount);
+    }
+
+    [Fact]
     public async Task CompletedDuplicateJumpOverPreservesHistory()
     {
         using var context = DuplicatePolicyContext.WithCompleted(AppDialogOutcome.Accepted);
@@ -122,9 +144,10 @@ public sealed class DownloadAddOwnerTests : IDisposable
     {
         using var context = DuplicatePolicyContext.WithCompleted(AppDialogOutcome.Accepted);
         var staleSnapshot = DownloadTaskProjectionMapper.ToDownloadedItem(context.Store.History!);
-        var completedCandidates = await context.Policy.LoadCompletedCandidatesAsync(
-            DownKyi.Core.Settings.RepeatDownloadStrategy.Ask,
-            TestContext.Current.CancellationToken);
+        var completedCandidates = new Lazy<Task<List<DownloadedItem>>>(() =>
+            context.Policy.LoadCompletedCandidatesAsync(
+                DownKyi.Core.Settings.RepeatDownloadStrategy.Ask,
+                TestContext.Current.CancellationToken));
 
         var shouldSkip = await context.Policy.ShouldSkipAsync(
             CreatePage(),
@@ -143,9 +166,11 @@ public sealed class DownloadAddOwnerTests : IDisposable
     public async Task CachedCandidatesIncludeACompletionProjectedDuringTheBatch()
     {
         using var context = new DuplicatePolicyContext(AppDialogOutcome.Accepted);
-        var completedCandidates = await context.Policy.LoadCompletedCandidatesAsync(
+        var candidateList = await context.Policy.LoadCompletedCandidatesAsync(
             DownKyi.Core.Settings.RepeatDownloadStrategy.JumpOver,
             TestContext.Current.CancellationToken);
+        var completedCandidates = new Lazy<Task<List<DownloadedItem>>>(() =>
+            Task.FromResult(candidateList));
         context.ListState.AddDownloaded(DownloadTaskProjectionMapper.ToDownloadedItem(
             DuplicatePolicyContext.CreateCompletedHistory()));
 
@@ -157,7 +182,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
             completedCandidates);
 
         Assert.True(shouldSkip);
-        Assert.Single(completedCandidates);
+        Assert.Single(candidateList);
         Assert.Equal(1, context.Store.HistoryPageRequestCount);
     }
 

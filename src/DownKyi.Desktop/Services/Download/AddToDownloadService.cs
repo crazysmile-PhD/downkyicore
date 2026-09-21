@@ -217,7 +217,7 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
 
         var settings = _settingsStore.Current;
         var addedCount = 0;
-        Task<List<DownloadedItem>>? completedCandidatesTask = null;
+        Lazy<Task<List<DownloadedItem>>>? completedCandidates = null;
         foreach (var section in _videoSections)
         {
             foreach (var page in section.VideoPages)
@@ -243,10 +243,10 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
                 }
 
                 var videoQuality = page.VideoQuality;
-                completedCandidatesTask ??= _duplicatePolicy.LoadCompletedCandidatesAsync(
-                    settings.Basic.RepeatDownloadStrategy,
-                    cancellationToken);
-                var completedCandidates = await completedCandidatesTask.ConfigureAwait(true);
+                completedCandidates ??= new Lazy<Task<List<DownloadedItem>>>(() =>
+                    _duplicatePolicy.LoadCompletedCandidatesAsync(
+                        settings.Basic.RepeatDownloadStrategy,
+                        cancellationToken));
                 if (await _duplicatePolicy
                     .ShouldSkipAsync(
                         page,

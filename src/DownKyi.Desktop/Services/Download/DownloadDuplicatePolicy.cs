@@ -35,7 +35,7 @@ internal sealed class DownloadDuplicatePolicy
         VideoQuality videoQuality,
         RepeatDownloadStrategy strategy,
         CancellationToken cancellationToken,
-        IList<DownloadedItem>? completedCandidates = null)
+        Lazy<Task<List<DownloadedItem>>>? completedCandidates = null)
     {
         ArgumentNullException.ThrowIfNull(page);
         ArgumentNullException.ThrowIfNull(videoQuality);
@@ -46,10 +46,11 @@ internal sealed class DownloadDuplicatePolicy
             return true;
         }
 
-        completedCandidates ??= await LoadCompletedCandidatesAsync(strategy, cancellationToken)
-            .ConfigureAwait(true);
-        MergeLiveCompletedCandidates(completedCandidates);
-        foreach (var item in completedCandidates)
+        var candidates = completedCandidates == null
+            ? await LoadCompletedCandidatesAsync(strategy, cancellationToken).ConfigureAwait(true)
+            : await completedCandidates.Value.ConfigureAwait(true);
+        MergeLiveCompletedCandidates(candidates);
+        foreach (var item in candidates)
         {
             if (!IsSameVideo(item, page, videoQuality))
             {
@@ -66,7 +67,7 @@ internal sealed class DownloadDuplicatePolicy
             };
             if (!shouldSkip)
             {
-                completedCandidates.Remove(item);
+                candidates.Remove(item);
             }
 
             return shouldSkip;
@@ -108,7 +109,7 @@ internal sealed class DownloadDuplicatePolicy
         return false;
     }
 
-    private void MergeLiveCompletedCandidates(IList<DownloadedItem> completedCandidates)
+    private void MergeLiveCompletedCandidates(List<DownloadedItem> completedCandidates)
     {
         var candidateIds = completedCandidates
             .Select(GetTaskId)
