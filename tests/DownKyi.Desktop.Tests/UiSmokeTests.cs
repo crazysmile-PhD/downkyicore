@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
 using Avalonia.Media;
 using Avalonia.Styling;
+using Avalonia.VisualTree;
 using Avalonia.Xaml.Interactivity;
 using DownKyi.Application.Desktop;
 using DownKyi.Application.Diagnostics;
@@ -275,6 +276,82 @@ public sealed class UiSmokeTests
             finally
             {
                 application.RequestedThemeVariant = originalTheme;
+                window.Close();
+            }
+        });
+    }
+
+    [AvaloniaFact]
+    public Task PublicFavoritesCancelPreparationStaysVisibleAtMinimumWindowSize()
+    {
+        return AvaloniaTestDispatcher.RunAsync(() =>
+        {
+            var application = DesktopTestResources.EnsureProductThemeResources();
+            application.Resources["PreparingDownloads"] = "正在准备下载";
+            application.Resources["CancelDownloadPreparation"] = "取消准备";
+            application.Styles.Add(new Avalonia.Markup.Xaml.Styling.StyleInclude(
+                new Uri("avares://DownKyi.Desktop.Tests/"))
+            {
+                Source = new Uri(
+                    "avares://DownKyi.Desktop/Themes/Styles/download-preparation-status.axaml")
+            });
+            var settingsPath = Path.Combine(
+                Path.GetTempPath(),
+                $"downkyi-public-favorites-layout-{Guid.NewGuid():N}.json");
+            using var settings = new SettingsStore(settingsPath);
+            using var navigation = new AvaloniaNavigationService(
+                _ => new NavigationProbe(AppRoute.PublicFavorites),
+                static action => action());
+            using var favorites = new ViewPublicFavoritesViewModel(
+                new DesktopInteractionContextStub(navigation),
+                new ClipboardServiceStub(),
+                new ContentDownloadCoordinatorStub(),
+                new FavoritesCoordinatorStub(navigation, settings),
+                settings,
+                NullLogger<ViewPublicFavoritesViewModel>.Instance)
+            {
+                Favorites = new FavoritesPageItem
+                {
+                    Title = "fixture favorites",
+                    Description = "fixture description",
+                    UpName = "fixture owner"
+                },
+                ContentVisibility = true
+            };
+            var view = new ViewPublicFavorites { DataContext = favorites };
+            var window = new Window
+            {
+                Content = view,
+                Width = 800,
+                Height = 550
+            };
+
+            Assert.True(favorites.DownloadCommandGate.TryEnter());
+            try
+            {
+                window.Show();
+                window.UpdateLayout();
+                var status = Assert.IsType<DownKyi.CustomControl.DownloadPreparationStatus>(
+                    view.FindControl<DownKyi.CustomControl.DownloadPreparationStatus>(
+                        "PublicFavoritesDownloadPreparationStatus"));
+                var cancelButton = Assert.Single(
+                    status.GetVisualDescendants().OfType<Button>(),
+                    button => ReferenceEquals(button.Command, favorites.CancelDownloadPreparationCommand));
+
+                Assert.True(status.IsActive);
+                Assert.True(cancelButton.IsVisible);
+                Assert.True(cancelButton.Bounds.Width > 0);
+                Assert.True(cancelButton.Bounds.Height > 0);
+                var origin = cancelButton.TranslatePoint(default, view);
+                Assert.NotNull(origin);
+                Assert.InRange(origin.Value.X, 0, view.Bounds.Width);
+                Assert.InRange(origin.Value.Y, 0, view.Bounds.Height);
+                Assert.True(origin.Value.X + cancelButton.Bounds.Width <= view.Bounds.Width + 0.5);
+                Assert.True(origin.Value.Y + cancelButton.Bounds.Height <= view.Bounds.Height + 0.5);
+            }
+            finally
+            {
+                favorites.DownloadCommandGate.Exit();
                 window.Close();
             }
         });
@@ -972,6 +1049,15 @@ public sealed class UiSmokeTests
         public IAppNavigationService Navigation { get; } = navigation;
 
         public IAppDialogService Dialogs { get; } = new DialogServiceStub();
+    }
+
+    private sealed class ClipboardServiceStub : IClipboardService
+    {
+        public Task SetTextAsync(string text, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class NotificationServiceStub : IUserNotificationService
