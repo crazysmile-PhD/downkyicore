@@ -126,7 +126,7 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
             await UiDispatcher.InvokeAsync(() => ApplyVideoDetailResult(result, operation.CancellationToken));
             if (_workflow.IsCurrent(operation) && settings.Basic.IsAutoParseVideo == AllowStatus.Yes)
             {
-                RunFireAndForget(ExecuteParseAllVideoCommandAsync(), nameof(ExecuteParseAllVideoCommandAsync), _logger);
+                await ExecuteParseAllVideoCommandAsync().ConfigureAwait(true);
             }
         }, VideoDetailDisplayState.Empty).ConfigureAwait(true);
     }
@@ -401,10 +401,10 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
             var input = parameter.Replace(AppConstant.ClipboardId, string.Empty, StringComparison.Ordinal);
             if (UiState.InputText != input || !parameter.EndsWith(AppConstant.ClipboardId, StringComparison.Ordinal))
             {
-                if (!UiState.IsBusy)
+                if (InputCommand.CanExecute(null))
                 {
                     UiState.InputText = input;
-                    RunFireAndForget(ExecuteInputCommandAsync(input), nameof(ExecuteInputCommandAsync), _logger);
+                    InputCommand.Execute(null);
                 }
             }
         }

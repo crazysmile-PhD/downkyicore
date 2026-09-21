@@ -169,60 +169,7 @@ public sealed class VideoDetailCommandStateTests
     }
 
     [Avalonia.Headless.XUnit.AvaloniaFact]
-    public async Task DownloadPreparationRejectsEveryCompetingOperation()
-    {
-        DesktopTestResources.EnsureProductThemeResources();
-        var settingsPath = Path.Combine(
-            Path.GetTempPath(),
-            $"downkyi-video-detail-operation-gate-{Guid.NewGuid():N}.json");
-        using var settings = new SettingsStore(settingsPath);
-        using var workflow = new VideoDetailWorkflowCoordinatorStub();
-        var downloadCoordinator = new VideoDetailDownloadCoordinatorStub
-        {
-            WaitForRelease = true
-        };
-        using var viewModel = new ViewVideoDetailViewModel(
-            new DesktopInteractionContextStub(),
-            new ClipboardServiceStub(),
-            settings,
-            workflow,
-            downloadCoordinator,
-            NullLogger<ViewVideoDetailViewModel>.Instance);
-        viewModel.UiState.VideoInfoView = new DownKyi.Presentation.VideoInfoView();
-        viewModel.UiState.DisplayState = VideoDetailDisplayState.Content;
-        var completion = WaitUntilExecutableAfterDisabled(viewModel.AddToDownloadCommand);
-
-        viewModel.AddToDownloadCommand.Execute(null);
-        await downloadCoordinator.AddRequested.Task
-            .WaitAsync(TestContext.Current.CancellationToken)
-            .ConfigureAwait(true);
-
-        Assert.False(viewModel.UiState.IsBusy);
-        Assert.False(viewModel.InputCommand.CanExecute(null));
-        Assert.False(viewModel.ParseCommand.CanExecute(null));
-        Assert.False(viewModel.ParseAllVideoCommand.CanExecute(null));
-        Assert.False(viewModel.AddToDownloadCommand.CanExecute(null));
-        Assert.Equal(1, workflow.OperationStartCount);
-
-        viewModel.InputCommand.Execute(null);
-        viewModel.ParseCommand.Execute(null);
-        viewModel.ParseAllVideoCommand.Execute(null);
-        viewModel.AddToDownloadCommand.Execute(null);
-
-        Assert.Equal(1, workflow.OperationStartCount);
-        Assert.Equal(1, downloadCoordinator.AddRequestCount);
-
-        downloadCoordinator.ReleaseAdd();
-        await completion.WaitAsync(TestContext.Current.CancellationToken).ConfigureAwait(true);
-
-        Assert.True(viewModel.InputCommand.CanExecute(null));
-        Assert.True(viewModel.ParseCommand.CanExecute(null));
-        Assert.True(viewModel.ParseAllVideoCommand.CanExecute(null));
-        Assert.True(viewModel.AddToDownloadCommand.CanExecute(null));
-    }
-
-    [Avalonia.Headless.XUnit.AvaloniaFact]
-    public async Task AutoParseCompletionReEnablesSelectedDownload()
+    public async Task AutoDownloadPreparationRejectsCompetingOperationsAndRecovers()
     {
         DesktopTestResources.EnsureProductThemeResources();
         var settingsPath = Path.Combine(
@@ -234,6 +181,7 @@ public sealed class VideoDetailCommandStateTests
             Basic = current.Basic with
             {
                 IsAutoParseVideo = AllowStatus.Yes,
+                IsAutoDownloadAll = AllowStatus.Yes,
                 ParseScope = ParseScope.All
             }
         });
@@ -253,30 +201,61 @@ public sealed class VideoDetailCommandStateTests
                 new DownKyi.Presentation.VideoInfoView(),
                 new[] { section })
         };
+        var downloadCoordinator = new VideoDetailDownloadCoordinatorStub
+        {
+            WaitForRelease = true
+        };
         using var viewModel = new ViewVideoDetailViewModel(
             new DesktopInteractionContextStub(),
             new ClipboardServiceStub(),
             settings,
             workflow,
-            new VideoDetailDownloadCoordinatorStub(),
+            downloadCoordinator,
             NullLogger<ViewVideoDetailViewModel>.Instance);
-        viewModel.UiState.InputText = "https://www.bilibili.com/video/BV1G1421D7mL";
+        var completion = WaitUntilExecutableAfterDisabled(viewModel.InputCommand);
 
-        viewModel.InputCommand.Execute(null);
+        viewModel.OnNavigatedTo(new AppNavigationContext(
+            AppNavigationRegion.Main,
+            AppRoute.VideoDetail,
+            AppRoute.Index,
+            "https://www.bilibili.com/video/BV1G1421D7mL",
+            new AppNavigationParameters()));
         await workflow.PageStreamsStarted.Task
             .WaitAsync(TestContext.Current.CancellationToken)
             .ConfigureAwait(true);
 
         Assert.True(viewModel.UiState.IsBusy);
         Assert.False(viewModel.AddToDownloadCommand.CanExecute(null));
-        var downloadEnabled = WaitUntilExecutable(viewModel.AddToDownloadCommand);
 
         workflow.ReleasePageStreams();
-        await downloadEnabled.WaitAsync(TestContext.Current.CancellationToken).ConfigureAwait(true);
+        await downloadCoordinator.AddRequested.Task
+            .WaitAsync(TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
 
         Assert.Equal(VideoDetailDisplayState.Content, viewModel.UiState.DisplayState);
+        Assert.False(viewModel.UiState.IsBusy);
+        Assert.False(viewModel.InputCommand.CanExecute(null));
+        Assert.False(viewModel.ParseCommand.CanExecute(null));
+        Assert.False(viewModel.ParseAllVideoCommand.CanExecute(null));
+        Assert.False(viewModel.AddToDownloadCommand.CanExecute(null));
+        Assert.Equal(3, workflow.OperationStartCount);
+
+        viewModel.InputCommand.Execute(null);
+        viewModel.ParseCommand.Execute(null);
+        viewModel.ParseAllVideoCommand.Execute(null);
+        viewModel.AddToDownloadCommand.Execute(null);
+
+        Assert.Equal(3, workflow.OperationStartCount);
+        Assert.Equal(1, downloadCoordinator.AddRequestCount);
+
+        downloadCoordinator.ReleaseAdd();
+        await completion.WaitAsync(TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.True(viewModel.InputCommand.CanExecute(null));
+        Assert.True(viewModel.ParseCommand.CanExecute(null));
         Assert.True(viewModel.ParseAllVideoCommand.CanExecute(null));
         Assert.True(viewModel.AddToDownloadCommand.CanExecute(null));
+        Assert.True(downloadCoordinator.LastIsAll);
     }
 
     [Avalonia.Headless.XUnit.AvaloniaFact]
