@@ -1,13 +1,16 @@
 using System;
+using System.ComponentModel;
 using System.Threading;
 
 namespace DownKyi.Commands;
 
-internal sealed class DownKyiAsyncCommandGate
+internal sealed class DownKyiAsyncCommandGate : INotifyPropertyChanged
 {
     private int _isExecuting;
 
     public event EventHandler? IsExecutingChanged;
+
+    public event PropertyChangedEventHandler? PropertyChanged;
 
     public bool IsExecuting => Volatile.Read(ref _isExecuting) != 0;
 
@@ -19,14 +22,18 @@ internal sealed class DownKyiAsyncCommandGate
         }
 
         IsExecutingChanged?.Invoke(this, EventArgs.Empty);
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsExecuting)));
         return true;
     }
 
     internal void Exit()
     {
-        if (Interlocked.Exchange(ref _isExecuting, 0) != 0)
+        if (Interlocked.Exchange(ref _isExecuting, 0) == 0)
         {
-            IsExecutingChanged?.Invoke(this, EventArgs.Empty);
+            return;
         }
+
+        IsExecutingChanged?.Invoke(this, EventArgs.Empty);
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsExecuting)));
     }
 }

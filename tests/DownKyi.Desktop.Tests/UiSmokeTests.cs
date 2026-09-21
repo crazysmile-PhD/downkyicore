@@ -139,6 +139,111 @@ public sealed class UiSmokeTests
     }
 
     [AvaloniaFact]
+    public async Task FavoritesDownloadPreparationRejectsOverlapCancelsAndCanRestart()
+    {
+        await AvaloniaTestDispatcher.RunAsync(async () =>
+        {
+            var application = DesktopTestResources.EnsureProductThemeResources();
+            application.Resources["TipDownloadPreparationAlreadyRunning"] =
+                "当前正在准备下载，请先取消准备，再重新选择加入方式。";
+            var directory = Path.Combine(Path.GetTempPath(), $"downkyi-favorites-download-gate-{Guid.NewGuid():N}");
+            var settings = new SettingsStore(Path.Combine(directory, "settings.json"));
+            try
+            {
+                using var navigation = new AvaloniaNavigationService(
+                    _ => new NavigationProbe(AppRoute.MyFavorites),
+                    static action => action());
+                var downloadCoordinator = new ContentDownloadCoordinatorStub
+                {
+                    WaitForFirstCancellation = true
+                };
+                var interactions = new DesktopInteractionContextStub(navigation);
+                var notifications = Assert.IsType<NotificationServiceStub>(interactions.Notifications);
+                var conflictNotification = new TaskCompletionSource<string>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+                notifications.NotificationRaised += (_, args) => conflictNotification.TrySetResult(args.Message);
+                using var favorites = new ViewMyFavoritesViewModel(
+                    interactions,
+                    downloadCoordinator,
+                    new FavoritesCoordinatorStub(navigation, settings),
+                    NullLogger<ViewMyFavoritesViewModel>.Instance);
+                var view = new ViewMyFavorites { DataContext = favorites };
+                var window = new Window { Content = view };
+
+                try
+                {
+                    window.Show();
+                    var status = Assert.IsType<DownKyi.CustomControl.DownloadPreparationStatus>(
+                        view.FindControl<DownKyi.CustomControl.DownloadPreparationStatus>(
+                            "DownloadPreparationStatus"));
+                    Assert.False(status.IsActive);
+
+                    favorites.AddAllToDownloadCommand.Execute(null);
+                    await downloadCoordinator.FirstRequestStarted.Task
+                        .WaitAsync(TestContext.Current.CancellationToken)
+                        .ConfigureAwait(true);
+                    window.UpdateLayout();
+
+                    Assert.True(favorites.DownloadCommandGate.IsExecuting);
+                    Assert.True(status.IsActive);
+
+                    favorites.AddToDownloadCommand.Execute(null);
+                    Assert.Equal(
+                        "当前正在准备下载，请先取消准备，再重新选择加入方式。",
+                        await conflictNotification.Task
+                            .WaitAsync(TestContext.Current.CancellationToken)
+                            .ConfigureAwait(true));
+                    Assert.Equal(1, downloadCoordinator.RequestCount);
+                    Assert.False(downloadCoordinator.FirstRequestCancellationRequested);
+
+                    var firstCanceled = ObserveGateReleased(favorites.DownloadCommandGate);
+                    favorites.CancelDownloadPreparationCommand.Execute(null);
+                    await firstCanceled.WaitAsync(TestContext.Current.CancellationToken).ConfigureAwait(true);
+                    window.UpdateLayout();
+
+                    Assert.True(downloadCoordinator.FirstRequestCancellationRequested);
+                    Assert.False(favorites.DownloadCommandGate.IsExecuting);
+                    Assert.False(status.IsActive);
+
+                    var restarted = ObserveGateReleased(favorites.DownloadCommandGate);
+                    favorites.AddToDownloadCommand.Execute(null);
+                    await restarted.WaitAsync(TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+                    Assert.Equal(2, downloadCoordinator.RequestCount);
+                    Assert.False(favorites.DownloadCommandGate.IsExecuting);
+                    Assert.False(status.IsActive);
+                }
+                finally
+                {
+                    window.Close();
+                }
+            }
+            finally
+            {
+                await settings.DisposeAsync().ConfigureAwait(true);
+            }
+
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }).ConfigureAwait(true);
+    }
+
+    private static Task ObserveGateReleased(DownKyi.Commands.DownKyiAsyncCommandGate gate)
+    {
+        var released = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        gate.IsExecutingChanged += (_, _) =>
+        {
+            if (!gate.IsExecuting)
+            {
+                released.TrySetResult();
+            }
+        };
+        return released.Task;
+    }
+
+    [AvaloniaFact]
     public Task PublicFavoritesBackArrowRemainsVisibleInLightAndDarkThemes()
     {
         return AvaloniaTestDispatcher.RunAsync(() =>
@@ -827,13 +932,36 @@ public sealed class UiSmokeTests
 
     private sealed class ContentDownloadCoordinatorStub : IContentDownloadCoordinator
     {
-        public Task<int?> AddAsync(
+        private int _requestCount;
+        private CancellationToken _firstRequestToken;
+
+        public bool WaitForFirstCancellation { get; init; }
+
+        public int RequestCount => Volatile.Read(ref _requestCount);
+
+        public bool FirstRequestCancellationRequested => _firstRequestToken.IsCancellationRequested;
+
+        public TaskCompletionSource FirstRequestStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task<int?> AddAsync(
             IReadOnlyList<ContentDownloadItem> items,
             bool onlySelected,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult<int?>(0);
+            var requestCount = Interlocked.Increment(ref _requestCount);
+            if (requestCount == 1)
+            {
+                _firstRequestToken = cancellationToken;
+                FirstRequestStarted.TrySetResult();
+                if (WaitForFirstCancellation)
+                {
+                    await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(true);
+                }
+            }
+
+            return 0;
         }
     }
 
