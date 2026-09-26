@@ -117,6 +117,38 @@ public sealed class CentralTestRunnerCancellationComponentTests
     }
 
     [Fact]
+    public async Task FiveSecondCancellationCleanupReservesMoreThanOneSecondForSnapshot()
+    {
+        OwnedProcessScope? scope = null;
+        TimeSpan? snapshotWindow = null;
+        await FailurePreservingTestCleanup.RunAsync(
+            async () =>
+            {
+                scope = await StartHoldingScopeAsync().ConfigureAwait(true);
+
+                await BuildProcessRunner.CleanupAfterCancellationAsync(
+                    scope,
+                    TestTimeout,
+                    (_, window) =>
+                    {
+                        snapshotWindow = window;
+                        return Task.FromResult(new FinalProcessSnapshot
+                        {
+                            CapturedAtUtc = DateTimeOffset.UtcNow,
+                            Completeness = "test snapshot",
+                            Processes = []
+                        });
+                    }).ConfigureAwait(true);
+
+                Assert.True(
+                    snapshotWindow > TimeSpan.FromSeconds(1),
+                    $"Expected more than one second for the snapshot phase, but received {snapshotWindow}.");
+                Assert.True(scope.Host.HasExited);
+            },
+            () => StopScopeAsync(scope)).ConfigureAwait(true);
+    }
+
+    [Fact]
     public async Task BuildSnapshotNeverReturnsDoesNotBlockTermination()
     {
         OwnedProcessScope? scope = null;

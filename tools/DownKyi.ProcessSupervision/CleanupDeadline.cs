@@ -11,7 +11,7 @@ internal sealed class CleanupDeadline(TimeSpan budget)
     public TimeSpan Remaining => budget > clock.Elapsed ? budget - clock.Elapsed : TimeSpan.Zero;
 
     public TimeSpan SnapshotWindow => TimeSpan.FromTicks(Math.Min(
-        TimeSpan.FromSeconds(1).Ticks,
+        TimeSpan.FromSeconds(2).Ticks,
         Remaining.Ticks / 4));
 
     public TimeSpan PostExitDrainWindow => TimeSpan.FromTicks(Math.Min(
