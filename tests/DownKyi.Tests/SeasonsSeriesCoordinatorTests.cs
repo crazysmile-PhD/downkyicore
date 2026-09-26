@@ -1,6 +1,3 @@
-using DownKyi.Core.BiliApi.VideoStream;
-using DownKyi.Services;
-using DownKyi.Services.Download;
 using DownKyi.Services.Media;
 using DownKyi.Services.UserSpace;
 
@@ -14,7 +11,7 @@ public sealed class SeasonsSeriesCoordinatorTests
     public async Task PreCanceledPageRequestDoesNotStartUserSpaceApiWork(int kindValue)
     {
         var coordinator = new SeasonsSeriesCoordinator(
-            new ContentDownloadCoordinator(new ThrowingFactory(), new ThrowingInfoServiceFactory()),
+            new ThrowingDownloadCoordinator(),
             new TestBilibiliApiClient());
         var kind = (SeasonsSeriesKind)kindValue;
         using var cancellation = new CancellationTokenSource();
@@ -24,23 +21,14 @@ public sealed class SeasonsSeriesCoordinatorTests
             () => coordinator.LoadPageAsync(42, 24, kind, 1, 30, cancellation.Token));
     }
 
-    private sealed class ThrowingFactory : IAddToDownloadServiceFactory
+    private sealed class ThrowingDownloadCoordinator : IContentDownloadCoordinator
     {
-        public IAddToDownloadSession Create(PlayStreamType streamType)
-        {
-            throw new InvalidOperationException("Page loading must not create a download session.");
-        }
-
-    }
-
-    private sealed class ThrowingInfoServiceFactory : IContentInfoServiceFactory
-    {
-        public Task<IInfoService> CreateAsync(
-            ContentDownloadItem item,
+        public Task<int?> AddAsync(
+            IReadOnlyList<ContentDownloadItem> items,
+            bool onlySelected,
             CancellationToken cancellationToken)
         {
-            return Task.FromException<IInfoService>(
-                new InvalidOperationException("Page loading must not create an info service."));
+            throw new InvalidOperationException("Page loading must not submit a download batch.");
         }
     }
 }

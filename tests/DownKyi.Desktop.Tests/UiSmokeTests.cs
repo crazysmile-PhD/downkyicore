@@ -197,6 +197,16 @@ public sealed class UiSmokeTests
                     Assert.Equal(1, downloadCoordinator.RequestCount);
                     Assert.False(downloadCoordinator.FirstRequestCancellationRequested);
 
+                    favorites.OnNavigatedFrom(new AppNavigationContext(
+                        AppNavigationRegion.Main,
+                        AppRoute.MyFavorites,
+                        AppRoute.Index,
+                        Parameter: null,
+                        new AppNavigationParameters()));
+
+                    Assert.False(downloadCoordinator.FirstRequestCancellationRequested);
+                    Assert.True(favorites.DownloadCommandGate.IsExecuting);
+
                     var firstCanceled = ObserveGateReleased(favorites.DownloadCommandGate);
                     favorites.CancelDownloadPreparationCommand.Execute(null);
                     await firstCanceled.WaitAsync(TestContext.Current.CancellationToken).ConfigureAwait(true);

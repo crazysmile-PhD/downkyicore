@@ -81,8 +81,13 @@ internal static class DesktopComposition
         services.AddSingleton<IVideoTagProvider, VideoTagProvider>();
         services.AddTransient<IVideoDetailWorkflowCoordinator, VideoDetailWorkflowCoordinator>();
         services.AddSingleton<IVideoDetailDownloadCoordinator, VideoDetailDownloadCoordinator>();
-        services.AddSingleton<IContentDownloadCoordinator, ContentDownloadCoordinator>();
         services.AddSingleton<IContentInfoServiceFactory, ContentInfoServiceFactory>();
+        services.AddSingleton<ContentDownloadCoordinator>();
+        services.AddSingleton<ContentDownloadBatchOwner>();
+        services.AddSingleton<IContentDownloadCoordinator>(provider =>
+            provider.GetRequiredService<ContentDownloadBatchOwner>());
+        services.AddSingleton<IHostedService>(provider =>
+            provider.GetRequiredService<ContentDownloadBatchOwner>());
         services.AddSingleton<IPersonalMediaCoordinator, PersonalMediaCoordinator>();
         services.AddSingleton<ILegacyUpgradeCoordinator, LegacyUpgradeCoordinator>();
         services.AddSingleton<IFavoritesService, FavoritesService>();

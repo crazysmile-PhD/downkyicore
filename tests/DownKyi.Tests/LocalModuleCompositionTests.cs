@@ -6,6 +6,7 @@ using DownKyi.Infrastructure.Downloads;
 using DownKyi.Infrastructure.Logging;
 using DownKyi.Platform;
 using DownKyi.Services.Download;
+using DownKyi.Services.Media;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -66,6 +67,15 @@ public sealed class LocalModuleCompositionTests
                 .OfType<DownloadBootstrapHostedService>()
                 .Single();
             Assert.Same(bootstrap, hostedBootstrap);
+
+            var batchOwner = host.Services.GetRequiredService<ContentDownloadBatchOwner>();
+            Assert.Same(batchOwner, host.Services.GetRequiredService<IContentDownloadCoordinator>());
+            Assert.Same(
+                batchOwner,
+                host.Services
+                    .GetServices<IHostedService>()
+                    .OfType<ContentDownloadBatchOwner>()
+                    .Single());
 
             Assert.Same(
                 host.Services.GetRequiredService<IAppNavigationService>(),
