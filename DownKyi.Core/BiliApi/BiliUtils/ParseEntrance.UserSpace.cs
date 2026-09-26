@@ -50,8 +50,13 @@ public static partial class ParseEntrance
             return false;
         }
 
-        var segments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
-        return segments.Length == 1
-            && long.TryParse(segments[0], NumberStyles.None, CultureInfo.InvariantCulture, out mid);
+        var segments = uri.AbsolutePath.TrimEnd('/').Split('/', StringSplitOptions.None);
+        var hasSupportedPath = segments.Length == 2
+            || (segments.Length == 4
+                && string.Equals(segments[2], "upload", StringComparison.Ordinal)
+                && string.Equals(segments[3], "video", StringComparison.Ordinal));
+        return hasSupportedPath
+            && long.TryParse(segments[1], NumberStyles.None, CultureInfo.InvariantCulture, out mid)
+            && mid > 0;
     }
 }

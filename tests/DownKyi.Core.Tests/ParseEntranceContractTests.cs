@@ -139,6 +139,22 @@ public sealed class ParseEntranceContractTests
     }
 
     [Theory]
+    [InlineData("https://space.bilibili.com/928123", 928123)]
+    [InlineData("https://space.bilibili.com/928123/upload/video", 928123)]
+    [InlineData("https://space.bilibili.com/928123/upload", -1)]
+    [InlineData("https://space.bilibili.com/928123/foo/video", -1)]
+    [InlineData("https://space.bilibili.com//928123/upload/video", -1)]
+    [InlineData("https://space.bilibili.com/928123//upload/video", -1)]
+    [InlineData("https://space.bilibili.com/928123/upload//video", -1)]
+    [InlineData("https://space.bilibili.com/0", -1)]
+    [InlineData("https://space.bilibili.com/0/upload/video", -1)]
+    public void UserSpaceUrlsHonorExactPathContract(string input, long expected)
+    {
+        Assert.Equal(expected > 0, ParseEntrance.IsUserUrl(input));
+        Assert.Equal(expected, ParseEntrance.GetUserId(input));
+    }
+
+    [Theory]
     [InlineData("https://space.bilibili.com.evil/928123")]
     [InlineData("https://evil.example/space.bilibili.com/928123")]
     [InlineData("https://space.bilibili.com/user928123")]
