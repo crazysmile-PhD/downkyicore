@@ -11,6 +11,7 @@ internal sealed class TestNavigationService : IAppNavigationService
     }
 
     public List<AppNavigationRequest> Requests { get; } = [];
+    public List<(AppNavigationRegion Region, AppRoute Route)> RegionRequests { get; } = [];
     public List<AppNavigationRegion> BackRequests { get; } = [];
     public bool CanGoBackResult { get; set; }
 
@@ -25,6 +26,7 @@ internal sealed class TestNavigationService : IAppNavigationService
         AppRoute route,
         IReadOnlyDictionary<string, object?>? parameters = null)
     {
+        RegionRequests.Add((region, route));
     }
 
     public void ClearRegion(AppNavigationRegion region)
