@@ -15,6 +15,7 @@ namespace DownKyi.ViewModels
         public const string Tag = "PageFriends";
 
         private long mid = -1;
+        private object? _ownedChild;
 
         #region 页面属性申明
 
@@ -132,12 +133,14 @@ namespace DownKyi.ViewModels
                         AppNavigationRegion.Friends,
                         AppRoute.Following,
                         parameters);
+                    _ownedChild = Navigation.GetActiveView(AppNavigationRegion.Friends);
                     break;
                 case 1:
                     Navigation.NavigateRegion(
                         AppNavigationRegion.Friends,
                         AppRoute.Follower,
                         parameters);
+                    _ownedChild = Navigation.GetActiveView(AppNavigationRegion.Friends);
                     break;
             }
         }
@@ -163,6 +166,13 @@ namespace DownKyi.ViewModels
             var targetMid = (long)parameter["mid"];
             if (mid == targetMid)
             {
+                if (_ownedChild == null || !ReferenceEquals(
+                        _ownedChild,
+                        Navigation.GetActiveView(AppNavigationRegion.Friends)))
+                {
+                    NavigationView(SelectTabId, true);
+                }
+
                 return;
             }
 
