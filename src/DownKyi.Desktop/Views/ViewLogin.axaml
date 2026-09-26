@@ -14,6 +14,7 @@
             <RowDefinition Height="106" />
             <RowDefinition Height="150*" MinHeight="200" />
             <RowDefinition Height="100*" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <Grid Grid.Row="0" ColumnDefinitions="100,*,100">
@@ -115,5 +116,23 @@
                 Text="{DynamicResource ScanLoginTip}"
                 TextAlignment="Center" />
         </StackPanel>
+
+        <Grid
+            Grid.Row="4"
+            Margin="120,0,120,18"
+            ColumnDefinitions="*,Auto">
+            <TextBox
+                Grid.Column="0"
+                MinHeight="36"
+                PasswordChar="●"
+                PlaceholderText="{DynamicResource BrowserCookieWatermark}"
+                Text="{Binding BrowserCookieHeader, Mode=TwoWay}" />
+            <Button
+                Grid.Column="1"
+                MinWidth="150"
+                Margin="8,0,0,0"
+                Command="{Binding BrowserCookieLoginCommand}"
+                Content="{DynamicResource BrowserCookieLogin}" />
+        </Grid>
     </Grid>
 </UserControl>
