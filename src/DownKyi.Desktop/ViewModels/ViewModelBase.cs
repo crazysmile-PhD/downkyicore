@@ -175,6 +175,20 @@ internal class ViewModelBase : ObservableObject, IAppNavigationAware, IDisposabl
         return replacement.Token;
     }
 
+    protected static void ReleaseCancellationSource(
+        ref CancellationTokenSource? source,
+        CancellationToken operationToken)
+    {
+        var current = Volatile.Read(ref source);
+        if (current == null || current.Token != operationToken
+            || Interlocked.CompareExchange(ref source, null, current) != current)
+        {
+            return;
+        }
+
+        current.Dispose();
+    }
+
     private void NavigationOnNavigationChanged(object? sender, AppNavigationChangedEventArgs e)
     {
         if (_observedRegion != e.Region)

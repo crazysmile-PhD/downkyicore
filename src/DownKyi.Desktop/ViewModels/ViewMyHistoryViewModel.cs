@@ -334,6 +334,10 @@ internal class ViewMyHistoryViewModel : ViewModelBase
             _logger.LogErrorMessage("History download preparation failed.", e);
             Notifications.Show(e.Message);
         }
+        finally
+        {
+            ReleaseCancellationSource(ref _downloadCancellation, cancellationToken);
+        }
     }
 
     private async Task UpdateHistoryMediaListAsync()
@@ -476,7 +480,6 @@ internal class ViewMyHistoryViewModel : ViewModelBase
     {
         Interlocked.Increment(ref _loadVersion);
         CancelAndDispose(ref _loadCancellation);
-        CancelAndDispose(ref _downloadCancellation);
     }
 
     protected override void Dispose(bool disposing)

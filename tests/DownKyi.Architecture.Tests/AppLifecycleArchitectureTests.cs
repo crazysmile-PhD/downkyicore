@@ -206,6 +206,50 @@ public sealed class AppLifecycleArchitectureTests
         Assert.Contains("builder.Services.AddLogging()", hostSource, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void BatchDownloadPreparationUsesOneHostOwnedFifoAbovePageLifetimes()
+    {
+        var ownerSource = ReadSource(
+            "src", "DownKyi.Desktop",
+            "Services", "Media",
+            "ContentDownloadBatchOwner.cs");
+        var compositionSource = ReadSource(
+            "src", "DownKyi.Desktop",
+            "Composition",
+            "DesktopComposition.cs");
+
+        Assert.Contains("ContentDownloadCoordinator coordinator", ownerSource, StringComparison.Ordinal);
+        Assert.Contains("Channel.CreateUnbounded<BatchRequest>", ownerSource, StringComparison.Ordinal);
+        Assert.Contains("SingleReader = true", ownerSource, StringComparison.Ordinal);
+        Assert.Contains("_applicationCancellation.CreateOperationScope", ownerSource, StringComparison.Ordinal);
+        Assert.Contains("await workerTask.WaitAsync(cancellationToken)", ownerSource, StringComparison.Ordinal);
+        Assert.Contains("AddSingleton<ContentDownloadBatchOwner>()", compositionSource, StringComparison.Ordinal);
+        Assert.Contains("GetRequiredService<ContentDownloadBatchOwner>()", compositionSource,
+            StringComparison.Ordinal);
+
+        foreach (var fileName in new[]
+                 {
+                     "ViewMyBangumiFollowViewModel.cs",
+                     "ViewMyFavoritesViewModel.cs",
+                     "ViewMyHistoryViewModel.cs",
+                     "ViewMyToViewVideoViewModel.cs",
+                     "ViewPublicationViewModel.cs",
+                     "ViewPublicFavoritesViewModel.cs",
+                     "ViewSeasonsSeriesDetailViewModel.cs"
+                 })
+        {
+            var source = ReadSource(
+                "src", "DownKyi.Desktop",
+                "ViewModels",
+                fileName);
+            Assert.Contains("CancelDownloadPreparationCommand", source, StringComparison.Ordinal);
+            Assert.Contains("ReleaseCancellationSource(ref _downloadCancellation", source,
+                StringComparison.Ordinal);
+            Assert.DoesNotContain("CancelAndDispose(ref _downloadCancellation)", source,
+                StringComparison.Ordinal);
+        }
+    }
+
     private static string FindRepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

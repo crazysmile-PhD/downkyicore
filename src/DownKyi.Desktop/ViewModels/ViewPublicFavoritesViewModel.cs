@@ -311,6 +311,10 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
             _logger.LogErrorMessage("Favorites download preparation failed.", e);
             Notifications.Show(e.Message);
         }
+        finally
+        {
+            ReleaseCancellationSource(ref _downloadCancellation, cancellationToken);
+        }
     }
 
     /// <summary>
@@ -405,7 +409,6 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
     private void CancelOperations()
     {
         CancelAndDispose(ref _loadCancellation);
-        CancelAndDispose(ref _downloadCancellation);
     }
 
     protected override void Dispose(bool disposing)
