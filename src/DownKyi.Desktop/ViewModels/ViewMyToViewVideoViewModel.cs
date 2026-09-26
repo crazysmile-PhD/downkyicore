@@ -294,6 +294,10 @@ internal class ViewMyToViewVideoViewModel : ViewModelBase
             _logger.LogErrorMessage("Watch-later download preparation failed.", e);
             Notifications.Show(e.Message);
         }
+        finally
+        {
+            ReleaseCancellationSource(ref _downloadCancellation, cancellationToken);
+        }
     }
 
     private async Task UpdateToViewMediaListAsync()
@@ -391,7 +395,6 @@ internal class ViewMyToViewVideoViewModel : ViewModelBase
     private void CancelOperations()
     {
         CancelAndDispose(ref _loadCancellation);
-        CancelAndDispose(ref _downloadCancellation);
     }
 
     protected override void Dispose(bool disposing)

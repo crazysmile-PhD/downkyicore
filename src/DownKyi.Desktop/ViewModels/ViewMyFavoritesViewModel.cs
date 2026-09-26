@@ -403,6 +403,10 @@ internal partial class ViewMyFavoritesViewModel : ViewModelBase
             _logger.LogErrorMessage("Favorites download preparation failed.", e);
             Notifications.Show(e.Message);
         }
+        finally
+        {
+            ReleaseCancellationSource(ref _downloadCancellation, cancellationToken);
+        }
     }
 
     private void OnCurrentChangedPager(object? sender, CancelEventArgs e)
@@ -427,7 +431,6 @@ internal partial class ViewMyFavoritesViewModel : ViewModelBase
     {
         CancelAndDispose(ref _folderLoadCancellation);
         CancelAndDispose(ref _mediaLoadCancellation);
-        CancelAndDispose(ref _downloadCancellation);
     }
 
     protected override void Dispose(bool disposing)

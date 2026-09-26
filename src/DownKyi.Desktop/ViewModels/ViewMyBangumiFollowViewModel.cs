@@ -304,6 +304,10 @@ internal partial class ViewMyBangumiFollowViewModel : ViewModelBase
             _logger.LogErrorMessage("Bangumi download preparation failed.", e);
             Notifications.Show(e.Message);
         }
+        finally
+        {
+            ReleaseCancellationSource(ref _downloadCancellation, cancellationToken);
+        }
     }
 
     private void OnCurrentChangedPager(object? sender, CancelEventArgs e)
@@ -429,7 +433,6 @@ internal partial class ViewMyBangumiFollowViewModel : ViewModelBase
     private void CancelOperations()
     {
         CancelAndDispose(ref _loadCancellation);
-        CancelAndDispose(ref _downloadCancellation);
     }
 
     protected override void Dispose(bool disposing)
