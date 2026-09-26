@@ -1,6 +1,7 @@
 using DownKyi.Core.BiliApi.Login;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Storage;
+using DownKyi.Core.Utils;
 
 namespace DownKyi.Core.Tests;
 
@@ -40,6 +41,28 @@ public sealed class LoginHelperTests
         Assert.Equal("fixture%2fvalue", reloaded.Value);
         Assert.True(reloaded.IsWireValue);
         Assert.Equal("SESSDATA=fixture%2fvalue", LoginHelper.GetLoginInfoCookiesString());
+    }
+
+    [Fact]
+    public void InvalidatingLoginInfoCacheReloadsExternallyWrittenCookies()
+    {
+        var initialCookies = new[]
+        {
+            new DownKyiCookie("SESSDATA", "initial", ".bilibili.com", isWireValue: true)
+        };
+        var updatedCookies = new[]
+        {
+            new DownKyiCookie("SESSDATA", "updated", ".bilibili.com", isWireValue: true)
+        };
+
+        Assert.True(LoginHelper.SaveLoginInfoCookies(initialCookies));
+        Assert.Equal("SESSDATA=initial", LoginHelper.GetLoginInfoCookiesString());
+        Assert.True(ObjectHelper.WriteCookiesToDisk(ApplicationStorage.GetLogin(), updatedCookies));
+        Assert.Equal("SESSDATA=initial", LoginHelper.GetLoginInfoCookiesString());
+
+        LoginHelper.InvalidateLoginInfoCache();
+
+        Assert.Equal("SESSDATA=updated", LoginHelper.GetLoginInfoCookiesString());
     }
 
     [Fact]

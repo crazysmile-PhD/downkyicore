@@ -70,9 +70,9 @@ public static class LoginHelper
     }
 
     /// <summary>
-    /// 使缓存失效，在写操作完成后调用
+    /// 使登录信息缓存失效，使下一次读取重新加载持久化内容
     /// </summary>
-    private static void InvalidateCache()
+    public static void InvalidateLoginInfoCache()
     {
         CacheLock.EnterWriteLock();
         try
@@ -129,7 +129,7 @@ public static class LoginHelper
             }
 
             // 写入成功后使缓存立即失效
-            InvalidateCache();
+            InvalidateLoginInfoCache();
         }
         else
         {
@@ -256,7 +256,7 @@ public static class LoginHelper
         try
         {
             File.Delete(LocalLoginInfo);
-            InvalidateCache();
+            InvalidateLoginInfoCache();
             return true;
         }
         catch (IOException)
@@ -289,7 +289,7 @@ public static class LoginHelper
             File.Delete(loginInfoPath);
 
             // 注销后使缓存立即失效
-            InvalidateCache();
+            InvalidateLoginInfoCache();
 
             settingsStore.Update(settings => settings with
             {

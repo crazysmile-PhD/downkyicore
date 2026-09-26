@@ -58,6 +58,16 @@ FFmpeg 合并策略遵循“效能优先，但成功率更重要”：优先无�
 - 设置 `DOWNKYI_DATA_DIR` 可指定完整数据根目录。
 - 设置 `DOWNKYI_PORTABLE=1`，或在程序目录放置 `portable` / `.portable` / `DownKyi.portable`，可启用便携模式。
 
+### 手动导入浏览器登录 Cookie
+
+`Login` 文件仍然保存在用户数据目录中。Windows 默认路径为：
+
+`%APPDATA%\DownKyi\Config\Login`
+
+使用 `DOWNKYI_DATA_DIR` 或便携模式时，对应路径为 `<数据根目录>\Config\Login`。
+
+程序会缓存已经读取的登录 Cookie。运行期间从外部创建、修改、删除或替换 `Login` 文件时，DownKyi 会使现有缓存失效，并在下一次使用登录 Cookie 时重新读取该文件，无需重新启动。
+
 ## 工作流程
 
 ```mermaid
