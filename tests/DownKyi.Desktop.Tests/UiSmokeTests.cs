@@ -451,6 +451,147 @@ public sealed class UiSmokeTests
     }
 
     [AvaloniaFact]
+    public Task FriendsBackPathPreservesCurrentSelectionAndChildInstance()
+    {
+        return AvaloniaTestDispatcher.RunAsync(async () =>
+        {
+            var created = new List<NavigationProbe>();
+            var desktopInteractions = new DesktopInteractionContextStub();
+            using var navigation = new AvaloniaNavigationService(
+                route =>
+                {
+                    if (route == AppRoute.Friends)
+                    {
+                        return new ViewFriendsViewModel(desktopInteractions);
+                    }
+
+                    var probe = new NavigationProbe(route);
+                    created.Add(probe);
+                    return probe;
+                },
+                static action => action());
+            desktopInteractions.Navigation = navigation;
+
+            var payload = new Dictionary<string, object>
+            {
+                ["mid"] = 42L,
+                ["friendId"] = 0
+            };
+            navigation.Navigate(new AppNavigationRequest(
+                AppRoute.Friends,
+                AppRoute.MySpace,
+                payload));
+            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(static () => { });
+
+            var originalFriends = Assert.IsType<ViewFriendsViewModel>(
+                navigation.GetActiveView(AppNavigationRegion.Main));
+            var originalFollowing = Assert.IsType<NavigationProbe>(
+                navigation.GetActiveView(AppNavigationRegion.Friends));
+            Assert.Equal(AppRoute.Following, originalFollowing.Route);
+            Assert.Equal(0, originalFriends.SelectTabId);
+
+            originalFriends.SelectTabId = 1;
+            originalFriends.TabHeadersCommand.Execute(originalFriends.TabHeaders[1]);
+            var originalFollower = Assert.IsType<NavigationProbe>(
+                navigation.GetActiveView(AppNavigationRegion.Friends));
+            Assert.Equal(AppRoute.Follower, originalFollower.Route);
+            Assert.True(originalFollowing.IsDisposed);
+            var followingCreationCount = created.Count(probe => probe.Route == AppRoute.Following);
+
+            navigation.Navigate(new AppNavigationRequest(
+                AppRoute.UserSpace,
+                AppRoute.Friends,
+                99L));
+            navigation.GoBack(AppNavigationRegion.Main);
+            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(static () => { });
+
+            Assert.Same(originalFriends, navigation.GetActiveView(AppNavigationRegion.Main));
+            Assert.Equal(1, originalFriends.SelectTabId);
+            Assert.Same(originalFollower, navigation.GetActiveView(AppNavigationRegion.Friends));
+            Assert.False(originalFollower.IsDisposed);
+            Assert.Equal(
+                followingCreationCount,
+                created.Count(probe => probe.Route == AppRoute.Following));
+        });
+    }
+
+    [AvaloniaFact]
+    public Task FriendsBackPathRecreatesCurrentSelectionAfterAnotherEntryReplacesChild()
+    {
+        return AvaloniaTestDispatcher.RunAsync(async () =>
+        {
+            var created = new List<NavigationProbe>();
+            var desktopInteractions = new DesktopInteractionContextStub();
+            using var navigation = new AvaloniaNavigationService(
+                route =>
+                {
+                    if (route == AppRoute.Friends)
+                    {
+                        return new ViewFriendsViewModel(desktopInteractions);
+                    }
+
+                    var probe = new NavigationProbe(route);
+                    created.Add(probe);
+                    return probe;
+                },
+                static action => action());
+            desktopInteractions.Navigation = navigation;
+
+            navigation.Navigate(new AppNavigationRequest(
+                AppRoute.Friends,
+                AppRoute.MySpace,
+                new Dictionary<string, object>
+                {
+                    ["mid"] = 42L,
+                    ["friendId"] = 0
+                }));
+            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(static () => { });
+
+            var originalFriends = Assert.IsType<ViewFriendsViewModel>(
+                navigation.GetActiveView(AppNavigationRegion.Main));
+            originalFriends.SelectTabId = 1;
+            originalFriends.TabHeadersCommand.Execute(originalFriends.TabHeaders[1]);
+            var originalFollower = Assert.IsType<NavigationProbe>(
+                navigation.GetActiveView(AppNavigationRegion.Friends));
+            Assert.Equal(AppRoute.Follower, originalFollower.Route);
+
+            navigation.Navigate(new AppNavigationRequest(
+                AppRoute.UserSpace,
+                AppRoute.Friends,
+                99L));
+            navigation.Navigate(new AppNavigationRequest(
+                AppRoute.Friends,
+                AppRoute.UserSpace,
+                new Dictionary<string, object>
+                {
+                    ["mid"] = 99L,
+                    ["friendId"] = 0
+                }));
+            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(static () => { });
+
+            var replacementFollowing = Assert.IsType<NavigationProbe>(
+                navigation.GetActiveView(AppNavigationRegion.Friends));
+            Assert.Equal(AppRoute.Following, replacementFollowing.Route);
+            Assert.True(originalFollower.IsDisposed);
+
+            navigation.GoBack(AppNavigationRegion.Main);
+            navigation.GoBack(AppNavigationRegion.Main);
+            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(static () => { });
+
+            Assert.Same(originalFriends, navigation.GetActiveView(AppNavigationRegion.Main));
+            Assert.Equal(1, originalFriends.SelectTabId);
+            var restoredFollower = Assert.IsType<NavigationProbe>(
+                navigation.GetActiveView(AppNavigationRegion.Friends));
+            Assert.Equal(AppRoute.Follower, restoredFollower.Route);
+            Assert.NotSame(originalFollower, restoredFollower);
+            Assert.False(restoredFollower.IsDisposed);
+            Assert.True(replacementFollowing.IsDisposed);
+            Assert.Equal(2, created.Count(probe => probe.Route == AppRoute.Following));
+            Assert.Equal(2, created.Count(probe => probe.Route == AppRoute.Follower));
+        });
+    }
+
+    [AvaloniaFact]
     public Task TypedRouterReplacesAndDisposesNestedRegionContent()
     {
         return AvaloniaTestDispatcher.RunAsync(() =>
@@ -1052,11 +1193,16 @@ public sealed class UiSmokeTests
         }
     }
 
-    private sealed class DesktopInteractionContextStub(IAppNavigationService navigation) : IDesktopInteractionContext
+    private sealed class DesktopInteractionContextStub : IDesktopInteractionContext
     {
+        public DesktopInteractionContextStub(IAppNavigationService? navigation = null)
+        {
+            Navigation = navigation!;
+        }
+
         public IUserNotificationService Notifications { get; } = new NotificationServiceStub();
 
-        public IAppNavigationService Navigation { get; } = navigation;
+        public IAppNavigationService Navigation { get; set; }
 
         public IAppDialogService Dialogs { get; } = new DialogServiceStub();
     }

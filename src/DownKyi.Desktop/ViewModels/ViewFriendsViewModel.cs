@@ -15,6 +15,7 @@ namespace DownKyi.ViewModels
         public const string Tag = "PageFriends";
 
         private long mid = -1;
+        private WeakReference<object>? _ownedChild;
 
         #region 页面属性申明
 
@@ -132,14 +133,22 @@ namespace DownKyi.ViewModels
                         AppNavigationRegion.Friends,
                         AppRoute.Following,
                         parameters);
+                    TrackActiveChild();
                     break;
                 case 1:
                     Navigation.NavigateRegion(
                         AppNavigationRegion.Friends,
                         AppRoute.Follower,
                         parameters);
+                    TrackActiveChild();
                     break;
             }
+        }
+
+        private void TrackActiveChild()
+        {
+            var activeChild = Navigation.GetActiveView(AppNavigationRegion.Friends);
+            _ownedChild = activeChild == null ? null : new WeakReference<object>(activeChild);
         }
 
         /// <summary>
@@ -160,7 +169,22 @@ namespace DownKyi.ViewModels
                 return;
             }
 
-            mid = (long)parameter["mid"];
+            var targetMid = (long)parameter["mid"];
+            if (mid == targetMid)
+            {
+                if (_ownedChild == null ||
+                    !_ownedChild.TryGetTarget(out var ownedChild) ||
+                    !ReferenceEquals(
+                        ownedChild,
+                        Navigation.GetActiveView(AppNavigationRegion.Friends)))
+                {
+                    NavigationView(SelectTabId, true);
+                }
+
+                return;
+            }
+
+            mid = targetMid;
             SelectTabId = (int)parameter["friendId"];
 
             PropertyChangeAsync(() =>
