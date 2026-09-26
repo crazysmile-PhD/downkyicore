@@ -698,9 +698,7 @@ public sealed partial class Aria2TlsIntegrationTests
         while (DateTimeOffset.UtcNow < deadline)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var response = await runtime.Client
-                .TellStatus(gid, cancellationToken)
-                .ConfigureAwait(false);
+            var response = await runtime.Client.TellStatus(gid).ConfigureAwait(false);
             if (response.Result is { } status
                 && (string.Equals(status.Status, "active", StringComparison.Ordinal)
                     || string.Equals(status.Status, "waiting", StringComparison.Ordinal)))

@@ -15,9 +15,7 @@ public sealed partial class AriaClient
     /// </summary>
     /// <param name="gid"></param>
     /// <returns></returns>
-    public async Task<AriaTellStatus> TellStatus(
-        string gid,
-        CancellationToken cancellationToken = default)
+    public async Task<AriaTellStatus> TellStatus(string gid)
     {
         List<object> ariaParams = new List<object>
         {
@@ -31,8 +29,7 @@ public sealed partial class AriaClient
             Method = "aria2.tellStatus",
             Params = ariaParams
         };
-        return await GetRpcResponseAsync<AriaTellStatus>(ariaSend, cancellationToken)
-            .ConfigureAwait(false);
+        return await GetRpcResponseAsync<AriaTellStatus>(ariaSend).ConfigureAwait(false);
     }
 
     /// <summary>

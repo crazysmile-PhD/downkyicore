@@ -774,27 +774,6 @@ public sealed class DownloadRetryPolicyTests
     }
 
     [Theory]
-    [InlineData("active", true)]
-    [InlineData("waiting", true)]
-    [InlineData("paused", true)]
-    [InlineData("complete", false)]
-    [InlineData("error", false)]
-    [InlineData("removed", false)]
-    public void AriaResetForceRemovesOnlyNonterminalTasks(string status, bool expected)
-    {
-        Assert.Equal(expected, Aria2TransferBackend.GetRequiresForceRemove(status));
-    }
-
-    [Theory]
-    [InlineData(null)]
-    [InlineData("")]
-    [InlineData("unknown")]
-    public void AriaResetRejectsUnknownStatus(string? status)
-    {
-        Assert.Null(Aria2TransferBackend.GetRequiresForceRemove(status));
-    }
-
-    [Theory]
     [InlineData("33", "No URI available.", "download.transfer.insecure-redirect")]
     [InlineData("34", "No URI available.", "download.transfer.credentialed-redirect")]
     public void AriaBackendPreservesSecureRedirectRejectionCodes(

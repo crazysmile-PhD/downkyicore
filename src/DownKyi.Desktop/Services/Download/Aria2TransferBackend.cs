@@ -272,9 +272,7 @@ internal sealed partial class Aria2TransferBackend : ITransferBackend
         string? existingStatus = null;
         if (!string.IsNullOrWhiteSpace(gid))
         {
-            var status = await _ariaClient
-                .TellStatus(gid, request.CancellationToken)
-                .ConfigureAwait(true);
+            var status = await _ariaClient.TellStatus(gid).ConfigureAwait(true);
             if (status is not { Result: { } statusResult })
             {
                 if (IsNotFound(status.Error))
