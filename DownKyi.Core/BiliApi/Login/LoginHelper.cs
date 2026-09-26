@@ -14,9 +14,12 @@ public static class LoginHelper
 
     // 内存缓存：读多写少，使用 ReaderWriterLockSlim 保证线程安全
     private static readonly ReaderWriterLockSlim CacheLock = new();
-    private static ImmutableArray<DownKyiCookie> _cachedCookies = [];
-    private static bool _isCookieCacheInitialized;
-    private static string? _cachedCookieString;
+    private static LoginInfoSnapshot? _cachedLoginInfo;
+
+    private sealed record LoginInfoSnapshot(
+        ImmutableArray<DownKyiCookie> Cookies,
+        string CookieHeader,
+        bool NeedsRefresh);
 
     private static DownKyiCookie CloneCookie(DownKyiCookie cookie)
     {
@@ -77,9 +80,10 @@ public static class LoginHelper
         CacheLock.EnterWriteLock();
         try
         {
-            _cachedCookies = [];
-            _isCookieCacheInitialized = false;
-            _cachedCookieString = null;
+            if (_cachedLoginInfo != null)
+            {
+                _cachedLoginInfo = _cachedLoginInfo with { NeedsRefresh = true };
+            }
         }
         finally
         {
@@ -140,18 +144,32 @@ public static class LoginHelper
     }
 
     /// <summary>
-    /// 获得登录的cookies，结果会被缓存到内存中，直到下次写操作使缓存失效
+    /// 获得登录的cookies，结果会被缓存到内存中，直到登录文件变更使缓存失效
     /// </summary>
     /// <returns></returns>
     public static IReadOnlyList<DownKyiCookie> GetLoginInfoCookies()
     {
-        // 先尝试从缓存读取
+        var snapshot = GetOrLoadLoginInfoSnapshot();
+        return snapshot == null ? [] : CloneCookies(snapshot.Cookies);
+    }
+
+    /// <summary>
+    /// 返回登录信息的cookies的字符串，结果会被缓存到内存中，直到登录文件变更使缓存失效
+    /// </summary>
+    /// <returns></returns>
+    public static string GetLoginInfoCookiesString()
+    {
+        return GetOrLoadLoginInfoSnapshot()?.CookieHeader ?? string.Empty;
+    }
+
+    private static LoginInfoSnapshot? GetOrLoadLoginInfoSnapshot()
+    {
         CacheLock.EnterReadLock();
         try
         {
-            if (_isCookieCacheInitialized)
+            if (_cachedLoginInfo is { NeedsRefresh: false })
             {
-                return CloneCookies(_cachedCookies);
+                return _cachedLoginInfo;
             }
         }
         finally
@@ -159,28 +177,23 @@ public static class LoginHelper
             CacheLock.ExitReadLock();
         }
 
-        // 缓存未命中，从磁盘加载
         CacheLock.EnterWriteLock();
         try
         {
-            // 双重检查：可能其他线程已完成加载
-            if (_isCookieCacheInitialized)
+            if (_cachedLoginInfo is { NeedsRefresh: false })
             {
-                return CloneCookies(_cachedCookies);
+                return _cachedLoginInfo;
             }
 
             if (!File.Exists(LocalLoginInfo))
             {
-                _cachedCookies = [];
-                _cachedCookieString = string.Empty;
-                _isCookieCacheInitialized = true;
-                return [];
+                _cachedLoginInfo = new LoginInfoSnapshot([], string.Empty, NeedsRefresh: false);
+                return _cachedLoginInfo;
             }
 
             List<DownKyiCookie>? cookies;
             try
             {
-                // 直接读取文件，用 FileShare.Read 避免独占锁，无需临时文件
                 using var stream = new FileStream(LocalLoginInfo, FileMode.Open, FileAccess.Read, FileShare.Read);
                 cookies = ObjectHelper.ReadCookiesFromStream(stream)?
                     .Where(cookie => !string.IsNullOrWhiteSpace(cookie.Name))
@@ -195,59 +208,31 @@ public static class LoginHelper
             }
             catch (IOException)
             {
-                return new List<DownKyiCookie>();
+                return _cachedLoginInfo;
             }
             catch (UnauthorizedAccessException)
             {
-                return new List<DownKyiCookie>();
+                return _cachedLoginInfo;
             }
 
-            _cachedCookies = (cookies ?? [])
+            if (cookies == null)
+            {
+                return _cachedLoginInfo;
+            }
+
+            var cachedCookies = cookies
                 .Select(CloneCookie)
                 .ToImmutableArray();
-            _isCookieCacheInitialized = true;
-            // 同步更新字符串缓存
-            _cachedCookieString = BuildCookieHeader(_cachedCookies);
-
-            return CloneCookies(_cachedCookies);
+            var snapshot = new LoginInfoSnapshot(
+                cachedCookies,
+                BuildCookieHeader(cachedCookies),
+                NeedsRefresh: false);
+            _cachedLoginInfo = snapshot;
+            return snapshot;
         }
         finally
         {
             CacheLock.ExitWriteLock();
-        }
-    }
-
-    /// <summary>
-    /// 返回登录信息的cookies的字符串，结果会被缓存到内存中，直到下次写操作使缓存失效
-    /// </summary>
-    /// <returns></returns>
-    public static string GetLoginInfoCookiesString()
-    {
-        // 先尝试从字符串缓存读取
-        CacheLock.EnterReadLock();
-        try
-        {
-            if (_cachedCookieString != null)
-            {
-                return _cachedCookieString;
-            }
-        }
-        finally
-        {
-            CacheLock.ExitReadLock();
-        }
-
-        // 字符串缓存未命中时，触发完整加载（GetLoginInfoCookies 内部会同步填充字符串缓存）
-        GetLoginInfoCookies();
-
-        CacheLock.EnterReadLock();
-        try
-        {
-            return _cachedCookieString ?? "";
-        }
-        finally
-        {
-            CacheLock.ExitReadLock();
         }
     }
 
