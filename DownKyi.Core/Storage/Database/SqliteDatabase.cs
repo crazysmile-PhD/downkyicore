@@ -19,7 +19,7 @@ public sealed class SqliteDatabase : IDisposable
         {
             Mode = SqliteOpenMode.ReadWriteCreate,
             DataSource = dbPath,
-            Pooling = true,
+            Pooling = false,
             DefaultTimeout = 30
         }.ToString();
     }
@@ -38,7 +38,7 @@ public sealed class SqliteDatabase : IDisposable
             Mode = SqliteOpenMode.ReadWriteCreate,
             Password = secretKey,
             DataSource = legacySqlCipherUri,
-            Pooling = true,
+            Pooling = false,
             DefaultTimeout = 30
         }.ToString();
     }
