@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text.Json;
 using DownKyi.CentralTestRunner;
 using DownKyi.ProcessSupervision;
+using DownKyi.TestInfrastructure;
 
 namespace DownKyi.Architecture.Tests;
 
@@ -280,51 +281,106 @@ public sealed class CentralTestRunnerRecorderTests
         var evidenceDirectory = CreateEvidenceDirectory();
         var markerPath = Path.Combine(evidenceDirectory, "pipe-holder.pid");
         int? childPid = null;
-        try
-        {
-            var runtimeConfig = Path.Combine(
-                AppContext.BaseDirectory,
-                "DownKyi.Architecture.Tests.runtimeconfig.json");
-            var clock = Stopwatch.StartNew();
-            var result = await FlightRecorderExecution.RunAsync(
-                new ProcessExecutionRequest(
-                    "fixture.pipe-holder.slice",
-                    "fixture.pipe-holder.test",
-                    CreateFixtureStartInfo("fixture-exit-with-pipe-holder", runtimeConfig, markerPath),
-                    TimeSpan.FromSeconds(5),
-                    TimeSpan.FromMilliseconds(500),
-                    evidenceDirectory),
-                CancellationToken.None);
-            clock.Stop();
-
-            Assert.Equal(2, result.ExitCode);
-            Assert.True(clock.Elapsed < TimeSpan.FromSeconds(4));
-            using var document = JsonDocument.Parse(await File.ReadAllTextAsync(
-                result.EvidencePath,
-                TestContext.Current.CancellationToken));
-            Assert.Equal("stream_drain_failed", document.RootElement.GetProperty("Outcome").GetString());
-            var events = document.RootElement.GetProperty("Events")
-                .EnumerateArray()
-                .Select(item => item.GetProperty("Event").GetString())
-                .ToArray();
-            Assert.Contains("process_start", events);
-            Assert.Contains("post_exit_output_held", events);
-            Assert.Contains("bounded_stop_requested", events);
-            Assert.Contains("cleanup_completed", events);
-
-            childPid = int.Parse(await File.ReadAllTextAsync(markerPath, TestContext.Current.CancellationToken),
-                CultureInfo.InvariantCulture);
-            Assert.False(IsProcessAlive(childPid.Value));
-        }
-        finally
-        {
-            if (childPid is { } pid)
+        await FailurePreservingTestCleanup.RunAsync(
+            async () =>
             {
-                StopFixtureProcessIfAlive(pid);
-            }
+                var runtimeConfig = Path.Combine(
+                    AppContext.BaseDirectory,
+                    "DownKyi.Architecture.Tests.runtimeconfig.json");
+                var clock = Stopwatch.StartNew();
+                var result = await FlightRecorderExecution.RunAsync(
+                    new ProcessExecutionRequest(
+                        "fixture.pipe-holder.slice",
+                        "fixture.pipe-holder.test",
+                        CreateFixtureStartInfo("fixture-exit-with-pipe-holder", runtimeConfig, markerPath),
+                        TimeSpan.FromSeconds(5),
+                        TimeSpan.FromMilliseconds(500),
+                        evidenceDirectory),
+                    CancellationToken.None).ConfigureAwait(true);
+                clock.Stop();
 
-            Directory.Delete(evidenceDirectory, recursive: true);
+                Assert.Equal(2, result.ExitCode);
+                Assert.True(clock.Elapsed < TimeSpan.FromSeconds(4));
+                using var document = JsonDocument.Parse(await File.ReadAllTextAsync(
+                    result.EvidencePath,
+                    TestContext.Current.CancellationToken).ConfigureAwait(true));
+                Assert.Equal("stream_drain_failed", document.RootElement.GetProperty("Outcome").GetString());
+                var events = document.RootElement.GetProperty("Events")
+                    .EnumerateArray()
+                    .Select(item => item.GetProperty("Event").GetString())
+                    .ToArray();
+                Assert.Contains("process_start", events);
+                Assert.Contains("post_exit_output_held", events);
+                Assert.Contains("bounded_stop_requested", events);
+                Assert.Contains("cleanup_completed", events);
+
+                childPid = int.Parse(await File.ReadAllTextAsync(markerPath, TestContext.Current.CancellationToken)
+                    .ConfigureAwait(true),
+                    CultureInfo.InvariantCulture);
+                Assert.False(IsProcessAlive(childPid.Value));
+            },
+            async () => childPid = await CleanupPipeHolderFixtureAsync(
+                markerPath,
+                childPid,
+                evidenceDirectory).ConfigureAwait(true)).ConfigureAwait(true);
+    }
+
+    [Fact]
+    public async Task PipeHolderAssertionBeforePidAssignmentStillCompletesCleanup()
+    {
+        var evidenceDirectory = CreateEvidenceDirectory();
+        var markerPath = Path.Combine(evidenceDirectory, "pipe-holder.pid");
+        int? childPid = null;
+        var runtimeConfig = Path.Combine(
+            AppContext.BaseDirectory,
+            "DownKyi.Architecture.Tests.runtimeconfig.json");
+
+        var failure = await Record.ExceptionAsync(() => FailurePreservingTestCleanup.RunAsync(
+            async () =>
+            {
+                using var fixture = Process.Start(
+                    CreateFixtureStartInfo("fixture-exit-with-pipe-holder", runtimeConfig, markerPath))
+                    ?? throw new InvalidOperationException("The pipe-holder fixture did not start.");
+                await fixture.WaitForExitAsync(TestContext.Current.CancellationToken)
+                    .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken)
+                    .ConfigureAwait(true);
+
+                Assert.Fail("Intentional assertion before the pipe-holder PID is assigned.");
+            },
+            async () => childPid = await CleanupPipeHolderFixtureAsync(
+                markerPath,
+                childPid,
+                evidenceDirectory).ConfigureAwait(true))).ConfigureAwait(true);
+
+        var assertion = Assert.IsAssignableFrom<Xunit.Sdk.XunitException>(failure);
+        Assert.Contains("Intentional assertion", assertion.Message, StringComparison.Ordinal);
+        Assert.NotNull(childPid);
+        Assert.False(IsProcessAlive(childPid.Value));
+        Assert.False(Directory.Exists(evidenceDirectory));
+    }
+
+    private static async Task<int?> CleanupPipeHolderFixtureAsync(
+        string markerPath,
+        int? childPid,
+        string evidenceDirectory)
+    {
+        var cleanup = new FailurePreservingTestCollector();
+        if (childPid is null && File.Exists(markerPath))
+        {
+            await cleanup.RunAsync(
+                "pipe-holder marker recovery",
+                async () => childPid = await WaitForProcessMarkerAsync(markerPath).ConfigureAwait(false))
+                .ConfigureAwait(false);
         }
+
+        await cleanup.RunAsync(
+            "pipe-holder process stop",
+            () => StopFixtureProcessAndWaitAsync(childPid)).ConfigureAwait(false);
+        cleanup.Run(
+            "pipe-holder evidence deletion",
+            () => Directory.Delete(evidenceDirectory, recursive: true));
+        cleanup.ThrowIfAny();
+        return childPid;
     }
 
     [Fact]
@@ -688,6 +744,31 @@ public sealed class CentralTestRunnerRecorderTests
                 process.Kill();
                 process.WaitForExit(3000);
             }
+        }
+        catch (ArgumentException)
+        {
+            // The focused cancellation path already stopped the fixture.
+        }
+    }
+
+    private static async Task StopFixtureProcessAndWaitAsync(int? processId)
+    {
+        if (processId is not { } pid)
+        {
+            return;
+        }
+
+        try
+        {
+            using var process = Process.GetProcessById(pid);
+            if (!process.HasExited)
+            {
+                process.Kill();
+            }
+
+            await process.WaitForExitAsync()
+                .WaitAsync(TimeSpan.FromSeconds(3))
+                .ConfigureAwait(false);
         }
         catch (ArgumentException)
         {
