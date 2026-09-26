@@ -28,6 +28,9 @@
     <system:String x:Key="LoginTimeOut">已超时！尝试重新获取二维码！</system:String>
     <system:String x:Key="LoginSuccessful">登录成功！(3秒后自动回到主页)</system:String>
     <system:String x:Key="LoginFailed">未保存登录信息！(3秒后自动回到主页)</system:String>
+    <system:String x:Key="BrowserCookieLogin">使用浏览器 Cookie 登录</system:String>
+    <system:String x:Key="BrowserCookieWatermark">粘贴浏览器 Cookie header</system:String>
+    <system:String x:Key="BrowserCookieInvalid">没有找到有效的浏览器 Cookie</system:String>
 
     <!--  MySpace  -->
     <system:String x:Key="MySpace">我的个人空间</system:String><system:String x:Key="Logout">退出登录</system:String>

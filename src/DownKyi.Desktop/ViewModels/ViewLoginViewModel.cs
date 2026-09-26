@@ -47,6 +47,14 @@ internal class ViewLoginViewModel : ViewModelBase
         set => SetProperty(ref _loginQrCodeStatus, value);
     }
 
+    private string _browserCookieHeader = string.Empty;
+
+    public string BrowserCookieHeader
+    {
+        get => _browserCookieHeader;
+        set => SetProperty(ref _browserCookieHeader, value);
+    }
+
     #endregion
 
     public ViewLoginViewModel(
@@ -64,6 +72,14 @@ internal class ViewLoginViewModel : ViewModelBase
     private RelayCommand? _backSpaceCommand;
 
     public RelayCommand BackSpaceCommand => _backSpaceCommand ??= new RelayCommand(ExecuteBackSpace);
+
+    private RelayCommand? _browserCookieLoginCommand;
+    private bool _browserCookieLoginRunning;
+
+    public RelayCommand BrowserCookieLoginCommand =>
+        _browserCookieLoginCommand ??= new RelayCommand(
+            ExecuteBrowserCookieLogin,
+            () => !_browserCookieLoginRunning);
 
     protected internal override void ExecuteBackSpace()
     {
@@ -172,36 +188,13 @@ internal class ViewLoginViewModel : ViewModelBase
                     break;
                 case 0:
                     // 确认登录
-                    // 保存登录信息
-                    var isSucceed = false;
-                    try
-                    {
-                        var redirectUri = new Uri(loginData.RedirectAddress, UriKind.Absolute);
-                        isSucceed = await _loginCoordinator
-                            .SaveLoginCookiesAsync(loginStatus, redirectUri, cancellationToken)
-                            .ConfigureAwait(true);
-                    }
-                    catch (Exception e) when (e is System.IO.IOException or UnauthorizedAccessException
-                        or System.Net.Http.HttpRequestException or InvalidOperationException
-                        or ArgumentException or FormatException or Newtonsoft.Json.JsonException)
-                    {
-                        _logger.LogErrorMessage("Login cookie persistence failed.", e);
-                    }
-
-                    if (isSucceed)
-                    {
-                        Notifications.Show(DictionaryResource.GetString("LoginSuccessful"));
-                        _logger.LogInformationMessage("Login completed successfully.");
-                    }
-                    else
-                    {
-                        Notifications.Show(DictionaryResource.GetString("LoginFailed"));
-                        _logger.LogErrorMessage("Login cookies could not be persisted and validated.");
-                    }
-
-                    // 取消任务
-                    await Task.Delay(3000, cancellationToken).ConfigureAwait(true);
-                    PropertyChange(ExecuteBackSpace);
+                    var redirectUri = new Uri(loginData.RedirectAddress, UriKind.Absolute);
+                    await FinishLoginAttemptAsync(
+                        () => _loginCoordinator.SaveLoginCookiesAsync(
+                            loginStatus,
+                            redirectUri,
+                            cancellationToken),
+                        cancellationToken).ConfigureAwait(true);
                     return;
             }
 
@@ -212,7 +205,81 @@ internal class ViewLoginViewModel : ViewModelBase
         }
     }
 
-    private async Task RestartLoginAsync()
+    private void ExecuteBrowserCookieLogin()
+    {
+        if (_browserCookieLoginRunning)
+        {
+            return;
+        }
+
+        _browserCookieLoginRunning = true;
+        _browserCookieLoginCommand?.NotifyCanExecuteChanged();
+        RunFireAndForget(
+            LoginWithBrowserCookiesAsync(),
+            $"{Tag}.LoginWithBrowserCookiesAsync",
+            _logger);
+    }
+
+    private async Task LoginWithBrowserCookiesAsync()
+    {
+        try
+        {
+            var cookies = BrowserCookieParser.ParseHeader(BrowserCookieHeader);
+            if (cookies.Count == 0)
+            {
+                Notifications.Show(DictionaryResource.GetString("BrowserCookieInvalid"));
+                return;
+            }
+
+            BrowserCookieHeader = string.Empty;
+            var cancellationToken = await ReplaceLoginCancellationAsync().ConfigureAwait(true);
+            await FinishLoginAttemptAsync(
+                () => _loginCoordinator.CommitLoginCookiesAsync(cookies, cancellationToken),
+                cancellationToken).ConfigureAwait(true);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        finally
+        {
+            _browserCookieLoginRunning = false;
+            _browserCookieLoginCommand?.NotifyCanExecuteChanged();
+        }
+    }
+
+    private async Task FinishLoginAttemptAsync(
+        Func<Task<bool>> commit,
+        CancellationToken cancellationToken)
+    {
+        var isSucceed = false;
+        try
+        {
+            isSucceed = await commit().ConfigureAwait(true);
+        }
+        catch (Exception e) when (e is System.IO.IOException or UnauthorizedAccessException
+            or System.Net.Http.HttpRequestException or InvalidOperationException
+            or ArgumentException or FormatException or Newtonsoft.Json.JsonException)
+        {
+            _logger.LogErrorMessage("Login cookie persistence failed.", e);
+        }
+
+        if (isSucceed)
+        {
+            Notifications.Show(DictionaryResource.GetString("LoginSuccessful"));
+            _logger.LogInformationMessage("Login completed successfully.");
+        }
+        else
+        {
+            Notifications.Show(DictionaryResource.GetString("LoginFailed"));
+            _logger.LogErrorMessage("Login cookies could not be persisted and validated.");
+        }
+
+        await Task.Delay(3000, cancellationToken).ConfigureAwait(true);
+        PropertyChange(ExecuteBackSpace);
+    }
+
+    private async Task<CancellationToken> ReplaceLoginCancellationAsync()
     {
         var replacement = new CancellationTokenSource();
         var previous = Interlocked.Exchange(ref _tokenSource, replacement);
@@ -222,7 +289,13 @@ internal class ViewLoginViewModel : ViewModelBase
             previous.Dispose();
         }
 
-        RunFireAndForget(LoginAsync(replacement.Token), $"{Tag}.LoginAsync", _logger);
+        return replacement.Token;
+    }
+
+    private async Task RestartLoginAsync()
+    {
+        var cancellationToken = await ReplaceLoginCancellationAsync().ConfigureAwait(true);
+        RunFireAndForget(LoginAsync(cancellationToken), $"{Tag}.LoginAsync", _logger);
     }
 
 
@@ -234,6 +307,7 @@ internal class ViewLoginViewModel : ViewModelBase
         LoginQrCode = null;
         LoginQrCodeOpacity = 1;
         LoginQrCodeStatus = false;
+        BrowserCookieHeader = string.Empty;
     }
 
     public override void OnNavigatedTo(AppNavigationContext navigationContext)

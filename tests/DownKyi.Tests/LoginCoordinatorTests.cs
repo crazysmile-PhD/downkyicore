@@ -98,7 +98,75 @@ public sealed class LoginCoordinatorTests
     }
 
     [Fact]
-    public async Task FailedValidationRestoresPreviousLoginCookies()
+    public async Task BrowserCookiesCommitWithoutQrSessionAndPreserveWireValues()
+    {
+        LoginHelper.DeleteLoginInfoCookies();
+        using var session = new StubLoginSession();
+        var sessionFactory = new StubLoginSessionFactory(session);
+        var client = new TestBilibiliApiClient
+        {
+            GetStringAsyncHandler = (_, _) =>
+            {
+                Assert.Equal(
+                    "SESSDATA=fixture%2Fsession",
+                    LoginHelper.GetLoginInfoCookiesString());
+                return Task.FromResult(
+                    """{"code":0,"data":{"isLogin":true,"mid":42,"uname":"fixture-user"}}""");
+            }
+        };
+        using var coordinator = new LoginCoordinator(
+            NullLogger<LoginCoordinator>.Instance,
+            client,
+            sessionFactory);
+        var cookies = BrowserCookieParser.ParseHeader(
+            "Cookie: SESSDATA=fixture%2Fsession");
+
+        var candidate = Assert.Single(cookies);
+        Assert.Equal(".bilibili.com", candidate.Domain);
+        Assert.True(candidate.IsWireValue);
+
+        var result = await coordinator.CommitLoginCookiesAsync(
+            cookies,
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result);
+        Assert.Equal(0, sessionFactory.CreateCalls);
+        var reloaded = Assert.Single(LoginHelper.GetLoginInfoCookies());
+        Assert.Equal("fixture%2Fsession", reloaded.Value);
+        Assert.True(reloaded.IsWireValue);
+        Assert.Equal("SESSDATA=fixture%2Fsession", LoginHelper.GetLoginInfoCookiesString());
+    }
+
+    [Fact]
+    public async Task BrowserInputWithoutValidCookiesDoesNotReplacePreviousLogin()
+    {
+        var previousCookies = new[]
+        {
+            new DownKyiCookie("previous", "fixture-previous", ".bilibili.com")
+        };
+        Assert.True(LoginHelper.SaveLoginInfoCookies(previousCookies));
+        using var session = new StubLoginSession();
+        var sessionFactory = new StubLoginSessionFactory(session);
+        using var coordinator = new LoginCoordinator(
+            NullLogger<LoginCoordinator>.Instance,
+            new TestBilibiliApiClient(),
+            sessionFactory);
+        var cookies = BrowserCookieParser.ParseHeader("not-a-cookie; =missing-name; empty=");
+
+        Assert.Empty(cookies);
+        var result = await coordinator.CommitLoginCookiesAsync(
+            cookies,
+            TestContext.Current.CancellationToken);
+
+        Assert.False(result);
+        Assert.Equal(0, sessionFactory.CreateCalls);
+        var restored = Assert.Single(LoginHelper.GetLoginInfoCookies());
+        Assert.Equal("previous", restored.Name);
+        Assert.Equal("fixture-previous", restored.Value);
+    }
+
+    [Fact]
+    public async Task FailedCandidateValidationRestoresPreviousLoginCookies()
     {
         var previousCookies = new[]
         {
@@ -115,14 +183,12 @@ public sealed class LoginCoordinatorTests
             NullLogger<LoginCoordinator>.Instance,
             client,
             new StubLoginSessionFactory(session));
-        await coordinator.RequestLoginUrlAsync(TestContext.Current.CancellationToken);
-        var pollResult = new LoginStatusResult(
-            new LoginStatus(),
-            [new BilibiliLoginCookie("SESSDATA", "invalid-fixture", ".bilibili.com")]);
-
-        var result = await coordinator.SaveLoginCookiesAsync(
-            pollResult,
-            new Uri("https://passport.bilibili.com/callback"),
+        var result = await coordinator.CommitLoginCookiesAsync(
+            [new DownKyiCookie(
+                "SESSDATA",
+                "invalid-fixture",
+                ".bilibili.com",
+                isWireValue: true)],
             TestContext.Current.CancellationToken);
 
         Assert.False(result);
@@ -132,33 +198,34 @@ public sealed class LoginCoordinatorTests
     }
 
     [Fact]
-    public async Task ValidationFailureRestoresPreviousLoginCookiesBeforeRethrowing()
+    public async Task ValidationFailureRestoresPreviousLoginCookiesBeforeRethrowingOriginalException()
     {
         var previousCookies = new[]
         {
             new DownKyiCookie("previous", "fixture-previous", ".bilibili.com")
         };
         Assert.True(LoginHelper.SaveLoginInfoCookies(previousCookies));
+        var expected = new HttpRequestException("Fixture validation failure.");
         var client = new TestBilibiliApiClient
         {
             GetStringAsyncHandler = (_, _) => Task.FromException<string>(
-                new HttpRequestException("Fixture validation failure."))
+                expected)
         };
         using var session = new StubLoginSession();
         using var coordinator = new LoginCoordinator(
             NullLogger<LoginCoordinator>.Instance,
             client,
             new StubLoginSessionFactory(session));
-        await coordinator.RequestLoginUrlAsync(TestContext.Current.CancellationToken);
-        var pollResult = new LoginStatusResult(
-            new LoginStatus(),
-            [new BilibiliLoginCookie("SESSDATA", "invalid-fixture", ".bilibili.com")]);
+        var thrown = await Assert.ThrowsAsync<HttpRequestException>(() =>
+            coordinator.CommitLoginCookiesAsync(
+                [new DownKyiCookie(
+                    "SESSDATA",
+                    "invalid-fixture",
+                    ".bilibili.com",
+                    isWireValue: true)],
+                TestContext.Current.CancellationToken));
 
-        await Assert.ThrowsAsync<HttpRequestException>(() => coordinator.SaveLoginCookiesAsync(
-            pollResult,
-            new Uri("https://passport.bilibili.com/callback"),
-            TestContext.Current.CancellationToken));
-
+        Assert.Same(expected, thrown);
         var restored = Assert.Single(LoginHelper.GetLoginInfoCookies());
         Assert.Equal("previous", restored.Name);
         Assert.Equal("fixture-previous", restored.Value);
@@ -186,15 +253,13 @@ public sealed class LoginCoordinatorTests
             NullLogger<LoginCoordinator>.Instance,
             client,
             new StubLoginSessionFactory(session));
-        await coordinator.RequestLoginUrlAsync(TestContext.Current.CancellationToken);
-        var pollResult = new LoginStatusResult(
-            new LoginStatus(),
-            [new BilibiliLoginCookie("SESSDATA", "candidate-session", ".bilibili.com")]);
-
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-            coordinator.SaveLoginCookiesAsync(
-                pollResult,
-                new Uri("https://passport.bilibili.com/callback"),
+            coordinator.CommitLoginCookiesAsync(
+                [new DownKyiCookie(
+                    "SESSDATA",
+                    "candidate-session",
+                    ".bilibili.com",
+                    isWireValue: true)],
                 cancellation.Token));
 
         var restored = Assert.Single(LoginHelper.GetLoginInfoCookies());
@@ -207,6 +272,8 @@ public sealed class LoginCoordinatorTests
         private readonly StubLoginSession _session;
         private readonly Action? _onCreate;
 
+        public int CreateCalls { get; private set; }
+
         public StubLoginSessionFactory(StubLoginSession session, Action? onCreate = null)
         {
             _session = session;
@@ -216,6 +283,7 @@ public sealed class LoginCoordinatorTests
         public IBilibiliLoginSession Create(
             IReadOnlyList<BilibiliLoginCookie>? initialCookies = null)
         {
+            CreateCalls++;
             _onCreate?.Invoke();
             return _session;
         }

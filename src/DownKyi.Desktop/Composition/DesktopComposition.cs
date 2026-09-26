@@ -90,7 +90,6 @@ internal static class DesktopComposition
         services.AddSingleton<IBiliHelperCoordinator, BiliHelperCoordinator>();
         services.AddSingleton<IUserSessionCoordinator, UserSessionCoordinator>();
         services.AddSingleton<ILoginCoordinator, LoginCoordinator>();
-        services.AddSingleton<IHostedService, LoginFileChangeMonitor>();
         services.AddSingleton<IFriendRelationCoordinator, FriendRelationCoordinator>();
         services.AddSingleton<ISeasonsSeriesCoordinator, SeasonsSeriesCoordinator>();
         services.AddSingleton<IUserSpacePageCoordinator, UserSpacePageCoordinator>();

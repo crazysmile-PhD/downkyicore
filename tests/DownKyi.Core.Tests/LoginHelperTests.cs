@@ -1,8 +1,6 @@
-using System.Collections.Concurrent;
 using DownKyi.Core.BiliApi.Login;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Storage;
-using DownKyi.Core.Utils;
 
 namespace DownKyi.Core.Tests;
 
@@ -42,93 +40,6 @@ public sealed class LoginHelperTests
         Assert.Equal("fixture%2fvalue", reloaded.Value);
         Assert.True(reloaded.IsWireValue);
         Assert.Equal("SESSDATA=fixture%2fvalue", LoginHelper.GetLoginInfoCookiesString());
-    }
-
-    [Fact]
-    public void InvalidatingLoginInfoCacheReloadsExternallyWrittenCookies()
-    {
-        var initialCookies = new[]
-        {
-            new DownKyiCookie("SESSDATA", "initial", ".bilibili.com", isWireValue: true)
-        };
-        var updatedCookies = new[]
-        {
-            new DownKyiCookie("SESSDATA", "updated", ".bilibili.com", isWireValue: true)
-        };
-
-        Assert.True(LoginHelper.SaveLoginInfoCookies(initialCookies));
-        Assert.Equal("SESSDATA=initial", LoginHelper.GetLoginInfoCookiesString());
-        Assert.True(ObjectHelper.WriteCookiesToDisk(ApplicationStorage.GetLogin(), updatedCookies));
-        Assert.Equal("SESSDATA=initial", LoginHelper.GetLoginInfoCookiesString());
-
-        LoginHelper.InvalidateLoginInfoCache();
-
-        Assert.Equal("SESSDATA=updated", LoginHelper.GetLoginInfoCookiesString());
-    }
-
-    [Fact]
-    public void InvalidCookieFileKeepsTheLastSnapshotDirtyForRetry()
-    {
-        var initialCookies = new[]
-        {
-            new DownKyiCookie("SESSDATA", "initial", ".bilibili.com", isWireValue: true)
-        };
-        var updatedCookies = new[]
-        {
-            new DownKyiCookie("SESSDATA", "updated", ".bilibili.com", isWireValue: true)
-        };
-
-        Assert.True(LoginHelper.SaveLoginInfoCookies(initialCookies));
-        Assert.Equal("SESSDATA=initial", LoginHelper.GetLoginInfoCookiesString());
-        File.WriteAllText(ApplicationStorage.GetLogin(), "[{");
-        LoginHelper.InvalidateLoginInfoCache();
-
-        Assert.Equal("SESSDATA=initial", LoginHelper.GetLoginInfoCookiesString());
-        Assert.True(ObjectHelper.WriteCookiesToDisk(ApplicationStorage.GetLogin(), updatedCookies));
-        Assert.Equal("SESSDATA=updated", LoginHelper.GetLoginInfoCookiesString());
-    }
-
-    [Fact]
-    public async Task ConcurrentInvalidationReturnsOneCompleteCacheSnapshot()
-    {
-        const string expectedHeader = "SESSDATA=stable";
-        var cookies = new[]
-        {
-            new DownKyiCookie("SESSDATA", "stable", ".bilibili.com", isWireValue: true)
-        };
-        var unexpectedHeaders = new ConcurrentQueue<string>();
-        using var start = new ManualResetEventSlim();
-
-        Assert.True(LoginHelper.SaveLoginInfoCookies(cookies));
-
-        var invalidator = Task.Run(() =>
-        {
-            start.Wait(TestContext.Current.CancellationToken);
-            for (var index = 0; index < 1_000; index++)
-            {
-                LoginHelper.InvalidateLoginInfoCache();
-                Thread.Yield();
-            }
-        }, TestContext.Current.CancellationToken);
-        var readers = Enumerable.Range(0, 4)
-            .Select(_ => Task.Run(() =>
-            {
-                start.Wait(TestContext.Current.CancellationToken);
-                for (var index = 0; index < 250; index++)
-                {
-                    var header = LoginHelper.GetLoginInfoCookiesString();
-                    if (!string.Equals(header, expectedHeader, StringComparison.Ordinal))
-                    {
-                        unexpectedHeaders.Enqueue(header);
-                    }
-                }
-            }, TestContext.Current.CancellationToken))
-            .ToArray();
-
-        start.Set();
-        await Task.WhenAll(readers.Append(invalidator));
-
-        Assert.Empty(unexpectedHeaders);
     }
 
     [Fact]

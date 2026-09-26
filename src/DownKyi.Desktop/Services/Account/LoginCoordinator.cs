@@ -23,6 +23,10 @@ internal interface ILoginCoordinator : IDisposable
         LoginStatusResult loginStatus,
         Uri redirectUri,
         CancellationToken cancellationToken);
+
+    Task<bool> CommitLoginCookiesAsync(
+        IReadOnlyList<DownKyiCookie> cookies,
+        CancellationToken cancellationToken);
 }
 
 internal sealed class LoginCoordinator : ILoginCoordinator
@@ -90,6 +94,20 @@ internal sealed class LoginCoordinator : ILoginCoordinator
             loginStatus.Cookies,
             callbackCookies,
             ObjectHelper.ParseCookie(redirectUri));
+        return await CommitLoginCookiesAsync(cookies, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<bool> CommitLoginCookiesAsync(
+        IReadOnlyList<DownKyiCookie> cookies,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(cookies);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (cookies.Count == 0)
+        {
+            return false;
+        }
+
         var previousCookies = LoginHelper.GetLoginInfoCookies();
         var saved = await RunAsync(
             () => LoginHelper.SaveLoginInfoCookies(cookies),

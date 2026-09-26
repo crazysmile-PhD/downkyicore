@@ -14,12 +14,9 @@ public static class LoginHelper
 
     // 内存缓存：读多写少，使用 ReaderWriterLockSlim 保证线程安全
     private static readonly ReaderWriterLockSlim CacheLock = new();
-    private static LoginInfoSnapshot? _cachedLoginInfo;
-
-    private sealed record LoginInfoSnapshot(
-        ImmutableArray<DownKyiCookie> Cookies,
-        string CookieHeader,
-        bool NeedsRefresh);
+    private static ImmutableArray<DownKyiCookie> _cachedCookies = [];
+    private static bool _isCookieCacheInitialized;
+    private static string? _cachedCookieString;
 
     private static DownKyiCookie CloneCookie(DownKyiCookie cookie)
     {
@@ -73,17 +70,16 @@ public static class LoginHelper
     }
 
     /// <summary>
-    /// 使登录信息缓存失效，使下一次读取重新加载持久化内容
+    /// 使缓存失效，在写操作完成后调用
     /// </summary>
-    public static void InvalidateLoginInfoCache()
+    private static void InvalidateCache()
     {
         CacheLock.EnterWriteLock();
         try
         {
-            if (_cachedLoginInfo != null)
-            {
-                _cachedLoginInfo = _cachedLoginInfo with { NeedsRefresh = true };
-            }
+            _cachedCookies = [];
+            _isCookieCacheInitialized = false;
+            _cachedCookieString = null;
         }
         finally
         {
@@ -133,7 +129,7 @@ public static class LoginHelper
             }
 
             // 写入成功后使缓存立即失效
-            InvalidateLoginInfoCache();
+            InvalidateCache();
         }
         else
         {
@@ -144,32 +140,18 @@ public static class LoginHelper
     }
 
     /// <summary>
-    /// 获得登录的cookies，结果会被缓存到内存中，直到登录文件变更使缓存失效
+    /// 获得登录的cookies，结果会被缓存到内存中，直到下次写操作使缓存失效
     /// </summary>
     /// <returns></returns>
     public static IReadOnlyList<DownKyiCookie> GetLoginInfoCookies()
     {
-        var snapshot = GetOrLoadLoginInfoSnapshot();
-        return snapshot == null ? [] : CloneCookies(snapshot.Cookies);
-    }
-
-    /// <summary>
-    /// 返回登录信息的cookies的字符串，结果会被缓存到内存中，直到登录文件变更使缓存失效
-    /// </summary>
-    /// <returns></returns>
-    public static string GetLoginInfoCookiesString()
-    {
-        return GetOrLoadLoginInfoSnapshot()?.CookieHeader ?? string.Empty;
-    }
-
-    private static LoginInfoSnapshot? GetOrLoadLoginInfoSnapshot()
-    {
+        // 先尝试从缓存读取
         CacheLock.EnterReadLock();
         try
         {
-            if (_cachedLoginInfo is { NeedsRefresh: false })
+            if (_isCookieCacheInitialized)
             {
-                return _cachedLoginInfo;
+                return CloneCookies(_cachedCookies);
             }
         }
         finally
@@ -177,23 +159,28 @@ public static class LoginHelper
             CacheLock.ExitReadLock();
         }
 
+        // 缓存未命中，从磁盘加载
         CacheLock.EnterWriteLock();
         try
         {
-            if (_cachedLoginInfo is { NeedsRefresh: false })
+            // 双重检查：可能其他线程已完成加载
+            if (_isCookieCacheInitialized)
             {
-                return _cachedLoginInfo;
+                return CloneCookies(_cachedCookies);
             }
 
             if (!File.Exists(LocalLoginInfo))
             {
-                _cachedLoginInfo = new LoginInfoSnapshot([], string.Empty, NeedsRefresh: false);
-                return _cachedLoginInfo;
+                _cachedCookies = [];
+                _cachedCookieString = string.Empty;
+                _isCookieCacheInitialized = true;
+                return [];
             }
 
             List<DownKyiCookie>? cookies;
             try
             {
+                // 直接读取文件，用 FileShare.Read 避免独占锁，无需临时文件
                 using var stream = new FileStream(LocalLoginInfo, FileMode.Open, FileAccess.Read, FileShare.Read);
                 cookies = ObjectHelper.ReadCookiesFromStream(stream)?
                     .Where(cookie => !string.IsNullOrWhiteSpace(cookie.Name))
@@ -208,31 +195,59 @@ public static class LoginHelper
             }
             catch (IOException)
             {
-                return _cachedLoginInfo;
+                return new List<DownKyiCookie>();
             }
             catch (UnauthorizedAccessException)
             {
-                return _cachedLoginInfo;
+                return new List<DownKyiCookie>();
             }
 
-            if (cookies == null)
-            {
-                return _cachedLoginInfo;
-            }
-
-            var cachedCookies = cookies
+            _cachedCookies = (cookies ?? [])
                 .Select(CloneCookie)
                 .ToImmutableArray();
-            var snapshot = new LoginInfoSnapshot(
-                cachedCookies,
-                BuildCookieHeader(cachedCookies),
-                NeedsRefresh: false);
-            _cachedLoginInfo = snapshot;
-            return snapshot;
+            _isCookieCacheInitialized = true;
+            // 同步更新字符串缓存
+            _cachedCookieString = BuildCookieHeader(_cachedCookies);
+
+            return CloneCookies(_cachedCookies);
         }
         finally
         {
             CacheLock.ExitWriteLock();
+        }
+    }
+
+    /// <summary>
+    /// 返回登录信息的cookies的字符串，结果会被缓存到内存中，直到下次写操作使缓存失效
+    /// </summary>
+    /// <returns></returns>
+    public static string GetLoginInfoCookiesString()
+    {
+        // 先尝试从字符串缓存读取
+        CacheLock.EnterReadLock();
+        try
+        {
+            if (_cachedCookieString != null)
+            {
+                return _cachedCookieString;
+            }
+        }
+        finally
+        {
+            CacheLock.ExitReadLock();
+        }
+
+        // 字符串缓存未命中时，触发完整加载（GetLoginInfoCookies 内部会同步填充字符串缓存）
+        GetLoginInfoCookies();
+
+        CacheLock.EnterReadLock();
+        try
+        {
+            return _cachedCookieString ?? "";
+        }
+        finally
+        {
+            CacheLock.ExitReadLock();
         }
     }
 
@@ -241,7 +256,7 @@ public static class LoginHelper
         try
         {
             File.Delete(LocalLoginInfo);
-            InvalidateLoginInfoCache();
+            InvalidateCache();
             return true;
         }
         catch (IOException)
@@ -274,7 +289,7 @@ public static class LoginHelper
             File.Delete(loginInfoPath);
 
             // 注销后使缓存立即失效
-            InvalidateLoginInfoCache();
+            InvalidateCache();
 
             settingsStore.Update(settings => settings with
             {

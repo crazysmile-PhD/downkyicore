@@ -58,15 +58,11 @@ FFmpeg 合并策略遵循“效能优先，但成功率更重要”：优先无�
 - 设置 `DOWNKYI_DATA_DIR` 可指定完整数据根目录。
 - 设置 `DOWNKYI_PORTABLE=1`，或在程序目录放置 `portable` / `.portable` / `DownKyi.portable`，可启用便携模式。
 
-### 手动导入浏览器登录 Cookie
+### 使用浏览器 Cookie 登录
 
-`Login` 文件仍然保存在用户数据目录中。Windows 默认路径为：
+无法使用手机客户端扫码时，可以在登录页面粘贴已登录 Bilibili 页面请求中的 `Cookie` header。DownKyi 会把浏览器 Cookie 作为候选登录凭据，使用与二维码登录相同的保存和登录验证流程；验证失败、网络异常或取消时会恢复原有登录凭据。
 
-`%APPDATA%\DownKyi\Config\Login`
-
-使用 `DOWNKYI_DATA_DIR` 或便携模式时，对应路径为 `<数据根目录>\Config\Login`。
-
-程序会缓存已经读取的登录 Cookie。运行期间从外部创建、修改、删除或替换 `Login` 文件时，DownKyi 会使现有缓存失效，并在下一次使用登录 Cookie 时重新读取该文件，无需重新启动。如果操作系统无法启动文件监视，DownKyi 会记录错误并继续正常启动，但本次运行不会自动刷新外部修改。
+浏览器 Cookie 值会按已经编码的传输形式保存，例如 `SESSDATA` 中的 `%2F` 不会再次编码。正式 `Login` 文件由程序管理，无需手动修改。
 
 ## 工作流程
 
