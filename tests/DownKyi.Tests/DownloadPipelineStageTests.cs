@@ -155,6 +155,110 @@ public sealed class DownloadPipelineStageTests
     }
 
     [Fact]
+    public async Task MediaStageRejectsDuplicateDurlOrdersBeforeAnyTransfer()
+    {
+        var playUrl = new PlayUrl
+        {
+            Durl =
+            [
+                new PlayUrlDurl
+                {
+                    Order = 1,
+                    SourceAddress = "https://example.invalid/segment-a"
+                },
+                new PlayUrlDurl
+                {
+                    Order = 1,
+                    SourceAddress = "https://example.invalid/segment-b"
+                }
+            ]
+        };
+        using var fixture = await MediaStageFixture.CreateAsync(
+            playUrl,
+            downloadAudio: false,
+            downloadVideo: true).ConfigureAwait(true);
+
+        var result = await fixture.Stage.ExecuteAsync(
+            fixture.Context,
+            TestContext.Current.CancellationToken);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("download.media.durl.duplicate-order", result.Error?.Code);
+        Assert.Empty(fixture.Backend.Requests);
+    }
+
+    [Fact]
+    public async Task MediaStageRejectsMissingDurlAddressBeforeAnyTransfer()
+    {
+        var playUrl = new PlayUrl
+        {
+            Durl =
+            [
+                new PlayUrlDurl
+                {
+                    Order = 1,
+                    SourceAddress = "https://example.invalid/segment-1"
+                },
+                new PlayUrlDurl
+                {
+                    Order = 2,
+                    SourceAddress = "   ",
+                    BackupUrl = ["", "  "]
+                }
+            ]
+        };
+        using var fixture = await MediaStageFixture.CreateAsync(
+            playUrl,
+            downloadAudio: false,
+            downloadVideo: true).ConfigureAwait(true);
+
+        var result = await fixture.Stage.ExecuteAsync(
+            fixture.Context,
+            TestContext.Current.CancellationToken);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("download.media.durl.no-address", result.Error?.Code);
+        Assert.Empty(fixture.Backend.Requests);
+    }
+
+    [Fact]
+    public async Task MediaStageAcceptsGappedDurlOrdersAndTransfersInOrder()
+    {
+        var playUrl = new PlayUrl
+        {
+            Durl =
+            [
+                new PlayUrlDurl
+                {
+                    Order = 3,
+                    SourceAddress = "https://example.invalid/segment-3"
+                },
+                new PlayUrlDurl
+                {
+                    Order = 1,
+                    SourceAddress = "https://example.invalid/segment-1"
+                }
+            ]
+        };
+        using var fixture = await MediaStageFixture.CreateAsync(
+            playUrl,
+            downloadAudio: false,
+            downloadVideo: true).ConfigureAwait(true);
+
+        var result = await fixture.Stage.ExecuteAsync(
+            fixture.Context,
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsSuccess, result.Error?.Message);
+        Assert.Equal(
+            [
+                "https://example.invalid/segment-1",
+                "https://example.invalid/segment-3"
+            ],
+            fixture.Backend.Requests.Select(request => Assert.Single(request.Urls)));
+    }
+
+    [Fact]
     public void MediaStagePrefersPopulatedDashAndPreservesExpectedSize()
     {
         using var settings = new TestSettingsStore();

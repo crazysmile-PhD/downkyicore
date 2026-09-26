@@ -26,7 +26,8 @@ internal static class DownloadFileIntegrity
         var actualBytes = new FileInfo(path).Length;
         var requiredBytes = expectedBytes > 0 ? expectedBytes : totalBytesToReceive;
         if (actualBytes <= 0 ||
-            requiredBytes > 0 && actualBytes < requiredBytes ||
+            expectedBytes > 0 && actualBytes != expectedBytes ||
+            totalBytesToReceive > 0 && actualBytes != totalBytesToReceive ||
             requiredBytes > 0 && receivedBytes > 0 && receivedBytes < requiredBytes)
         {
             return DownloadFileIntegrityResult.Invalid(

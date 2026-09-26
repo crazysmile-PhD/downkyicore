@@ -401,6 +401,43 @@ public sealed class DownloadRetryPolicyTests
     }
 
     [Fact]
+    public async Task CoordinatorResetsOwnedBackendStateForInvalidCompletionEvidence()
+    {
+        var directory = CreateTemporaryDirectory("invalid-completion");
+        const string fileName = "media.tmp";
+        var target = Path.Combine(directory, fileName);
+        var identityUpdates = new List<string?>();
+        using var backend = new IncompleteCompletionBackend(target);
+
+        try
+        {
+            var result = await CreateCoordinator(backend, maximumAttempts: 5).TransferAsync(
+                CreateRequestAt(
+                    directory,
+                    fileName,
+                    backendIdentity: null,
+                    (identity, _) =>
+                    {
+                        identityUpdates.Add(identity);
+                        return Task.CompletedTask;
+                    },
+                    "https://primary.invalid/media"),
+                static _ => Task.FromResult<IReadOnlyList<string>>([]),
+                TestContext.Current.CancellationToken);
+
+            Assert.Equal(DownloadTransferOutcome.Failed, result.Outcome);
+            Assert.Equal(DownloadTransferFailureKind.InvalidMedia, result.FailureKind);
+            Assert.Equal(["test-gid", null], identityUpdates);
+            Assert.Equal(["test-gid"], backend.ResetIdentities);
+            Assert.False(File.Exists(target));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task CoordinatorDoesNotRetryTlsFailureOrTryBackupAddresses()
     {
         using var backend = new RecordingBackend(
@@ -701,6 +738,27 @@ public sealed class DownloadRetryPolicyTests
         Assert.Equal(DownloadTransferOutcome.Failed, result.Outcome);
         Assert.Equal((DownloadTransferFailureKind)expectedValue, result.FailureKind);
         Assert.Equal($"download.transfer.aria2-{errorCode}", result.ErrorCode);
+    }
+
+    [Theory]
+    [InlineData("active", true)]
+    [InlineData("waiting", true)]
+    [InlineData("paused", true)]
+    [InlineData("complete", false)]
+    [InlineData("error", false)]
+    [InlineData("removed", false)]
+    public void AriaResetForceRemovesOnlyNonterminalTasks(string status, bool expected)
+    {
+        Assert.Equal(expected, Aria2TransferBackend.GetRequiresForceRemove(status));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("unknown")]
+    public void AriaResetRejectsUnknownStatus(string? status)
+    {
+        Assert.Null(Aria2TransferBackend.GetRequiresForceRemove(status));
     }
 
     [Theory]
@@ -1106,6 +1164,44 @@ public sealed class DownloadRetryPolicyTests
         {
             Requests.Add(request);
             return Task.FromResult(transfer(++_attempt, request));
+        }
+
+        public void Dispose()
+        {
+        }
+    }
+
+    private sealed class IncompleteCompletionBackend(string targetFile) : ITransferBackend
+    {
+        public List<string?> ResetIdentities { get; } = [];
+
+        public string Name => "incomplete-completion";
+
+        public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task<DownloadTransferResult> ResetAsync(
+            string? backendIdentity,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ResetIdentities.Add(backendIdentity);
+            return Task.FromResult(DownloadTransferResult.Succeeded());
+        }
+
+        public async Task<DownloadTransferResult> TransferAsync(DownloadTransferRequest request)
+        {
+            await File.WriteAllBytesAsync(
+                targetFile,
+                [0, 1, 2, 3],
+                request.CancellationToken).ConfigureAwait(true);
+            await request.SetBackendIdentityAsync(
+                "test-gid",
+                request.CancellationToken).ConfigureAwait(true);
+            return DownloadTransferResult.Failed(
+                DownloadTransferFailureKind.InvalidMedia,
+                "download.transfer.incomplete-evidence");
         }
 
         public void Dispose()

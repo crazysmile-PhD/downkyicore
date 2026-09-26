@@ -1,3 +1,4 @@
+using DownKyi.Core.Aria2cNet;
 using DownKyi.Services.Download;
 
 namespace DownKyi.Tests;
@@ -52,11 +53,55 @@ public sealed class DownloadFileIntegrityTests : IDisposable
     }
 
     [Fact]
+    public void IsUsableRejectsLengthBeyondAuthoritativeExpectedLength()
+    {
+        var file = CreateFile("long.mp4", new byte[] { 0, 1, 2, 3, 4 });
+
+        Assert.False(DownloadFileIntegrity.IsUsable(file, expectedBytes: 4, receivedBytes: 4));
+    }
+
+    [Fact]
     public void IsUsableAcceptsNonEmptyMediaLikeFile()
     {
         var file = CreateFile("video.mp4", new byte[] { 0, 1, 2, 3 });
 
         Assert.True(DownloadFileIntegrity.IsUsable(file, expectedBytes: 4, receivedBytes: 4));
+    }
+
+    [Fact]
+    public void IsUsableDoesNotInventExactLengthWhenContractDoesNotProvideOne()
+    {
+        var file = CreateFile("unknown-length.mp4", new byte[] { 0, 1, 2, 3, 4 });
+
+        Assert.True(DownloadFileIntegrity.IsUsable(file));
+    }
+
+    [Fact]
+    public void AriaCompletionRequiresNativeEvidenceAndMatchingFileLength()
+    {
+        var file = CreateFile("aria.mp4", new byte[] { 0, 1, 2, 3 });
+        var completeEvidence = new AriaTransferCompletionEvidence(4, 4, "80", 1);
+
+        var result = Aria2TransferBackend.ValidateCompletedTransfer(
+            file,
+            exactExpectedBytes: 4,
+            completeEvidence);
+
+        Assert.Equal(DownloadTransferOutcome.Succeeded, result.Outcome);
+
+        var wrongLength = Aria2TransferBackend.ValidateCompletedTransfer(
+            file,
+            exactExpectedBytes: 5,
+            completeEvidence);
+        Assert.Equal(DownloadTransferOutcome.Failed, wrongLength.Outcome);
+        Assert.Equal(DownloadTransferFailureKind.InvalidMedia, wrongLength.FailureKind);
+
+        var incompletePieces = Aria2TransferBackend.ValidateCompletedTransfer(
+            file,
+            exactExpectedBytes: 4,
+            completeEvidence with { Bitfield = "00" });
+        Assert.Equal(DownloadTransferOutcome.Failed, incompletePieces.Outcome);
+        Assert.Equal(DownloadTransferFailureKind.InvalidMedia, incompletePieces.FailureKind);
     }
 
     private string CreateFile(string name, string content)

@@ -173,7 +173,7 @@ internal sealed partial class Aria2TransferBackend : ITransferBackend
         ariaManager.TellStatus += progressHandler;
         try
         {
-            var (downloadResult, errorCode, errorMessage) =
+            var (downloadResult, errorCode, errorMessage, completionEvidence) =
                 await ariaManager.GetDownloadStatusDetailAsync(
                 activeGid,
                 async cancellationToken =>
@@ -191,7 +191,17 @@ internal sealed partial class Aria2TransferBackend : ITransferBackend
 
             if (downloadResult == DownloadResult.SUCCESS)
             {
-                return DownloadTransferResult.Succeeded();
+                var result = ValidateCompletedTransfer(
+                    Path.Combine(request.Directory, request.FileName),
+                    request.ExpectedBytes,
+                    completionEvidence);
+                if (result.Outcome != DownloadTransferOutcome.Succeeded)
+                {
+                    _logger.LogWarningMessage(
+                        "aria2 completion evidence did not match the transfer output.");
+                }
+
+                return result;
             }
 
             if (ShouldClearBackendIdentity(errorCode))
@@ -402,6 +412,30 @@ internal sealed partial class Aria2TransferBackend : ITransferBackend
     {
         return !string.IsNullOrWhiteSpace(errorCode) &&
                !errorCode.StartsWith("rpc-", StringComparison.Ordinal);
+    }
+
+    internal static DownloadTransferResult ValidateCompletedTransfer(
+        string targetFile,
+        long exactExpectedBytes,
+        AriaTransferCompletionEvidence? completionEvidence)
+    {
+        if (completionEvidence?.IsComplete != true)
+        {
+            return DownloadTransferResult.Failed(
+                DownloadTransferFailureKind.InvalidMedia,
+                "download.transfer.incomplete-evidence");
+        }
+
+        var integrity = DownloadFileIntegrity.Check(
+            targetFile,
+            exactExpectedBytes,
+            completionEvidence.CompletedLength,
+            completionEvidence.TotalLength);
+        return integrity.IsUsable
+            ? DownloadTransferResult.Succeeded()
+            : DownloadTransferResult.Failed(
+                DownloadTransferFailureKind.InvalidMedia,
+                "download.transfer.invalid-media");
     }
 
     private DownloadProgress? CreateProgress(string activeGid, AriaProgressEventArgs eventArgs)

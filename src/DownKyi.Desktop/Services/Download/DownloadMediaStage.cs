@@ -185,8 +185,14 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
         }
 
         _presenter.ShowDownloadingVideo(context);
-        var downloads = source
-            .OrderBy(durl => durl.Order)
+        if (!TryPrepareDurlManifest(source, out var orderedDurls, out var preflightError))
+        {
+            return DownloadStageResult.Failure(
+                preflightError,
+                "The DURL manifest is invalid.");
+        }
+
+        var downloads = orderedDurls
             .Select(durl => new PendingDurlDownload(durl))
             .ToArray();
 
@@ -442,8 +448,43 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
 
     private static PlayUrlDashVideo? SelectDurl(PlayUrl playUrl, int order)
     {
-        var durl = playUrl.Durl.FirstOrDefault(candidate => candidate.Order == order);
+        if (!TryPrepareDurlManifest(playUrl.Durl, out var orderedDurls, out _))
+        {
+            return null;
+        }
+
+        var durl = orderedDurls.FirstOrDefault(candidate => candidate.Order == order);
         return durl == null ? null : CreateDurlDownloadDescriptor([durl]);
+    }
+
+    private static bool TryPrepareDurlManifest(
+        IEnumerable<PlayUrlDurl> source,
+        out PlayUrlDurl[] orderedDurls,
+        out string errorCode)
+    {
+        var durls = source.ToArray();
+        var orders = new HashSet<int>();
+        foreach (var durl in durls)
+        {
+            if (!orders.Add(durl.Order))
+            {
+                orderedDurls = [];
+                errorCode = "download.media.durl.duplicate-order";
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(durl.SourceAddress) &&
+                durl.BackupUrl?.Any(address => !string.IsNullOrWhiteSpace(address)) != true)
+            {
+                orderedDurls = [];
+                errorCode = "download.media.durl.no-address";
+                return false;
+            }
+        }
+
+        orderedDurls = durls.OrderBy(durl => durl.Order).ToArray();
+        errorCode = string.Empty;
+        return true;
     }
 
     private static List<string> CreateAddresses(PlayUrlDashVideo media)

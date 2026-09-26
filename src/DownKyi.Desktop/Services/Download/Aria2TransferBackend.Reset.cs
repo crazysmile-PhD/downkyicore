@@ -23,14 +23,41 @@ internal sealed partial class Aria2TransferBackend
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(TimeSpan.FromSeconds(3));
-            var removed = await _ariaClient
-                .ForceRemoveAsync(backendIdentity, timeout.Token)
+            var status = await _ariaClient
+                .TellStatus(backendIdentity)
+                .WaitAsync(timeout.Token)
                 .ConfigureAwait(true);
-            if (removed.Error != null && !IsNotFound(removed.Error))
+            if (status is not { Result: { } statusResult })
             {
+                if (IsNotFound(status.Error))
+                {
+                    return DownloadTransferResult.Succeeded();
+                }
+
                 return DownloadTransferResult.Failed(
                     DownloadTransferFailureKind.TransientNetwork,
-                    "download.transfer.aria2-reset-rejected");
+                    "download.transfer.aria2-reset-status-rejected");
+            }
+
+            var requiresForceRemove = GetRequiresForceRemove(statusResult.Status);
+            if (requiresForceRemove == null)
+            {
+                return DownloadTransferResult.Failed(
+                    DownloadTransferFailureKind.Permanent,
+                    "download.transfer.aria2-reset-status-contract");
+            }
+
+            if (requiresForceRemove.Value)
+            {
+                var removed = await _ariaClient
+                    .ForceRemoveAsync(backendIdentity, timeout.Token)
+                    .ConfigureAwait(true);
+                if (removed.Error != null && !IsNotFound(removed.Error))
+                {
+                    return DownloadTransferResult.Failed(
+                        DownloadTransferFailureKind.TransientNetwork,
+                        "download.transfer.aria2-reset-rejected");
+                }
             }
 
             var resultRemoved = await _ariaClient
@@ -69,4 +96,11 @@ internal sealed partial class Aria2TransferBackend
                 "download.transfer.aria2-reset-contract");
         }
     }
+
+    internal static bool? GetRequiresForceRemove(string? status) => status switch
+    {
+        "active" or "waiting" or "paused" => true,
+        "complete" or "error" or "removed" => false,
+        _ => null
+    };
 }

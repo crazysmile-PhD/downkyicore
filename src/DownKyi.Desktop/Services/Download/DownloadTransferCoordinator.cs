@@ -79,6 +79,20 @@ internal sealed class DownloadTransferCoordinator
             if (lastResult.FailureKind is DownloadTransferFailureKind.InvalidMedia
                 or DownloadTransferFailureKind.ResumeRejected)
             {
+                if (lastResult.FailureKind == DownloadTransferFailureKind.InvalidMedia &&
+                    !string.IsNullOrWhiteSpace(backendIdentity))
+                {
+                    var resetResult = await _backend
+                        .ResetAsync(backendIdentity, cancellationToken)
+                        .ConfigureAwait(true);
+                    if (resetResult.Outcome != DownloadTransferOutcome.Succeeded)
+                    {
+                        return resetResult;
+                    }
+
+                    await SetBackendIdentityAsync(null, cancellationToken).ConfigureAwait(true);
+                }
+
                 var cleanup = DownloadTransferFileCleanup.DeleteInvalidArtifacts(
                     Path.Combine(request.Directory, request.FileName),
                     request.StagingDirectory,

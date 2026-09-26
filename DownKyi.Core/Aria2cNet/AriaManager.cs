@@ -33,7 +33,76 @@ public sealed class AriaGlobalStatusEventArgs(long speed) : EventArgs
 public sealed record AriaDownloadStatus(
     DownloadResult Result,
     string? ErrorCode,
-    string? ErrorMessage);
+    string? ErrorMessage,
+    AriaTransferCompletionEvidence? CompletionEvidence = null);
+
+public sealed record AriaTransferCompletionEvidence(
+    long TotalLength,
+    long CompletedLength,
+    string Bitfield,
+    long NumPieces)
+{
+    public bool IsComplete =>
+        TotalLength > 0 &&
+        CompletedLength == TotalLength &&
+        HasAllPieces(Bitfield, NumPieces);
+
+    private static bool HasAllPieces(string bitfield, long numPieces)
+    {
+        if (numPieces <= 0 || string.IsNullOrWhiteSpace(bitfield))
+        {
+            return false;
+        }
+
+        var requiredNibbles = ((numPieces - 1) / 4) + 1;
+        if (requiredNibbles > bitfield.Length)
+        {
+            return false;
+        }
+
+        for (var index = 0L; index < requiredNibbles; index++)
+        {
+            if (!TryParseHex(bitfield[(int)index], out var actual))
+            {
+                return false;
+            }
+
+            var remainingPieces = numPieces - (index * 4);
+            var requiredBits = (int)Math.Min(4, remainingPieces);
+            var requiredMask = (15 << (4 - requiredBits)) & 15;
+            if ((actual & requiredMask) != requiredMask)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool TryParseHex(char value, out int parsed)
+    {
+        if (value is >= '0' and <= '9')
+        {
+            parsed = value - '0';
+            return true;
+        }
+
+        if (value is >= 'a' and <= 'f')
+        {
+            parsed = value - 'a' + 10;
+            return true;
+        }
+
+        if (value is >= 'A' and <= 'F')
+        {
+            parsed = value - 'A' + 10;
+            return true;
+        }
+
+        parsed = 0;
+        return false;
+    }
+}
 
 public class AriaManager
 {
@@ -154,11 +223,17 @@ public class AriaManager
 
             if (result.Status == "complete")
             {
+                var completionEvidence = new AriaTransferCompletionEvidence(
+                    totalLength,
+                    completedLength,
+                    result.Bitfield,
+                    ParseLong(result.NumPieces));
                 OnDownloadFinish(true, filePath, gid, null);
                 return new AriaDownloadStatus(
                     DownloadResult.SUCCESS,
                     null,
-                    null);
+                    null,
+                    completionEvidence);
             }
 
             if (!string.IsNullOrEmpty(result.ErrorCode) && result.ErrorCode != "0")
