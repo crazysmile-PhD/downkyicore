@@ -160,7 +160,13 @@ namespace DownKyi.ViewModels
                 return;
             }
 
-            mid = (long)parameter["mid"];
+            var targetMid = (long)parameter["mid"];
+            if (mid == targetMid)
+            {
+                return;
+            }
+
+            mid = targetMid;
             SelectTabId = (int)parameter["friendId"];
 
             PropertyChangeAsync(() =>
