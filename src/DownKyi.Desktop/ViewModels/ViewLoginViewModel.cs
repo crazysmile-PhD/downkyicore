@@ -222,6 +222,7 @@ internal class ViewLoginViewModel : ViewModelBase
 
     private async Task LoginWithBrowserCookiesAsync()
     {
+        var cancellationToken = CancellationToken.None;
         try
         {
             var cookies = BrowserCookieParser.ParseHeader(BrowserCookieHeader);
@@ -232,12 +233,12 @@ internal class ViewLoginViewModel : ViewModelBase
             }
 
             BrowserCookieHeader = string.Empty;
-            var cancellationToken = await ReplaceLoginCancellationAsync().ConfigureAwait(true);
+            cancellationToken = await ReplaceLoginCancellationAsync().ConfigureAwait(true);
             await FinishLoginAttemptAsync(
                 () => _loginCoordinator.CommitLoginCookiesAsync(cookies, cancellationToken),
                 cancellationToken).ConfigureAwait(true);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             return;
         }
@@ -256,6 +257,10 @@ internal class ViewLoginViewModel : ViewModelBase
         try
         {
             isSucceed = await commit().ConfigureAwait(true);
+        }
+        catch (OperationCanceledException e) when (!cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogErrorMessage("Login cookie validation was canceled by the transport.", e);
         }
         catch (Exception e) when (e is System.IO.IOException or UnauthorizedAccessException
             or System.Net.Http.HttpRequestException or InvalidOperationException

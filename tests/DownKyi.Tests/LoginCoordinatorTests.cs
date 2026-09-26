@@ -166,6 +166,35 @@ public sealed class LoginCoordinatorTests
     }
 
     [Fact]
+    public async Task BrowserInputWithHeaderControlCharactersDoesNotReplacePreviousLogin()
+    {
+        var previousCookies = new[]
+        {
+            new DownKyiCookie("previous", "fixture-previous", ".bilibili.com")
+        };
+        Assert.True(LoginHelper.SaveLoginInfoCookies(previousCookies));
+        using var session = new StubLoginSession();
+        var sessionFactory = new StubLoginSessionFactory(session);
+        using var coordinator = new LoginCoordinator(
+            NullLogger<LoginCoordinator>.Instance,
+            new TestBilibiliApiClient(),
+            sessionFactory);
+        var cookies = BrowserCookieParser.ParseHeader(
+            "SESSDATA=fixture%2Fsession\r\nX-Next-Header: fixture-secret");
+
+        Assert.Empty(cookies);
+        var result = await coordinator.CommitLoginCookiesAsync(
+            cookies,
+            TestContext.Current.CancellationToken);
+
+        Assert.False(result);
+        Assert.Equal(0, sessionFactory.CreateCalls);
+        var restored = Assert.Single(LoginHelper.GetLoginInfoCookies());
+        Assert.Equal("previous", restored.Name);
+        Assert.Equal("fixture-previous", restored.Value);
+    }
+
+    [Fact]
     public async Task FailedCandidateValidationRestoresPreviousLoginCookies()
     {
         var previousCookies = new[]
@@ -265,6 +294,71 @@ public sealed class LoginCoordinatorTests
         var restored = Assert.Single(LoginHelper.GetLoginInfoCookies());
         Assert.Equal("previous", restored.Name);
         Assert.Equal("fixture-previous", restored.Value);
+    }
+
+    [Fact]
+    public async Task OverlappingQrRollbackCannotOverwriteSuccessfulBrowserCommit()
+    {
+        var previousCookies = new[]
+        {
+            new DownKyiCookie("previous", "fixture-previous", ".bilibili.com")
+        };
+        Assert.True(LoginHelper.SaveLoginInfoCookies(previousCookies));
+        using var qrCancellation = new CancellationTokenSource();
+        var firstValidationStarted = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondValidationStarted = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFirstValidation = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var validationCall = 0;
+        var client = new TestBilibiliApiClient
+        {
+            GetStringAsyncHandler = async (_, cancellationToken) =>
+            {
+                if (Interlocked.Increment(ref validationCall) == 1)
+                {
+                    firstValidationStarted.SetResult();
+                    await releaseFirstValidation.Task.ConfigureAwait(false);
+                    cancellationToken.ThrowIfCancellationRequested();
+                }
+
+                secondValidationStarted.SetResult();
+                return """{"code":0,"data":{"isLogin":true,"mid":42,"uname":"fixture-user"}}""";
+            }
+        };
+        using var session = new StubLoginSession();
+        using var coordinator = new LoginCoordinator(
+            NullLogger<LoginCoordinator>.Instance,
+            client,
+            new StubLoginSessionFactory(session));
+        await coordinator.RequestLoginUrlAsync(TestContext.Current.CancellationToken);
+        var qrCommit = coordinator.SaveLoginCookiesAsync(
+            new LoginStatusResult(
+                new LoginStatus(),
+                [new BilibiliLoginCookie("SESSDATA", "qr-session", ".bilibili.com")]),
+            new Uri("https://passport.bilibili.com/callback"),
+            qrCancellation.Token);
+        await firstValidationStarted.Task.WaitAsync(TestContext.Current.CancellationToken);
+
+        await qrCancellation.CancelAsync();
+        var browserCommit = coordinator.CommitLoginCookiesAsync(
+            [new DownKyiCookie(
+                "SESSDATA",
+                "browser-session",
+                ".bilibili.com",
+                isWireValue: true)],
+            TestContext.Current.CancellationToken);
+
+        await Task.Delay(100, TestContext.Current.CancellationToken);
+        Assert.False(secondValidationStarted.Task.IsCompleted);
+        Assert.Equal("SESSDATA=qr-session", LoginHelper.GetLoginInfoCookiesString());
+
+        releaseFirstValidation.SetResult();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => qrCommit);
+        Assert.True(await browserCommit.ConfigureAwait(true));
+        Assert.True(secondValidationStarted.Task.IsCompleted);
+        Assert.Equal("SESSDATA=browser-session", LoginHelper.GetLoginInfoCookiesString());
     }
 
     private sealed class StubLoginSessionFactory : IBilibiliLoginSessionFactory

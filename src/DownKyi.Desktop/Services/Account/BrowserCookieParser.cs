@@ -14,6 +14,11 @@ internal static class BrowserCookieParser
             return [];
         }
 
+        if (header.Any(IsHeaderControlCharacter))
+        {
+            return [];
+        }
+
         var value = header.Trim();
         if (value.StartsWith("Cookie:", StringComparison.OrdinalIgnoreCase))
         {
@@ -58,5 +63,10 @@ internal static class BrowserCookieParser
         {
             return false;
         }
+    }
+
+    private static bool IsHeaderControlCharacter(char value)
+    {
+        return value <= '\u001f' || value == '\u007f';
     }
 }

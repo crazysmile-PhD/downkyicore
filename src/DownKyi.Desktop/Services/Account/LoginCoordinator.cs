@@ -35,6 +35,7 @@ internal sealed class LoginCoordinator : ILoginCoordinator
     private readonly IBilibiliApiClient _client;
     private readonly IBilibiliLoginSessionFactory _sessionFactory;
     private readonly object _sessionLock = new();
+    private readonly SemaphoreSlim _commitGate = new(1, 1);
     private IBilibiliLoginSession? _session;
     private int _disposed;
 
@@ -108,37 +109,45 @@ internal sealed class LoginCoordinator : ILoginCoordinator
             return false;
         }
 
-        var previousCookies = LoginHelper.GetLoginInfoCookies();
-        var saved = await RunAsync(
-            () => LoginHelper.SaveLoginInfoCookies(cookies),
-            cancellationToken).ConfigureAwait(false);
-        if (!saved)
-        {
-            _logger.LogWarningMessage("Bilibili login cookies could not be persisted.");
-            return false;
-        }
-
+        await _commitGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            var navigation = await _client.GetUserInfoForNavigationAsync(cancellationToken)
-                .ConfigureAwait(false);
-            if (navigation?.IsLogin == true)
+            var previousCookies = LoginHelper.GetLoginInfoCookies();
+            var saved = await RunAsync(
+                () => LoginHelper.SaveLoginInfoCookies(cookies),
+                cancellationToken).ConfigureAwait(false);
+            if (!saved)
             {
-                return true;
+                _logger.LogWarningMessage("Bilibili login cookies could not be persisted.");
+                return false;
             }
-        }
-        catch (Exception e) when (e is OperationCanceledException or HttpRequestException
-            or InvalidOperationException or ArgumentException or Newtonsoft.Json.JsonException)
-        {
+
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var navigation = await _client.GetUserInfoForNavigationAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                if (navigation?.IsLogin == true)
+                {
+                    return true;
+                }
+            }
+            catch (Exception e) when (e is OperationCanceledException or HttpRequestException
+                or InvalidOperationException or ArgumentException or Newtonsoft.Json.JsonException)
+            {
+                await RestoreCookiesAsync(previousCookies).ConfigureAwait(false);
+                ExceptionDispatchInfo.Capture(e).Throw();
+            }
+
             await RestoreCookiesAsync(previousCookies).ConfigureAwait(false);
-            ExceptionDispatchInfo.Capture(e).Throw();
+
+            _logger.LogWarningMessage("Persisted Bilibili login cookies failed account validation.");
+            return false;
         }
-
-        await RestoreCookiesAsync(previousCookies).ConfigureAwait(false);
-
-        _logger.LogWarningMessage("Persisted Bilibili login cookies failed account validation.");
-        return false;
+        finally
+        {
+            _commitGate.Release();
+        }
     }
 
     public void Dispose()
@@ -146,6 +155,7 @@ internal sealed class LoginCoordinator : ILoginCoordinator
         if (Interlocked.Exchange(ref _disposed, 1) == 0)
         {
             ReplaceSession(null)?.Dispose();
+            _commitGate.Dispose();
         }
     }
 
