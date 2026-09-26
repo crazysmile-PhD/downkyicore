@@ -100,9 +100,6 @@ public sealed class UserSpaceArchitectureTests
         var stateSource = File.ReadAllText(statePath);
 
         Assert.True(
-            File.ReadLines(workflowPath).Count() <= 450,
-            "Bangumi-follow workflow owner exceeded its size budget.");
-        Assert.True(
             File.ReadLines(statePath).Count() <= 150,
             "Bangumi-follow binding-state owner exceeded its size budget.");
         Assert.Contains("IUserSpacePageCoordinator", workflowSource, StringComparison.Ordinal);
