@@ -65,7 +65,8 @@ public sealed class AriaClientRpcContractTests
     [InlineData("remove")]
     [InlineData("force-remove")]
     [InlineData("remove-result")]
-    public async Task TransferRemovalMethodsPropagateCancellation(string operation)
+    [InlineData("tell-status")]
+    public async Task TransferResetMethodsPropagateCancellation(string operation)
     {
         using var cancellation = new CancellationTokenSource();
         var requestStarted = new TaskCompletionSource(
@@ -82,11 +83,12 @@ public sealed class AriaClientRpcContractTests
                 await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
                 return null;
             });
-        var request = operation switch
+        Task request = operation switch
         {
             "remove" => client.RemoveAsync("gid", cancellation.Token),
             "force-remove" => client.ForceRemoveAsync("gid", cancellation.Token),
             "remove-result" => client.RemoveDownloadResultAsync("gid", cancellation.Token),
+            "tell-status" => client.TellStatus("gid", cancellation.Token),
             _ => throw new ArgumentOutOfRangeException(nameof(operation), operation, null)
         };
 

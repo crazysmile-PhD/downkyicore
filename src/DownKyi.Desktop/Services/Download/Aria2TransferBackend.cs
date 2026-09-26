@@ -272,7 +272,9 @@ internal sealed partial class Aria2TransferBackend : ITransferBackend
         string? existingStatus = null;
         if (!string.IsNullOrWhiteSpace(gid))
         {
-            var status = await _ariaClient.TellStatus(gid).ConfigureAwait(true);
+            var status = await _ariaClient
+                .TellStatus(gid, request.CancellationToken)
+                .ConfigureAwait(true);
             if (status is not { Result: { } statusResult })
             {
                 if (IsNotFound(status.Error))
@@ -416,7 +418,7 @@ internal sealed partial class Aria2TransferBackend : ITransferBackend
 
     internal static DownloadTransferResult ValidateCompletedTransfer(
         string targetFile,
-        long exactExpectedBytes,
+        long expectedBytes,
         AriaTransferCompletionEvidence? completionEvidence)
     {
         if (completionEvidence?.IsComplete != true)
@@ -428,7 +430,7 @@ internal sealed partial class Aria2TransferBackend : ITransferBackend
 
         var integrity = DownloadFileIntegrity.Check(
             targetFile,
-            exactExpectedBytes,
+            expectedBytes,
             completionEvidence.CompletedLength,
             completionEvidence.TotalLength);
         return integrity.IsUsable

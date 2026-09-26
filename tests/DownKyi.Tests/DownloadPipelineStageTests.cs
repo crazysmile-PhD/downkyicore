@@ -188,6 +188,34 @@ public sealed class DownloadPipelineStageTests
     }
 
     [Fact]
+    public async Task MediaStageRejectsNonPositiveDurlOrderBeforeAnyTransfer()
+    {
+        var playUrl = new PlayUrl
+        {
+            Durl =
+            [
+                new PlayUrlDurl
+                {
+                    Order = 0,
+                    SourceAddress = "https://example.invalid/segment"
+                }
+            ]
+        };
+        using var fixture = await MediaStageFixture.CreateAsync(
+            playUrl,
+            downloadAudio: false,
+            downloadVideo: true).ConfigureAwait(true);
+
+        var result = await fixture.Stage.ExecuteAsync(
+            fixture.Context,
+            TestContext.Current.CancellationToken);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("download.media.durl.invalid-order", result.Error?.Code);
+        Assert.Empty(fixture.Backend.Requests);
+    }
+
+    [Fact]
     public async Task MediaStageRejectsMissingDurlAddressBeforeAnyTransfer()
     {
         var playUrl = new PlayUrl

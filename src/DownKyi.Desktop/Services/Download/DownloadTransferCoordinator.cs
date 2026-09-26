@@ -89,8 +89,6 @@ internal sealed class DownloadTransferCoordinator
                     {
                         return resetResult;
                     }
-
-                    await SetBackendIdentityAsync(null, cancellationToken).ConfigureAwait(true);
                 }
 
                 var cleanup = DownloadTransferFileCleanup.DeleteInvalidArtifacts(
@@ -102,6 +100,12 @@ internal sealed class DownloadTransferCoordinator
                     return DownloadTransferResult.Failed(
                         DownloadTransferFailureKind.Disk,
                         "download.transfer.cleanup-failed");
+                }
+
+                if (lastResult.FailureKind == DownloadTransferFailureKind.InvalidMedia &&
+                    !string.IsNullOrWhiteSpace(backendIdentity))
+                {
+                    await SetBackendIdentityAsync(null, cancellationToken).ConfigureAwait(true);
                 }
             }
 

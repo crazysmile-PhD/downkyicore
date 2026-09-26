@@ -58,9 +58,8 @@ internal sealed class DownloadRetryPolicy
                 MoveOrRefresh(hasNextAddress, canRefreshAddresses),
             DownloadTransferFailureKind.ResumeRejected =>
                 RetrySameThenMove(attemptsForAddress, hasNextAddress),
-            DownloadTransferFailureKind.InvalidMedia => hasNextAddress
-                ? new DownloadRetryDecision(DownloadRetryAction.TryNextAddress, TimeSpan.Zero)
-                : Stop(),
+            DownloadTransferFailureKind.InvalidMedia =>
+                MoveOrRefresh(hasNextAddress, canRefreshAddresses),
             DownloadTransferFailureKind.None or
                 DownloadTransferFailureKind.Disk or
                 DownloadTransferFailureKind.Tls or

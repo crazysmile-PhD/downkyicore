@@ -466,6 +466,13 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
         var orders = new HashSet<int>();
         foreach (var durl in durls)
         {
+            if (durl.Order <= 0)
+            {
+                orderedDurls = [];
+                errorCode = "download.media.durl.invalid-order";
+                return false;
+            }
+
             if (!orders.Add(durl.Order))
             {
                 orderedDurls = [];

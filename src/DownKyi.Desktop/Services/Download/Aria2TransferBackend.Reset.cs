@@ -24,8 +24,7 @@ internal sealed partial class Aria2TransferBackend
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(TimeSpan.FromSeconds(3));
             var status = await _ariaClient
-                .TellStatus(backendIdentity)
-                .WaitAsync(timeout.Token)
+                .TellStatus(backendIdentity, timeout.Token)
                 .ConfigureAwait(true);
             if (status is not { Result: { } statusResult })
             {

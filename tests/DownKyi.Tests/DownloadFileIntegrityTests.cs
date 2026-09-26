@@ -53,11 +53,11 @@ public sealed class DownloadFileIntegrityTests : IDisposable
     }
 
     [Fact]
-    public void IsUsableRejectsLengthBeyondAuthoritativeExpectedLength()
+    public void IsUsableDoesNotTreatEstimatedLengthAsExact()
     {
         var file = CreateFile("long.mp4", new byte[] { 0, 1, 2, 3, 4 });
 
-        Assert.False(DownloadFileIntegrity.IsUsable(file, expectedBytes: 4, receivedBytes: 4));
+        Assert.True(DownloadFileIntegrity.IsUsable(file, expectedBytes: 4, receivedBytes: 4));
     }
 
     [Fact]
@@ -84,21 +84,21 @@ public sealed class DownloadFileIntegrityTests : IDisposable
 
         var result = Aria2TransferBackend.ValidateCompletedTransfer(
             file,
-            exactExpectedBytes: 4,
+            expectedBytes: 4,
             completeEvidence);
 
         Assert.Equal(DownloadTransferOutcome.Succeeded, result.Outcome);
 
         var wrongLength = Aria2TransferBackend.ValidateCompletedTransfer(
             file,
-            exactExpectedBytes: 5,
-            completeEvidence);
+            expectedBytes: 4,
+            completeEvidence with { TotalLength = 5, CompletedLength = 5 });
         Assert.Equal(DownloadTransferOutcome.Failed, wrongLength.Outcome);
         Assert.Equal(DownloadTransferFailureKind.InvalidMedia, wrongLength.FailureKind);
 
         var incompletePieces = Aria2TransferBackend.ValidateCompletedTransfer(
             file,
-            exactExpectedBytes: 4,
+            expectedBytes: 4,
             completeEvidence with { Bitfield = "00" });
         Assert.Equal(DownloadTransferOutcome.Failed, incompletePieces.Outcome);
         Assert.Equal(DownloadTransferFailureKind.InvalidMedia, incompletePieces.FailureKind);

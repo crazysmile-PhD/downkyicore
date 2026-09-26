@@ -37,6 +37,39 @@ public sealed class DownloadRetryPolicyTests
     }
 
     [Fact]
+    public async Task CoordinatorRefreshesInvalidMediaAfterBackupsAreExhausted()
+    {
+        using var backend = new RecordingBackend(
+            DownloadTransferResult.Failed(
+                DownloadTransferFailureKind.InvalidMedia,
+                "invalid-media"),
+            DownloadTransferResult.Failed(
+                DownloadTransferFailureKind.InvalidMedia,
+                "invalid-media"),
+            DownloadTransferResult.Succeeded());
+        var coordinator = CreateCoordinator(backend, maximumAttempts: 5);
+        var refreshCount = 0;
+
+        var result = await coordinator.TransferAsync(
+            CreateRequest(
+                "https://primary.invalid/media",
+                "https://backup.invalid/media"),
+            _ =>
+            {
+                refreshCount++;
+                return Task.FromResult<IReadOnlyList<string>>(
+                    ["https://refreshed.invalid/media"]);
+            },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(DownloadTransferOutcome.Succeeded, result.Outcome);
+        Assert.Equal(1, refreshCount);
+        Assert.Equal(
+            "https://refreshed.invalid/media",
+            Assert.Single(backend.Requests[2].Urls));
+    }
+
+    [Fact]
     public async Task CoordinatorRetriesTransientFailureOnSameAddressBeforeMoving()
     {
         using var backend = new RecordingBackend(
@@ -880,15 +913,20 @@ public sealed class DownloadRetryPolicyTests
             $"{target}.download",
             "resume",
             TestContext.Current.CancellationToken);
+        var identityUpdates = new List<string?>();
 
         try
         {
-            var request = CreateRequest("https://primary.invalid/media") with
-            {
-                Directory = directory,
-                StagingDirectory = directory,
-                FileName = Path.GetFileName(target)
-            };
+            var request = CreateRequestAt(
+                directory,
+                Path.GetFileName(target),
+                "persisted-id",
+                (identity, _) =>
+                {
+                    identityUpdates.Add(identity);
+                    return Task.CompletedTask;
+                },
+                "https://primary.invalid/media");
 
             var result = await coordinator.TransferAsync(
                 request,
@@ -899,6 +937,8 @@ public sealed class DownloadRetryPolicyTests
             Assert.Equal(DownloadTransferFailureKind.Disk, result.FailureKind);
             Assert.Equal("download.transfer.cleanup-failed", result.ErrorCode);
             Assert.Single(backend.Requests);
+            Assert.Equal(["persisted-id"], backend.ResetIdentities);
+            Assert.Empty(identityUpdates);
             Assert.True(Directory.Exists(target));
             Assert.True(File.Exists($"{target}.aria2"));
             Assert.True(File.Exists($"{target}.download"));

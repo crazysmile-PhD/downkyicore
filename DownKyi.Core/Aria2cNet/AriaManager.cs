@@ -176,7 +176,9 @@ public class AriaManager
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var status = await _ariaClient.TellStatus(gid).ConfigureAwait(false);
+            var status = await _ariaClient
+                .TellStatus(gid, cancellationToken)
+                .ConfigureAwait(false);
             if (status?.Result == null)
             {
                 if (status?.Error is { } rpcError)
