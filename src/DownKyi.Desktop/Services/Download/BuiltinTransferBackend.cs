@@ -20,6 +20,8 @@ namespace DownKyi.Services.Download;
 
 internal sealed class BuiltinTransferBackend : ITransferBackend
 {
+    private const int QueuedChunkFactor = 4;
+    private const long PreferredMinimumChunkSize = 1024 * 1024;
     private readonly ISettingsStore _settingsStore;
     private readonly DownloadDiagnosticLogger _diagnosticLogger;
     private readonly ILogger<BuiltinTransferBackend> _logger;
@@ -88,12 +90,14 @@ internal sealed class BuiltinTransferBackend : ITransferBackend
         }
 
         var split = network.Split;
+        var scheduling = CalculateChunkScheduling(split, expectedBytes);
         var configuration = new DownloadConfiguration
         {
-            ChunkCount = split,
+            ChunkCount = scheduling.ChunkCount,
             RequestConfiguration = requestConfiguration,
             ParallelDownload = true,
             ParallelCount = split,
+            MinimumChunkSize = scheduling.MinimumChunkSize,
             MaxTryAgainOnFailure = 0,
             MaximumMemoryBufferBytes = 50 * 1024 * 1024,
             EnableAutoResumeDownload = true,
@@ -283,6 +287,24 @@ internal sealed class BuiltinTransferBackend : ITransferBackend
     {
     }
 
+    internal static (int ChunkCount, long MinimumChunkSize) CalculateChunkScheduling(
+        int parallelCount,
+        long expectedBytes)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(parallelCount, 1);
+        ArgumentOutOfRangeException.ThrowIfNegative(expectedBytes);
+        var maximumChunkCount = checked(parallelCount * QueuedChunkFactor);
+        if (expectedBytes == 0)
+        {
+            return (maximumChunkCount, PreferredMinimumChunkSize);
+        }
+
+        var usefulChunkCount = Math.Max(
+            parallelCount,
+            DivideRoundingUp(expectedBytes, PreferredMinimumChunkSize));
+        return ((int)Math.Min(maximumChunkCount, usefulChunkCount), 0);
+    }
+
     internal static DownloadTransferResult ClassifyFailure(
         Exception? exception,
         bool reportedCanceled)
@@ -376,6 +398,9 @@ internal sealed class BuiltinTransferBackend : ITransferBackend
 
         return null;
     }
+
+    private static long DivideRoundingUp(long value, long divisor) =>
+        1 + ((value - 1) / divisor);
 
     private bool IsDownloadedMediaFileUsable(
         string? file,
