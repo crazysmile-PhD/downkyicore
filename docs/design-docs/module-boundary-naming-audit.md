@@ -102,7 +102,7 @@ Resolution (2026-07-26): Gate 6 extracted a typed execution context and six orde
 
 ## Finding 5: Retry ownership 重複
 
-Resolution (2026-07-26, pending integration): `DownloadTransferCoordinator` now owns one five-attempt budget. `DownloadMediaStage` invokes it once per stream/segment, each backend receives exactly one URL, Downloader uses `MaxTryAgainOnFailure=0`, aria2 uses `max-tries=1`, `retry-wait=0`, `always-resume=false` and `max-resume-failure-tries=0`, and every aria RPC client call makes one physical request. Typed policy decisions cover transient network/5xx, 429, expired address/403, rejected resume state, invalid media, disk, permanent failure and cancellation. Retryable partial files remain resumable; rejected resume state gets one centralized cleanup retry; confirmed invalid media is removed before a backup is attempted. RPC-layer aria2 failures preserve the latest GID, while terminal task failure or explicit task-not-found clears stale identity.
+Resolution (2026-07-26; semantic regression coverage updated 2026-09-27): `DownloadTransferCoordinator` now owns one five-attempt budget. `DownloadMediaStage` invokes it once per stream/segment, each backend receives exactly one URL, Downloader uses `MaxTryAgainOnFailure=0`, aria2 uses `max-tries=1`, `retry-wait=0`, `always-resume=false` and `max-resume-failure-tries=0`, and every aria RPC client call makes one physical request. Typed policy decisions cover transient network/5xx, 429, expired address/403, rejected resume state, invalid media, disk, permanent failure and cancellation. Retryable partial files remain resumable; rejected resume state gets one centralized cleanup retry; confirmed invalid media is removed before a backup is attempted. RPC-layer aria2 failures preserve the latest GID, while terminal task failure or explicit task-not-found clears stale identity.
 
 Implemented policy:
 
@@ -115,7 +115,7 @@ Implemented policy:
 | disk / permission | fail immediately |
 | cancellation | never retry |
 
-The architecture test `TransferRetryHasOneTypedBudgetOwner` rejects a reintroduced stage retry loop, multi-URL backend call, Downloader retry, or aria2 retry. Deterministic coordinator tests prove that primary and backup addresses share one budget and playback refresh occurs at most once.
+The retry contract is protected at observable boundaries: coordinator tests prove that primary and backup addresses share one budget and playback refresh occurs at most once; backend contract tests require one URL per invocation and disable backend-owned retry; RPC contract tests prove that a transport failure is not retried; and stage tests prove that `DownloadMediaStage` does not add another attempt after the coordinator stops. These semantic invariants do not require a particular source file, helper name or implementation location.
 
 ## Resolved Finding 6: HTTP ownership
 
