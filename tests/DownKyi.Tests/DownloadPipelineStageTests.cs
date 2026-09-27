@@ -216,6 +216,29 @@ public sealed class DownloadPipelineStageTests
     }
 
     [Fact]
+    public async Task MediaStageDoesNotAddRetryAfterCoordinatorStops()
+    {
+        using var fixture = await MediaStageFixture.CreateAsync(
+            CreateVideoOnlyPlayUrl(),
+            downloadAudio: false,
+            downloadVideo: true,
+            backendResults:
+            [
+                DownloadTransferResult.Failed(
+                    DownloadTransferFailureKind.Permanent,
+                    "download.transfer.permanent")
+            ]).ConfigureAwait(true);
+
+        var result = await fixture.Stage.ExecuteAsync(
+            fixture.Context,
+            TestContext.Current.CancellationToken);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("download.transfer.permanent", result.Error?.Code);
+        Assert.Single(fixture.Backend.Requests);
+    }
+
+    [Fact]
     public async Task MediaStageUsesBaseAddressWhenDashBackupUrlsAreNull()
     {
         var playUrl = JsonConvert.DeserializeObject<PlayUrl>("""

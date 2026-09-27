@@ -45,15 +45,17 @@ internal sealed class VideoDetailDownloadCoordinator : IVideoDetailDownloadCoord
         }
 
         var addService = _serviceFactory.Create(streamType.Value);
-        return DownloadAddCoordinator.AddToDownloadIfDirectorySelectedAsync(
+        return DownloadAddCoordinator.AddToDownloadIfSelectionAcceptedAsync(
             () => addService.EnsureAdmissionAsync(cancellationToken),
-            () => addService.SetDirectory(cancellationToken),
-            async directory =>
+            () => addService.SelectDownloadAsync(cancellationToken),
+            async selection =>
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                addService.GetVideo(videoInfoView, videoSections);
+                var preparedDownload = await addService
+                    .PrepareAsync(videoInfoView, videoSections, isAll, cancellationToken)
+                    .ConfigureAwait(false);
                 return await addService
-                    .AddToDownload(directory, isAll, cancellationToken)
+                    .AddToDownload(selection, preparedDownload, isAll, cancellationToken)
                     .ConfigureAwait(false);
             },
             cancellationToken);

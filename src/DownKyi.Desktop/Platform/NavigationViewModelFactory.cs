@@ -50,7 +50,6 @@ internal sealed class NavigationViewModelFactory(IServiceProvider services)
             AppRoute.Delogo => typeof(ViewDelogoViewModel),
             AppRoute.ExtractMedia => typeof(ViewExtractMediaViewModel),
             AppRoute.Archive => typeof(ViewArchiveViewModel),
-            AppRoute.UserSpaceChannel => typeof(ViewChannelViewModel),
             AppRoute.UserSpaceSeasonsSeries => typeof(ViewUserSpaceSeasonsSeriesViewModel),
             AppRoute.UserSpaceFavorites => typeof(ViewFavoritesViewModel),
             _ => throw new ArgumentOutOfRangeException(nameof(route), route, null)

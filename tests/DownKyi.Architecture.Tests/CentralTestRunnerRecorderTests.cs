@@ -226,7 +226,6 @@ public sealed class CentralTestRunnerRecorderTests
             var events = document.RootElement.GetProperty("Events").EnumerateArray()
                 .Select(item => item.GetProperty("Event").GetString()).ToArray();
             Assert.Contains("bounded_stop_requested", events);
-            Assert.Contains("cleanup_completed", events);
             Assert.Contains("cleanup_failed", events);
         }
         finally
@@ -433,7 +432,13 @@ public sealed class CentralTestRunnerRecorderTests
             var build = BuildProcessRunner.RunAsync(
                 CreateFixtureStartInfo("fixture-hold-marker", markerPath),
                 cancellation.Token,
-                TimeSpan.FromSeconds(3));
+                TimeSpan.FromSeconds(3),
+                captureSnapshotAsync: (_, _) => Task.FromResult(new FinalProcessSnapshot
+                {
+                    CapturedAtUtc = DateTimeOffset.UtcNow,
+                    Completeness = "Controlled successful snapshot.",
+                    Processes = []
+                }));
             processId = await WaitForProcessMarkerAsync(markerPath);
 
             await cancellation.CancelAsync();

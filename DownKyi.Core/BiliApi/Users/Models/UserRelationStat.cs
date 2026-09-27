@@ -13,7 +13,6 @@ public class UserRelationStat : BaseModel
 {
     [JsonProperty("mid")] public long Mid { get; set; }
     [JsonProperty("following")] public long Following { get; set; } // 关注数
-    [JsonProperty("whisper")] public long Whisper { get; set; }
     [JsonProperty("black")] public long Black { get; set; }
     [JsonProperty("follower")] public long Follower { get; set; } // 粉丝数
 }

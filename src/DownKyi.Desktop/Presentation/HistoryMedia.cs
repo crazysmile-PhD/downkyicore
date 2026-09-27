@@ -160,29 +160,27 @@ internal class HistoryMedia : ObservableObject
     #region 命令申明
 
     // 视频标题点击事件
-    private RelayCommand<object>? _titleCommand;
+    private RelayCommand? _titleCommand;
 
-    public RelayCommand<object> TitleCommand => _titleCommand ??= RequiredParameterCommand.Create<object>(ExecuteTitleCommand);
+    public RelayCommand TitleCommand => _titleCommand ??= new RelayCommand(ExecuteTitleCommand);
 
     /// <summary>
     /// 视频标题点击事件
     /// </summary>
-    /// <param name="parameter"></param>
-    private void ExecuteTitleCommand(object parameter)
+    private void ExecuteTitleCommand()
     {
         _navigationService.Navigate(new AppNavigationRequest(AppRoute.VideoDetail, _parentRoute, Url));
     }
 
     // UP主头像点击事件
-    private RelayCommand<object>? _upCommand;
+    private RelayCommand? _upCommand;
 
-    public RelayCommand<object> UpCommand => _upCommand ??= RequiredParameterCommand.Create<object>(ExecuteUpCommand);
+    public RelayCommand UpCommand => _upCommand ??= new RelayCommand(ExecuteUpCommand);
 
     /// <summary>
     /// UP主头像点击事件
     /// </summary>
-    /// <param name="parameter"></param>
-    private void ExecuteUpCommand(object parameter)
+    private void ExecuteUpCommand()
     {
         var route = _settingsStore.Current.User.Mid == UpMid
             ? AppRoute.MySpace

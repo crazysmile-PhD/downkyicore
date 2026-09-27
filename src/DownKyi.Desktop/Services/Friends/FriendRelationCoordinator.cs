@@ -11,7 +11,6 @@ namespace DownKyi.Services.Friends;
 internal enum FollowingListKind
 {
     All,
-    Whisper,
     Group
 }
 
@@ -82,12 +81,6 @@ internal sealed class FriendRelationCoordinator : IFriendRelationCoordinator
                     pageSize,
                     cancellationToken: cancellationToken).ConfigureAwait(false);
                 contents = following?.List;
-                break;
-            case FollowingListKind.Whisper:
-                contents = await _client.GetWhispersAsync(
-                    page,
-                    pageSize,
-                    cancellationToken).ConfigureAwait(false);
                 break;
             case FollowingListKind.Group:
                 contents = await _client.GetFollowingGroupContentAsync(

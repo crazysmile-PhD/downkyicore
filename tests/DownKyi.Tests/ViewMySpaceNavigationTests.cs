@@ -12,6 +12,39 @@ public sealed class ViewMySpaceNavigationTests : IDisposable
     private readonly TestSettingsStore _settings = new();
 
     [Theory]
+    [InlineData(0, 0)]
+    [InlineData(1, 1)]
+    public void RelationshipStatusUsesRemainingFriendsTabsAndResetsSelection(
+        int selectedStatus,
+        int expectedFriendId)
+    {
+        var navigation = new RecordingNavigationService();
+        using var viewModel = CreateViewModel(navigation, new RecordingPlatformLauncher());
+        viewModel.OnNavigatedTo(new AppNavigationContext(
+            AppNavigationRegion.Main,
+            AppRoute.MySpace,
+            AppRoute.Index,
+            42L,
+            new AppNavigationParameters(new Dictionary<string, object?>
+            {
+                ["Parameter"] = 42L
+            })));
+
+        Assert.Equal(5, viewModel.StatusList.Count);
+
+        viewModel.SelectedStatus = selectedStatus;
+        viewModel.StatusListCommand.Execute(null);
+
+        var request = Assert.Single(navigation.Requests);
+        Assert.Equal(AppRoute.Friends, request.Route);
+        Assert.Equal(AppRoute.MySpace, request.Parent);
+        var payload = Assert.IsType<Dictionary<string, object>>(request.Parameter);
+        Assert.Equal(42L, payload["mid"]);
+        Assert.Equal(expectedFriendId, payload["friendId"]);
+        Assert.Equal(-1, viewModel.SelectedStatus);
+    }
+
+    [Theory]
     [InlineData(0, AppRoute.MyFavorites)]
     [InlineData(1, AppRoute.MyBangumiFollow)]
     [InlineData(2, AppRoute.MyToViewVideo)]
@@ -190,7 +223,7 @@ public sealed class ViewMySpaceNavigationTests : IDisposable
 
         public Task<MySpaceProfileSnapshot?> LoadMyProfileAsync(
             long mid,
-            CancellationToken cancellationToken) => throw new NotSupportedException();
+            CancellationToken cancellationToken) => Task.FromResult<MySpaceProfileSnapshot?>(null);
 
         public Task<MySpaceStatsSnapshot> LoadMyStatsAsync(
             long mid,

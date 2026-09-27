@@ -24,7 +24,6 @@ namespace DownKyi.ViewModels
 {
     internal partial class ViewPublicationViewModel : ViewModelBase
     {
-        public const string Tag = "PagePublication";
         private readonly IContentDownloadCoordinator _downloadCoordinator;
         private readonly ILogger<ViewPublicationViewModel> _logger;
         private readonly IUserSpacePageCoordinator _userSpaceCoordinator;
@@ -39,14 +38,6 @@ namespace DownKyi.ViewModels
         private const int VideoNumberInPage = 30;
 
         #region 页面属性申明
-
-        private string _pageName = Tag;
-
-        public string PageName
-        {
-            get => _pageName;
-            set => SetProperty(ref _pageName, value);
-        }
 
         private bool _loading;
 

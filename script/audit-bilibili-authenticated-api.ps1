@@ -381,11 +381,6 @@ try {
         "https://api.bilibili.com/x/relation/followings?vmid=$currentMid&pn=1&ps=1&order_type=attention" $false `
         @('data', 'data.list', 'data.total') $headers ([ref]$followingsJson)
 
-    $whispersJson = $null
-    Add-Probe $results 'private-follows' '/x/relation/whispers' `
-        'https://api.bilibili.com/x/relation/whispers?pn=1&ps=1' $true `
-        @('data', 'data.list') $headers ([ref]$whispersJson)
-
     $blacksJson = $null
     Add-Probe $results 'block-list' '/x/relation/blacks' `
         'https://api.bilibili.com/x/relation/blacks?pn=1&ps=1' $true `

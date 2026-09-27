@@ -104,7 +104,6 @@ internal partial class ViewUserSpaceViewModel : ViewModelBase
         var route = banner.Id switch
         {
             0 => AppRoute.Archive,
-            1 => AppRoute.UserSpaceChannel,
             2 => AppRoute.UserSpaceSeasonsSeries,
             3 => AppRoute.UserSpaceFavorites,
             _ => (AppRoute?)null

@@ -27,7 +27,6 @@ namespace DownKyi.ViewModels;
 
 internal class ViewSeasonsSeriesDetailViewModel : ViewModelBase
 {
-    public const string Tag = "PageSeasonsSeries";
     private const int VideoNumberInPage = 30;
     private const string PlaceholderCover = "avares://DownKyi.Desktop/Resources/video-placeholder.png";
 
@@ -40,14 +39,6 @@ internal class ViewSeasonsSeriesDetailViewModel : ViewModelBase
     private long _mid = -1;
     private long _id = -1;
     private SeasonsSeriesKind _kind;
-
-    private string _pageName = Tag;
-
-    public string PageName
-    {
-        get => _pageName;
-        set => SetProperty(ref _pageName, value);
-    }
 
     private bool _loading = true;
 

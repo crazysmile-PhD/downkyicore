@@ -1,305 +1,243 @@
-# Maintenance Guide
+# Maintenance Flight Manual
 
-This document records the project maintenance routine for dependencies, external binaries, release validation, and regression checks.
+用途：維護工作先看這裡；找到 owner 後，只讀該卡與連結文件。
 
-## Dependency Updates
+口訣：**找主、守界、取證、停手**。
 
-1. Update managed package versions only in `Directory.Packages.props`.
-2. Run `dotnet restore ./DownKyi.sln`.
-3. Run `dotnet build ./DownKyi.sln -c Release --no-restore --no-incremental -p:TreatWarningsAsErrors=true -p:CodeAnalysisTreatWarningsAsErrors=true -p:EnableNETAnalyzers=true -p:AnalysisMode=All -p:EnforceCodeStyleInBuild=true`.
-4. Run `pwsh ./script/test-solution.ps1 -Configuration Release -NoRestore -NoBuild`.
-5. Run `dotnet package list --project ./DownKyi.sln --vulnerable --include-transitive`.
-6. Run `dotnet package list --project ./DownKyi.sln --deprecated` and review the report.
+1. 找主：誰擁有狀態與 transition？
+2. 守界：哪些相容性／安全 invariant 不能破壞？
+3. 取證：哪一個 regression 與 gate 能證明結果？
+4. 停手：出現第二個 owner 或第二個可獨立交付結果就停止。
 
-Avoid mixing package updates with large refactors unless the refactor is required by the dependency change.
+若文件與 current code／可重現測試不一致，以 code 和 evidence 為準，並在同一
+PR 修正文件。
 
-Solution builds set `CompileUsingReferenceAssemblies=false`. Consumers compile
-against completed implementation assemblies instead of the SDK's transient
-`obj/<configuration>/<framework>/ref` copies. This keeps a producer's successful
-implementation output authoritative and prevents an intermittently invalid
-reference assembly from cascading into `CS0009`, `CS0234`, and `CS0246` on
-hosted builds. Keep this policy unconditional across platforms; removal requires
-an exact-SDK cross-platform stress proof that consumers can safely return to the
-generated reference-assembly path.
+## 十秒路由
 
-## CI Policy
+| 任務 | Authoritative owner | 最少證據 | 詳細入口 |
+| --- | --- | --- | --- |
+| NuGet dependency | `Directory.Packages.props` | restore、strict build、tests、package audit | 本文件「依賴」 |
+| Test／CI failure | `DownKyi.CentralTestRunner` + OS test project | TRX + failure recorder | `docs/testing/README.md` |
+| Download persistence | Domain task + Application service + SQLite store | transition／migration tests | 本文件「下載資料」 |
+| Transfer／media | coordinator + selected backend + media validator | focused runtime regression | 本文件「傳輸與媒體」 |
+| Known runtime gap | quick cards（locator only） | current-main repro + owner confirmation | `docs/exec-plans/v1.1.1-runtime-hardening.md` |
+| Settings | `ISettingsStore`／`SettingsSchemaMigrator` | settings + architecture + Host tests | 本文件「Settings」 |
+| Logging | `ApplicationLogProvider` + Infrastructure logging owners | provider stress + Host tests | `docs/design-docs/logging-ownership-sink-adr.md` |
+| Desktop／DI／theme | Desktop composition + design tokens | architecture + XAML + packaged smoke | `ARCHITECTURE.md` |
+| Bilibili／WBI | API adapter + `IWbiKeyProvider` + fixtures | contract fixture + inventory gate | `docs/operations/bilibili-api-audit.md` |
+| Analyzer | strict build config + analyzer inventory | clean strict build + inventory | `docs/analyzer-baseline.md` |
+| aria2／FFmpeg binary | `script/assets/external-assets.json` + installer scripts | digest + six-RID gates | `docs/operations/aria2-security.md` |
+| Release | `version.txt` + release workflow | exact-head release gates | `docs/operations/verification-and-rollback.md` |
 
-### Test Platform Ownership
+## 共用起飛檢查
 
-Every `*.Tests.csproj` must declare `DownKyiTestPlatforms` as an explicit
-semicolon-separated subset of `Windows;Linux;macOS`; projects that support all
-three list all three, with no implicit default. Native behavioral tests belong
-in an OS-owned project. `DownKyi.CentralTestRunner`, reached through
-`script/test-project.ps1` and `script/test-solution.ps1`, rejects unknown
-projects or platform declarations and runs only projects that include the
-current OS. `docs/testing/test-runner-policy.json` records the two necessary
-xUnit in-process routing exceptions and their rationale.
+- [ ] 一句話寫出 Core、Done、Stop。
+- [ ] 從 current `main` 重現問題或驗證需求。
+- [ ] 找到唯一 owner；不建立平行 registry、retry、cleanup、persistence 或 DI。
+- [ ] 先跑 focused proof，再跑風險相稱的正式 gate。
+- [ ] 比較 diff；刪除不能解釋為 Done 所必需的修改。
 
-The runner records test identity, root process identity and lifecycle events.
-PASS discards the recorder; failure preserves bounded stdout/stderr, cleanup
-state and one final best-effort process snapshot under
-`artifacts/test-flight-recorder`. The snapshot is diagnostic evidence, not a
-complete descendant proof. See `docs/testing/README.md` for the executable
-owners and focused behavior tests.
+立即停手：需要第二個 owner、新 dependency、新 workflow、跨 owner call edge，或只能
+靠 retry／timeout／catch 讓結果看起來成功。
 
-Resource-contention failures follow
-`docs/testing/targeted-resource-forensics.md`: CI first classifies the failure,
-then points maintainers to a resource- and operation-specific probe. ETW remains
-opt-in and pre-armed only for a narrow target; it is never blanket-enabled for
-the normal success path. Failure-only artifacts are bounded and sanitized, and
-must state `Root cause not proven.` until failure-window evidence identifies an
-owner or proves the violated lifecycle ordering.
+## 標準品質閘門
 
-Pull requests are guarded by `.github/workflows/quality.yml`:
+Focused test 先用 `script/test-project.ps1`。完整正式閘門：
 
-- format check with `dotnet format --verify-no-changes --verbosity diagnostic`
-- Windows, Linux, and macOS Release builds
-- compiler and all `AnalysisMode=All` CA diagnostics treated as errors
-- unit tests with uploaded TRX reports
-- transitive vulnerable package audit
-- deprecated package report
+```powershell
+dotnet restore ./DownKyi.sln
+dotnet build ./DownKyi.sln -c Release --no-restore --no-incremental `
+  -p:TreatWarningsAsErrors=true `
+  -p:CodeAnalysisTreatWarningsAsErrors=true `
+  -p:EnableNETAnalyzers=true `
+  -p:AnalysisMode=All `
+  -p:EnforceCodeStyleInBuild=true
+pwsh ./script/test-solution.ps1 -Configuration Release -NoRestore -NoBuild
+dotnet format ./DownKyi.sln --verify-no-changes --no-restore
+dotnet package list --project ./DownKyi.sln --vulnerable --include-transitive
+dotnet package list --project ./DownKyi.sln --deprecated
+git diff --check
+```
 
-Release tags are additionally checked by
-`script/validate-release-version.ps1`. `version.txt` must contain one stable
-`major.minor.patch` value, and a tag workflow may proceed only when
-`GITHUB_REF` equals `refs/tags/v<version>`. The v1.1.0 tag is immutable and its
-withdrawn draft must not be republished; the corrective release is v1.1.1.
+`CompileUsingReferenceAssemblies=false` 是跨平台 hosted-build 穩定性政策。沒有 exact-SDK
+cross-platform stress proof，不得移除。
 
-The repository uses `AnalysisMode=All` with
-`CodeAnalysisTreatWarningsAsErrors=true`. Current analyzer inventory and the
-approved cleanup record live in `docs/analyzer-baseline.csv`,
-`docs/analyzer-baseline.md` and `docs/analyzer-cleanup-report.md`.
+## 依賴卡
 
-## Download Persistence Policy
+- 只在 `Directory.Packages.props` 改 managed package 版本。
+- 不把 dependency update 與非必要 refactor 混在同一 PR。
+- 跑標準品質閘門；deprecated report 需要人工判讀。
+- Stop：dependency change 若迫使產品語義改變，拆成獨立 scope。
 
-- `src/DownKyi.Domain/Downloads` owns immutable task identity, lifecycle, progress, transfer, output, failure, and completion state.
-- `IDownloadTaskApplicationService` / `DownloadTaskApplicationService` owns normal runtime commands and queries for active, crash-recoverable tasks. It loads by `DownloadTaskId`, invokes a Domain transition, persists with the current optimistic version, and publishes the committed snapshot only after a successful store operation.
-- `IDownloadHistoryService` / `DownloadHistoryService` separately owns completed-history add, page, delete, and clear operations. Completion is explicitly and lossily projected to `DownloadHistoryRecord`; restart restores that history record and does not reconstruct a completed `DownloadTask` aggregate.
-- `IDownloadTaskStore` is the durable contract for active crash recovery. `IDownloadHistoryStore` is the durable contract for completed history. Infrastructure implementations of both contracts must use async APIs and honor cancellation.
-- `IDownloadCompletionStore` exclusively owns the atomic active-to-history persistence transition. It removes the expected active version and inserts its `DownloadHistoryRecord` in one transaction; neither endpoint store may expose this cross-boundary authority.
-- `SqliteDownloadTaskStore` is the single owner of download SQL and storage JSON and implements all three persistence capabilities. `DownloadTaskProjectionStore` maps active `DownloadTask` snapshots to `DownloadingItem` and `DownloadHistoryRecord` values to `DownloadedItem` without owning SQL.
-- Runtime code must not rebuild a Domain task from a mutable UI projection or a history record. `DownloadTask.Restore` is limited to active SQLite materialization; legacy history migration uses the completion-specific `DownloadTask.ImportCompletedHistory` factory before projecting the result to `DownloadHistoryRecord`, and architecture tests enforce both allowlists.
-- Completed-task staging cleanup is best effort in the completing process after the durable history transition. Restart restores no cleanup locator from lossy history and does not guarantee post-crash cleanup of completed-task staging; restoring that guarantee requires a separate operational cleanup contract, not additional `DownloadHistoryRecord` fields.
-- Use short pooled connections, WAL, optimistic task versions, and transactions. Never restore a process-wide SQLite connection, global database lock, `Task.Run` database wrapper, or offset-based history scan.
-- Every schema migration must create a SQLite backup before DDL, execute in one transaction, update `user_version` only on success, and have a rollback test.
-- Legacy migration treats `download_base + downloading` as the active owner and `downloaded` / `download_history` as the history owner. A shared record ID does not transfer authority: active wins an active/history collision, a discarded `downloaded` row loses its own quarantine, and only an existing `downloading` quarantine may suppress active recovery. Migration may preserve, delete, or explicitly project data within its owner; it must never relabel a history quarantine as active.
-- Malformed rows are quarantined individually and must not truncate later keyset history pages. Diagnostics may include source table, record ID, field, and a fixed reason; never include raw JSON, full paths, cookies, or URLs.
-- Startup loads every unfinished task and the newest 100 history records after shell creation. Remaining history uses keyset pages outside the first-screen path.
-- State transitions persist immediately and UI projection follows the committed event. High-rate live progress may be projected without a durable write for every sample; accepted persistence uses bounded/coalesced writes and shutdown recovery preserves the last durable resume state.
-- The SQLite native bundle is `SQLite3MC.PCLRaw.bundle`. Any update must pass `LegacySqlCipherCompatibilityTests` against the committed SQLCipher v4 fixture before merge.
+## Test／CI 卡
 
-## Download And Media Runtime Policy
+- 每個 `*.Tests.csproj` 明列 `DownKyiTestPlatforms`：`Windows;Linux;macOS` 的明確子集。
+- Native behavior 放在對應 OS test project；正式入口只走 CentralTestRunner scripts。
+- PASS 刪除 flight recorder；FAIL 保存 bounded output、cleanup 與 best-effort snapshot。
+- Snapshot 不是完整 descendant proof；沒有 failure-window owner evidence 時寫
+  `Root cause not proven.`。
+- Resource contention 依 `docs/testing/targeted-resource-forensics.md`；ETW 只可對窄目標
+  預先啟用，不能 blanket-enable。
+- CodeQL 保持 explicit `manual` build；不得為消除提示改成 buildless mode。
+- Stop：新 CI failure 若不同 owner／不同 evidence，列 Pending，不為綠燈擴 scope。
 
-- Queue consumption uses a bounded Channel and fixed workers. Do not restore per-item task spawning or synchronous persistence callbacks.
-- New, resumed, and startup-restored work enters through `DownloadTaskQueueGateway` as `DownloadTaskId`. The unbounded admission channel isolates UI/startup callers from worker-channel capacity; only the internal dispatcher waits for bounded worker capacity. Runtime scheduling must never poll `ObservableCollection`.
-- New task admission is serialized by the singleton `DownloadTaskAdmissionService`. It selects one normalized base path against authoritative unfinished Domain tasks and current disk outputs, persists it before UI/queue publication, and uses case-insensitive comparison on Windows. Failed retryable tasks retain the reservation; canceled/completed/deleted tasks release active ownership.
-- Built-in and aria2 transfers share key, resume, integrity, and persistence behavior. Custom aria2 is a backend selection, not a copied workflow.
-- `DownloadArtifactWriter` owns cover, subtitle, danmaku, and NFO output. `DownloadTaskStateWriter` adapts runtime calls to typed Application commands; it cannot accept `DownloadingItem` or persist reconstructed UI state.
-- Pause first persists `Pausing`; built-in/aria2 backends preserve partial files and return a paused outcome; the worker confirms `Paused` only after transfer teardown. Process shutdown returns active `Downloading`/`Pausing` tasks to `Queued` without dropping GID, partial-file maps, completed keys, progress, output size, or optimistic version.
-- Explicit task deletion persists `Canceled`, stops the physical backend, removes generated media and `.aria2` / `.download` sidecars, then deletes the row. A cleanup failure leaves a retryable canceled record rather than pretending deletion succeeded.
-- Multi-segment DURL identity includes `DURL.Order`, input is sorted by that order, and concat never starts with stream copy.
-- FFmpeg operations use `FfmpegProcessRunner`, bounded concurrency, cancellation, timeout, captured stderr, and process-tree cleanup. Hardware encoding is attempted when available, with CPU fallback kept for success rate.
-- Download mux/concat writes a same-directory temporary output and refuses to overwrite an existing destination. Failure cleans only its temporary file and preserves both foreign destination content and valid source streams; toolbox transforms keep their explicitly separate overwrite contract.
-- FFmpeg mux failure returns typed invalid-input evidence. Only a source that a real fail-on-error decode rejects may have its completed transfer key, backend identity, file and sidecars revoked; process startup, timeout, permission, destination and other infrastructure failures preserve reusable source state.
-- A multi-segment output is complete only after ffprobe confirms a video stream, expected duration, and successful middle/tail seek decoding. Invalid partial output is deleted.
-- Bilibili requests use injected `IBilibiliApiClient` and `IBuvidProvider` ports backed by the Infrastructure `IHttpClientFactory` transport. Endpoint adapters are async; static client state, global configuration and synchronous HTTP compatibility paths are prohibited.
-- HTTP 401/403 and API schema rejection are non-retryable, 429 honors bounded `Retry-After`, cancellation is never retried, and empty/HTML/malformed responses fail visibly.
+## 下載資料卡
 
-Loopback cancellation tests must synchronize on the server receiving the first request before canceling. Fixed timeouts are not an acceptable substitute because a loaded Windows runner can cancel before socket acceptance and produce a false zero-request failure.
-CodeQL uses explicit `manual` build mode so generated and build-resolved C# remains in the high-accuracy full database. `CODEQL_OVERLAY_DATABASE_MODE=none` disables the incompatible incremental overlay optimization; do not switch to buildless `none` mode only to remove an annotation, because that can omit generated code.
+Owner：
 
-## Settings Persistence Policy
+- Active task：Domain `DownloadTask` → `DownloadTaskApplicationService` →
+  `IDownloadTaskStore`。
+- Completed history：`DownloadHistoryService` → `IDownloadHistoryStore`。
+- Active → history：只由 `IDownloadCompletionStore` 在一個 transaction 完成。
+- SQL／storage JSON：只由 `SqliteDownloadTaskStore` 擁有；UI projection 不擁有 SQL。
 
-- `ISettingsStore.Current` is the validated immutable read contract. Production consumers must use `Current` and typed `Update` calls; the non-singleton `SettingsManager` is an internal persistence implementation constructed only by `SettingsStore`.
-- Correlated settings changes use one `Update` call. This prevents another consumer from observing half of a proxy, content-selection, or related multi-field update.
-- `SchemaVersion` advances only through `SettingsSchemaMigrator`, one explicit version at a time. A migration must preserve existing JSON property names unless a separately tested compatibility migration is approved.
-- Malformed settings are moved to a unique `.invalid-*` backup before safe defaults are persisted. Do not log the payload or its personal path.
-- A file with a schema newer than the running application is read only for safe fallback and must remain byte-for-byte unchanged.
-- Persistence is debounced, serialized through one async gate, written to a UTF-8 temporary file, flushed, and atomically replaced. Do not restore synchronous whole-file writes or wrap them in `Task.Run`.
-- Debounce uses one tracked cancellation-aware Task, not a `Timer` callback. A replacement update cancels the previous delay; final async disposal awaits the last accepted write before releasing the gate.
-- The temporary JSON file must parse as one complete object before atomic replacement. Invalid or interrupted temporary output cannot replace the last valid settings file.
-- Each HTTP, download-planning, transfer, artifact, diagnostic, and FFmpeg operation captures one immutable snapshot. Dynamic setting suppliers are reserved for policy selection for the next queued worker slot, never for changing an operation already in progress.
-- Nested settings collections are immutable arrays. Publishing a later update cannot mutate an earlier operation snapshot.
-- Application shutdown must await `FlushAsync`. Owners that require pending changes to persist during disposal use `DisposeAsync`; synchronous `Dispose` only stops scheduled work.
-- The historical DES reader remains read-only. It may decrypt supported old settings once, but no code may use DES to write new data.
+守界：
 
-Settings changes must pass `SettingsStoreTests`, `SettingsArchitectureTests`, the Host smoke test, and the full Release build with `AnalysisMode=All`.
+- 不從 mutable UI 或 lossy history 重建 active Domain task。
+- 短連線、WAL、optimistic version、transaction；不要 process-wide DB lock／connection。
+- Migration：先 backup，再單一 transaction DDL，成功後才改 `user_version`，並有 rollback test。
+- Active/history collision 由 active owner 優先；history quarantine 不得改名成 active evidence。
+- Malformed row 個別 quarantine；不得截斷後續 keyset pages，也不得記錄 raw JSON、完整
+  path、Cookie 或 URL。
+- Completion 先完成 durable active→history transaction；之後的 staging cleanup 是
+  best effort。Lossy history 不保存 cleanup locator，restart 不保證補做。
+- 啟動載入全部 unfinished tasks 與最新 100 筆 history；其餘使用 keyset paging。
+- State 先 durable commit，再更新 UI；高頻 progress 可 bounded/coalesced。
+- 更新 `SQLite3MC.PCLRaw.bundle` 必跑 `LegacySqlCipherCompatibilityTests`。
 
-## Logging Policy
+## 傳輸與媒體卡
 
-- New code receives `ILogger<T>` from composition and must not call static `LogManager` or write diagnostics directly to Console.
-- Application-facing records, metrics and `IApplicationLogService` live in `DownKyi.Application.Diagnostics`. The provider, redactor, NLog sink, recent buffer, retention and exporter live in `DownKyi.Infrastructure.Logging`; Core and Desktop cannot own a logging implementation.
-- `ApplicationLogProvider` is the single MEL adapter and redaction boundary. It delegates to separate bounded recent-buffer, private NLog sink, retention and file-backed exporter owners. Do not create another log queue, file writer or export sanitizer.
-- Only NLog core is allowed. The sink owns a private `LogFactory`; global `LogManager` and `NLog.Extensions.Logging` are prohibited.
-- Keep per-record writes in the private `ReopenableFileTarget` batch override. NLog flushes the complete async queue as one `FileTarget` batch regardless of wrapper batch size, so the override is what guarantees a size-roll check between JSONL records while producers remain asynchronous.
-- Logging scopes carry correlation, download-task, or child-process context; messages must not contain raw cookies, sensitive query values, account IDs, email addresses, or full personal paths.
-- The writer queue and recent-event buffer stay bounded. A full queue may drop an entry and increments the diagnostic drop counter; logging must never block a download or UI thread.
-- Redaction completes before a record reaches NLog or the recent buffer. JSON serialization runs on NLog's async target through the thread-agnostic project layout.
-- Application shutdown must await `FlushAsync` and `DisposeAsync`. Explicit flush uses the bounded deferred-write barrier before resetting only the `FileTarget` handles, so the Log page can open the file immediately on Windows without losing concurrent records or rebuilding the async logger configuration.
-- Writer initialization or persistence failures must reach the caller of `FlushAsync`; `DisposeAsync` completes cleanup and then rethrows the first persistence failure. Do not silently report a successful flush or shutdown.
-- Files use UTC `yyyy-MM-dd` directories and JSONL records. Rotation defaults to 32 MiB, hard retention to seven days, and the storage safety cap to 512 MiB; maintenance protects the active file and runs at startup, hourly, day change, rotation, and before export.
-- Diagnostic export reads persisted files after flush, re-redacts defensively, skips malformed records with a metric, and writes a redacted JSON manifest plus bounded events. Metrics expose capacity ratio, age/capacity deletion counts, bytes/events written and malformed records; capacity changes require deterministic retention evidence first.
+- Queue：bounded workers；入口只傳 `DownloadTaskId`，不得輪詢 `ObservableCollection`。
+- Admission：`DownloadTaskAdmissionService` 唯一擁有 output reservation。
+- Backend：built-in／aria2 共用 key、resume、integrity、persistence 與 coordinator policy。
+- Success：backend 完成後仍須通過 shared DownKyi final-file integrity。
+- Pause／shutdown：保留 GID、partial map、completed keys、progress 與 version。
+- Delete：先 persist `Canceled`，再 stop backend、刪產物／sidecars、最後刪 row；cleanup
+  失敗不得假裝成功。
+- DURL：初始與刷新 manifest 先拒絕 duplicate `Order` 及無可用地址 segment，再排序。
+  不自行增加 positive、gap、contiguity 或 must-start-at-1 規則。
+- Mux／concat：same-directory temp；不覆蓋 foreign destination；失敗保留有效 source。
+- 只有 real fail-on-error decode 證明 source 無效時，才撤銷 completed key／identity／file。
+- FFmpeg：只由 `FfmpegProcessRunner` 擁有 concurrency、timeout、cancellation 與 process tree。
+- HTTP：401／403／schema failure 不 retry；429 bounded `Retry-After`；cancellation 不 retry。
 
-Logging changes must pass Infrastructure `ApplicationLogProviderTests`, including concurrent producer/flush stress, the Host smoke test, and the full Release build with `AnalysisMode=All`.
+Loopback cancellation test 必須先同步到 server 已收到 request；固定 sleep／timeout 不是同步。
 
-## Desktop Theme Policy
+## Settings 卡
 
-- Desktop uses `Avalonia.Themes.Fluent` and the Fluent DataGrid theme. Do not reintroduce the Simple theme or load two control themes in the same App.
-- Shared typography, spacing, radius, elevation, control-height, and progress-thickness values live in `DownKyi/Themes/DesignTokens.axaml`.
-- `ThemeDefault.axaml` retains both `Default` and `Dark` color dictionaries. Theme work must preserve keyboard focus, high-DPI sizing, and existing localized resources.
-- Download, history, and favorites lists must retain `VirtualizingStackPanel`; styling changes cannot trade large-list responsiveness for visual uniformity.
-- Theme changes require `UiThemeArchitectureTests`, real Host XAML smoke, and an isolated packaged-App startup on Windows. Native Linux/macOS construction remains enforced by the CI matrix.
+- 讀：`ISettingsStore.Current` immutable snapshot；寫：typed `Update`。
+- Correlated fields 用一次 `Update`；operation 開始後不得讀動態設定改變其語義。
+- Schema 一次升一版；保留既有 JSON names，除非有相容 migration。
+- Malformed file 先移到唯一 `.invalid-*`；newer schema file 必須 byte-for-byte 不動。
+- 寫入：debounce → single async gate → temp UTF-8 JSON → parse → flush → atomic replace。
+- Shutdown await `FlushAsync`／必要時 `DisposeAsync`；DES 僅可讀 legacy，禁止新寫入。
+- 證據：`SettingsStoreTests`、`SettingsArchitectureTests`、Host smoke、strict build。
 
-## Host Composition Policy
+## Logging 卡
 
-- `src/DownKyi.Domain` is framework-free and owns typed result/error contracts.
-- `src/DownKyi.Application` depends only on Domain and owns application cancellation plus injectable time contracts.
-- `src/DownKyi.Infrastructure` implements Application contracts and never references Desktop, Avalonia, or removed composition frameworks.
-- `src/DownKyi.Desktop` owns the framework-neutral Host builder; `DownKyi/Composition/DesktopComposition.cs` owns concrete product registrations through Microsoft DI.
-- `DownKyiHost` uses `DisableDefaults=true`; adding configuration providers must be explicit and must not redirect existing database, settings, login, portable-mode, or aria2 session paths.
-- There is one Microsoft DI container. Prism/DryIoc, service locator access, global App services, and a second composition root are forbidden.
-- Host-independent root XAML must not use `ViewModelLocator.AutoWireViewModel` or `RegionManager.RegionName`; production C# must not reference `ContainerLocator`.
-- Long-running operations create a linked scope from `ApplicationCancellation`; caller cancellation stays local, while Host stop cancels every linked operation.
+- 入口只注入 `ILogger<T>`；禁止 static `LogManager`、Console 與第二套 log queue/writer。
+- `ApplicationLogProvider` 是唯一 MEL adapter／redaction boundary；實作在 Infrastructure。
+- Redaction 必須早於 NLog 與 recent buffer；禁止 Cookie、token、account、email、完整私人路徑。
+- Queue／recent buffer 保持 bounded；logging 不得阻塞 download 或 UI thread。
+- Shutdown await `FlushAsync` + `DisposeAsync`；第一個 persistence failure 必須傳回 caller。
+- Export：flush 後讀 persisted files、再次 redaction、跳過 malformed 並計數。
+- 預設：UTC day、32 MiB rotation、7-day retention、512 MiB safety cap。
+- 證據：`ApplicationLogProviderTests` stress、Host smoke、strict build。
 
-## WBI And API Contract Policy
+## Desktop／Host 卡
 
-- `IWbiKeyProvider` owns runtime WBI key validity. Persisted `ImgKey` and `SubKey` remain unchanged for data compatibility and are examined once as a startup candidate, not treated as permanently valid configuration.
-- Valid keys are published atomically, retained for six hours, and refreshed through one shared task. Canceling one waiter does not cancel the refresh needed by other operations.
-- `WbiSign` is a deterministic protocol function: callers supply both keys and the timestamp. It cannot read settings or initialize user state.
-- A WBI request may force one refresh and one retry only when Bilibili returns code `-403` from that signed request. A second rejection and all non-WBI/non-`-403` errors propagate with the original code and message.
-- Home-page account refresh may update profile and valid WBI keys, but a missing/partial navigation payload cannot erase previously validated keys. Public video parsing cannot depend on login or home-page timing.
-- Ordinary video playback uses `data`, bangumi v2 playback uses `result.video_info`, and cheese playback uses `data`. Missing or structurally empty expected payloads are typed contract failures.
-- Anonymous `/x/web-interface/nav` may return code `-101` while still carrying public WBI metadata. That exception is endpoint-scoped; every other nonzero API code remains a typed failure.
-- Fixed fixtures under `tests/DownKyi.Core.Tests/BiliApi/JsonSamples` cover `BV1U7V66FEiK` video info, page/CID, and playback without using the live Bilibili network.
-- `docs/operations/bilibili-api-audit.md` is the endpoint inventory. Any endpoint/envelope change updates it and a deterministic fixture in the same PR; `BilibiliApiInventoryArchitectureTests` enforces coverage.
-- `pwsh ./script/audit-bilibili-api.ps1 -ConfirmLive` performs an explicitly requested anonymous probe. It never loads local login data and is not a CI test.
-- `pwsh ./script/audit-bilibili-authenticated-api.ps1 -ConfirmAuthenticatedLive` is the separately authorized read-only login probe. It gates on `/nav`, reads only `BILIBILI_TEST_COOKIE` from `~/.codex/.env`, and persists only the allowlisted sanitized artifact.
-- Run `pwsh ./script/scan-secrets.ps1` after an authenticated audit. Gitleaks must report zero findings for all tracked and non-ignored untracked candidate files; broad path exclusions are prohibited.
+- 依賴方向：Domain ← Application ← Infrastructure／Desktop；Infrastructure 不 reference Desktop。
+- `DownKyi` 只組 concrete product registrations；全產品只有一個 Microsoft DI container。
+- 禁止 Prism、DryIoc、service locator、global App services 與第二 composition root。
+- `DisableDefaults=true`；新增 config provider 不得改變既有 data/settings/login/aria2 paths。
+- Long-running operation 使用 linked scope：caller cancellation local，Host stop cancel all。
+- Theme 只用 Fluent + Fluent DataGrid；token 在 `DesignTokens.axaml`。
+- 保留 keyboard focus、high-DPI、localization 與大型列表 virtualization。
+- 證據：architecture tests、Host XAML smoke、Windows packaged startup、CI platform matrix。
 
-## Analyzer Policy
+## Bilibili／WBI 卡
 
-- Do not add project-wide `NoWarn`, analyzer exclusions, `#nullable disable`, `GlobalSuppressions.cs`, or `.editorconfig` severities of `none` or `silent`.
-- Do not add `#pragma warning disable` or `SuppressMessage` merely to make a build pass.
-- Normal strict builds load `legacy-ca-blocking.globalconfig` and enforce CA1005, CA1017, CA1021, CA1045, CA1060, CA1502, CA1505, and CA1509 as errors. CA1501 and CA1506 remain advisory-only.
-- `script/audit-code-metrics.ps1` is the independent advisory reporting path for the complete Issue #194 legacy inventory. It enables all ten rules as warnings with warnings-as-errors disabled, so every original finding remains visible without changing the strict-build policy; restore, build, or audit execution failures still fail closed.
-- A minimal external-protocol suppression is allowed only when the protocol requires the algorithm, a contract test proves the requirement, and the code documents why it is not used for passwords or trust decisions.
-- Fix diagnostics in this order: security/correctness; async/cancellation/disposal/threading; performance/allocation; public API/collections; naming/globalization/style.
-- Before changing fields, properties, collections, or names, inspect JSON/XML serialization, SQLite persistence, Avalonia bindings, reflection, and external protocol contracts.
-- Regenerate an inventory from clean-build logs with `script/analyzer-inventory.ps1`; its CSV is the authoritative file-and-line detail, while the Markdown file is the review summary.
-- UI-layer awaits that must continue on Avalonia state use `ConfigureAwait(true)`; reusable Core and background infrastructure use `ConfigureAwait(false)`. xUnit test bodies retain the test scheduler with `ConfigureAwait(true)`.
-- Fire-and-forget entry points must observe faulted tasks and log the base exception. Do not restore a general `catch (Exception)` sink.
-- Types that own cancellation sources, processes, HTTP resources, streams, bitmaps, or download services must release them through an explicit `IDisposable` or `IAsyncDisposable` owner.
-- Assemblies explicitly declare `CLSCompliant(false)` in `Directory.Build.props`; this satisfies `CA1014` by documenting the current cross-language contract and must not be changed to `true` without first auditing every public API for CLS compliance.
+- `IWbiKeyProvider` 唯一擁有 key validity；一次 shared refresh，不被單一 waiter cancellation 取消。
+- `WbiSign` 是純 protocol function；caller 傳 keys + timestamp。
+- 只有 signed request 回 `-403` 可 force refresh 並 retry 一次；第二次直接傳回原錯誤。
+- Public parsing 不依賴 login／home-page timing；partial nav 不得清掉已驗證 keys。
+- Envelope：video=`data`、bangumi v2=`result.video_info`、cheese=`data`；缺失／空 payload
+  是 typed failure。
+- Endpoint／envelope 變更：同 PR 更新 API inventory + deterministic fixture。
+- Live audit 必須顯式授權；authenticated audit 後跑 `script/scan-secrets.ps1`。
 
-### Approved Minimal Suppressions
+## Analyzer 卡
 
-Only the following source-local suppressions are approved. Any other suppression requires the same contract evidence and an update to this section.
+- 禁止 project-wide `NoWarn`、analyzer exclusion、`#nullable disable`、silent severity 或
+  為過 build 新增 suppression。
+- 修復順序：security/correctness → async/lifecycle → performance → public API → style。
+- 改 field／property／collection／name 前，檢查 serialization、SQLite、XAML、reflection、protocol。
+- Blocking rules 由 strict build 擁有；CA1501／CA1506 只在 advisory audit 報告。
+- Inventory 用 `script/analyzer-inventory.ps1`；CSV 是 file/line authority，Markdown 是摘要。
+- UI state await 用 `ConfigureAwait(true)`；reusable Core/background 用 `false`。
+- Resource owner 必須有明確 `IDisposable`／`IAsyncDisposable`；fire-and-forget 必須觀察 fault。
 
-| Rule | Location | Reason | Guard | Removal owner |
-| --- | --- | --- | --- | --- |
-| `CA5351` | `DownKyi.Core/BiliApi/Sign/WbiSign.cs` | Bilibili WBI defines `w_rid` as MD5 of the canonical query plus mixin key. It is an external request-signing format, not password storage or a local trust decision. | `WbiSignTests.EncodeWbiMatchesProtocolVector` | Remove only if Bilibili replaces WBI. |
-| `CA5351` | `DownKyi.Core/Utils/Encryptor/LegacySettingsDecryptor.cs` | Read-only migration of settings written by DownKyi 1.0.20 and earlier. It cannot encrypt new data; successful reads are immediately rewritten through the current JSON settings writer. | `LegacySettingsDecryptorTests.DecryptReadsLegacySettingsFixture` | Remove only after an explicit migration-window decision includes release telemetry and user-data recovery guidance. |
+唯一預先核准的 source-local `CA5351`：
 
-Both suppressions cover only the algorithm construction or one-shot hash call. Expanding their scope, reusing them for credentials/integrity, or adding another weak-crypto caller is prohibited.
+| Location | 只允許用途 | Removal gate |
+| --- | --- | --- |
+| `DownKyi.Core/BiliApi/Sign/WbiSign.cs` | Bilibili WBI protocol MD5 | Bilibili 取代 WBI |
+| `DownKyi.Core/Utils/Encryptor/LegacySettingsDecryptor.cs` | read-only legacy migration | 有 telemetry、recovery guidance 的 migration-window 決策 |
 
-## External Binaries
+不得把這兩個 suppression 擴到 password、integrity 或其他 trust decision。
 
-Release packaging downloads aria2 and FFmpeg from the scripts in `script/`.
+## External Binary 卡
 
-- `script/aria2.ps1` and `script/aria2.sh` manage aria2 assets.
-- `script/ffmpeg.ps1` and `script/ffmpeg.sh` manage FFmpeg and ffprobe assets.
-- FFmpeg upstream discovery and project-owned immutable mirroring are owned by
-  `.github/workflows/update-ffmpeg-assets.yml`; see
-  `docs/operations/ffmpeg-asset-mirroring.md`. Production entries must be
-  fixed project-owned release URLs, never BtbN/yt-dlp/martin-riedl URLs or
-  `latest` aliases.
-- Windows and Linux packages prefer FFmpeg builds with hardware encoders. Windows x86 uses the pinned yt-dlp FFmpeg build because the former compact archive omitted ffprobe.
-- macOS packages prefer builds that expose VideoToolbox when available.
-- Every script resolves the manifest, download directory and binary output
-  relative to its own file, so it must work when invoked from the repository
-  root or from `script/`.
-- `script/assets/external-assets.json` is the only URL/checksum owner. Use an
-  immutable release tag, never a mutable `latest` asset. The scripts accept an
-  archive only after TLS validation, a successful HTTP status and its SHA-256
-  matching the manifest.
-- aria2 manifest entries record the official base commit, exact independent
-  DownKyi source commit, canonical patch digest, immutable build commit,
-  required feature marker, archive digest and extracted binary digest. The
-  installer writes the verified binary digest beside `aria2c`; runtime verifies
-  that sidecar before process creation and then verifies the feature over RPC.
-  These controls identify source and artifact content but do not by themselves
-  prove reproducible builds, an SBOM or signed provenance. Current evidence and
-  residual risk are maintained in `docs/operations/aria2-security.md` and
-  `docs/operations/aria2-security-baseline.json`.
-- `DownKyi.Core` stores the checked-in external asset catalog but does not
-  select or copy runtime-specific content. The executable is the sole package
-  content owner: it uses the explicit publish target first, otherwise the host
-  for local development, then directly includes the selected catalog files.
-  `DownKyiAssetRuntimeIdentifier` must never cross a project-reference
-  boundary or assign the .NET SDK `RuntimeIdentifier`; cross-target restore
-  and publish remain the SDK RID owners.
-- Packaged local aria2 RPC listens only on a fresh ephemeral loopback port and
-  uses a fresh 256-bit secret. The secret is supplied through a temporary
-  restricted config and never appears in process arguments. It receives
-  `--stop-with-process` on every OS and also joins a kill-on-close Windows Job
-  Object, so an abrupt App termination cannot leave a local child running.
-  Custom remote aria2 endpoints are not started or terminated by this owner;
-  non-loopback RPC requires HTTPS and does not follow redirects. Custom Aria is
-  compatible only with endpoints whose `aria2.getVersion().enabledFeatures`
-  includes `downkyi-secure-redirect-v2`; generic aria2 and Motrix remain
-  unsupported because they cannot prove the required redirect protection.
-- aria2 task headers are per-transfer. Cookie can be attached only to an exact
-  HTTPS `bilibili.com` host or subdomain. The actual patched transfer engine
-  rejects scheme downgrade and credential-bearing cross-origin redirects before
-  another request is emitted. There is no process-global Cookie header and no
-  production certificate-validation or HTTPS-downgrade switch.
+- URL／checksum 唯一 owner：`script/assets/external-assets.json`；只用 immutable tag／URL。
+- Installer 必須從 repository root 與 `script/` 都能執行。
+- aria2 provenance 記錄 official base、DownKyi source/patch/build commit、archive/binary digest。
+- Runtime 在 process start 前驗 sidecar digest，再透過 RPC 驗 required feature。
+- Packaged local aria2：ephemeral loopback port、fresh 256-bit secret、restricted config、
+  `--stop-with-process`；Windows 再加 kill-on-close Job Object。
+- Credential header 只給 exact HTTPS `bilibili.com` host／subdomain；禁止 downgrade 與
+  credential-bearing cross-origin redirect。
+- Remote aria2 不由 App start/stop；non-loopback 必須 HTTPS 且需要
+  `downkyi-secure-redirect-v2`。Generic aria2／Motrix 不受支援。
 
-When updating an external binary:
+更新 checklist：
 
-1. Update the independent source commit and mechanically regenerate the
-   normal-context canonical patch from the fixed official base.
-2. Verify the patch digest, `git apply --check`, actual apply, applied-source
-   `git diff --check` and exact source tree equality in the static build repo.
-3. Build all six RIDs from the immutable commit and record archive and binary
-   SHA-256 values in `script/assets/external-assets.json`.
-4. Invoke the installer from the repository root and verify its binary sidecar,
-   then run the `aria2-tls-security` matrix for all six RIDs and inspect every
-   sanitized report.
-5. Confirm `ffmpeg -hide_banner -encoders` lists the expected hardware encoder on a capable machine.
-6. Keep fallback behavior intact; missing GPU support must not block normal downloads.
+- [ ] 固定 source/base/build commits，mechanically regenerate canonical patch。
+- [ ] 驗 patch digest、`git apply --check`、applied tree equality、`git diff --check`。
+- [ ] 建六個 RID，記錄 archive + binary SHA-256。
+- [ ] 從 repo root 跑 installer 並驗 sidecar。
+- [ ] 六 RID `aria2-tls-security` 全過並檢查 sanitized reports。
+- [ ] 驗 FFmpeg／ffprobe 與適用平台 hardware encoder；GPU 缺失仍可 CPU fallback。
 
-## Release Tag Validation
+詳細 supply-chain 與 residual risk：`docs/operations/aria2-security.md`、
+`docs/operations/ffmpeg-asset-mirroring.md`。
 
-Before pushing a release tag:
+## Release 卡
 
-1. Confirm `version.txt` matches the planned tag.
-2. Manually dispatch `.github/workflows/build.yml` on the release commit and require all Windows, Linux, and macOS release-gate/package jobs to pass.
-3. For macOS without Apple credentials, require the final app bundle to use ad-hoc signing and pass `codesign --verify --deep --strict` before DMG creation. Record that the resulting DMG is not Developer ID signed, notarized, stapled, or Gatekeeper-trusted.
-4. When `MACOS_CERTIFICATE`, `MACOS_CERTIFICATE_PWD`, `APPLE_ID`, `TEAM_ID`, and `APP_SPECIFIC_PASSWORD` are available, additionally confirm macOS x64 and arm64 app notarization, stapling, Gatekeeper assessment, DMG signing, DMG verification, DMG notarization, and final DMG assessment before upload.
-5. Confirm each uploaded publish manifest contains non-empty DownKyi, aria2, FFmpeg, and ffprobe binaries with SHA-256 values and the expected application version.
-6. Run the quality commands from the dependency section and `git diff --check`.
-7. Review `README.md` and `CHANGELOG.md` for user-visible changes.
-8. Push `main`, then push the `v*` tag so the same workflow recreates the validated packages.
-9. Verify generated packages, per-package `.sha256` files, and publish manifests are attached to the release.
+- [ ] `version.txt` 與 `v<version>` 完全一致。
+- [ ] 在 exact release commit 手動跑 build workflow；所有 OS release/package gates 通過。
+- [ ] Publish manifest 含 DownKyi、aria2、FFmpeg、ffprobe、版本與 SHA-256。
+- [ ] macOS 二選一：完整 Developer ID/notarization/stapling/Gatekeeper；或明確標示的
+  ad-hoc + strict bundle/DMG/copy/launch 驗證。不得宣稱 ad-hoc 是 trusted distribution。
+- [ ] Signing 是最後一步；sign 後不得再改 bundle content／permission。
+- [ ] 驗證完成 DMG 內的 exact app，不只驗中間 signing command。
+- [ ] 跑標準品質閘門，review README + CHANGELOG。
+- [ ] 先 push `main`，再 push tag；發布後核對 packages、`.sha256` 與 manifests。
 
-`script/validate-publish-output.ps1` is the common package-content gate. It also rejects a runtime that drops the Fluent theme, restores the Simple theme, omits ffprobe, or publishes a mismatched assembly version. Do not replace it with a file-exists check in only one platform job.
+`script/validate-publish-output.ps1` 是共同 package-content gate；禁止以單一平台的
+file-exists check 取代。
 
-macOS signing is deliberately last-mile and inside-out: managed assemblies and Mach-O files in the app bundle are signed explicitly before the outer app. Non-code publish files are stored under `Contents/Resources` and linked from their host-expected relative paths; `Contents/MacOS` must not contain unsigned regular data files. `script/macos/package.sh` may create the app bundle, copy `Info.plist`, icon and publish output, and apply executable bits to aria2/FFmpeg. No content or permission step may run after `script/macos/sign.sh`; a later mutation invalidates the resource seal. The release workflow verifies and launches the exact app bundle from the completed DMG, not just an earlier signing command.
+## 手動 Smoke 卡
 
-## Regression Checklist
+- [ ] 視窗關閉後 process exit；可重新開啟。
+- [ ] BV、AV、bangumi、cheese 可解析。
+- [ ] 單項、多 P、全選可加入下載；取消 directory picker 不新增 task。
+- [ ] Pause → close → reopen 後 resume，不從零開始。
+- [ ] 刪除 active task 會移除 media 與 `.aria2`／`.download` sidecars。
+- [ ] Subtitle SRT time code 正確。
+- [ ] Diagnostic export 不含私人路徑、Cookie、token、敏感 URL。
 
-Use this checklist for download, parsing, and exit-related changes:
+## 固定名稱
 
-- Start the app, close it from the window button, and confirm the process exits.
-- Reopen the app after closing and confirm the main window appears.
-- Parse BV, AV, bangumi, and cheese links.
-- Select one item, multiple parts, and all items, then add them to downloads.
-- Cancel the directory picker and confirm no task is added.
-- Pause, close, reopen, and confirm large tasks resume rather than restart.
-- Delete an active large download and confirm media files and `.aria2` / `.download` sidecars are removed.
-- Download subtitles and confirm SRT time codes are correct.
-- Export diagnostic logs and confirm local user paths, cookies, tokens, and sensitive URLs are redacted.
-
-## Canonical Resource Naming
-
-The default language resource lives at `src/DownKyi.Desktop/Languages/Default.axaml`, and the FFmpeg runtime namespace is `DownKyi.Core.FFmpeg`. Architecture tests reject the historical `Languanges` resource spelling and `FFMpeg` source-directory casing so packaging and case-sensitive platforms cannot drift.
+- Language resource：`src/DownKyi.Desktop/Languages/Default.axaml`。
+- FFmpeg namespace：`DownKyi.Core.FFmpeg`。
+- 禁止歷史拼法 `Languanges` 與 source-directory casing `FFMpeg`。

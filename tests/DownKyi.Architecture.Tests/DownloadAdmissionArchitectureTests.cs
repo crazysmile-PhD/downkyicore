@@ -70,13 +70,37 @@ public sealed class DownloadAdmissionArchitectureTests
 
         Assert.True(
             helper.IndexOf("ensureAdmissionAsync()", StringComparison.Ordinal)
-            < helper.IndexOf("selectDirectoryAsync()", StringComparison.Ordinal));
+            < helper.IndexOf("selectDownloadAsync()", StringComparison.Ordinal));
         Assert.Contains("addToDownloadSession.EnsureAdmissionAsync", content, StringComparison.Ordinal);
         Assert.Contains("addService.EnsureAdmissionAsync", video, StringComparison.Ordinal);
         Assert.Contains("_admissionPresenter.EnsureAdmissionAsync", session, StringComparison.Ordinal);
         Assert.True(File.ReadLines(Path.Combine(
             RepositoryRoot,
             "src", "DownKyi.Desktop", "Services", "Download", "AddToDownloadService.cs")).Count() <= 350);
+    }
+
+    [Fact]
+    public void AddFlowRequiresExplicitSelectionAndPreparedDownloadInputs()
+    {
+        var contract = ReadSource(
+            "src", "DownKyi.Desktop", "Services", "Download", "IAddToDownloadSession.cs");
+        var service = ReadSource(
+            "src", "DownKyi.Desktop", "Services", "Download", "AddToDownloadService.cs");
+        var selection = ReadSource(
+            "src", "DownKyi.Application", "Downloads", "DownloadAddSelection.cs");
+        var prepared = ReadSource(
+            "src", "DownKyi.Desktop", "Services", "Download", "PreparedDownload.cs");
+
+        Assert.Contains("Task<DownloadAddSelection?> SelectDownloadAsync", contract, StringComparison.Ordinal);
+        Assert.Contains("Task<PreparedDownload> PrepareAsync", contract, StringComparison.Ordinal);
+        Assert.Contains("DownloadAddSelection selection", contract, StringComparison.Ordinal);
+        Assert.Contains("PreparedDownload preparedDownload", contract, StringComparison.Ordinal);
+        Assert.Contains("DownloadContentSelection RequestedContent", selection, StringComparison.Ordinal);
+        Assert.Contains("DownloadMediaCapabilities AvailableMedia", prepared, StringComparison.Ordinal);
+        Assert.DoesNotContain("_downloadContent", service, StringComparison.Ordinal);
+        Assert.DoesNotContain("SetVideoInfoService", contract, StringComparison.Ordinal);
+        Assert.DoesNotContain("GetVideo(", contract, StringComparison.Ordinal);
+        Assert.DoesNotContain("ParseVideoAsync", contract, StringComparison.Ordinal);
     }
 
     [Fact]

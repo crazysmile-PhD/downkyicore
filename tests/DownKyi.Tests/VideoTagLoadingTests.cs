@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Net.Http;
 using DownKyi.Application.Desktop;
 using DownKyi.Application.Downloads;
+using DownKyi.Core.BiliApi.VideoStream.Models;
 using DownKyi.Domain.Downloads;
 using DownKyi.Domain.Results;
 using DownKyi.Infrastructure.Downloads;
@@ -78,10 +79,10 @@ public sealed class VideoTagLoadingTests : IDisposable
             observedToken = cancellationToken;
             return Task.FromResult<IReadOnlyList<string>>(["current"]);
         });
-        context.Prepare(page);
+        var preparedDownload = await context.PrepareAsync(page);
 
         var added = await context.Service
-            .AddToDownload(_directory, cancellationToken: operation.Token)
+            .AddToDownload(CreateSelection(_directory), preparedDownload, cancellationToken: operation.Token)
             .ConfigureAwait(true);
 
         Assert.Equal(1, added);
@@ -103,9 +104,12 @@ public sealed class VideoTagLoadingTests : IDisposable
             await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(true);
             return Array.Empty<string>();
         });
-        context.Prepare(page);
+        var preparedDownload = await context.PrepareAsync(page);
 
-        var addTask = context.Service.AddToDownload(_directory, cancellationToken: operation.Token);
+        var addTask = context.Service.AddToDownload(
+            CreateSelection(_directory),
+            preparedDownload,
+            cancellationToken: operation.Token);
         await entered.Task.WaitAsync(TestContext.Current.CancellationToken).ConfigureAwait(true);
         await operation.CancelAsync();
 
@@ -121,10 +125,11 @@ public sealed class VideoTagLoadingTests : IDisposable
         using var operation = CancellationTokenSource.CreateLinkedTokenSource(
             TestContext.Current.CancellationToken);
         context.Store.AfterAddAsync = operation.CancelAsync;
-        context.Prepare(CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([])));
+        var preparedDownload = await context.PrepareAsync(
+            CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([])));
 
         var added = await context.Service
-            .AddToDownload(_directory, cancellationToken: operation.Token)
+            .AddToDownload(CreateSelection(_directory), preparedDownload, cancellationToken: operation.Token)
             .ConfigureAwait(true);
 
         Assert.True(operation.IsCancellationRequested);
@@ -139,10 +144,13 @@ public sealed class VideoTagLoadingTests : IDisposable
         using var context = CreateContext(generateMetadata: true);
         var page = CreatePage(_ => Task.FromException<IReadOnlyList<string>>(
             new HttpRequestException("tag endpoint unavailable")));
-        context.Prepare(page);
+        var preparedDownload = await context.PrepareAsync(page);
 
         var added = await context.Service
-            .AddToDownload(_directory, cancellationToken: TestContext.Current.CancellationToken)
+            .AddToDownload(
+                CreateSelection(_directory),
+                preparedDownload,
+                cancellationToken: TestContext.Current.CancellationToken)
             .ConfigureAwait(true);
 
         Assert.Equal(1, added);
@@ -177,10 +185,14 @@ public sealed class VideoTagLoadingTests : IDisposable
     public async Task EnabledMovieMetadataIncludesLoadedTags()
     {
         using var context = CreateContext(generateMetadata: true);
-        context.Prepare(CreatePage(_ => Task.FromResult<IReadOnlyList<string>>(["one", "two"])));
+        var preparedDownload = await context.PrepareAsync(
+            CreatePage(_ => Task.FromResult<IReadOnlyList<string>>(["one", "two"])));
 
         var added = await context.Service
-            .AddToDownload(_directory, cancellationToken: TestContext.Current.CancellationToken)
+            .AddToDownload(
+                CreateSelection(_directory),
+                preparedDownload,
+                cancellationToken: TestContext.Current.CancellationToken)
             .ConfigureAwait(true);
 
         Assert.Equal(1, added);
@@ -207,13 +219,16 @@ public sealed class VideoTagLoadingTests : IDisposable
         };
         var provider = new VideoTagProvider(client);
         using var context = CreateContext(generateMetadata: true);
-        context.Prepare(CreatePage(cancellationToken => provider.GetTagsAsync(
+        var preparedDownload = await context.PrepareAsync(CreatePage(cancellationToken => provider.GetTagsAsync(
             "BV1test",
             84,
             cancellationToken)));
 
         var added = await context.Service
-            .AddToDownload(_directory, cancellationToken: TestContext.Current.CancellationToken)
+            .AddToDownload(
+                CreateSelection(_directory),
+                preparedDownload,
+                cancellationToken: TestContext.Current.CancellationToken)
             .ConfigureAwait(true);
 
         Assert.Equal(1, added);
@@ -226,14 +241,17 @@ public sealed class VideoTagLoadingTests : IDisposable
     {
         using var context = CreateContext(generateMetadata: false);
         var loadCount = 0;
-        context.Prepare(CreatePage(_ =>
+        var preparedDownload = await context.PrepareAsync(CreatePage(_ =>
         {
             loadCount++;
             return Task.FromResult<IReadOnlyList<string>>(["unused"]);
         }));
 
         var added = await context.Service
-            .AddToDownload(_directory, cancellationToken: TestContext.Current.CancellationToken)
+            .AddToDownload(
+                CreateSelection(_directory),
+                preparedDownload,
+                cancellationToken: TestContext.Current.CancellationToken)
             .ConfigureAwait(true);
 
         Assert.Equal(1, added);
@@ -252,10 +270,13 @@ public sealed class VideoTagLoadingTests : IDisposable
         var second = CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]));
         second.Cid = 2;
         second.Name = "second";
-        context.Prepare(first, second);
+        var preparedDownload = await context.PrepareAsync(first, second);
 
         var added = await context.Service
-            .AddToDownload(_directory, cancellationToken: TestContext.Current.CancellationToken)
+            .AddToDownload(
+                CreateSelection(_directory),
+                preparedDownload,
+                cancellationToken: TestContext.Current.CancellationToken)
             .ConfigureAwait(true);
 
         Assert.Equal(1, added);
@@ -276,10 +297,12 @@ public sealed class VideoTagLoadingTests : IDisposable
         using var context = CreateContext(
             generateMetadata: false,
             new UnknownFailurePhysicalOutputPathResolver());
-        context.Prepare(CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([])));
+        var preparedDownload = await context.PrepareAsync(
+            CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([])));
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => context.Service.AddToDownload(
-            _directory,
+            CreateSelection(_directory),
+            preparedDownload,
             cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Equal(0, context.Store.AddCount);
@@ -294,12 +317,13 @@ public sealed class VideoTagLoadingTests : IDisposable
         using var context = CreateContext(
             generateMetadata: false,
             runtimeAvailability: new UnavailableDownloadRuntimeAvailability());
-        context.PrepareSections(
+        var preparedDownload = await context.PrepareSectionsAsync(
             [CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]))],
             [CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]))]);
 
         var added = await context.Service.AddToDownload(
-            _directory,
+            CreateSelection(_directory),
+            preparedDownload,
             isAll: true,
             TestContext.Current.CancellationToken);
 
@@ -317,14 +341,133 @@ public sealed class VideoTagLoadingTests : IDisposable
         first.Cid = 1;
         var second = CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]));
         second.Cid = 2;
-        context.Prepare(first, second);
+        var preparedDownload = await context.PrepareAsync(first, second);
 
         var added = await context.Service.AddToDownload(
-            _directory,
+            CreateSelection(_directory),
+            preparedDownload,
             cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(2, added);
         Assert.Equal(1, context.Store.HistoryPageRequestCount);
+    }
+
+    [Fact]
+    public async Task ExistingDataPreparationReportsEachPagesMediaCapabilities()
+    {
+        using var context = CreateContext(generateMetadata: false);
+        var videoOnly = CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]));
+        videoOnly.PlayUrl = new PlayUrl
+        {
+            Dash = new PlayUrlDash
+            {
+                Video = [new PlayUrlDashVideo()]
+            }
+        };
+        var audioAndVideo = CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]));
+        audioAndVideo.PlayUrl = new PlayUrl
+        {
+            Dash = new PlayUrlDash
+            {
+                Video = [new PlayUrlDashVideo()],
+                Audio = [new PlayUrlDashVideo()]
+            }
+        };
+        var combined = CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]));
+        combined.PlayUrl = new PlayUrl
+        {
+            Durl = [new PlayUrlDurl()]
+        };
+        var dolby = CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]));
+        dolby.PlayUrl = new PlayUrl
+        {
+            Dash = new PlayUrlDash
+            {
+                Video = [new PlayUrlDashVideo()],
+                Dolby = new PlayUrlDashDolby { Audio = [new PlayUrlDashVideo()] }
+            }
+        };
+        var flac = CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]));
+        flac.PlayUrl = new PlayUrl
+        {
+            Dash = new PlayUrlDash
+            {
+                Video = [new PlayUrlDashVideo()],
+                Flac = new PlayUrlDashFlac
+                {
+                    Audio = new PlayUrlDashVideo { BaseAddress = "https://media.invalid/audio.flac" }
+                }
+            }
+        };
+
+        var preparedDownload = await context.PrepareAsync(
+            videoOnly,
+            audioAndVideo,
+            combined,
+            dolby,
+            flac);
+        var pages = Assert.Single(preparedDownload.Sections).Pages;
+
+        Assert.Equal(new DownloadMediaCapabilities(Video: true, Audio: false), pages[0].AvailableMedia);
+        Assert.Equal(new DownloadMediaCapabilities(Video: true, Audio: true), pages[1].AvailableMedia);
+        Assert.Equal(new DownloadMediaCapabilities(Video: true, Audio: true), pages[2].AvailableMedia);
+        Assert.Equal(new DownloadMediaCapabilities(Video: true, Audio: true), pages[3].AvailableMedia);
+        Assert.Equal(new DownloadMediaCapabilities(Video: true, Audio: true), pages[4].AvailableMedia);
+    }
+
+    [Fact]
+    public async Task ExplicitRequestedContentIsStoredWithoutDirectorySelectionState()
+    {
+        using var context = CreateContext(generateMetadata: false);
+        var preparedDownload = await context.PrepareAsync(
+            CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([])));
+        var requestedContent = DownloadContentSelection.None with
+        {
+            Audio = true,
+            Subtitle = true
+        };
+
+        var added = await context.Service.AddToDownload(
+            CreateSelection(_directory, requestedContent),
+            preparedDownload,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, added);
+        Assert.Equal(
+            requestedContent,
+            Assert.Single(context.ListState.Downloading).DownloadBase.NeedDownloadContent);
+    }
+
+    [Fact]
+    public async Task InfoServicePreparationResolvesPlaybackIntoTheSamePreparedResult()
+    {
+        using var context = CreateContext(generateMetadata: false);
+        var page = CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]));
+        page.PlayUrl = null;
+        var video = new VideoInfoView { Title = "resolved" };
+        var section = new VideoSection { VideoPages = [page] };
+        var infoService = new PreparationInfoService(
+            video,
+            [section],
+            new PlayUrl
+            {
+                Dash = new PlayUrlDash
+                {
+                    Video = [new PlayUrlDashVideo()]
+                }
+            });
+
+        var preparedDownload = await context.Service.PrepareAsync(
+            infoService,
+            TestContext.Current.CancellationToken);
+
+        Assert.NotNull(preparedDownload);
+        Assert.Same(video, preparedDownload.Video);
+        var preparedPage = Assert.Single(Assert.Single(preparedDownload.Sections).Pages);
+        Assert.Same(page, preparedPage.Page);
+        Assert.Equal(new DownloadMediaCapabilities(Video: true, Audio: false), preparedPage.AvailableMedia);
+        Assert.True(page.IsSelected);
+        Assert.Equal(1, infoService.StreamRequestCount);
     }
 
     private DownloadTestContext CreateContext(
@@ -340,6 +483,15 @@ public sealed class VideoTagLoadingTests : IDisposable
             resolver,
             taskQueue,
             runtimeAvailability);
+    }
+
+    private static DownloadAddSelection CreateSelection(
+        string directory,
+        DownloadContentSelection? requestedContent = null)
+    {
+        return new DownloadAddSelection(
+            directory,
+            requestedContent ?? DownloadContentSelection.All);
     }
 
     private static VideoPage CreatePage(
@@ -453,9 +605,9 @@ public sealed class VideoTagLoadingTests : IDisposable
 
         public RecordingDialogService Dialogs { get; }
 
-        public void Prepare(params VideoPage[] pages)
+        public Task<PreparedDownload> PrepareAsync(params VideoPage[] pages)
         {
-            Service.GetVideo(
+            return Service.PrepareAsync(
                 new VideoInfoView
                 {
                     Title = "video",
@@ -470,12 +622,14 @@ public sealed class VideoTagLoadingTests : IDisposable
                         Title = "section",
                         VideoPages = pages
                     }
-                ]);
+                ],
+                isAll: false,
+                TestContext.Current.CancellationToken);
         }
 
-        public void PrepareSections(params VideoPage[][] sections)
+        public Task<PreparedDownload> PrepareSectionsAsync(params VideoPage[][] sections)
         {
-            Service.GetVideo(
+            return Service.PrepareAsync(
                 new VideoInfoView
                 {
                     Title = "video",
@@ -488,7 +642,9 @@ public sealed class VideoTagLoadingTests : IDisposable
                     IsSelected = true,
                     Title = $"section-{index + 1}",
                     VideoPages = pages
-                }).ToArray());
+                }).ToArray(),
+                isAll: true,
+                TestContext.Current.CancellationToken);
         }
 
         public void Dispose()
@@ -571,6 +727,41 @@ public sealed class VideoTagLoadingTests : IDisposable
         {
             LastToken = cancellationToken;
             return loadTagsAsync(bvid, cid, cancellationToken);
+        }
+    }
+
+    private sealed class PreparationInfoService(
+        VideoInfoView video,
+        IList<VideoSection> sections,
+        PlayUrl playUrl) : IInfoService
+    {
+        public int StreamRequestCount { get; private set; }
+
+        public VideoInfoView? GetVideoView(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return video;
+        }
+
+        public IList<VideoSection>? GetVideoSections(
+            bool noUgc,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Assert.True(noUgc);
+            return sections;
+        }
+
+        public IList<VideoPage>? GetVideoPages(CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<PlayUrl?> GetVideoStreamAsync(
+            VideoPage page,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            StreamRequestCount++;
+            return Task.FromResult<PlayUrl?>(playUrl);
         }
     }
 

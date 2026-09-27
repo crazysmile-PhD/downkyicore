@@ -63,9 +63,78 @@ public sealed class Aria2FinalValidationTests
         }
     }
 
+    [Fact]
+    public async Task AriaTransferDisablesBackendOwnedRetryAndResumeFallback()
+    {
+        var directory = CreateTemporaryDirectory();
+        var target = Path.Combine(directory, "media.tmp");
+        await File.WriteAllBytesAsync(
+            target,
+            [0, 1, 2, 3],
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+        JObject? addUriRequest = null;
+
+        try
+        {
+            var result = await TransferCompletedAriaTaskAsync(
+                directory,
+                target,
+                request =>
+                {
+                    if (request["method"]?.Value<string>() == "aria2.addUri")
+                    {
+                        addUriRequest = request;
+                    }
+                }).ConfigureAwait(true);
+
+            Assert.Equal(DownloadTransferOutcome.Succeeded, result.Outcome);
+            var parameters = Assert.IsType<JArray>(addUriRequest?["params"]);
+            var options = Assert.IsType<JObject>(parameters[2]);
+            Assert.Equal("1", options["max-tries"]?.Value<string>());
+            Assert.Equal("0", options["retry-wait"]?.Value<string>());
+            Assert.Equal("false", options["always-resume"]?.Value<string>());
+            Assert.Equal("0", options["max-resume-failure-tries"]?.Value<string>());
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task AriaBackendRejectsMultipleAddressesBeforeRpc()
+    {
+        var directory = CreateTemporaryDirectory();
+        var target = Path.Combine(directory, "media.tmp");
+        var rpcRequestCount = 0;
+
+        try
+        {
+            var result = await TransferCompletedAriaTaskAsync(
+                directory,
+                target,
+                _ => rpcRequestCount++,
+                [
+                    "https://primary.example/media",
+                    "https://backup.example/media"
+                ]).ConfigureAwait(true);
+
+            Assert.Equal(DownloadTransferOutcome.Failed, result.Outcome);
+            Assert.Equal(DownloadTransferFailureKind.Permanent, result.FailureKind);
+            Assert.Equal("download.transfer.single-address-required", result.ErrorCode);
+            Assert.Equal(0, rpcRequestCount);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     private static async Task<DownloadTransferResult> TransferCompletedAriaTaskAsync(
         string directory,
-        string target)
+        string target,
+        Action<JObject>? observeRequest = null,
+        IReadOnlyList<string>? urls = null)
     {
         using var settings = new TestSettingsStore();
         var client = new AriaClient(
@@ -76,6 +145,7 @@ public sealed class Aria2FinalValidationTests
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var request = JObject.Parse(payload);
+                observeRequest?.Invoke(request);
                 JToken result = request["method"]?.Value<string>() switch
                 {
                     "aria2.addUri" => JValue.CreateString("test-gid"),
@@ -114,7 +184,7 @@ public sealed class Aria2FinalValidationTests
         var request = new DownloadTransferRequest(
             new DownloadTaskId("aria-final-validation"),
             BackendIdentity: null,
-            Urls: ["https://download.example/media"],
+            Urls: urls ?? ["https://download.example/media"],
             Directory: directory,
             FileName: Path.GetFileName(target),
             ExpectedBytes: 0,

@@ -21,7 +21,6 @@ namespace DownKyi.ViewModels;
 
 internal class ViewMyHistoryViewModel : ViewModelBase
 {
-    public const string Tag = "PageMyHistory";
     private readonly IContentDownloadCoordinator _downloadCoordinator;
     private readonly ILogger<ViewMyHistoryViewModel> _logger;
     private readonly IPersonalMediaCoordinator _personalMediaCoordinator;
@@ -37,14 +36,6 @@ internal class ViewMyHistoryViewModel : ViewModelBase
     private int _loadVersion;
 
     #region 页面属性申明
-
-    private string _pageName = Tag;
-
-    public string PageName
-    {
-        get => _pageName;
-        set => SetProperty(ref _pageName, value);
-    }
 
     private VectorImage _arrowBack = null!;
 

@@ -1,4 +1,7 @@
+using DownKyi.Application.Bilibili;
+using DownKyi.Application.Downloads;
 using DownKyi.Core.BiliApi.VideoStream;
+using DownKyi.Domain.Downloads;
 using DownKyi.Presentation;
 using DownKyi.Services;
 using DownKyi.Services.Download;
@@ -63,6 +66,29 @@ public sealed class VideoDetailDownloadCoordinatorTests
         Assert.Equal(0, session.AddCount);
     }
 
+    [Fact]
+    public async Task ExistingVideoDataIsPreparedBeforeTheExplicitSelectionIsAdded()
+    {
+        var session = new RecordingSession(admissionAllowed: true);
+        var coordinator = new VideoDetailDownloadCoordinator(new RecordingFactory(session));
+        var video = new VideoInfoView();
+        IList<VideoSection> sections = [new VideoSection()];
+
+        var result = await coordinator.AddAsync(
+            "BV17x411w7KC",
+            video,
+            sections,
+            isAll: true,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, result);
+        Assert.Equal(1, session.PrepareCount);
+        Assert.Equal(1, session.AddCount);
+        Assert.Same(video, session.CreatedPreparedDownload!.Video);
+        Assert.Same(session.Selection, session.ReceivedSelection);
+        Assert.Same(session.CreatedPreparedDownload, session.ReceivedPreparedDownload);
+    }
+
     private sealed class RecordingFactory(IAddToDownloadSession? session = null)
         : IAddToDownloadServiceFactory
     {
@@ -77,7 +103,7 @@ public sealed class VideoDetailDownloadCoordinatorTests
 
     }
 
-    private sealed class RecordingSession : IAddToDownloadSession
+    private sealed class RecordingSession(bool admissionAllowed = false) : IAddToDownloadSession
     {
         public int AdmissionCheckCount { get; private set; }
 
@@ -85,38 +111,60 @@ public sealed class VideoDetailDownloadCoordinatorTests
 
         public int AddCount { get; private set; }
 
+        public int PrepareCount { get; private set; }
+
+        public DownloadAddSelection Selection { get; } = new(
+            @"D:\Downloads",
+            DownloadContentSelection.None with { Video = true });
+
+        public DownloadAddSelection? ReceivedSelection { get; private set; }
+
+        public PreparedDownload? CreatedPreparedDownload { get; private set; }
+
+        public PreparedDownload? ReceivedPreparedDownload { get; private set; }
+
         public Task<bool> EnsureAdmissionAsync(CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
             AdmissionCheckCount++;
-            return Task.FromResult(false);
+            return Task.FromResult(admissionAllowed);
         }
 
-        public Task<string?> SetDirectory(CancellationToken cancellationToken = default)
+        public Task<DownloadAddSelection?> SelectDownloadAsync(
+            CancellationToken cancellationToken = default)
         {
             DirectorySelectionCount++;
-            return Task.FromResult<string?>(@"D:\Downloads");
+            return Task.FromResult<DownloadAddSelection?>(Selection);
         }
 
-        public void SetVideoInfoService(IInfoService videoInfoService) =>
-            throw new NotSupportedException();
+        public Task<PreparedDownload> PrepareAsync(
+            VideoInfoView videoInfoView,
+            IList<VideoSection> videoSections,
+            bool isAll,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Assert.True(isAll);
+            PrepareCount++;
+            CreatedPreparedDownload = PreparedDownload.Create(videoInfoView, videoSections);
+            return Task.FromResult(CreatedPreparedDownload);
+        }
 
-        public void GetVideo(VideoInfoView videoInfoView, IList<VideoSection> videoSections) =>
-            throw new NotSupportedException();
-
-        public void GetVideo() => throw new NotSupportedException();
-
-        public Task ParseVideoAsync(
+        public Task<PreparedDownload?> PrepareAsync(
             IInfoService videoInfoService,
             CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 
         public Task<int> AddToDownload(
-            string? directory,
+            DownloadAddSelection selection,
+            PreparedDownload preparedDownload,
             bool isAll = false,
             CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             AddCount++;
+            ReceivedSelection = selection;
+            ReceivedPreparedDownload = preparedDownload;
             return Task.FromResult(1);
         }
     }

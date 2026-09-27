@@ -41,7 +41,6 @@ internal sealed record MySpaceStatsSnapshot(
     string Coin,
     string Money,
     string? Following,
-    string? Whisper,
     string? Follower,
     string? Black);
 
@@ -230,7 +229,6 @@ internal sealed class UserSpacePageCoordinator : IUserSpacePageCoordinator
             coin,
             money,
             relation?.Following.ToString(CultureInfo.CurrentCulture),
-            relation?.Whisper.ToString(CultureInfo.CurrentCulture),
             relation?.Follower.ToString(CultureInfo.CurrentCulture),
             relation?.Black.ToString(CultureInfo.CurrentCulture));
     }

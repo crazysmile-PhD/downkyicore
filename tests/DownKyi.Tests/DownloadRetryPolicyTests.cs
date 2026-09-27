@@ -12,13 +12,13 @@ namespace DownKyi.Tests;
 public sealed class DownloadRetryPolicyTests
 {
     [Fact]
-    public async Task CoordinatorUsesOneGlobalBudgetAcrossPrimaryAndBackupAddresses()
+    public async Task CoordinatorCapsOneGlobalBudgetAcrossPrimaryAndBackupAddresses()
     {
         using var backend = new RecordingBackend(
             DownloadTransferResult.Failed(
                 DownloadTransferFailureKind.InvalidMedia,
                 "invalid-media"));
-        var coordinator = CreateCoordinator(backend, maximumAttempts: 5);
+        var coordinator = CreateCoordinator(backend, maximumAttempts: 3);
 
         var result = await coordinator.TransferAsync(
             CreateRequest(
@@ -30,9 +30,9 @@ public sealed class DownloadRetryPolicyTests
             TestContext.Current.CancellationToken);
 
         Assert.Equal(DownloadTransferOutcome.Failed, result.Outcome);
-        Assert.Equal(4, backend.Requests.Count);
+        Assert.Equal(3, backend.Requests.Count);
         Assert.Equal(
-            4,
+            3,
             backend.Requests.SelectMany(request => request.Urls).Distinct().Count());
     }
 
@@ -373,6 +373,35 @@ public sealed class DownloadRetryPolicyTests
         {
             Directory.Delete(directory, recursive: true);
         }
+    }
+
+    [Fact]
+    public async Task BuiltinBackendRejectsMultipleAddressesBeforeStartingDownloader()
+    {
+        using var settings = new TestSettingsStore();
+        using var backend = new BuiltinTransferBackend(
+            settings.Store,
+            new DownloadDiagnosticLogger(
+                NullLogger<DownloadDiagnosticLogger>.Instance),
+            NullLogger<BuiltinTransferBackend>.Instance);
+
+        var result = await backend.TransferAsync(CreateRequest(
+            "https://primary.invalid/media",
+            "https://backup.invalid/media"));
+
+        Assert.Equal(DownloadTransferOutcome.Failed, result.Outcome);
+        Assert.Equal(DownloadTransferFailureKind.Permanent, result.FailureKind);
+        Assert.Equal("download.transfer.single-address-required", result.ErrorCode);
+    }
+
+    [Fact]
+    public void BuiltinBackendDisablesDownloaderRetryBudget()
+    {
+        using var settings = new TestSettingsStore();
+        var configuration = BuiltinTransferBackend.CreateDownloadConfiguration(
+            settings.Store.Current.Network);
+
+        Assert.Equal(0, configuration.MaxTryAgainOnFailure);
     }
 
     [Fact]

@@ -21,7 +21,6 @@ namespace DownKyi.ViewModels;
 
 internal class ViewMyToViewVideoViewModel : ViewModelBase
 {
-    public const string Tag = "PageMyToView";
     private readonly IContentDownloadCoordinator _downloadCoordinator;
     private readonly ILogger<ViewMyToViewVideoViewModel> _logger;
     private readonly IPersonalMediaCoordinator _personalMediaCoordinator;
@@ -31,14 +30,6 @@ internal class ViewMyToViewVideoViewModel : ViewModelBase
     public DownKyiAsyncCommandGate DownloadCommandGate { get; } = new();
 
     #region 页面属性申明
-
-    private string _pageName = Tag;
-
-    public string PageName
-    {
-        get => _pageName;
-        set => SetProperty(ref _pageName, value);
-    }
 
     private VectorImage _arrowBack = null!;
 

@@ -1,3 +1,4 @@
+using System.Globalization;
 using DownKyi.Core.FFmpeg;
 
 namespace DownKyi.Core.Tests;
@@ -25,24 +26,28 @@ public sealed class FfmpegMediaValidatorTests : IDisposable
             TestContext.Current.CancellationToken);
 
         Assert.True(result.IsValid);
-        Assert.Equal(2, runner.SeekDecodeCount);
+        Assert.Equal(
+            [TimeSpan.Zero, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(19)],
+            runner.SeekPositions);
     }
 
     [Fact]
-    public async Task ValidateRejectsDurationMismatchBeforeSeekDecode()
+    public async Task ValidateRejectsTruncatedOutputAtExpectedTailCheckpoint()
     {
         var runner = new ProbeProcessRunner("""
-            {"streams":[{"codec_type":"video"}],"format":{"duration":"8.0"}}
-            """);
+            {"streams":[{"codec_type":"video"}],"format":{"duration":"960.0"}}
+            """, decodableThrough: TimeSpan.FromSeconds(960));
         var validator = new FfmpegMediaValidator(runner);
 
         var result = await validator.ValidateAsync(
             _mediaFile,
-            TimeSpan.FromSeconds(20),
+            TimeSpan.FromSeconds(1000),
             TestContext.Current.CancellationToken);
 
         Assert.False(result.IsValid);
-        Assert.Equal(0, runner.SeekDecodeCount);
+        Assert.Equal(
+            [TimeSpan.Zero, TimeSpan.FromSeconds(500), TimeSpan.FromSeconds(999)],
+            runner.SeekPositions);
     }
 
     [Fact]
@@ -59,7 +64,7 @@ public sealed class FfmpegMediaValidatorTests : IDisposable
             TestContext.Current.CancellationToken);
 
         Assert.False(result.IsValid);
-        Assert.Equal(0, runner.SeekDecodeCount);
+        Assert.Empty(runner.SeekPositions);
     }
 
     [Fact]
@@ -76,7 +81,7 @@ public sealed class FfmpegMediaValidatorTests : IDisposable
             TestContext.Current.CancellationToken);
 
         Assert.False(result.IsValid);
-        Assert.Equal(1, runner.SeekDecodeCount);
+        Assert.Single(runner.SeekPositions);
     }
 
     public void Dispose()
@@ -89,14 +94,19 @@ public sealed class FfmpegMediaValidatorTests : IDisposable
     {
         private readonly string _probeJson;
         private readonly int _decodedFrames;
+        private readonly TimeSpan? _decodableThrough;
 
-        public ProbeProcessRunner(string probeJson, int decodedFrames = 1)
+        public ProbeProcessRunner(
+            string probeJson,
+            int decodedFrames = 1,
+            TimeSpan? decodableThrough = null)
         {
             _probeJson = probeJson;
             _decodedFrames = decodedFrames;
+            _decodableThrough = decodableThrough;
         }
 
-        public int SeekDecodeCount { get; private set; }
+        public List<TimeSpan> SeekPositions { get; } = [];
 
         public Task<FfmpegProcessResult> RunAsync(
             FfmpegCommand command,
@@ -109,11 +119,19 @@ public sealed class FfmpegMediaValidatorTests : IDisposable
                 return Task.FromResult(new FfmpegProcessResult(true, 0, _probeJson, string.Empty, false));
             }
 
-            SeekDecodeCount++;
+            var seekIndex = command.Arguments.ToList().IndexOf("-ss");
+            Assert.True(seekIndex >= 0);
+            var seekPosition = TimeSpan.FromSeconds(double.Parse(
+                command.Arguments[seekIndex + 1],
+                CultureInfo.InvariantCulture));
+            SeekPositions.Add(seekPosition);
+            var decodedFrames = _decodableThrough is null || seekPosition <= _decodableThrough
+                ? _decodedFrames
+                : 0;
             return Task.FromResult(new FfmpegProcessResult(
                 true,
                 0,
-                $"frame={_decodedFrames}",
+                $"frame={decodedFrames}",
                 string.Empty,
                 false));
         }

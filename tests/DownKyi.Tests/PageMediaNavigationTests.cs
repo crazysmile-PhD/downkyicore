@@ -16,7 +16,7 @@ public sealed class PageMediaNavigationTests
             Bvid = "BV1typed"
         };
 
-        media.TitleCommand.Execute(new object());
+        media.TitleCommand.Execute(null);
 
         var request = Assert.Single(navigation.Requests);
         Assert.Equal(AppRoute.VideoDetail, request.Route);
@@ -38,7 +38,7 @@ public sealed class PageMediaNavigationTests
             UpMid = 42
         };
 
-        media.VideoUpperCommand.Execute(new object());
+        media.VideoUpperCommand.Execute(null);
 
         var request = Assert.Single(navigation.Requests);
         Assert.Equal(AppRoute.MySpace, request.Route);
@@ -52,7 +52,7 @@ public sealed class PageMediaNavigationTests
         var navigation = new TestNavigationService();
         var friend = new FriendInfo(navigation, AppRoute.Friends) { Mid = 99 };
 
-        friend.UserCommand.Execute(new object());
+        friend.UserCommand.Execute(null);
 
         var request = Assert.Single(navigation.Requests);
         Assert.Equal(new AppNavigationRequest(AppRoute.UserSpace, AppRoute.Friends, 99L), request);

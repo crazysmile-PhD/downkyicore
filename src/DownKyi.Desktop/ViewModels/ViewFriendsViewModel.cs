@@ -12,8 +12,6 @@ namespace DownKyi.ViewModels
 {
     internal class ViewFriendsViewModel : ViewModelBase
     {
-        public const string Tag = "PageFriends";
-
         private long mid = -1;
         private WeakReference<object>? _ownedChild;
 

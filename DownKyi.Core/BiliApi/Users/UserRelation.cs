@@ -137,31 +137,6 @@ public static class UserRelation
     }
 
     /// <summary>
-    /// 查询悄悄关注明细
-    /// </summary>
-    /// <param name="pn">页码</param>
-    /// <param name="ps">每页项数</param>
-    /// <returns></returns>
-    public static async Task<IReadOnlyList<RelationFollowInfo>?> GetWhispersAsync(
-        this IBilibiliApiClient client,
-        int pn,
-        int ps,
-        CancellationToken cancellationToken = default)
-    {
-        var url = $"https://api.bilibili.com/x/relation/whispers?pn={pn}&ps={ps}";
-        const string referer = "https://www.bilibili.com";
-        var relationWhisper = await BiliApiRequest.RequestJsonAsync<RelationWhisper>(
-            client,
-            url,
-            referer,
-            nameof(GetWhispersAsync),
-            "UserRelation",
-            cancellationToken: cancellationToken).ConfigureAwait(false);
-
-        return BiliApiRequest.RequirePayload(relationWhisper.Data).List;
-    }
-
-    /// <summary>
     /// 查询黑名单明细
     /// </summary>
     /// <param name="pn">页码</param>

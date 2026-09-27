@@ -75,8 +75,7 @@
                                     ToolTip.Tip="{Binding Title}">
                                     <Interaction.Behaviors>
                                         <EventTriggerBehavior EventName="PointerReleased">
-                                            <InvokeCommandAction Command="{Binding TitleCommand}"
-                                                                 CommandParameter="{ReflectionBinding DataContext.PageName, RelativeSource={RelativeSource Mode=FindAncestor, AncestorType=UserControl}}" />
+                                            <InvokeCommandAction Command="{Binding TitleCommand}" />
                                         </EventTriggerBehavior>
                                     </Interaction.Behaviors>
                                 </TextBlock>
@@ -137,8 +136,7 @@
                                             Orientation="Horizontal">
                                             <Interaction.Behaviors>
                                                 <EventTriggerBehavior EventName="PointerReleased">
-                                                    <InvokeCommandAction Command="{Binding UpCommand}"
-                                                                         CommandParameter="{ReflectionBinding DataContext.PageName, RelativeSource={RelativeSource Mode=FindAncestor, AncestorType=UserControl}}" />
+                                                    <InvokeCommandAction Command="{Binding UpCommand}" />
                                                 </EventTriggerBehavior>
                                             </Interaction.Behaviors>
                                             <Border

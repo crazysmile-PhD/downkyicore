@@ -58,7 +58,6 @@ internal static class DesktopInteractionComposition
         services.AddTransient<ViewDelogoViewModel>();
         services.AddTransient<ViewExtractMediaViewModel>();
         services.AddTransient<ViewArchiveViewModel>();
-        services.AddTransient<ViewChannelViewModel>();
         services.AddTransient<ViewUserSpaceSeasonsSeriesViewModel>();
         services.AddTransient<ViewFavoritesViewModel>();
     }

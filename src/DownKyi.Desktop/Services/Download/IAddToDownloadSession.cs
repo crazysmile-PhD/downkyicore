@@ -1,6 +1,8 @@
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using DownKyi.Application.Bilibili;
+using DownKyi.Application.Downloads;
 using DownKyi.Presentation;
 
 namespace DownKyi.Services.Download;
@@ -9,20 +11,21 @@ internal interface IAddToDownloadSession
 {
     Task<bool> EnsureAdmissionAsync(CancellationToken cancellationToken = default);
 
-    Task<string?> SetDirectory(CancellationToken cancellationToken = default);
+    Task<DownloadAddSelection?> SelectDownloadAsync(CancellationToken cancellationToken = default);
 
-    void SetVideoInfoService(IInfoService videoInfoService);
+    Task<PreparedDownload> PrepareAsync(
+        VideoInfoView videoInfoView,
+        IList<VideoSection> videoSections,
+        bool isAll,
+        CancellationToken cancellationToken = default);
 
-    void GetVideo(VideoInfoView videoInfoView, IList<VideoSection> videoSections);
-
-    void GetVideo();
-
-    Task ParseVideoAsync(
+    Task<PreparedDownload?> PrepareAsync(
         IInfoService videoInfoService,
         CancellationToken cancellationToken = default);
 
     Task<int> AddToDownload(
-        string? directory,
+        DownloadAddSelection selection,
+        PreparedDownload preparedDownload,
         bool isAll = false,
         CancellationToken cancellationToken = default);
 }

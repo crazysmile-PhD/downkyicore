@@ -76,15 +76,14 @@ internal class ChannelMedia : ObservableObject
     #region 命令申明
 
     // 视频标题点击事件
-    private RelayCommand<object>? _titleCommand;
+    private RelayCommand? _titleCommand;
 
-    public RelayCommand<object> TitleCommand => _titleCommand ?? (_titleCommand = RequiredParameterCommand.Create<object>(ExecuteTitleCommand));
+    public RelayCommand TitleCommand => _titleCommand ?? (_titleCommand = new RelayCommand(ExecuteTitleCommand));
 
     /// <summary>
     /// 视频标题点击事件
     /// </summary>
-    /// <param name="parameter"></param>
-    private void ExecuteTitleCommand(object parameter)
+    private void ExecuteTitleCommand()
     {
         _navigationService.Navigate(new AppNavigationRequest(
             AppRoute.VideoDetail,

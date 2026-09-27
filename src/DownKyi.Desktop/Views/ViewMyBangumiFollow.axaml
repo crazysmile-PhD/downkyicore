@@ -60,8 +60,7 @@
                                     ToolTip.Tip="{Binding Title}">
                                     <Interaction.Behaviors>
                                         <EventTriggerBehavior EventName="PointerPressed">
-                                            <InvokeCommandAction Command="{Binding TitleCommand}"
-                                                                 CommandParameter="{ReflectionBinding DataContext.PageName, RelativeSource={RelativeSource Mode=FindAncestor, AncestorType=UserControl}}" />
+                                            <InvokeCommandAction Command="{Binding TitleCommand}" />
                                         </EventTriggerBehavior>
                                     </Interaction.Behaviors>
                                 </TextBlock>

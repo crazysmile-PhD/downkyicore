@@ -145,15 +145,14 @@ internal class FavoritesMedia : ObservableObject
     #region 命令申明
 
     // 视频标题点击事件
-    private RelayCommand<object>? _titleCommand;
+    private RelayCommand? _titleCommand;
 
-    public RelayCommand<object> TitleCommand => _titleCommand ??= RequiredParameterCommand.Create<object>(ExecuteTitleCommand);
+    public RelayCommand TitleCommand => _titleCommand ??= new RelayCommand(ExecuteTitleCommand);
 
     /// <summary>
     /// 视频标题点击事件
     /// </summary>
-    /// <param name="parameter"></param>
-    private void ExecuteTitleCommand(object parameter)
+    private void ExecuteTitleCommand()
     {
         if (IsUnavailable)
         {
@@ -167,15 +166,14 @@ internal class FavoritesMedia : ObservableObject
     }
 
     // 视频的UP主点击事件
-    private RelayCommand<object>? _videoUpperCommand;
+    private RelayCommand? _videoUpperCommand;
 
-    public RelayCommand<object> VideoUpperCommand => _videoUpperCommand ??= RequiredParameterCommand.Create<object>(ExecuteVideoUpperCommand);
+    public RelayCommand VideoUpperCommand => _videoUpperCommand ??= new RelayCommand(ExecuteVideoUpperCommand);
 
     /// <summary>
     /// 视频的UP主点击事件
     /// </summary>
-    /// <param name="parameter"></param>
-    private void ExecuteVideoUpperCommand(object parameter)
+    private void ExecuteVideoUpperCommand()
     {
         var route = _settingsStore.Current.User.Mid == UpMid
             ? AppRoute.MySpace

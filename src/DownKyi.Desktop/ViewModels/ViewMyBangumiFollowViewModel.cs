@@ -26,7 +26,6 @@ namespace DownKyi.ViewModels;
 
 internal partial class ViewMyBangumiFollowViewModel : ViewModelBase
 {
-    public const string Tag = "PageMyBangumiFollow";
     private readonly IContentDownloadCoordinator _downloadCoordinator;
     private readonly ILogger<ViewMyBangumiFollowViewModel> _logger;
     private readonly IUserSpacePageCoordinator _userSpaceCoordinator;

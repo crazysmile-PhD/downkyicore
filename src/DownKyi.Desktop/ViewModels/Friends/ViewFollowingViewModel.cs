@@ -36,14 +36,6 @@ internal class ViewFollowingViewModel : ViewModelBase
 
     #region 页面属性申明
 
-    private string _pageName = ViewFriendsViewModel.Tag;
-
-    public string PageName
-    {
-        get => _pageName;
-        set => SetProperty(ref _pageName, value);
-    }
-
     private bool _contentVisibility;
 
     public bool ContentVisibility
@@ -260,15 +252,6 @@ internal class ViewFollowingViewModel : ViewModelBase
                     Title = DictionaryResource.GetString("AllFollowing"),
                     SubTitle = overview.Relation.Following.ToString(CultureInfo.CurrentCulture)
                 });
-                if (isCurrentUser)
-                {
-                    TabHeaders.Add(new TabHeader
-                    {
-                        Id = -2,
-                        Title = DictionaryResource.GetString("WhisperFollowing"),
-                        SubTitle = overview.Relation.Whisper.ToString(CultureInfo.CurrentCulture)
-                    });
-                }
             }
 
             foreach (var tag in overview.Groups)
@@ -327,7 +310,6 @@ internal class ViewFollowingViewModel : ViewModelBase
             var kind = tab.Id switch
             {
                 -1 => FollowingListKind.All,
-                -2 => FollowingListKind.Whisper,
                 _ => FollowingListKind.Group
             };
             var contents = await _friendRelationCoordinator

@@ -58,7 +58,6 @@
         <DataTemplate DataType="toolboxVm:ViewDelogoViewModel"><toolboxViews:ViewDelogo /></DataTemplate>
         <DataTemplate DataType="toolboxVm:ViewExtractMediaViewModel"><toolboxViews:ViewExtractMedia /></DataTemplate>
         <DataTemplate DataType="userSpaceVm:ViewArchiveViewModel"><userSpaceViews:ViewArchive /></DataTemplate>
-        <DataTemplate DataType="userSpaceVm:ViewChannelViewModel"><userSpaceViews:ViewChannel /></DataTemplate>
         <DataTemplate DataType="userSpaceVm:ViewUserSpaceSeasonsSeriesViewModel"><userSpaceViews:ViewUserSpaceSeasonsSeries /></DataTemplate>
         <DataTemplate DataType="userSpaceVm:ViewFavoritesViewModel"><userSpaceViews:ViewFavorites /></DataTemplate>
     </Application.DataTemplates>

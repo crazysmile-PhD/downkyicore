@@ -125,7 +125,9 @@ internal sealed class DownloadTransferCoordinator
                         addresses[nextAddressIndex],
                         backendIdentity,
                         SetBackendIdentityAsync,
-                        cancellationToken).ConfigureAwait(true);
+                        deleteArtifacts: lastResult.FailureKind !=
+                            DownloadTransferFailureKind.InvalidMedia,
+                        cancellationToken: cancellationToken).ConfigureAwait(true);
                     if (sourceChangeFailure != null)
                     {
                         return sourceChangeFailure;
@@ -148,7 +150,9 @@ internal sealed class DownloadTransferCoordinator
                         refreshedAddresses[0],
                         backendIdentity,
                         SetBackendIdentityAsync,
-                        cancellationToken).ConfigureAwait(true);
+                        deleteArtifacts: lastResult.FailureKind !=
+                            DownloadTransferFailureKind.InvalidMedia,
+                        cancellationToken: cancellationToken).ConfigureAwait(true);
                     if (refreshChangeFailure != null)
                     {
                         return refreshChangeFailure;
@@ -169,7 +173,8 @@ internal sealed class DownloadTransferCoordinator
                             backendIdentity,
                             SetBackendIdentityAsync,
                             "download.transfer.cleanup-failed",
-                            cancellationToken).ConfigureAwait(true);
+                            deleteArtifacts: false,
+                            cancellationToken: cancellationToken).ConfigureAwait(true);
                         if (terminalResetFailure != null)
                         {
                             return terminalResetFailure;
@@ -189,6 +194,7 @@ internal sealed class DownloadTransferCoordinator
         string nextAddress,
         string? backendIdentity,
         Func<string?, CancellationToken, Task> setBackendIdentityAsync,
+        bool deleteArtifacts,
         CancellationToken cancellationToken)
     {
         if (string.Equals(currentAddress, nextAddress, StringComparison.Ordinal))
@@ -201,6 +207,7 @@ internal sealed class DownloadTransferCoordinator
             backendIdentity,
             setBackendIdentityAsync,
             "download.transfer.source-change-cleanup",
+            deleteArtifacts,
             cancellationToken).ConfigureAwait(true);
         if (resetFailure != null)
         {
@@ -217,6 +224,7 @@ internal sealed class DownloadTransferCoordinator
         string? backendIdentity,
         Func<string?, CancellationToken, Task> setBackendIdentityAsync,
         string cleanupFailureCode,
+        bool deleteArtifacts,
         CancellationToken cancellationToken)
     {
         var resetResult = await _backend
@@ -227,17 +235,20 @@ internal sealed class DownloadTransferCoordinator
             return resetResult;
         }
 
-        var cleanup = await DownloadTransferFileCleanup.DeleteInvalidArtifactsAsync(
-                Path.Combine(request.Directory, request.FileName),
-                request.StagingDirectory,
-                _logger,
-                _timeProvider,
-                cancellationToken).ConfigureAwait(true);
-        if (!cleanup.Succeeded)
+        if (deleteArtifacts)
         {
-            return DownloadTransferResult.Failed(
-                DownloadTransferFailureKind.Disk,
-                cleanupFailureCode);
+            var cleanup = await DownloadTransferFileCleanup.DeleteInvalidArtifactsAsync(
+                    Path.Combine(request.Directory, request.FileName),
+                    request.StagingDirectory,
+                    _logger,
+                    _timeProvider,
+                    cancellationToken).ConfigureAwait(true);
+            if (!cleanup.Succeeded)
+            {
+                return DownloadTransferResult.Failed(
+                    DownloadTransferFailureKind.Disk,
+                    cleanupFailureCode);
+            }
         }
 
         await setBackendIdentityAsync(null, cancellationToken).ConfigureAwait(true);

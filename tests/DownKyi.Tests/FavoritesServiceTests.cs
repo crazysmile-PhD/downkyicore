@@ -32,7 +32,7 @@ public sealed class FavoritesServiceTests
             AppRoute.PublicFavorites,
             CancellationToken.None));
         mapped.IsSelected = true;
-        mapped.TitleCommand.Execute(new object());
+        mapped.TitleCommand.Execute(null);
 
         Assert.True(mapped.IsUnavailable);
         Assert.False(mapped.IsSelected);

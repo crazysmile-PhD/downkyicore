@@ -1,4 +1,5 @@
 using DownKyi.Application.Downloads;
+using DownKyi.Domain.Downloads;
 
 namespace DownKyi.Application.Tests;
 
@@ -9,9 +10,9 @@ public sealed class DownloadAddCoordinatorTests
     {
         var addWasCalled = false;
 
-        var result = await DownloadAddCoordinator.AddToDownloadIfDirectorySelectedAsync(
+        var result = await DownloadAddCoordinator.AddToDownloadIfSelectionAcceptedAsync(
             () => Task.FromResult(true),
-            () => Task.FromResult<string?>(null),
+            () => Task.FromResult<DownloadAddSelection?>(null),
             _ =>
             {
                 addWasCalled = true;
@@ -24,22 +25,25 @@ public sealed class DownloadAddCoordinatorTests
     }
 
     [Fact]
-    public async Task SelectedDirectoryReachesTheDownloadOperation()
+    public async Task AcceptedSelectionReachesTheDownloadOperation()
     {
-        string? receivedDirectory = null;
+        DownloadAddSelection? receivedSelection = null;
+        var requestedContent = DownloadContentSelection.None with { Video = true };
 
-        var result = await DownloadAddCoordinator.AddToDownloadIfDirectorySelectedAsync(
+        var result = await DownloadAddCoordinator.AddToDownloadIfSelectionAcceptedAsync(
             () => Task.FromResult(true),
-            () => Task.FromResult<string?>("D:\\Downloads"),
-            directory =>
+            () => Task.FromResult<DownloadAddSelection?>(
+                new DownloadAddSelection("D:\\Downloads", requestedContent)),
+            selection =>
             {
-                receivedDirectory = directory;
+                receivedSelection = selection;
                 return Task.FromResult(2);
             },
             TestContext.Current.CancellationToken);
 
         Assert.Equal(2, result);
-        Assert.Equal("D:\\Downloads", receivedDirectory);
+        Assert.Equal("D:\\Downloads", receivedSelection!.Directory);
+        Assert.Same(requestedContent, receivedSelection.RequestedContent);
     }
 
     [Fact]
@@ -48,12 +52,14 @@ public sealed class DownloadAddCoordinatorTests
         var directorySelectionCount = 0;
         var addCount = 0;
 
-        var result = await DownloadAddCoordinator.AddToDownloadIfDirectorySelectedAsync(
+        var result = await DownloadAddCoordinator.AddToDownloadIfSelectionAcceptedAsync(
             () => Task.FromResult(false),
             () =>
             {
                 directorySelectionCount++;
-                return Task.FromResult<string?>("D:\\Downloads");
+                return Task.FromResult<DownloadAddSelection?>(new DownloadAddSelection(
+                    "D:\\Downloads",
+                    DownloadContentSelection.All));
             },
             _ =>
             {

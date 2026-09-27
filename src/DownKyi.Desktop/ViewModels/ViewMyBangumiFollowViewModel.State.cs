@@ -5,14 +5,6 @@ namespace DownKyi.ViewModels;
 
 internal partial class ViewMyBangumiFollowViewModel
 {
-    private string _pageName = Tag;
-
-    public string PageName
-    {
-        get => _pageName;
-        set => SetProperty(ref _pageName, value);
-    }
-
     private VectorImage _arrowBack = null!;
 
     public VectorImage ArrowBack

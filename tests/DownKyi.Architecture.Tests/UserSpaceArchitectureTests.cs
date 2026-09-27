@@ -111,7 +111,6 @@ public sealed class UserSpaceArchitectureTests
 
         foreach (var property in new[]
         {
-            "PageName",
             "ArrowBack",
             "DownloadManage",
             "TabHeaders",

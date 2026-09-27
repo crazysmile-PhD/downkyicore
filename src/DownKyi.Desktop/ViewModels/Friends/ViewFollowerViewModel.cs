@@ -40,14 +40,6 @@ internal class ViewFollowerViewModel : ViewModelBase
 
     #region 页面属性申明
 
-    private string _pageName = ViewFriendsViewModel.Tag;
-
-    public string PageName
-    {
-        get => _pageName;
-        set => SetProperty(ref _pageName, value);
-    }
-
     private bool _contentVisibility;
 
     public bool ContentVisibility

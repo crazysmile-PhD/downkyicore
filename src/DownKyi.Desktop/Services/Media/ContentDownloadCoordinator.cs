@@ -112,13 +112,13 @@ internal sealed class ContentDownloadCoordinator : IContentDownloadCoordinator
         }
 
         var addToDownloadSession = _serviceFactory.Create(ToPlayStreamType(selectedItems[0].Kind));
-        return await DownloadAddCoordinator.AddToDownloadIfDirectorySelectedAsync(
+        return await DownloadAddCoordinator.AddToDownloadIfSelectionAcceptedAsync(
             () => addToDownloadSession.EnsureAdmissionAsync(cancellationToken),
-            () => addToDownloadSession.SetDirectory(cancellationToken),
-            directory => AddItemsAsync(
+            () => addToDownloadSession.SelectDownloadAsync(cancellationToken),
+            selection => AddItemsAsync(
                 addToDownloadSession,
                 selectedItems,
-                directory,
+                selection,
                 cancellationToken),
             cancellationToken).ConfigureAwait(true);
     }
@@ -126,7 +126,7 @@ internal sealed class ContentDownloadCoordinator : IContentDownloadCoordinator
     private Task<int> AddItemsAsync(
         IAddToDownloadSession addToDownloadSession,
         IReadOnlyList<ContentDownloadItem> items,
-        string directory,
+        DownloadAddSelection selection,
         CancellationToken cancellationToken)
     {
         return Task.Run(async () =>
@@ -138,14 +138,18 @@ internal sealed class ContentDownloadCoordinator : IContentDownloadCoordinator
                 var infoService = await _infoServiceFactory
                     .CreateAsync(item, cancellationToken)
                     .ConfigureAwait(false);
-                addToDownloadSession.SetVideoInfoService(infoService);
-                addToDownloadSession.GetVideo();
-                await addToDownloadSession
-                    .ParseVideoAsync(infoService, cancellationToken)
+                var preparedDownload = await addToDownloadSession
+                    .PrepareAsync(infoService, cancellationToken)
                     .ConfigureAwait(false);
+                if (preparedDownload == null)
+                {
+                    addedCount--;
+                    continue;
+                }
+
                 cancellationToken.ThrowIfCancellationRequested();
                 addedCount += await addToDownloadSession
-                    .AddToDownload(directory, cancellationToken: cancellationToken)
+                    .AddToDownload(selection, preparedDownload, cancellationToken: cancellationToken)
                     .ConfigureAwait(false);
             }
 

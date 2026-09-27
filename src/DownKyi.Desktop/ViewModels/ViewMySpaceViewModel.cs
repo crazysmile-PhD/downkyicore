@@ -139,13 +139,6 @@ internal partial class ViewMySpaceViewModel : ViewModelBase
                     data));
                 break;
             case 1:
-                data["friendId"] = 0;
-                Navigation.Navigate(new AppNavigationRequest(
-                    AppRoute.Friends,
-                    AppRoute.MySpace,
-                    data));
-                break;
-            case 2:
                 data["friendId"] = 1;
                 Navigation.Navigate(new AppNavigationRequest(
                     AppRoute.Friends,
@@ -241,7 +234,6 @@ internal partial class ViewMySpaceViewModel : ViewModelBase
 
         StatusList.Clear();
         StatusList.Add(new SpaceItem { IsEnabled = true, Title = DictionaryResource.GetString("Following"), Subtitle = "--" });
-        StatusList.Add(new SpaceItem { IsEnabled = true, Title = DictionaryResource.GetString("Whisper"), Subtitle = "--" });
         StatusList.Add(new SpaceItem { IsEnabled = true, Title = DictionaryResource.GetString("Follower"), Subtitle = "--" });
         StatusList.Add(new SpaceItem { IsEnabled = false, Title = DictionaryResource.GetString("Black"), Subtitle = "--" });
         StatusList.Add(new SpaceItem { IsEnabled = false, Title = DictionaryResource.GetString("Moral"), Subtitle = "--" });
@@ -350,8 +342,8 @@ internal partial class ViewMySpaceViewModel : ViewModelBase
         CurrentExp = profile.CurrentExperience;
         MaxExp = profile.MaximumExperience;
         ExpProgress = profile.ExperienceProgress;
-        StatusList[4].Subtitle = profile.Moral;
-        StatusList[5].Subtitle = profile.Silence;
+        StatusList[3].Subtitle = profile.Moral;
+        StatusList[4].Subtitle = profile.Silence;
 
         ArrowBack.Fill = DictionaryResource.GetColor("ColorText");
         Logout.Fill = DictionaryResource.GetColor("ColorText");
@@ -368,9 +360,8 @@ internal partial class ViewMySpaceViewModel : ViewModelBase
         Coin = stats.Coin;
         Money = stats.Money;
         StatusList[0].Subtitle = stats.Following ?? StatusList[0].Subtitle;
-        StatusList[1].Subtitle = stats.Whisper ?? StatusList[1].Subtitle;
-        StatusList[2].Subtitle = stats.Follower ?? StatusList[2].Subtitle;
-        StatusList[3].Subtitle = stats.Black ?? StatusList[3].Subtitle;
+        StatusList[1].Subtitle = stats.Follower ?? StatusList[1].Subtitle;
+        StatusList[2].Subtitle = stats.Black ?? StatusList[2].Subtitle;
     }
 
     private void ShowNoData()

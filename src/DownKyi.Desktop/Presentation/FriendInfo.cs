@@ -50,15 +50,14 @@ internal class FriendInfo : ObservableObject
     #region 命令申明
 
     // 视频标题点击事件
-    private RelayCommand<object>? _userCommand;
+    private RelayCommand? _userCommand;
 
-    public RelayCommand<object> UserCommand => _userCommand ??= RequiredParameterCommand.Create<object>(ExecuteUserCommand);
+    public RelayCommand UserCommand => _userCommand ??= new RelayCommand(ExecuteUserCommand);
 
     /// <summary>
     /// 视频标题点击事件
     /// </summary>
-    /// <param name="parameter"></param>
-    private void ExecuteUserCommand(object parameter)
+    private void ExecuteUserCommand()
     {
         _navigationService.Navigate(new AppNavigationRequest(AppRoute.UserSpace, _parentRoute, Mid));
     }

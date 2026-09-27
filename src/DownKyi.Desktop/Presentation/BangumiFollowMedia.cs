@@ -112,16 +112,15 @@ internal class BangumiFollowMedia : ObservableObject
     #region 命令申明
 
     // 视频标题点击事件
-    private RelayCommand<object>? titleCommand;
+    private RelayCommand? titleCommand;
 
-    public RelayCommand<object> TitleCommand =>
-        titleCommand ?? (titleCommand = RequiredParameterCommand.Create<object>(ExecuteTitleCommand));
+    public RelayCommand TitleCommand =>
+        titleCommand ?? (titleCommand = new RelayCommand(ExecuteTitleCommand));
 
     /// <summary>
     /// 视频标题点击事件
     /// </summary>
-    /// <param name="parameter"></param>
-    private void ExecuteTitleCommand(object parameter)
+    private void ExecuteTitleCommand()
     {
         _navigationService.Navigate(new AppNavigationRequest(
             AppRoute.VideoDetail,

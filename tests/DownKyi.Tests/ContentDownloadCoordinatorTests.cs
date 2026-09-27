@@ -1,5 +1,8 @@
+using DownKyi.Application.Bilibili;
+using DownKyi.Application.Downloads;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.BiliApi.VideoStream.Models;
+using DownKyi.Domain.Downloads;
 using DownKyi.Presentation;
 using DownKyi.Services;
 using DownKyi.Services.Download;
@@ -80,8 +83,7 @@ public sealed class ContentDownloadCoordinatorTests
         Assert.Null(result);
         Assert.Equal(1, session.AdmissionCheckCount);
         Assert.Equal(0, session.DirectorySelectionCount);
-        Assert.Equal(0, session.SetInfoCount);
-        Assert.Equal(0, session.ParseCount);
+        Assert.Equal(0, session.PrepareCount);
         Assert.Equal(0, session.AddCount);
         Assert.Empty(infoServiceFactory.CreatedKinds);
     }
@@ -106,9 +108,7 @@ public sealed class ContentDownloadCoordinatorTests
         Assert.Equal(1, factory.CreateCount);
         Assert.Equal(PlayStreamType.Video, factory.StreamType);
         Assert.Equal(1, session.DirectorySelectionCount);
-        Assert.Equal(2, session.SetInfoCount);
-        Assert.Equal(2, session.GetVideoCount);
-        Assert.Equal(2, session.ParseCount);
+        Assert.Equal(2, session.PrepareCount);
         Assert.Equal(2, session.AddCount);
         Assert.Equal(
             [DownloadInfoKind.Video, DownloadInfoKind.Bangumi],
@@ -130,7 +130,7 @@ public sealed class ContentDownloadCoordinatorTests
             cancellation.Token));
 
         Assert.Equal(1, session.DirectorySelectionCount);
-        Assert.Equal(0, session.SetInfoCount);
+        Assert.Equal(0, session.PrepareCount);
         Assert.Equal(0, session.AddCount);
     }
 
@@ -160,7 +160,7 @@ public sealed class ContentDownloadCoordinatorTests
             cancellation.Token));
 
         Assert.Equal(1, session.AddCount);
-        Assert.Equal(1, session.ParseCount);
+        Assert.Equal(1, session.PrepareCount);
     }
 
     private sealed class RecordingFactory(IAddToDownloadSession session) : IAddToDownloadServiceFactory
@@ -187,11 +187,7 @@ public sealed class ContentDownloadCoordinatorTests
 
         public int DirectorySelectionCount { get; private set; }
 
-        public int SetInfoCount { get; private set; }
-
-        public int GetVideoCount { get; private set; }
-
-        public int ParseCount { get; private set; }
+        public int PrepareCount { get; private set; }
 
         public int AddCount { get; private set; }
 
@@ -202,46 +198,49 @@ public sealed class ContentDownloadCoordinatorTests
             return Task.FromResult(admissionAllowed);
         }
 
-        public Task<string?> SetDirectory(CancellationToken cancellationToken = default)
+        public DownloadAddSelection Selection { get; } = new(
+            @"D:\Downloads",
+            DownloadContentSelection.None with { Video = true });
+
+        public Task<DownloadAddSelection?> SelectDownloadAsync(
+            CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
             DirectorySelectionCount++;
-            return Task.FromResult(directory);
+            return Task.FromResult(directory == null
+                ? null
+                : new DownloadAddSelection(directory, Selection.RequestedContent));
         }
 
-        public void SetVideoInfoService(IInfoService videoInfoService)
-        {
-            Assert.NotNull(videoInfoService);
-            SetInfoCount++;
-        }
-
-        public void GetVideo(VideoInfoView videoInfoView, IList<VideoSection> videoSections)
-        {
+        public Task<PreparedDownload> PrepareAsync(
+            VideoInfoView videoInfoView,
+            IList<VideoSection> videoSections,
+            bool isAll,
+            CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
-        }
 
-        public void GetVideo()
-        {
-            GetVideoCount++;
-        }
-
-        public Task ParseVideoAsync(
+        public Task<PreparedDownload?> PrepareAsync(
             IInfoService videoInfoService,
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
             Assert.NotNull(videoInfoService);
-            ParseCount++;
-            return Task.CompletedTask;
+            PrepareCount++;
+            return Task.FromResult<PreparedDownload?>(PreparedDownload.Create(
+                new VideoInfoView(),
+                [new VideoSection()]));
         }
 
         public Task<int> AddToDownload(
-            string? directoryPath,
+            DownloadAddSelection selection,
+            PreparedDownload preparedDownload,
             bool isAll = false,
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            Assert.Equal(directory, directoryPath);
+            Assert.Equal(directory, selection.Directory);
+            Assert.Equal(Selection.RequestedContent, selection.RequestedContent);
+            Assert.NotNull(preparedDownload);
             Assert.False(isAll);
             AddCount++;
             afterAdd?.Invoke(AddCount);

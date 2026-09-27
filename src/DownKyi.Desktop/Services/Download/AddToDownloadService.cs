@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using DownKyi.Application.Bilibili;
 using DownKyi.Application.Desktop;
 using DownKyi.Application.Diagnostics;
+using DownKyi.Application.Downloads;
 using DownKyi.Core.BiliApi.Sign;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.Settings;
@@ -30,10 +31,7 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
     private readonly ISettingsStore _settingsStore;
     private readonly IAppDialogService _dialogService;
     private readonly ILogger<AddToDownloadService> _logger;
-    private IInfoService _videoInfoService = null!;
-    private VideoInfoView? _videoInfoView;
-    private IList<VideoSection>? _videoSections;
-    private DownloadContentSelection _downloadContent = DownloadContentSelection.All;
+    private readonly IInfoService _playbackService;
 
     public AddToDownloadService(
         PlayStreamType streamType,
@@ -60,22 +58,17 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
         ArgumentNullException.ThrowIfNull(wbiKeyProvider);
         ArgumentNullException.ThrowIfNull(client);
 
-        switch (streamType)
+        _playbackService = streamType switch
         {
-            case PlayStreamType.Video:
-                _videoInfoService = new VideoInfoService(
-                    settingsStore,
-                    tagProvider,
-                    wbiKeyProvider,
-                    client);
-                break;
-            case PlayStreamType.Bangumi:
-                _videoInfoService = new BangumiInfoService(settingsStore, client);
-                break;
-            case PlayStreamType.Cheese:
-                _videoInfoService = new CheeseInfoService(settingsStore, client);
-                break;
-        }
+            PlayStreamType.Video => new VideoInfoService(
+                settingsStore,
+                tagProvider,
+                wbiKeyProvider,
+                client),
+            PlayStreamType.Bangumi => new BangumiInfoService(settingsStore, client),
+            PlayStreamType.Cheese => new CheeseInfoService(settingsStore, client),
+            _ => throw new ArgumentOutOfRangeException(nameof(streamType), streamType, null)
+        };
     }
 
     public Task<bool> EnsureAdmissionAsync(CancellationToken cancellationToken = default)
@@ -83,84 +76,97 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
         return _admissionPresenter.EnsureAdmissionAsync(cancellationToken);
     }
 
-    public void SetVideoInfoService(IInfoService videoInfoService)
+    public async Task<PreparedDownload> PrepareAsync(
+        VideoInfoView videoInfoView,
+        IList<VideoSection> videoSections,
+        bool isAll,
+        CancellationToken cancellationToken = default)
     {
-        _videoInfoService = videoInfoService;
-    }
+        ArgumentNullException.ThrowIfNull(videoInfoView);
+        ArgumentNullException.ThrowIfNull(videoSections);
 
-    public void GetVideo(VideoInfoView videoInfoView, IList<VideoSection> videoSections)
-    {
-        _videoInfoView = videoInfoView;
-        _videoSections = videoSections;
-    }
-
-    public void GetVideo()
-    {
-        _videoInfoView = _videoInfoService.GetVideoView();
-        if (_videoInfoView == null)
+        foreach (var section in videoSections)
         {
-            _logger.LogDebugMessage("VideoInfoView is null.");
-            return;
+            foreach (var page in section.VideoPages)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if ((isAll || page.IsSelected) && page.PlayUrl != null && page.VideoQuality == null)
+                {
+                    await RetryMissingVideoQualityAsync(
+                        _playbackService,
+                        page,
+                        cancellationToken).ConfigureAwait(false);
+                }
+            }
         }
 
-        _videoSections = _videoInfoService.GetVideoSections(true);
-        if (_videoSections == null)
+        return PreparedDownload.Create(videoInfoView, videoSections);
+    }
+
+    public async Task<PreparedDownload?> PrepareAsync(
+        IInfoService videoInfoService,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(videoInfoService);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var videoInfoView = videoInfoService.GetVideoView(cancellationToken);
+        if (videoInfoView == null)
+        {
+            _logger.LogDebugMessage("VideoInfoView is null.");
+            return null;
+        }
+
+        var videoSections = videoInfoService.GetVideoSections(true, cancellationToken);
+        if (videoSections == null)
         {
             _logger.LogDebugMessage("Video sections do not exist.");
-            _videoSections =
+            videoSections =
             [
                 new VideoSection
                 {
                     Id = 0,
                     Title = "default",
                     IsSelected = true,
-                    VideoPages = _videoInfoService.GetVideoPages() ?? new List<VideoPage>()
+                    VideoPages = videoInfoService.GetVideoPages(cancellationToken) ?? new List<VideoPage>()
                 }
             ];
         }
 
-        foreach (var section in _videoSections)
+        var settings = _settingsStore.Current;
+        foreach (var section in videoSections)
         {
             foreach (var item in section.VideoPages)
             {
-                item.IsSelected = true;
-            }
-        }
-    }
-
-    public async Task ParseVideoAsync(
-        IInfoService videoInfoService,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(videoInfoService);
-
-        if (_videoSections == null)
-        {
-            return;
-        }
-
-        var settings = _settingsStore.Current;
-        foreach (var section in _videoSections)
-        {
-            foreach (var page in section.VideoPages)
-            {
                 cancellationToken.ThrowIfCancellationRequested();
+                item.IsSelected = true;
                 var playUrl = await videoInfoService
-                    .GetVideoStreamAsync(page, cancellationToken)
+                    .GetVideoStreamAsync(item, cancellationToken)
                     .ConfigureAwait(false);
-                VideoPagePlaybackMapper.ApplyPlayUrl(playUrl, page, settings);
+                VideoPagePlaybackMapper.ApplyPlayUrl(playUrl, item, settings);
+                if (item.PlayUrl != null && item.VideoQuality == null)
+                {
+                    await RetryMissingVideoQualityAsync(
+                        videoInfoService,
+                        item,
+                        cancellationToken).ConfigureAwait(false);
+                }
             }
         }
+
+        return PreparedDownload.Create(videoInfoView, videoSections);
     }
 
-    public async Task<string?> SetDirectory(CancellationToken cancellationToken = default)
+    public async Task<DownloadAddSelection?> SelectDownloadAsync(
+        CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var directory = string.Empty;
+        var requestedContent = DownloadContentSelection.All;
         var videoSettings = _settingsStore.Current.Video;
         if (videoSettings.IsUseSaveVideoRootPath == AllowStatus.Yes)
         {
-            _downloadContent = new DownloadContentSelection(
+            requestedContent = new DownloadContentSelection(
                 videoSettings.Content.DownloadAudio,
                 videoSettings.Content.DownloadVideo,
                 videoSettings.Content.DownloadDanmaku,
@@ -178,7 +184,7 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
                 directory = result.Parameters.TryGetValue("directory", out var directoryValue)
                     ? directoryValue as string ?? string.Empty
                     : string.Empty;
-                _downloadContent = ReadDownloadContent(result.Parameters);
+                requestedContent = ReadDownloadContent(result.Parameters);
             }
         }
 
@@ -201,40 +207,30 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
             Directory.CreateDirectory(directory);
         }
 
-        return directory;
+        return new DownloadAddSelection(directory, requestedContent);
     }
 
     public async Task<int> AddToDownload(
-        string? directory,
+        DownloadAddSelection selection,
+        PreparedDownload preparedDownload,
         bool isAll = false,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(selection);
+        ArgumentNullException.ThrowIfNull(preparedDownload);
         cancellationToken.ThrowIfCancellationRequested();
-        if (string.IsNullOrEmpty(directory) || _videoSections == null || _videoInfoView == null)
-        {
-            return -1;
-        }
 
         var settings = _settingsStore.Current;
         var addedCount = 0;
         Lazy<Task<List<DownloadedItem>>>? completedCandidates = null;
-        foreach (var section in _videoSections)
+        foreach (var preparedSection in preparedDownload.Sections)
         {
-            foreach (var page in section.VideoPages)
+            foreach (var preparedPage in preparedSection.Pages)
             {
+                var page = preparedPage.Page;
                 if ((!isAll && !page.IsSelected) || page.PlayUrl == null)
                 {
                     continue;
-                }
-
-                var retry = 0;
-                while (page.VideoQuality == null && retry < 5)
-                {
-                    var playUrl = await _videoInfoService
-                        .GetVideoStreamAsync(page, cancellationToken)
-                        .ConfigureAwait(false);
-                    VideoPagePlaybackMapper.ApplyPlayUrl(playUrl, page, settings);
-                    retry++;
                 }
 
                 if (page.VideoQuality == null)
@@ -260,18 +256,18 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
                 }
 
                 var downloadingItem = DownloadTaskDraftFactory.Create(
-                    directory,
-                    _videoInfoView,
-                    section,
-                    _videoSections.Count,
+                    selection.Directory,
+                    preparedDownload.Video,
+                    preparedSection.Section,
+                    preparedDownload.Sections.Count,
                     page,
                     videoQuality,
                     settings,
-                    _downloadContent);
-                if (settings.Video.Content.GenerateMovieMetadata && _downloadContent.Video)
+                    selection.RequestedContent);
+                if (settings.Video.Content.GenerateMovieMetadata && selection.RequestedContent.Video)
                 {
                     downloadingItem.Metadata = await _metadataBuilder
-                        .BuildAsync(_videoInfoView, page, cancellationToken)
+                        .BuildAsync(preparedDownload.Video, page, cancellationToken)
                         .ConfigureAwait(true);
                 }
 
@@ -310,6 +306,23 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
         }
 
         return addedCount;
+    }
+
+    private async Task RetryMissingVideoQualityAsync(
+        IInfoService videoInfoService,
+        VideoPage page,
+        CancellationToken cancellationToken)
+    {
+        var settings = _settingsStore.Current;
+        var retry = 0;
+        while (page.VideoQuality == null && retry < 5)
+        {
+            var playUrl = await videoInfoService
+                .GetVideoStreamAsync(page, cancellationToken)
+                .ConfigureAwait(false);
+            VideoPagePlaybackMapper.ApplyPlayUrl(playUrl, page, settings);
+            retry++;
+        }
     }
 
     private static DownloadContentSelection ReadDownloadContent(

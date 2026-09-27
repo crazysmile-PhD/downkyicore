@@ -26,6 +26,7 @@ internal interface IFfmpegMediaValidator
 internal sealed class FfmpegMediaValidator : IFfmpegMediaValidator
 {
     private static readonly TimeSpan ProcessTimeout = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan TailSeekSafetyOffset = TimeSpan.FromSeconds(1);
     private readonly IFfmpegProcessRunner _processRunner;
 
     public FfmpegMediaValidator(IFfmpegProcessRunner processRunner)
@@ -42,6 +43,11 @@ internal sealed class FfmpegMediaValidator : IFfmpegMediaValidator
         if (!File.Exists(mediaFile) || new FileInfo(mediaFile).Length == 0)
         {
             return FfmpegMediaValidationResult.Failure("Output file is missing or empty.");
+        }
+
+        if (expectedDuration <= TimeSpan.Zero)
+        {
+            return FfmpegMediaValidationResult.Failure("Expected source duration is missing or invalid.");
         }
 
         var probe = await _processRunner
@@ -82,12 +88,7 @@ internal sealed class FfmpegMediaValidator : IFfmpegMediaValidator
         }
 
         var duration = TimeSpan.FromSeconds(durationSeconds);
-        if (!IsDurationClose(duration, expectedDuration))
-        {
-            return FfmpegMediaValidationResult.Failure("Output duration does not match the source segments.");
-        }
-
-        foreach (var position in GetSeekPositions(duration))
+        foreach (var position in GetSeekPositions(expectedDuration))
         {
             var decode = await _processRunner
                 .RunAsync(FfmpegCommandFactory.BuildSeekDecode(mediaFile, position), ProcessTimeout, cancellationToken)
@@ -101,25 +102,13 @@ internal sealed class FfmpegMediaValidator : IFfmpegMediaValidator
         return new FfmpegMediaValidationResult(true, duration, null);
     }
 
-    internal static bool IsDurationClose(TimeSpan actual, TimeSpan expected)
+    internal static IReadOnlyList<TimeSpan> GetSeekPositions(TimeSpan expectedDuration)
     {
-        if (expected <= TimeSpan.Zero)
-        {
-            return true;
-        }
-
-        var tolerance = TimeSpan.FromSeconds(Math.Max(3, expected.TotalSeconds * 0.05));
-        return (actual - expected).Duration() <= tolerance;
-    }
-
-    internal static IReadOnlyList<TimeSpan> GetSeekPositions(TimeSpan duration)
-    {
-        var middle = TimeSpan.FromTicks(duration.Ticks / 2);
-        var tailOffset = TimeSpan.FromSeconds(Math.Min(2, duration.TotalSeconds * 0.1));
-        var tail = duration - tailOffset;
-        return Math.Abs((tail - middle).TotalMilliseconds) < 100
-            ? new[] { middle }
-            : new[] { middle, tail };
+        var middle = TimeSpan.FromTicks(expectedDuration.Ticks / 2);
+        var tail = expectedDuration > TailSeekSafetyOffset
+            ? expectedDuration - TailSeekSafetyOffset
+            : TimeSpan.Zero;
+        return [TimeSpan.Zero, middle, tail];
     }
 
     private static bool DecodedAtLeastOneFrame(string progressOutput)

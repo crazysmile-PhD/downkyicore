@@ -23,7 +23,6 @@ namespace DownKyi.ViewModels;
 
 internal partial class ViewMyFavoritesViewModel : ViewModelBase
 {
-    public const string Tag = "PageMyFavorites";
     private readonly IContentDownloadCoordinator _downloadCoordinator;
     private readonly IFavoritesCoordinator _favoritesCoordinator;
     private readonly ILogger<ViewMyFavoritesViewModel> _logger;
@@ -39,14 +38,6 @@ internal partial class ViewMyFavoritesViewModel : ViewModelBase
     private const int VideoNumberInPage = 20;
 
     #region 页面属性申明
-
-    private string _pageName = Tag;
-
-    public string PageName
-    {
-        get => _pageName;
-        set => SetProperty(ref _pageName, value);
-    }
 
     private bool _contentVisibility;
 

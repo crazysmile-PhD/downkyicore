@@ -97,6 +97,30 @@ public sealed class AriaClientRpcContractTests
         Assert.Equal(cancellation.Token, observedToken);
     }
 
+    [Fact]
+    public async Task RpcClientPropagatesTransportFailureWithoutRetry()
+    {
+        var requestCount = 0;
+        var failure = new HttpRequestException("RPC transport failed.");
+        var client = new AriaClient(
+            "https://aria-contract.example",
+            35076,
+            "contract-token",
+            (_, _) =>
+            {
+                requestCount++;
+                return Task.FromException<string?>(failure);
+            });
+
+        var thrown = await Assert.ThrowsAsync<HttpRequestException>(() =>
+            client.AddUriAsync(
+                ["https://media.example/video"],
+                new AriaSendOption()));
+
+        Assert.Same(failure, thrown);
+        Assert.Equal(1, requestCount);
+    }
+
     private static IReadOnlyList<RpcContractCase> CreateCases()
     {
         var sendOption = new AriaSendOption();
