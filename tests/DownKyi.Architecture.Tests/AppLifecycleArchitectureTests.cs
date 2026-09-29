@@ -114,6 +114,18 @@ public sealed class AppLifecycleArchitectureTests
     }
 
     [Fact]
+    public void PackageLaunchReadinessIsSignaledByMainWindowOpenedState()
+    {
+        var appSource = ReadSource("src", "DownKyi.Desktop", "App.axaml.cs");
+
+        Assert.Contains("mainWindow.Opened += OnMainWindowOpened", appSource, StringComparison.Ordinal);
+        Assert.Contains("DOWNKYI_LAUNCH_READY_TOKEN", appSource, StringComparison.Ordinal);
+        Assert.Contains("Guid.TryParseExact(launchReadyToken, \"N\", out _)", appSource, StringComparison.Ordinal);
+        Assert.Contains("FileMode.CreateNew", appSource, StringComparison.Ordinal);
+        Assert.Contains("window.Opened -= OnMainWindowOpened", appSource, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ProductionSingleInstanceGuardPrecedesHostAndStorageInitialization()
     {
         var appSource = ReadSource("src", "DownKyi.Desktop", "App.axaml.cs");

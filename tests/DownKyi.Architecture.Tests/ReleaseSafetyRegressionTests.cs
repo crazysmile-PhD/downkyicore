@@ -44,6 +44,13 @@ public sealed class ReleaseSafetyRegressionTests
             "Assert-LinuxBinaryArchitecture -Path $executable",
             packageValidator,
             StringComparison.Ordinal);
+        Assert.Contains("DOWNKYI_LAUNCH_READY_TOKEN", packageValidator, StringComparison.Ordinal);
+        Assert.Contains("FileSystemWatcher", packageValidator, StringComparison.Ordinal);
+        Assert.Contains("Register-ObjectEvent", packageValidator, StringComparison.Ordinal);
+        Assert.Contains("Wait-Event", packageValidator, StringComparison.Ordinal);
+        Assert.Contains("WaitForExitAsync()", packageValidator, StringComparison.Ordinal);
+        Assert.DoesNotContain("Application initialized.", packageValidator, StringComparison.Ordinal);
+        Assert.DoesNotContain("Start-Sleep", packageValidator, StringComparison.Ordinal);
         Assert.DoesNotContain("& 7z", packageValidator, StringComparison.Ordinal);
     }
 
@@ -668,7 +675,7 @@ public sealed class ReleaseSafetyRegressionTests
                 root);
             Assert.NotEqual(0, brokenAppRun.ExitCode);
             Assert.Contains(
-                "AppRun launch smoke exited before the application initialization marker",
+                "AppRun launch smoke exited before the main-window ready handshake",
                 NormalizeDiagnostic(brokenAppRun),
                 StringComparison.Ordinal);
 
@@ -689,11 +696,11 @@ public sealed class ReleaseSafetyRegressionTests
             Assert.NotEqual(0, wrongStub.ExitCode);
             var wrongStubDiagnostic = NormalizeDiagnostic(wrongStub);
             Assert.Contains(
-                "AppImage runtime launch smoke exited before the application",
+                "AppImage runtime launch smoke exited before the main-window ready handshake",
                 wrongStubDiagnostic,
                 StringComparison.Ordinal);
             Assert.Contains(
-                "initialization marker (exit code 0)",
+                "main-window ready handshake (exit code 0)",
                 wrongStubDiagnostic,
                 StringComparison.Ordinal);
 
@@ -1131,29 +1138,26 @@ public sealed class ReleaseSafetyRegressionTests
             """
             #include <stdio.h>
             #include <stdlib.h>
-            #include <sys/stat.h>
             #include <unistd.h>
 
-            static int signal_initialized(void) {
+            static int signal_ready(void) {
                 const char *root = getenv("DOWNKYI_DATA_DIR");
-                char logs[4096];
-                char day[4096];
+                const char *token = getenv("DOWNKYI_LAUNCH_READY_TOKEN");
                 char marker[4096];
-                if (root == NULL ||
-                    snprintf(logs, sizeof(logs), "%s/Logs", root) >= (int)sizeof(logs) ||
-                    snprintf(day, sizeof(day), "%s/fixture", logs) >= (int)sizeof(day) ||
-                    snprintf(marker, sizeof(marker), "%s/events.jsonl", day) >= (int)sizeof(marker)) return 2;
-                mkdir(root, 0755);
-                mkdir(logs, 0755);
-                mkdir(day, 0755);
-                FILE *file = fopen(marker, "w");
-                if (file == NULL) return 3;
-                fputs("{\"message\":\"Application initialized. Fixture\"}\n", file);
-                return fclose(file) == 0 ? 0 : 4;
+                if (root == NULL || token == NULL || token[0] == '\0') return 2;
+                int length = snprintf(marker, sizeof(marker), "%s/.launch-ready-%s", root, token);
+                if (length < 0 || length >= (int)sizeof(marker)) return 3;
+                FILE *stream = fopen(marker, "wx");
+                if (stream == NULL) return 4;
+                if (fprintf(stream, "%s\n", token) < 0) {
+                    fclose(stream);
+                    return 5;
+                }
+                return fclose(stream) == 0 ? 0 : 6;
             }
 
             int main(void) {
-                if (signal_initialized() != 0) return 5;
+                if (signal_ready() != 0) return 7;
                 for (;;) pause();
             }
             """);
@@ -1174,7 +1178,9 @@ public sealed class ReleaseSafetyRegressionTests
         switch (appRunKind)
         {
             case AppRunFixtureKind.RegularExitsImmediately:
-                File.WriteAllText(appRun, "#!/bin/sh\nexit 0\n");
+                File.WriteAllText(
+                    appRun,
+                    "#!/bin/sh\nprintf '%s\\n' 'Application initialized. Fixture'\nexit 0\n");
                 File.SetUnixFileMode(
                     appRun,
                     UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
@@ -1206,7 +1212,7 @@ public sealed class ReleaseSafetyRegressionTests
 
         var escapedAppRoot = appRoot.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal);
         var outerBehavior = outerRuntimeStaysRunning
-            ? "if (signal_initialized() != 0) return 5; for (;;) pause();"
+            ? "if (signal_ready() != 0) return 5; for (;;) pause();"
             : "return 0;";
         var runtimeSource = """
             #include <stdio.h>
@@ -1215,22 +1221,20 @@ public sealed class ReleaseSafetyRegressionTests
             #include <sys/stat.h>
             #include <unistd.h>
 
-            static int signal_initialized(void) {
+            static int signal_ready(void) {
                 const char *root = getenv("DOWNKYI_DATA_DIR");
-                char logs[4096];
-                char day[4096];
+                const char *token = getenv("DOWNKYI_LAUNCH_READY_TOKEN");
                 char marker[4096];
-                if (root == NULL ||
-                    snprintf(logs, sizeof(logs), "%s/Logs", root) >= (int)sizeof(logs) ||
-                    snprintf(day, sizeof(day), "%s/fixture", logs) >= (int)sizeof(day) ||
-                    snprintf(marker, sizeof(marker), "%s/events.jsonl", day) >= (int)sizeof(marker)) return 2;
-                mkdir(root, 0755);
-                mkdir(logs, 0755);
-                mkdir(day, 0755);
-                FILE *file = fopen(marker, "w");
-                if (file == NULL) return 3;
-                fputs("{\"message\":\"Application initialized. Fixture\"}\n", file);
-                return fclose(file) == 0 ? 0 : 4;
+                if (root == NULL || token == NULL || token[0] == '\0') return 2;
+                int length = snprintf(marker, sizeof(marker), "%s/.launch-ready-%s", root, token);
+                if (length < 0 || length >= (int)sizeof(marker)) return 3;
+                FILE *stream = fopen(marker, "wx");
+                if (stream == NULL) return 4;
+                if (fprintf(stream, "%s\n", token) < 0) {
+                    fclose(stream);
+                    return 5;
+                }
+                return fclose(stream) == 0 ? 0 : 6;
             }
 
             int main(int argc, char **argv) {

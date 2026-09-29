@@ -124,7 +124,7 @@ function Assert-Type2AppImage {
     }
 }
 
-function Assert-LaunchInitializes {
+function Assert-LaunchReady {
     param(
         [string]$Label,
         [string]$Path,
@@ -149,50 +149,82 @@ function Assert-LaunchInitializes {
         $startInfo.Environment[$entry.Key] = [string]$entry.Value
     }
     $startInfo.Environment['DOWNKYI_DATA_DIR'] = $launchData
+    $launchReadyToken = [Guid]::NewGuid().ToString('N')
+    $launchReadyName = ".launch-ready-$launchReadyToken"
+    $launchReadyPath = Join-Path $launchData $launchReadyName
+    $startInfo.Environment['DOWNKYI_LAUNCH_READY_TOKEN'] = $launchReadyToken
 
-    $process = [Diagnostics.Process]::Start($startInfo)
-    if ($null -eq $process) {
-        throw "$Label launch smoke did not start."
-    }
-
-    $standardOutput = $process.StandardOutput.ReadToEndAsync()
-    $standardError = $process.StandardError.ReadToEndAsync()
-    $initialized = $false
+    $eventPrefix = "DownKyi.Launch.$launchReadyToken"
+    $readySource = "$eventPrefix.Ready"
+    $exitSource = "$eventPrefix.Exit"
+    $watcher = [IO.FileSystemWatcher]::new($launchData, $launchReadyName)
+    $process = [Diagnostics.Process]::new()
+    $process.StartInfo = $startInfo
+    $process.EnableRaisingEvents = $true
+    $readySubscription = $null
+    $exitSubscription = $null
+    $standardOutput = $null
+    $standardError = $null
+    $exitTask = $null
+    $started = $false
+    $ready = $false
     $exitCode = $null
     try {
-        while (-not $process.HasExited) {
-            $initialized = [bool](
-                Get-ChildItem -LiteralPath (Join-Path $launchData 'Logs') `
-                    -Recurse -File -Filter 'events.jsonl' -ErrorAction SilentlyContinue |
-                    Select-String -SimpleMatch 'Application initialized.' -Quiet)
-            if ($initialized -and -not $process.HasExited) {
-                break
-            }
-
-            Start-Sleep -Milliseconds 25
+        $readySubscription = Register-ObjectEvent -InputObject $watcher -EventName Created -SourceIdentifier $readySource
+        $exitSubscription = Register-ObjectEvent -InputObject $process -EventName Exited -SourceIdentifier $exitSource
+        $watcher.EnableRaisingEvents = $true
+        $started = $process.Start()
+        if (-not $started) {
+            throw "$Label launch smoke did not start."
         }
+
+        $standardOutput = $process.StandardOutput.ReadToEndAsync()
+        $standardError = $process.StandardError.ReadToEndAsync()
+        $exitTask = $process.WaitForExitAsync()
+        $event = Wait-Event -SourceIdentifier "$eventPrefix.*"
+        $ready = $event.SourceIdentifier -ceq $readySource -and
+            (Test-Path -LiteralPath $launchReadyPath -PathType Leaf) -and
+            -not $process.HasExited
     }
     finally {
-        try {
-            if (-not $process.HasExited) {
-                $process.Kill($true)
+        if ($started) {
+            try {
+                if (-not $process.HasExited) {
+                    $process.Kill($true)
+                }
             }
-        }
-        catch [InvalidOperationException] {
-            if (-not $process.HasExited) {
-                throw
+            catch [InvalidOperationException] {
+                if (-not $process.HasExited) {
+                    throw
+                }
             }
+
+            $exitTask.GetAwaiter().GetResult()
+            $exitCode = $process.ExitCode
         }
 
-        $process.WaitForExit()
-        $exitCode = $process.ExitCode
-        $null = $standardOutput.GetAwaiter().GetResult()
-        $null = $standardError.GetAwaiter().GetResult()
+        $watcher.EnableRaisingEvents = $false
+        foreach ($subscription in @($readySubscription, $exitSubscription)) {
+            if ($null -ne $subscription) {
+                Unregister-Event -SubscriptionId $subscription.SubscriptionId -Force
+            }
+        }
+        Get-Event -SourceIdentifier "$eventPrefix.*" -ErrorAction SilentlyContinue |
+            Remove-Event -ErrorAction SilentlyContinue
+        $watcher.Dispose()
+        Remove-Item -LiteralPath $launchReadyPath -Force -ErrorAction SilentlyContinue
+
+        if ($null -ne $standardOutput) {
+            $null = $standardOutput.GetAwaiter().GetResult()
+        }
+        if ($null -ne $standardError) {
+            $null = $standardError.GetAwaiter().GetResult()
+        }
         $process.Dispose()
     }
 
-    if (-not $initialized) {
-        throw "$Label launch smoke exited before the application initialization marker (exit code $exitCode)."
+    if (-not $ready) {
+        throw "$Label launch smoke exited before the main-window ready handshake (exit code $exitCode)."
     }
 }
 
@@ -335,12 +367,12 @@ try {
             HOME = $launchHome
             OWD = $temporaryRoot
         }
-        Assert-LaunchInitializes `
+        Assert-LaunchReady `
             -Label 'AppRun' `
             -Path $appRun `
             -Arguments @() `
             -Environment $launchEnvironment
-        Assert-LaunchInitializes `
+        Assert-LaunchReady `
             -Label 'AppImage runtime' `
             -Path $package `
             -Arguments @('--appimage-extract-and-run') `

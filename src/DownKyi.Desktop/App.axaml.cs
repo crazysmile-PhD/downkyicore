@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
@@ -27,6 +28,7 @@ namespace DownKyi;
 
 internal partial class App : Avalonia.Application, IAsyncDisposable
 {
+    private const string LaunchReadyTokenEnvironmentVariable = "DOWNKYI_LAUNCH_READY_TOKEN";
     private readonly object _disposeSync = new();
     private Task? _disposeTask;
 
@@ -81,6 +83,7 @@ internal partial class App : Avalonia.Application, IAsyncDisposable
         ImageBrushLoader.AsyncImageLoader = imageLoader;
 
         var mainWindow = host.Services.GetRequiredService<MainWindow>();
+        mainWindow.Opened += OnMainWindowOpened;
         desktopContext.AttachMainWindow(mainWindow);
         desktop.MainWindow = mainWindow;
 
@@ -152,6 +155,38 @@ internal partial class App : Avalonia.Application, IAsyncDisposable
                 }
             }
         }
+    }
+
+    private static void OnMainWindowOpened(object? sender, EventArgs e)
+    {
+        if (sender is Window window)
+        {
+            window.Opened -= OnMainWindowOpened;
+        }
+
+        var launchReadyToken = Environment.GetEnvironmentVariable(
+            LaunchReadyTokenEnvironmentVariable);
+        if (string.IsNullOrWhiteSpace(launchReadyToken))
+        {
+            return;
+        }
+
+        if (!Guid.TryParseExact(launchReadyToken, "N", out _))
+        {
+            throw new InvalidOperationException("The package launch readiness token is invalid.");
+        }
+
+        var launchReadyPath = Path.Combine(
+            ApplicationStorage.GetRoot(),
+            $".launch-ready-{launchReadyToken}");
+        using var stream = new FileStream(
+            launchReadyPath,
+            FileMode.CreateNew,
+            FileAccess.Write,
+            FileShare.Read);
+        using var writer = new StreamWriter(stream);
+        writer.WriteLine(launchReadyToken);
+        writer.Flush();
     }
 
     private void CreateHost()
