@@ -154,7 +154,7 @@ public class AriaManager
                 await statusCallback(cancellationToken).ConfigureAwait(false);
             }
 
-            if (result.Status == "complete")
+            if (string.Equals(result.Status, "complete", StringComparison.Ordinal))
             {
                 OnDownloadFinish(true, filePath, gid, null);
                 return new AriaDownloadStatus(
@@ -163,10 +163,24 @@ public class AriaManager
                     null);
             }
 
-            if (!string.IsNullOrEmpty(result.ErrorCode) && result.ErrorCode != "0")
+            if (string.Equals(result.Status, "removed", StringComparison.Ordinal))
             {
+                OnDownloadFinish(false, null, gid, result.ErrorMessage);
+                return new AriaDownloadStatus(
+                    DownloadResult.ABORT,
+                    "removed",
+                    result.ErrorMessage);
+            }
+
+            if (string.Equals(result.Status, "error", StringComparison.Ordinal)
+                || !string.IsNullOrEmpty(result.ErrorCode) && result.ErrorCode != "0")
+            {
+                var errorCode = string.IsNullOrEmpty(result.ErrorCode)
+                    || result.ErrorCode == "0"
+                        ? "unknown-error"
+                        : result.ErrorCode;
                 _logger.LogErrorMessage(
-                    $"aria2 reported a download failure; errorCode={result.ErrorCode}.");
+                    $"aria2 reported a download failure; errorCode={errorCode}.");
 
                 var ariaRemove = await _ariaClient
                     .RemoveDownloadResultAsync(gid, cancellationToken)
@@ -179,7 +193,7 @@ public class AriaManager
                 OnDownloadFinish(false, null, gid, result.ErrorMessage);
                 return new AriaDownloadStatus(
                     DownloadResult.FAILED,
-                    result.ErrorCode,
+                    errorCode,
                     result.ErrorMessage);
             }
 

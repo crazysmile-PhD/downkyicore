@@ -178,8 +178,12 @@ public sealed partial class AriaClient
     /// </summary>
     /// <param name="offset"></param>
     /// <param name="num"></param>
+    /// <param name="cancellationToken">Cancels the RPC request.</param>
     /// <returns></returns>
-    public async Task<AriaTellStatusList> TellWaitingAsync(int offset, int num)
+    public async Task<AriaTellStatusList> TellWaitingAsync(
+        int offset,
+        int num,
+        CancellationToken cancellationToken = default)
     {
         List<object> ariaParams = new List<object>
         {
@@ -194,7 +198,8 @@ public sealed partial class AriaClient
             Method = "aria2.tellWaiting",
             Params = ariaParams
         };
-        return await GetRpcResponseAsync<AriaTellStatusList>(ariaSend).ConfigureAwait(false);
+        return await GetRpcResponseAsync<AriaTellStatusList>(ariaSend, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <summary>

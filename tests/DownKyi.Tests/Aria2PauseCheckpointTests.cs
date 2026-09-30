@@ -166,11 +166,153 @@ public sealed class Aria2PauseCheckpointTests
         }
     }
 
+    [Theory]
+    [InlineData("complete", "Succeeded")]
+    [InlineData("error", "Failed")]
+    [InlineData("removed", "Failed")]
+    public async Task PauseCheckpointReturnsWhenTransferBecomesTerminal(
+        string terminalStatus,
+        string expectedOutcome)
+    {
+        var directory = CreateTemporaryDirectory();
+        await File.WriteAllBytesAsync(
+            Path.Combine(directory, "media.tmp"),
+            [1],
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+        var initialStatusStarted = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseInitialStatus = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var pauseRequested = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var pauseRpcObserved = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var pauseState = 0;
+        using var requestCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            TestContext.Current.CancellationToken);
+        Task<DownloadTransferResult>? transferTask = null;
+
+        try
+        {
+            using var settings = new TestSettingsStore();
+            var client = new AriaClient(
+                "http://localhost",
+                6800,
+                "test-token",
+                async (_, payload, cancellationToken) =>
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var request = JObject.Parse(payload);
+                    var method = request["method"]?.Value<string>();
+                    JToken result;
+                    switch (method)
+                    {
+                        case "aria2.addUri":
+                            result = JValue.CreateString("pause-terminal-gid");
+                            break;
+                        case "aria2.pause":
+                            Interlocked.Exchange(ref pauseState, 1);
+                            pauseRpcObserved.TrySetResult();
+                            result = JValue.CreateString("pause-terminal-gid");
+                            break;
+                        case "aria2.tellStatus" when Volatile.Read(ref pauseState) == 0:
+                            initialStatusStarted.TrySetResult();
+                            await releaseInitialStatus.Task
+                                .WaitAsync(cancellationToken)
+                                .ConfigureAwait(false);
+                            result = CreateStatus(terminalStatus);
+                            break;
+                        case "aria2.tellStatus":
+                            result = CreateStatus(terminalStatus);
+                            break;
+                        case "aria2.removeDownloadResult":
+                            result = JValue.CreateString("pause-terminal-gid");
+                            break;
+                        default:
+                            throw new InvalidOperationException(
+                                $"Unexpected aria2 RPC method '{method}'.");
+                    }
+
+                    return JsonConvert.SerializeObject(new
+                    {
+                        jsonrpc = "2.0",
+                        id = "pause-terminal",
+                        result
+                    });
+                });
+            using var probeHandler = new AcceptingHttpMessageHandler();
+            using var replacementResolver = AriaDownloadAddressResolver.CreateForTest(
+                probeHandler);
+            using var backend = new Aria2TransferBackend(
+                settings.Store.Current.Network,
+                client,
+                new AriaRuntimeClientRegistry(),
+                new DownloadDiagnosticLogger(
+                    NullLogger<DownloadDiagnosticLogger>.Instance),
+                new AriaServer(NullLoggerFactory.Instance),
+                NullLoggerFactory.Instance,
+                NullLogger<Aria2TransferBackend>.Instance,
+                ownsAriaServer: false,
+                localEndpoint: null);
+            ReplaceAddressResolverForTest(backend, replacementResolver);
+            var request = new DownloadTransferRequest(
+                new DownloadTaskId("aria-pause-terminal"),
+                BackendIdentity: null,
+                Urls: ["https://download.example/media"],
+                Directory: directory,
+                FileName: "media.tmp",
+                ExpectedBytes: 1,
+                EnsureActive: static () => { },
+                IsPauseRequested: () => pauseRequested.Task.IsCompleted,
+                WaitForPauseRequestedAsync: token => pauseRequested.Task.WaitAsync(token),
+                PublishProgress: static _ => { },
+                PersistProgressAsync: static (_, _) => Task.CompletedTask,
+                SetBackendIdentityAsync: static (_, _) => Task.CompletedTask,
+                CancellationToken: requestCancellation.Token,
+                StagingDirectory: directory);
+
+            transferTask = backend.TransferAsync(request);
+            await initialStatusStarted.Task
+                .WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+
+            pauseRequested.TrySetResult();
+            await pauseRpcObserved.Task
+                .WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+            releaseInitialStatus.TrySetResult();
+
+            var transferResult = await transferTask
+                .WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+            Assert.Equal(expectedOutcome, transferResult.Outcome.ToString());
+        }
+        finally
+        {
+            await requestCancellation.CancelAsync().ConfigureAwait(true);
+            releaseInitialStatus.TrySetResult();
+            if (transferTask != null)
+            {
+                try
+                {
+                    await transferTask.ConfigureAwait(true);
+                }
+                catch (OperationCanceledException)
+                {
+                }
+            }
+
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     private static JObject CreateStatus(string status)
     {
         return JObject.FromObject(new
         {
             status,
+            errorCode = status == "error" ? "1" : "0",
+            errorMessage = status == "error" ? "terminal test failure" : string.Empty,
             totalLength = "1024",
             completedLength = "512",
             downloadSpeed = status == "active" ? "128" : "0",

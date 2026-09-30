@@ -253,13 +253,23 @@ internal sealed class Aria2RuntimeLifecycle : IDisposable
                     NumberStyles.None,
                     CultureInfo.InvariantCulture,
                     out var activeDownloads)
-                || activeDownloads < 0)
+                || activeDownloads < 0
+                || !int.TryParse(
+                    result.NumWaiting,
+                    NumberStyles.None,
+                    CultureInfo.InvariantCulture,
+                    out var waitingDownloads)
+                || waitingDownloads < 0)
             {
                 throw new InvalidOperationException(
-                    "aria2 returned an invalid active-download count during shutdown.");
+                    "aria2 returned invalid download counts during shutdown.");
             }
 
-            if (activeDownloads == 0)
+            if (activeDownloads == 0
+                && await AreWaitingDownloadsPausedAsync(
+                    waitingDownloads,
+                    remaining,
+                    cancellationToken).ConfigureAwait(true))
             {
                 return;
             }
@@ -278,6 +288,28 @@ internal sealed class Aria2RuntimeLifecycle : IDisposable
                     cancellationToken)
                 .ConfigureAwait(true);
         }
+    }
+
+    private async Task<bool> AreWaitingDownloadsPausedAsync(
+        int waitingDownloads,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        if (waitingDownloads == 0)
+        {
+            return true;
+        }
+
+        var response = await _ariaClient
+            .TellWaitingAsync(0, waitingDownloads, cancellationToken)
+            .WaitAsync(timeout, cancellationToken)
+            .ConfigureAwait(true);
+        return response is { Result: { } downloads }
+            && downloads.Count == waitingDownloads
+            && downloads.All(download => string.Equals(
+                download.Status,
+                "paused",
+                StringComparison.Ordinal));
     }
 
     public void Dispose()

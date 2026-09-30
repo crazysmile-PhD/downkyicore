@@ -58,18 +58,21 @@ public sealed class Aria2RuntimeShutdownTests
     }
 
     [Fact]
-    public async Task OwnedStopWaitsForPausedCheckpointThenTerminatesWithoutRpcShutdownDelay()
+    public async Task OwnedStopWaitsForActiveAndWaitingDownloadsToReachPausedCheckpoint()
     {
         var requests = new List<string>();
-        var activeChecks = 0;
+        var globalChecks = 0;
+        var waitingChecks = 0;
         var client = CreateClient((method, _) =>
         {
             requests.Add(method);
             return method switch
             {
-                "aria2.getGlobalStat" => CreateGlobalStat(
-                    activeChecks++ == 0 ? "1" : "0",
-                    activeChecks == 1 ? "0" : "1"),
+                "aria2.getGlobalStat" => ++globalChecks == 1
+                    ? CreateGlobalStat("1", "0")
+                    : CreateGlobalStat("0", "1"),
+                "aria2.tellWaiting" => CreateWaitingStatuses(
+                    waitingChecks++ == 0 ? "waiting" : "paused"),
                 _ => "OK"
             };
         });
@@ -89,6 +92,9 @@ public sealed class Aria2RuntimeShutdownTests
                     "aria2.pauseAll",
                     "aria2.getGlobalStat",
                     "aria2.getGlobalStat",
+                    "aria2.tellWaiting",
+                    "aria2.getGlobalStat",
+                    "aria2.tellWaiting",
                     "aria2.saveSession"
                 ],
                 requests);
@@ -117,6 +123,11 @@ public sealed class Aria2RuntimeShutdownTests
                 return CreateGlobalStat("0", "1");
             }
 
+            if (method == "aria2.tellWaiting")
+            {
+                return CreateWaitingStatuses("paused");
+            }
+
             if (method == "aria2.saveSession")
             {
                 return "ERROR";
@@ -143,6 +154,7 @@ public sealed class Aria2RuntimeShutdownTests
                 [
                     "aria2.pauseAll",
                     "aria2.getGlobalStat",
+                    "aria2.tellWaiting",
                     "aria2.saveSession",
                     "aria2.shutdown"
                 ],
@@ -209,6 +221,17 @@ public sealed class Aria2RuntimeShutdownTests
             numWaiting,
             uploadSpeed = "0"
         };
+    }
+
+    private static JArray CreateWaitingStatuses(params string[] statuses)
+    {
+        return JArray.FromObject(
+            statuses.Select((status, index) => new
+            {
+                gid = $"waiting-{index}",
+                status
+            })
+                .ToArray());
     }
 
     private static AriaClient CreateClient(Func<string, JObject, object> resultFactory)

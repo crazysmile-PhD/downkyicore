@@ -197,21 +197,18 @@ internal sealed partial class Aria2TransferBackend : ITransferBackend
             {
                 await pauseRequestTask.ConfigureAwait(true);
                 request.CancellationToken.ThrowIfCancellationRequested();
-                await monitorCancellation.CancelAsync().ConfigureAwait(true);
-                try
+                var checkpoint = await PauseAndWaitForCheckpointAsync(
+                    activeGid,
+                    request.CancellationToken).ConfigureAwait(true);
+                if (checkpoint == AriaPauseCheckpoint.Paused)
                 {
-                    await PauseAndWaitForCheckpointAsync(
-                        activeGid,
-                        request.CancellationToken).ConfigureAwait(true);
-                }
-                finally
-                {
+                    await monitorCancellation.CancelAsync().ConfigureAwait(true);
                     await ObserveExpectedMonitorCancellationAsync(
                         statusTask,
                         request.CancellationToken).ConfigureAwait(true);
-                }
 
-                return DownloadTransferResult.Paused();
+                    return DownloadTransferResult.Paused();
+                }
             }
 
             var (downloadResult, errorCode, errorMessage) =
@@ -279,7 +276,7 @@ internal sealed partial class Aria2TransferBackend : ITransferBackend
         }
     }
 
-    private async Task PauseAndWaitForCheckpointAsync(
+    private async Task<AriaPauseCheckpoint> PauseAndWaitForCheckpointAsync(
         string gid,
         CancellationToken cancellationToken)
     {
@@ -304,7 +301,14 @@ internal sealed partial class Aria2TransferBackend : ITransferBackend
 
             if (string.Equals(result.Status, "paused", StringComparison.Ordinal))
             {
-                return;
+                return AriaPauseCheckpoint.Paused;
+            }
+
+            if (string.Equals(result.Status, "complete", StringComparison.Ordinal)
+                || string.Equals(result.Status, "error", StringComparison.Ordinal)
+                || string.Equals(result.Status, "removed", StringComparison.Ordinal))
+            {
+                return AriaPauseCheckpoint.Terminal;
             }
 
             await Task.Delay(PauseStatusPollInterval, cancellationToken)
@@ -562,6 +566,12 @@ internal sealed partial class Aria2TransferBackend : ITransferBackend
     private void ReleaseRuntimeRegistration()
     {
         Interlocked.Exchange(ref _runtimeRegistration, null)?.Dispose();
+    }
+
+    private enum AriaPauseCheckpoint
+    {
+        Paused,
+        Terminal
     }
 }
 
