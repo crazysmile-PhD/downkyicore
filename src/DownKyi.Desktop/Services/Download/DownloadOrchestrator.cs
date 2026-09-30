@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
@@ -215,6 +216,9 @@ internal sealed class DownloadOrchestrator : IDownloadRuntime
                     }
 
                     await _stateWriter.StartAsync(taskId, execution.Token).ConfigureAwait(false);
+                    _logger.LogInformationMessage(
+                        $"source=download-ui-timing; stage=worker-started; task={taskId.Value}; " +
+                        $"monotonicTicks={Stopwatch.GetTimestamp()}; frequency={Stopwatch.Frequency}");
                     await _executor.ExecuteAsync(taskId, execution.Token).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (shutdownToken.IsCancellationRequested)
@@ -299,6 +303,9 @@ internal sealed class DownloadOrchestrator : IDownloadRuntime
             {
                 await _stateWriter.ConfirmPausedAsync(taskId, CancellationToken.None)
                     .ConfigureAwait(false);
+                _logger.LogInformationMessage(
+                    $"source=download-ui-timing; stage=pause-confirmed; task={taskId.Value}; " +
+                    $"monotonicTicks={Stopwatch.GetTimestamp()}; frequency={Stopwatch.Frequency}");
             }
         }
         catch (InvalidOperationException exception)

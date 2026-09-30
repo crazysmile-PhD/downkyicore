@@ -209,6 +209,40 @@ internal sealed class DownloadTaskProjectionStore : IDisposable
         }
     }
 
+    public async Task WaitForPauseRequestAsync(
+        DownloadTaskId taskId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(taskId);
+        var pauseRequested = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        void OnTaskChanged(object? sender, DownloadTaskChangedEventArgs args)
+        {
+            if (args.TaskId.Equals(taskId)
+                && args.Snapshot?.Phase is DownloadPhase.Pausing or DownloadPhase.Paused)
+            {
+                pauseRequested.TrySetResult();
+            }
+        }
+
+        _tasks.TaskChanged += OnTaskChanged;
+        try
+        {
+            if (GetRequiredSnapshot(taskId).Phase is
+                DownloadPhase.Pausing or DownloadPhase.Paused)
+            {
+                return;
+            }
+
+            await pauseRequested.Task.WaitAsync(cancellationToken).ConfigureAwait(true);
+        }
+        finally
+        {
+            _tasks.TaskChanged -= OnTaskChanged;
+        }
+    }
+
     public DownloadingItem GetRequiredDownloadingProjection(DownloadTaskId taskId)
     {
         ArgumentNullException.ThrowIfNull(taskId);

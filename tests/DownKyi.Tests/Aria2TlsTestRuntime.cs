@@ -241,7 +241,9 @@ internal sealed class Aria2TlsTestRuntime : IAsyncDisposable
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var status = await Client.TellStatus(gid).ConfigureAwait(false);
+            var status = await Client
+                .TellStatus(gid, cancellationToken)
+                .ConfigureAwait(false);
             if (status.Result is { } result
                 && (string.Equals(result.Status, "complete", StringComparison.Ordinal)
                     || string.Equals(result.Status, "error", StringComparison.Ordinal)

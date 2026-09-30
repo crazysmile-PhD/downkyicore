@@ -205,8 +205,11 @@ public sealed partial class AriaClient
     /// This method returns GID of paused download.
     /// </summary>
     /// <param name="gid"></param>
+    /// <param name="cancellationToken">Cancels the RPC request.</param>
     /// <returns></returns>
-    public async Task<AriaPause> PauseAsync(string gid)
+    public async Task<AriaPause> PauseAsync(
+        string gid,
+        CancellationToken cancellationToken = default)
     {
         List<object> ariaParams = new List<object>
         {
@@ -220,7 +223,8 @@ public sealed partial class AriaClient
             Method = "aria2.pause",
             Params = ariaParams
         };
-        return await GetRpcResponseAsync<AriaPause>(ariaSend).ConfigureAwait(false);
+        return await GetRpcResponseAsync<AriaPause>(ariaSend, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <summary>

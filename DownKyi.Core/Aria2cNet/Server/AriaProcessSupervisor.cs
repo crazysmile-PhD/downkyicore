@@ -104,6 +104,16 @@ internal sealed class AriaProcessSupervisor
     public bool Kill(string reason)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(reason);
+        return Terminate(reason);
+    }
+
+    public bool Terminate()
+    {
+        return Terminate(failureReason: null);
+    }
+
+    private bool Terminate(string? failureReason)
+    {
         Process? process;
         lock (_sync)
         {
@@ -119,7 +129,13 @@ internal sealed class AriaProcessSupervisor
         {
             if (!process.HasExited)
             {
-                _logger.LogErrorMessage(reason, new TimeoutException(reason));
+                if (failureReason != null)
+                {
+                    _logger.LogErrorMessage(
+                        failureReason,
+                        new TimeoutException(failureReason));
+                }
+
                 process.Kill(entireProcessTree: true);
             }
 

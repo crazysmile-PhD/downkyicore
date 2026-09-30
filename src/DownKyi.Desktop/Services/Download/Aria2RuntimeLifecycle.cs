@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
@@ -18,6 +20,8 @@ namespace DownKyi.Services.Download;
 internal sealed class Aria2RuntimeLifecycle : IDisposable
 {
     internal const string SecureRedirectFeature = "downkyi-secure-redirect-v2";
+    private static readonly TimeSpan ShutdownCheckpointTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan ShutdownCheckpointPollInterval = TimeSpan.FromMilliseconds(25);
 
     private readonly AriaClient _ariaClient;
     private readonly AriaServer _ariaServer;
@@ -179,11 +183,30 @@ internal sealed class Aria2RuntimeLifecycle : IDisposable
 
     private async Task CloseOwnedServerAsync(CancellationToken cancellationToken)
     {
+        var sessionCheckpointSaved = false;
         try
         {
-            await _ariaClient.PauseAllAsync()
+            var paused = await _ariaClient.PauseAllAsync()
                 .WaitAsync(TimeSpan.FromSeconds(2), cancellationToken)
                 .ConfigureAwait(true);
+            if (paused is not { Result: "OK" })
+            {
+                throw new InvalidOperationException(
+                    "aria2 did not acknowledge the shutdown pause request.");
+            }
+
+            await WaitForPausedDownloadsAsync(cancellationToken).ConfigureAwait(true);
+
+            var saved = await _ariaClient.SaveSessionAsync()
+                .WaitAsync(TimeSpan.FromSeconds(2), cancellationToken)
+                .ConfigureAwait(true);
+            if (saved is not { Result: "OK" })
+            {
+                throw new InvalidOperationException(
+                    "aria2 did not commit the shutdown session checkpoint.");
+            }
+
+            sessionCheckpointSaved = true;
         }
         catch (Exception exception) when (exception is TimeoutException
             or HttpRequestException
@@ -191,7 +214,12 @@ internal sealed class Aria2RuntimeLifecycle : IDisposable
             or InvalidOperationException
             or Newtonsoft.Json.JsonException)
         {
-            _logger.LogErrorMessage("Aria server shutdown failed.", exception);
+            _logger.LogErrorMessage("Aria server shutdown checkpoint failed.", exception);
+        }
+
+        if (sessionCheckpointSaved && _ariaServer.TerminateAfterSessionCheckpoint())
+        {
+            return;
         }
 
         if (!await _ariaServer.CloseServerAsync(
@@ -201,6 +229,54 @@ internal sealed class Aria2RuntimeLifecycle : IDisposable
             await _ariaServer.ForceCloseServerAsync(
                 _ariaClient,
                 TimeSpan.FromSeconds(2)).ConfigureAwait(true);
+        }
+    }
+
+    private async Task WaitForPausedDownloadsAsync(CancellationToken cancellationToken)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        while (true)
+        {
+            var remaining = ShutdownCheckpointTimeout - stopwatch.Elapsed;
+            if (remaining <= TimeSpan.Zero)
+            {
+                throw new TimeoutException(
+                    "aria2 downloads did not reach the paused checkpoint before shutdown.");
+            }
+
+            var response = await _ariaClient.GetGlobalStatAsync()
+                .WaitAsync(remaining, cancellationToken)
+                .ConfigureAwait(true);
+            if (response is not { Result: { } result }
+                || !int.TryParse(
+                    result.NumActive,
+                    NumberStyles.None,
+                    CultureInfo.InvariantCulture,
+                    out var activeDownloads)
+                || activeDownloads < 0)
+            {
+                throw new InvalidOperationException(
+                    "aria2 returned an invalid active-download count during shutdown.");
+            }
+
+            if (activeDownloads == 0)
+            {
+                return;
+            }
+
+            remaining = ShutdownCheckpointTimeout - stopwatch.Elapsed;
+            if (remaining <= TimeSpan.Zero)
+            {
+                throw new TimeoutException(
+                    "aria2 downloads did not reach the paused checkpoint before shutdown.");
+            }
+
+            await Task.Delay(
+                    remaining < ShutdownCheckpointPollInterval
+                        ? remaining
+                        : ShutdownCheckpointPollInterval,
+                    cancellationToken)
+                .ConfigureAwait(true);
         }
     }
 

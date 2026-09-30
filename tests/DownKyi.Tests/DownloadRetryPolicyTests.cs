@@ -1063,6 +1063,8 @@ public sealed class DownloadRetryPolicyTests
             ExpectedBytes: 0,
             EnsureActive: static () => { },
             IsPauseRequested: static () => false,
+            WaitForPauseRequestedAsync: static token =>
+                Task.Delay(Timeout.InfiniteTimeSpan, token),
             PublishProgress: static _ => { },
             PersistProgressAsync: static (_, _) => Task.CompletedTask,
             SetBackendIdentityAsync: setBackendIdentityAsync,

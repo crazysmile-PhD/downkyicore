@@ -18,6 +18,49 @@ public sealed class DownloadTaskProjectionStoreResumeTests : IDisposable
         Guid.NewGuid().ToString("N"));
 
     [Fact]
+    public async Task PauseWaiterCompletesFromAuthoritativeTaskChange()
+    {
+        Directory.CreateDirectory(_directory);
+        var database = Path.Combine(_directory, "pause-waiter.db");
+        var item = new DownloadingItem
+        {
+            DownloadBase = new DownloadBase
+            {
+                Id = "pause-waiter-task",
+                FilePath = Path.Combine(_directory, "pause-waiter-task")
+            },
+            Downloading = new Downloading
+            {
+                Id = "pause-waiter-task",
+                DownloadStatus = DownloadStatus.WaitForDownload
+            }
+        };
+        using var store = new SqliteDownloadTaskStore(
+            new SqliteDownloadTaskStoreOptions(database),
+            new SystemClock());
+        var clock = new SystemClock();
+        var historyService = DownloadHistoryService.CreateForSharedStore(store);
+        using var tasks = new DownloadTaskApplicationService(store, historyService, clock);
+        using var storage = new DownloadTaskProjectionStore(tasks, historyService, clock);
+        var stateWriter = new DownloadTaskStateWriter(tasks);
+        await storage.AddDownloadingAsync(item, TestContext.Current.CancellationToken);
+        var taskId = new DownloadTaskId(item.DownloadBase.Id);
+        await stateWriter.StartAsync(taskId, TestContext.Current.CancellationToken);
+
+        var pauseWaiter = storage.WaitForPauseRequestAsync(
+            taskId,
+            TestContext.Current.CancellationToken);
+        Assert.False(pauseWaiter.IsCompleted);
+
+        await stateWriter.PauseAsync(taskId, TestContext.Current.CancellationToken);
+        await pauseWaiter
+            .WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
+
+        Assert.Equal(DownloadPhase.Pausing, storage.GetRequiredSnapshot(taskId).Phase);
+    }
+
+    [Fact]
     public async Task AddDownloadingPreservesResumeIdentityFilesAndPausedStateAcrossReopen()
     {
         Directory.CreateDirectory(_directory);

@@ -266,6 +266,17 @@ namespace DownKyi.Core.Aria2cNet.Server
             return exited;
         }
 
+        public bool TerminateAfterSessionCheckpoint()
+        {
+            var exited = _processSupervisor.Terminate();
+            if (exited)
+            {
+                ReleaseStartupSecrets();
+            }
+
+            return exited;
+        }
+
         internal void SetTrackedServerForTests(Process? process)
         {
             _processSupervisor.SetTrackedProcessForTests(process);

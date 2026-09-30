@@ -23,6 +23,7 @@ namespace DownKyi.Services.Download;
 
 internal sealed partial class Aria2TransferBackend : ITransferBackend
 {
+    private static readonly TimeSpan PauseStatusPollInterval = TimeSpan.FromMilliseconds(25);
     private readonly AriaClient _ariaClient;
     private readonly AriaRuntimeClientRegistry _clientRegistry;
     private readonly DownloadDiagnosticLogger _diagnosticLogger;
@@ -173,20 +174,51 @@ internal sealed partial class Aria2TransferBackend : ITransferBackend
         ariaManager.TellStatus += progressHandler;
         try
         {
-            var (downloadResult, errorCode, errorMessage) =
-                await ariaManager.GetDownloadStatusDetailAsync(
+            using var monitorCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+                request.CancellationToken);
+            var statusTask = ariaManager.GetDownloadStatusDetailAsync(
                 activeGid,
-                async cancellationToken =>
+                cancellationToken =>
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    if (request.IsPauseRequested())
+                    if (!request.IsPauseRequested())
                     {
-                        await _ariaClient.PauseAsync(activeGid).ConfigureAwait(false);
-                        throw new OperationCanceledException("Download was paused.");
+                        request.EnsureActive();
                     }
 
-                    request.EnsureActive();
+                    return ValueTask.CompletedTask;
                 },
+                monitorCancellation.Token);
+            var pauseRequestTask = request.WaitForPauseRequestedAsync(
+                monitorCancellation.Token);
+            var completedTask = await Task.WhenAny(statusTask, pauseRequestTask)
+                .ConfigureAwait(true);
+            if (ReferenceEquals(completedTask, pauseRequestTask))
+            {
+                await pauseRequestTask.ConfigureAwait(true);
+                request.CancellationToken.ThrowIfCancellationRequested();
+                await monitorCancellation.CancelAsync().ConfigureAwait(true);
+                try
+                {
+                    await PauseAndWaitForCheckpointAsync(
+                        activeGid,
+                        request.CancellationToken).ConfigureAwait(true);
+                }
+                finally
+                {
+                    await ObserveExpectedMonitorCancellationAsync(
+                        statusTask,
+                        request.CancellationToken).ConfigureAwait(true);
+                }
+
+                return DownloadTransferResult.Paused();
+            }
+
+            var (downloadResult, errorCode, errorMessage) =
+                await statusTask.ConfigureAwait(true);
+            await monitorCancellation.CancelAsync().ConfigureAwait(true);
+            await ObserveExpectedMonitorCancellationAsync(
+                pauseRequestTask,
                 request.CancellationToken).ConfigureAwait(true);
 
             if (downloadResult == DownloadResult.SUCCESS)
@@ -218,11 +250,6 @@ internal sealed partial class Aria2TransferBackend : ITransferBackend
                 errorCode,
                 errorMessage);
         }
-        catch (OperationCanceledException) when (
-            !request.CancellationToken.IsCancellationRequested && request.IsPauseRequested())
-        {
-            return DownloadTransferResult.Paused();
-        }
         catch (Exception exception) when (exception is HttpRequestException
             or IOException
             or TimeoutException)
@@ -252,30 +279,64 @@ internal sealed partial class Aria2TransferBackend : ITransferBackend
         }
     }
 
+    private async Task PauseAndWaitForCheckpointAsync(
+        string gid,
+        CancellationToken cancellationToken)
+    {
+        var pause = await _ariaClient.PauseAsync(gid, cancellationToken)
+            .ConfigureAwait(true);
+        if (pause is not { Result: { } pausedGid }
+            || !string.Equals(pausedGid, gid, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("aria2 rejected the pause request.");
+        }
+
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var status = await _ariaClient.TellStatus(gid, cancellationToken)
+                .ConfigureAwait(true);
+            if (status is not { Result: { } result })
+            {
+                throw new InvalidOperationException(
+                    "aria2 rejected the pause status request.");
+            }
+
+            if (string.Equals(result.Status, "paused", StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            await Task.Delay(PauseStatusPollInterval, cancellationToken)
+                .ConfigureAwait(true);
+        }
+    }
+
+    private static async Task ObserveExpectedMonitorCancellationAsync(
+        Task task,
+        CancellationToken requestCancellationToken)
+    {
+        try
+        {
+            await task.ConfigureAwait(true);
+        }
+        catch (OperationCanceledException) when (!requestCancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+    }
+
     private async Task<AriaTaskPreparation> EnsureAriaTaskAsync(
         DownloadTransferRequest request)
     {
-        var resolution = await _addressResolver.ResolveAsync(
-            request.Urls[0],
-            _networkSettings.UserAgent,
-            LoginHelper.GetLoginInfoCookiesString(),
-            request.CancellationToken).ConfigureAwait(true);
-        if (resolution.ErrorCode != null)
-        {
-            return AriaTaskPreparation.Rejected(resolution.ErrorCode);
-        }
-
-        var resolvedAddress = resolution.Address
-            ?? throw new InvalidOperationException("The accepted aria2 address is missing.");
-        var taskHeaders = resolution.Headers
-            ?? throw new InvalidOperationException("The accepted aria2 task headers are missing.");
         var gid = string.IsNullOrWhiteSpace(request.BackendIdentity)
             ? null
             : request.BackendIdentity;
-        string? existingStatus = null;
-        if (!string.IsNullOrWhiteSpace(gid))
+        if (gid != null)
         {
-            var status = await _ariaClient.TellStatus(gid).ConfigureAwait(true);
+            var status = await _ariaClient
+                .TellStatus(gid, request.CancellationToken)
+                .ConfigureAwait(true);
             if (status is not { Result: { } statusResult })
             {
                 if (IsNotFound(status.Error))
@@ -293,58 +354,101 @@ internal sealed partial class Aria2TransferBackend : ITransferBackend
             }
             else
             {
-                existingStatus = statusResult.Status;
+                if (string.Equals(statusResult.Status, "paused", StringComparison.Ordinal))
+                {
+                    var taskAddress = await GetExistingTaskAddressAsync(
+                        _ariaClient,
+                        gid,
+                        request.CancellationToken).ConfigureAwait(true);
+                    var resumedTaskHeaders = AriaTaskHeaderPolicy.Create(
+                        taskAddress,
+                        _networkSettings.UserAgent,
+                        LoginHelper.GetLoginInfoCookiesString());
+                    await RefreshOptionsAndUnpauseAsync(
+                        _ariaClient,
+                        gid,
+                        resumedTaskHeaders,
+                        request.CancellationToken).ConfigureAwait(true);
+                }
+
+                return AriaTaskPreparation.Ready(gid);
             }
         }
 
-        if (gid == null)
+        var resolution = await _addressResolver.ResolveAsync(
+            request.Urls[0],
+            _networkSettings.UserAgent,
+            LoginHelper.GetLoginInfoCookiesString(),
+            request.CancellationToken).ConfigureAwait(true);
+        if (resolution.ErrorCode != null)
         {
-            var option = new AriaSendOption
-            {
-                Dir = request.Directory,
-                Out = request.FileName,
-                Continue = "true",
-                AllowOverwrite = "true",
-                AutoFileRenaming = "false",
-                UserAgent = taskHeaders.UserAgent,
-                Headers = taskHeaders.Headers,
-                Split = _networkSettings.AriaSplit.ToString(CultureInfo.InvariantCulture),
-                MaxConnectionPerServer = _networkSettings.AriaMaxConnectionPerServer
-                    .ToString(CultureInfo.InvariantCulture),
-                MinSplitSize = $"{_networkSettings.AriaMinSplitSize}M",
-                MaxTries = "1",
-                RetryWait = "0",
-                AlwaysResume = "false",
-                MaxResumeFailureTries = "0"
-            };
-            if (_httpsProxyAddress != null)
-            {
-                option.HttpsProxy = _httpsProxyAddress.AbsoluteUri;
-            }
-
-            var added = await _ariaClient.AddUriAsync(
-                [resolvedAddress.AbsoluteUri],
-                option).ConfigureAwait(true);
-            if (added is not { Result: { } addedGid } ||
-                string.IsNullOrWhiteSpace(addedGid))
-            {
-                throw new InvalidOperationException(
-                    "aria2 rejected the addUri request.");
-            }
-
-            gid = addedGid;
-            await request.SetBackendIdentityAsync(gid, request.CancellationToken).ConfigureAwait(true);
+            return AriaTaskPreparation.Rejected(resolution.ErrorCode);
         }
-        else if (string.Equals(existingStatus, "paused", StringComparison.Ordinal))
+
+        var resolvedAddress = resolution.Address
+            ?? throw new InvalidOperationException("The accepted aria2 address is missing.");
+        var taskHeaders = resolution.Headers
+            ?? throw new InvalidOperationException("The accepted aria2 task headers are missing.");
+        var option = new AriaSendOption
         {
-            await RefreshOptionsAndUnpauseAsync(
-                _ariaClient,
-                gid,
-                taskHeaders,
-                request.CancellationToken).ConfigureAwait(true);
+            Dir = request.Directory,
+            Out = request.FileName,
+            Continue = "true",
+            AllowOverwrite = "true",
+            AutoFileRenaming = "false",
+            UserAgent = taskHeaders.UserAgent,
+            Headers = taskHeaders.Headers,
+            Split = _networkSettings.AriaSplit.ToString(CultureInfo.InvariantCulture),
+            MaxConnectionPerServer = _networkSettings.AriaMaxConnectionPerServer
+                .ToString(CultureInfo.InvariantCulture),
+            MinSplitSize = $"{_networkSettings.AriaMinSplitSize}M",
+            MaxTries = "1",
+            RetryWait = "0",
+            AlwaysResume = "false",
+            MaxResumeFailureTries = "0"
+        };
+        if (_httpsProxyAddress != null)
+        {
+            option.HttpsProxy = _httpsProxyAddress.AbsoluteUri;
         }
 
+        var added = await _ariaClient.AddUriAsync(
+            [resolvedAddress.AbsoluteUri],
+            option).ConfigureAwait(true);
+        if (added is not { Result: { } addedGid } ||
+            string.IsNullOrWhiteSpace(addedGid))
+        {
+            throw new InvalidOperationException(
+                "aria2 rejected the addUri request.");
+        }
+
+        gid = addedGid;
+        await request.SetBackendIdentityAsync(gid, request.CancellationToken).ConfigureAwait(true);
         return AriaTaskPreparation.Ready(gid);
+    }
+
+    private static async Task<string> GetExistingTaskAddressAsync(
+        AriaClient ariaClient,
+        string gid,
+        CancellationToken cancellationToken)
+    {
+        var response = await ariaClient
+            .GetUrisAsync(gid)
+            .WaitAsync(cancellationToken)
+            .ConfigureAwait(true);
+        if (response is not { Result: { Count: > 0 } uris })
+        {
+            throw new InvalidOperationException(
+                "aria2 rejected the task address request.");
+        }
+
+        var current = uris.FirstOrDefault(uri =>
+                string.Equals(uri.Status, "used", StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(uri.Address))
+            ?? uris.FirstOrDefault(uri => !string.IsNullOrWhiteSpace(uri.Address));
+        return current?.Address
+            ?? throw new InvalidOperationException(
+                "aria2 returned no usable task address.");
     }
 
     internal static async Task RefreshOptionsAndUnpauseAsync(

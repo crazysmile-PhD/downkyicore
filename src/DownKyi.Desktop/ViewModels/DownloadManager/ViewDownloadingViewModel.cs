@@ -1,13 +1,16 @@
 using System;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
+using DownKyi.Application.Diagnostics;
 using DownKyi.Commands;
 using DownKyi.Services;
 using DownKyi.Services.Download;
 using DownKyi.Utils;
 using Microsoft.Extensions.Logging;
+using DownloadStatus = DownKyi.Models.DownloadStatus;
 
 namespace DownKyi.ViewModels.DownloadManager
 {
@@ -80,11 +83,35 @@ namespace DownKyi.ViewModels.DownloadManager
                 ExecuteToggleDownloadingCommand,
                 _logger);
 
-        private Task ExecuteToggleDownloadingCommand(DownloadingItem? downloadingItem)
+        private async Task ExecuteToggleDownloadingCommand(DownloadingItem? downloadingItem)
         {
-            return downloadingItem == null
-                ? Task.CompletedTask
-                : _downloadManagerCoordinator.ToggleAsync(downloadingItem);
+            if (downloadingItem == null)
+            {
+                return;
+            }
+
+            var initialStatus = downloadingItem.Downloading.DownloadStatus;
+            var taskId = downloadingItem.Downloading.Id;
+            var action = initialStatus is DownloadStatus.PauseStarted
+                or DownloadStatus.Pause
+                or DownloadStatus.DownloadFailed
+                    ? "resume"
+                    : "pause";
+            var startedTimestamp = Stopwatch.GetTimestamp();
+            _logger.LogInformationMessage(
+                $"source=download-ui-timing; stage=command-enter; task={taskId}; " +
+                $"action={action}; initialStatus={initialStatus:G}; " +
+                $"monotonicTicks={startedTimestamp}; frequency={Stopwatch.Frequency}");
+
+            await _downloadManagerCoordinator.ToggleAsync(downloadingItem).ConfigureAwait(true);
+
+            var stateAppliedTimestamp = Stopwatch.GetTimestamp();
+            var projectedStatus = downloadingItem.Downloading.DownloadStatus;
+            _logger.LogInformationMessage(
+                $"source=download-ui-timing; stage=projection-observed; task={taskId}; " +
+                $"action={action}; projectedStatus={projectedStatus:G}; " +
+                $"monotonicTicks={stateAppliedTimestamp}; " +
+                $"elapsedMs={Stopwatch.GetElapsedTime(startedTimestamp, stateAppliedTimestamp).TotalMilliseconds:F3}");
         }
 
         // 删除所有下载事件

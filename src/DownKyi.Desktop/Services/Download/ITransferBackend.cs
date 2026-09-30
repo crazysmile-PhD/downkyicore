@@ -15,6 +15,7 @@ internal sealed record DownloadTransferRequest(
     long ExpectedBytes,
     Action EnsureActive,
     Func<bool> IsPauseRequested,
+    Func<CancellationToken, Task> WaitForPauseRequestedAsync,
     Action<DownloadProgress> PublishProgress,
     Func<DownloadProgress, CancellationToken, Task> PersistProgressAsync,
     Func<string?, CancellationToken, Task> SetBackendIdentityAsync,
