@@ -14,11 +14,19 @@ public sealed partial class AriaClient
     /// The response is a struct and contains following keys. Values are strings.
     /// </summary>
     /// <param name="gid"></param>
+    /// <returns></returns>
+    public Task<AriaTellStatus> TellStatus(string gid)
+    {
+        return TellStatus(gid, CancellationToken.None);
+    }
+
+    /// <summary>
+    /// This method returns the progress of the download denoted by gid (string).
+    /// </summary>
+    /// <param name="gid"></param>
     /// <param name="cancellationToken">Cancels the RPC request.</param>
     /// <returns></returns>
-    public async Task<AriaTellStatus> TellStatus(
-        string gid,
-        CancellationToken cancellationToken = default)
+    public async Task<AriaTellStatus> TellStatus(string gid, CancellationToken cancellationToken)
     {
         List<object> ariaParams = new List<object>
         {
@@ -178,12 +186,23 @@ public sealed partial class AriaClient
     /// </summary>
     /// <param name="offset"></param>
     /// <param name="num"></param>
+    /// <returns></returns>
+    public Task<AriaTellStatusList> TellWaitingAsync(int offset, int num)
+    {
+        return TellWaitingAsync(offset, num, CancellationToken.None);
+    }
+
+    /// <summary>
+    /// This method returns a list of waiting downloads.
+    /// </summary>
+    /// <param name="offset"></param>
+    /// <param name="num"></param>
     /// <param name="cancellationToken">Cancels the RPC request.</param>
     /// <returns></returns>
     public async Task<AriaTellStatusList> TellWaitingAsync(
         int offset,
         int num,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken)
     {
         List<object> ariaParams = new List<object>
         {

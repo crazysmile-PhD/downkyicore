@@ -306,6 +306,165 @@ public sealed class Aria2PauseCheckpointTests
         }
     }
 
+    [Theory]
+    [InlineData("status")]
+    [InlineData("pause")]
+    public async Task ExceptionalRaceCancelsAndObservesTheOtherTask(string failedOperation)
+    {
+        var directory = CreateTemporaryDirectory();
+        var pauseRequested = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var statusStarted = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var otherTaskCancellationObserved = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        using var requestCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            TestContext.Current.CancellationToken);
+        Task<DownloadTransferResult>? transferTask = null;
+
+        try
+        {
+            using var settings = new TestSettingsStore();
+            var client = new AriaClient(
+                "http://localhost",
+                6800,
+                "test-token",
+                async (_, payload, cancellationToken) =>
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var request = JObject.Parse(payload);
+                    var method = request["method"]?.Value<string>();
+                    if (method == "aria2.addUri")
+                    {
+                        return CreateResponse("race-failure-gid");
+                    }
+
+                    if (method == "aria2.pause")
+                    {
+                        throw new HttpRequestException("Pause checkpoint failed.");
+                    }
+
+                    if (method != "aria2.tellStatus")
+                    {
+                        throw new InvalidOperationException(
+                            $"Unexpected aria2 RPC method '{method}'.");
+                    }
+
+                    if (failedOperation == "status")
+                    {
+                        throw new HttpRequestException("Status polling failed.");
+                    }
+
+                    statusStarted.TrySetResult();
+                    try
+                    {
+                        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        otherTaskCancellationObserved.TrySetResult();
+                        throw;
+                    }
+
+                    throw new InvalidOperationException("The status monitor was not canceled.");
+                });
+            using var probeHandler = new AcceptingHttpMessageHandler();
+            using var replacementResolver = AriaDownloadAddressResolver.CreateForTest(
+                probeHandler);
+            using var backend = new Aria2TransferBackend(
+                settings.Store.Current.Network,
+                client,
+                new AriaRuntimeClientRegistry(),
+                new DownloadDiagnosticLogger(
+                    NullLogger<DownloadDiagnosticLogger>.Instance),
+                new AriaServer(NullLoggerFactory.Instance),
+                NullLoggerFactory.Instance,
+                NullLogger<Aria2TransferBackend>.Instance,
+                ownsAriaServer: false,
+                localEndpoint: null);
+            ReplaceAddressResolverForTest(backend, replacementResolver);
+            var request = new DownloadTransferRequest(
+                new DownloadTaskId("aria-race-failure"),
+                BackendIdentity: null,
+                Urls: ["https://download.example/media"],
+                Directory: directory,
+                FileName: "media.tmp",
+                ExpectedBytes: 0,
+                EnsureActive: static () => { },
+                IsPauseRequested: () => pauseRequested.Task.IsCompleted,
+                WaitForPauseRequestedAsync: token => failedOperation == "status"
+                    ? WaitUntilCanceledAsync(otherTaskCancellationObserved, token)
+                    : pauseRequested.Task.WaitAsync(token),
+                PublishProgress: static _ => { },
+                PersistProgressAsync: static (_, _) => Task.CompletedTask,
+                SetBackendIdentityAsync: static (_, _) => Task.CompletedTask,
+                CancellationToken: requestCancellation.Token,
+                StagingDirectory: directory);
+
+            transferTask = backend.TransferAsync(request);
+            if (failedOperation == "pause")
+            {
+                await statusStarted.Task
+                    .WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken)
+                    .ConfigureAwait(true);
+                pauseRequested.TrySetResult();
+            }
+
+            var transferResult = await transferTask
+                .WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+            await otherTaskCancellationObserved.Task
+                .WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+
+            Assert.Equal(DownloadTransferOutcome.Failed, transferResult.Outcome);
+            Assert.Equal(DownloadTransferFailureKind.TransientNetwork, transferResult.FailureKind);
+        }
+        finally
+        {
+            await requestCancellation.CancelAsync().ConfigureAwait(true);
+            pauseRequested.TrySetResult();
+            if (transferTask != null)
+            {
+                try
+                {
+                    await transferTask.ConfigureAwait(true);
+                }
+                catch (OperationCanceledException)
+                {
+                }
+            }
+
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    private static async Task WaitUntilCanceledAsync(
+        TaskCompletionSource cancellationObserved,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            cancellationObserved.TrySetResult();
+            throw;
+        }
+    }
+
+    private static string CreateResponse(object result)
+    {
+        return JsonConvert.SerializeObject(new
+        {
+            jsonrpc = "2.0",
+            id = "race-failure",
+            result
+        });
+    }
+
     private static JObject CreateStatus(string status)
     {
         return JObject.FromObject(new

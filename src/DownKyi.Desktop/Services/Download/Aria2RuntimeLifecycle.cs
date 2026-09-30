@@ -265,13 +265,22 @@ internal sealed class Aria2RuntimeLifecycle : IDisposable
                     "aria2 returned invalid download counts during shutdown.");
             }
 
-            if (activeDownloads == 0
-                && await AreWaitingDownloadsPausedAsync(
-                    waitingDownloads,
-                    remaining,
-                    cancellationToken).ConfigureAwait(true))
+            if (activeDownloads == 0)
             {
-                return;
+                remaining = ShutdownCheckpointTimeout - stopwatch.Elapsed;
+                if (remaining <= TimeSpan.Zero)
+                {
+                    throw new TimeoutException(
+                        "aria2 downloads did not reach the paused checkpoint before shutdown.");
+                }
+
+                if (await AreWaitingDownloadsPausedAsync(
+                        waitingDownloads,
+                        remaining,
+                        cancellationToken).ConfigureAwait(true))
+                {
+                    return;
+                }
             }
 
             remaining = ShutdownCheckpointTimeout - stopwatch.Elapsed;

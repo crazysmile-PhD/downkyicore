@@ -191,61 +191,61 @@ internal sealed partial class Aria2TransferBackend : ITransferBackend
                 monitorCancellation.Token);
             var pauseRequestTask = request.WaitForPauseRequestedAsync(
                 monitorCancellation.Token);
-            var completedTask = await Task.WhenAny(statusTask, pauseRequestTask)
-                .ConfigureAwait(true);
-            if (ReferenceEquals(completedTask, pauseRequestTask))
+            try
             {
-                await pauseRequestTask.ConfigureAwait(true);
-                request.CancellationToken.ThrowIfCancellationRequested();
-                var checkpoint = await PauseAndWaitForCheckpointAsync(
-                    activeGid,
-                    request.CancellationToken).ConfigureAwait(true);
-                if (checkpoint == AriaPauseCheckpoint.Paused)
+                var completedTask = await Task.WhenAny(statusTask, pauseRequestTask)
+                    .ConfigureAwait(true);
+                if (ReferenceEquals(completedTask, pauseRequestTask))
                 {
-                    await monitorCancellation.CancelAsync().ConfigureAwait(true);
-                    await ObserveExpectedMonitorCancellationAsync(
-                        statusTask,
+                    await pauseRequestTask.ConfigureAwait(true);
+                    request.CancellationToken.ThrowIfCancellationRequested();
+                    var checkpoint = await PauseAndWaitForCheckpointAsync(
+                        activeGid,
                         request.CancellationToken).ConfigureAwait(true);
-
-                    return DownloadTransferResult.Paused();
+                    if (checkpoint == AriaPauseCheckpoint.Paused)
+                    {
+                        return DownloadTransferResult.Paused();
+                    }
                 }
-            }
 
-            var (downloadResult, errorCode, errorMessage) =
-                await statusTask.ConfigureAwait(true);
-            await monitorCancellation.CancelAsync().ConfigureAwait(true);
-            await ObserveExpectedMonitorCancellationAsync(
-                pauseRequestTask,
-                request.CancellationToken).ConfigureAwait(true);
+                var (downloadResult, errorCode, errorMessage) =
+                    await statusTask.ConfigureAwait(true);
 
-            if (downloadResult == DownloadResult.SUCCESS)
-            {
-                var finalFile = Path.Combine(request.Directory, request.FileName);
-                var integrity = DownloadFileIntegrity.Check(
-                    finalFile,
-                    request.ExpectedBytes);
-                if (!integrity.IsUsable)
+                if (downloadResult == DownloadResult.SUCCESS)
                 {
-                    _logger.LogInformationMessage(
-                        integrity.Reason ?? "Downloaded media file is not usable.");
-                    return DownloadTransferResult.Failed(
-                        DownloadTransferFailureKind.InvalidMedia,
-                        "download.transfer.invalid-media");
+                    var finalFile = Path.Combine(request.Directory, request.FileName);
+                    var integrity = DownloadFileIntegrity.Check(
+                        finalFile,
+                        request.ExpectedBytes);
+                    if (!integrity.IsUsable)
+                    {
+                        _logger.LogInformationMessage(
+                            integrity.Reason ?? "Downloaded media file is not usable.");
+                        return DownloadTransferResult.Failed(
+                            DownloadTransferFailureKind.InvalidMedia,
+                            "download.transfer.invalid-media");
+                    }
+
+                    return DownloadTransferResult.Succeeded();
                 }
 
-                return DownloadTransferResult.Succeeded();
-            }
+                if (ShouldClearBackendIdentity(errorCode))
+                {
+                    await request.SetBackendIdentityAsync(
+                        null,
+                        request.CancellationToken).ConfigureAwait(true);
+                }
 
-            if (ShouldClearBackendIdentity(errorCode))
+                return Aria2TransferFailureClassifier.Classify(
+                    errorCode,
+                    errorMessage);
+            }
+            finally
             {
-                await request.SetBackendIdentityAsync(
-                    null,
-                    request.CancellationToken).ConfigureAwait(true);
+                await monitorCancellation.CancelAsync().ConfigureAwait(true);
+                await ObserveRacedTaskCompletionAsync(statusTask).ConfigureAwait(true);
+                await ObserveRacedTaskCompletionAsync(pauseRequestTask).ConfigureAwait(true);
             }
-
-            return Aria2TransferFailureClassifier.Classify(
-                errorCode,
-                errorMessage);
         }
         catch (Exception exception) when (exception is HttpRequestException
             or IOException
@@ -316,18 +316,9 @@ internal sealed partial class Aria2TransferBackend : ITransferBackend
         }
     }
 
-    private static async Task ObserveExpectedMonitorCancellationAsync(
-        Task task,
-        CancellationToken requestCancellationToken)
+    private static async Task ObserveRacedTaskCompletionAsync(Task task)
     {
-        try
-        {
-            await task.ConfigureAwait(true);
-        }
-        catch (OperationCanceledException) when (!requestCancellationToken.IsCancellationRequested)
-        {
-            return;
-        }
+        await task.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
     }
 
     private async Task<AriaTaskPreparation> EnsureAriaTaskAsync(

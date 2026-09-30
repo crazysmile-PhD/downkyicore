@@ -8,6 +8,20 @@ namespace DownKyi.Core.Tests;
 public sealed class AriaClientRpcContractTests
 {
     [Fact]
+    public void CancellationOverloadsPreserveOriginalPublicSignatures()
+    {
+        Assert.NotNull(typeof(AriaClient).GetMethod(
+            nameof(AriaClient.TellStatus),
+            [typeof(string)]));
+        Assert.NotNull(typeof(AriaClient).GetMethod(
+            nameof(AriaClient.PauseAsync),
+            [typeof(string)]));
+        Assert.NotNull(typeof(AriaClient).GetMethod(
+            nameof(AriaClient.TellWaitingAsync),
+            [typeof(int), typeof(int)]));
+    }
+
+    [Fact]
     public async Task PublicRpcMethodsKeepTheirAria2WireMethodAndAuthenticationContract()
     {
         var cases = CreateCases();
@@ -65,7 +79,10 @@ public sealed class AriaClientRpcContractTests
     [InlineData("remove")]
     [InlineData("force-remove")]
     [InlineData("remove-result")]
-    public async Task TransferRemovalMethodsPropagateCancellation(string operation)
+    [InlineData("pause")]
+    [InlineData("tell-status")]
+    [InlineData("tell-waiting")]
+    public async Task CancellationAwareRpcMethodsPropagateCancellation(string operation)
     {
         using var cancellation = new CancellationTokenSource();
         var requestStarted = new TaskCompletionSource(
@@ -82,11 +99,14 @@ public sealed class AriaClientRpcContractTests
                 await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
                 return null;
             });
-        var request = operation switch
+        Task request = operation switch
         {
             "remove" => client.RemoveAsync("gid", cancellation.Token),
             "force-remove" => client.ForceRemoveAsync("gid", cancellation.Token),
             "remove-result" => client.RemoveDownloadResultAsync("gid", cancellation.Token),
+            "pause" => client.PauseAsync("gid", cancellation.Token),
+            "tell-status" => client.TellStatus("gid", cancellation.Token),
+            "tell-waiting" => client.TellWaitingAsync(0, 10, cancellation.Token),
             _ => throw new ArgumentOutOfRangeException(nameof(operation), operation, null)
         };
 
@@ -132,18 +152,21 @@ public sealed class AriaClientRpcContractTests
             new(nameof(AriaClient.RemoveAsync), "aria2.remove", true, client => client.RemoveAsync("gid")),
             new(nameof(AriaClient.ForceRemoveAsync), "aria2.forceRemove", true, client => client.ForceRemoveAsync("gid")),
             new(nameof(AriaClient.PauseAsync), "aria2.pause", true, client => client.PauseAsync("gid")),
+            new(nameof(AriaClient.PauseAsync), "aria2.pause", true, client => client.PauseAsync("gid", CancellationToken.None)),
             new(nameof(AriaClient.PauseAllAsync), "aria2.pauseAll", true, client => client.PauseAllAsync()),
             new(nameof(AriaClient.ForcePauseAsync), "aria2.forcePause", true, client => client.ForcePauseAsync("gid")),
             new(nameof(AriaClient.ForcePauseAllAsync), "aria2.forcePauseAll", true, client => client.ForcePauseAllAsync()),
             new(nameof(AriaClient.UnpauseAsync), "aria2.unpause", true, client => client.UnpauseAsync("gid")),
             new(nameof(AriaClient.UnpauseAllAsync), "aria2.unpauseAll", true, client => client.UnpauseAllAsync()),
             new(nameof(AriaClient.TellStatus), "aria2.tellStatus", true, client => client.TellStatus("gid")),
+            new(nameof(AriaClient.TellStatus), "aria2.tellStatus", true, client => client.TellStatus("gid", CancellationToken.None)),
             new(nameof(AriaClient.GetUrisAsync), "aria2.getUris", true, client => client.GetUrisAsync("gid")),
             new(nameof(AriaClient.GetFilesAsync), "aria2.getFiles", true, client => client.GetFilesAsync("gid")),
             new(nameof(AriaClient.GetPeersAsync), "aria2.getPeers", true, client => client.GetPeersAsync("gid")),
             new(nameof(AriaClient.GetServersAsync), "aria2.getServers", true, client => client.GetServersAsync("gid")),
             new(nameof(AriaClient.TellActiveAsync), "aria2.tellActive", true, client => client.TellActiveAsync()),
             new(nameof(AriaClient.TellWaitingAsync), "aria2.tellWaiting", true, client => client.TellWaitingAsync(0, 10)),
+            new(nameof(AriaClient.TellWaitingAsync), "aria2.tellWaiting", true, client => client.TellWaitingAsync(0, 10, CancellationToken.None)),
             new(nameof(AriaClient.TellStoppedAsync), "aria2.tellStopped", true, client => client.TellStoppedAsync(0, 10)),
             new(nameof(AriaClient.ChangePositionAsync), "aria2.changePosition", true, client => client.ChangePositionAsync("gid", 0, HowChangePosition.PosSet)),
             new(nameof(AriaClient.ChangeUriAsync), "aria2.changeUri", true, client => client.ChangeUriAsync("gid", 1, [], ["https://media.example/video"])),
