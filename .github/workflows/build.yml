@@ -545,6 +545,13 @@ jobs:
             -OutputPath $approvedManifest
           $hash = (Get-FileHash -LiteralPath $packages[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $($packages[0].Name)" | Set-Content -LiteralPath "$($packages[0].FullName).sha256" -Encoding ascii
+      - name: Upload ARM64 package validation diagnostics
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux-arm64-${{ matrix.kind }}-validation-diagnostics
+          path: candidate/*.failure-*
+          if-no-files-found: ignore
       - name: Create validated ARM64 AppImage transport
         if: ${{ matrix.kind == 'AppImage' }}
         run: |

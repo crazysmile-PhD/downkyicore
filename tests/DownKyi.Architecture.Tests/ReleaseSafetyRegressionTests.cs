@@ -116,6 +116,11 @@ public sealed class ReleaseSafetyRegressionTests
                 StringComparison.Ordinal)));
         Assert.ThrowsAny<Exception>(() => AssertArm64PromotionContract(
             workflow.Replace(
+                "path: candidate/*.failure-*",
+                "path: candidate/missing-validation-diagnostics",
+                StringComparison.Ordinal)));
+        Assert.ThrowsAny<Exception>(() => AssertArm64PromotionContract(
+            workflow.Replace(
                 "Get-ChildItem artifacts -File -Filter '*.internal.transport.tar'",
                 "Get-ChildItem artifacts -File -Filter '*.candidate.transport.tar'",
                 StringComparison.Ordinal)));
@@ -1447,6 +1452,12 @@ public sealed class ReleaseSafetyRegressionTests
 
         Assert.Contains("needs: build-linux", validateArm64, StringComparison.Ordinal);
         Assert.Contains("name: linux-arm64-${{ matrix.kind }}-candidate", validateArm64, StringComparison.Ordinal);
+        Assert.Contains("if: ${{ failure() }}", validateArm64, StringComparison.Ordinal);
+        Assert.Contains(
+            "name: linux-arm64-${{ matrix.kind }}-validation-diagnostics",
+            validateArm64,
+            StringComparison.Ordinal);
+        Assert.Contains("path: candidate/*.failure-*", validateArm64, StringComparison.Ordinal);
         Assert.Contains("name: appimage-arm64-transport", validateArm64, StringComparison.Ordinal);
         Assert.Contains(
             "name: downkyi_${{ steps.version.outputs.content }}_linux_self-contained_arm64.deb",
