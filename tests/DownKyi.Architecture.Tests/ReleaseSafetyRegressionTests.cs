@@ -87,7 +87,11 @@ public sealed class ReleaseSafetyRegressionTests
             RunRequired("git", ["commit", "-m", "current release fixture"], repository);
             RunRequired("git", ["tag", "-a", "v2.0.0", "-m", "v2.0.0"], repository);
 
-            var result = RunPowerShell(resolver, ["-RepositoryRoot", repository], repository);
+            var result = RunPowerShell(
+                resolver,
+                ["-RepositoryRoot", repository],
+                repository,
+                new Dictionary<string, string> { ["GITHUB_REF"] = "refs/tags/v2.0.0" });
 
             Assert.Equal(0, result.ExitCode);
             Assert.Equal("v1.8.0", result.StandardOutput.Trim());
@@ -1561,7 +1565,7 @@ public sealed class ReleaseSafetyRegressionTests
             startInfo.ArgumentList.Add(argument);
         }
 
-        foreach (var name in new[] { "MACOS_CERTIFICATE", "MACOS_CERTIFICATE_PWD", "APPLE_ID", "TEAM_ID", "APP_SPECIFIC_PASSWORD" })
+        foreach (var name in new[] { "GITHUB_REF", "MACOS_CERTIFICATE", "MACOS_CERTIFICATE_PWD", "APPLE_ID", "TEAM_ID", "APP_SPECIFIC_PASSWORD" })
         {
             startInfo.Environment.Remove(name);
         }
