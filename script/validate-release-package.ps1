@@ -14,7 +14,13 @@ param(
     [string]$ExpectedManifestPath,
 
     [Parameter(Mandatory = $true)]
-    [string]$OutputPath
+    [string]$OutputPath,
+
+    [ValidateRange(1, 600)]
+    [int]$LaunchTimeoutSeconds = 60,
+
+    [ValidateRange(1, 120)]
+    [int]$ProcessCleanupTimeoutSeconds = 10
 )
 
 $ErrorActionPreference = 'Stop'
@@ -29,7 +35,29 @@ if ([String]::Equals($expectedManifestPath, $approvedManifestPath, [StringCompar
 }
 $temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) "downkyi-release-package-$([Guid]::NewGuid().ToString('N'))"
 $extractDirectory = Join-Path $temporaryRoot 'extracted'
+$failureDiagnosticsPath = "$approvedManifestPath.failure-$([Guid]::NewGuid().ToString('N'))"
+$validationSucceeded = $false
 New-Item -ItemType Directory -Path $temporaryRoot -Force | Out-Null
+
+function Write-ValidationStage {
+    param([string]$Stage)
+
+    $line = "timestamp=$([DateTimeOffset]::UtcNow.ToString('O')) stage=$Stage"
+    Add-Content -LiteralPath (Join-Path $temporaryRoot 'validation-stages.txt') -Value $line
+    Write-Output "[release-package] $line"
+}
+
+function Write-LaunchStage {
+    param(
+        [string]$Label,
+        [string]$Stage,
+        [string]$StagePath
+    )
+
+    $line = "timestamp=$([DateTimeOffset]::UtcNow.ToString('O')) label=$Label stage=$Stage"
+    Add-Content -LiteralPath $StagePath -Value $line
+    Write-Output "[release-package] $line"
+}
 
 function ConvertTo-ComparableManifestJson {
     param([string]$Path)
@@ -134,13 +162,18 @@ function Assert-LaunchInitializes {
 
     $launchData = Join-Path ([string]$Environment.HOME) "launch-data-$([Guid]::NewGuid().ToString('N'))"
     New-Item -ItemType Directory -Path $launchData -Force | Out-Null
+    $stagePath = Join-Path $launchData 'stages.txt'
+    $standardOutputPath = Join-Path $launchData 'stdout.txt'
+    $standardErrorPath = Join-Path $launchData 'stderr.txt'
     $startInfo = [Diagnostics.ProcessStartInfo]::new()
-    $startInfo.FileName = 'xvfb-run'
+    $startInfo.FileName = 'bash'
     $startInfo.UseShellExecute = $false
     $startInfo.CreateNoWindow = $true
-    $startInfo.RedirectStandardOutput = $true
-    $startInfo.RedirectStandardError = $true
-    $startInfo.ArgumentList.Add('-a')
+    $startInfo.ArgumentList.Add('-c')
+    $startInfo.ArgumentList.Add('stdout_path=$1; stderr_path=$2; shift 2; exec xvfb-run -a "$@" >"$stdout_path" 2>"$stderr_path"')
+    $startInfo.ArgumentList.Add('_')
+    $startInfo.ArgumentList.Add($standardOutputPath)
+    $startInfo.ArgumentList.Add($standardErrorPath)
     $startInfo.ArgumentList.Add($Path)
     foreach ($argument in $Arguments) {
         $startInfo.ArgumentList.Add($argument)
@@ -150,49 +183,100 @@ function Assert-LaunchInitializes {
     }
     $startInfo.Environment['DOWNKYI_DATA_DIR'] = $launchData
 
-    $process = [Diagnostics.Process]::Start($startInfo)
-    if ($null -eq $process) {
-        throw "$Label launch smoke did not start."
-    }
-
-    $standardOutput = $process.StandardOutput.ReadToEndAsync()
-    $standardError = $process.StandardError.ReadToEndAsync()
+    $process = [Diagnostics.Process]::new()
+    $process.StartInfo = $startInfo
+    $started = $false
     $initialized = $false
+    $timedOut = $false
+    $reaped = $false
+    $cleanupFailure = $null
     $exitCode = $null
+    Write-LaunchStage -Label $Label -Stage 'launch-requested' -StagePath $stagePath
     try {
-        while (-not $process.HasExited) {
-            $initialized = [bool](
-                Get-ChildItem -LiteralPath (Join-Path $launchData 'Logs') `
-                    -Recurse -File -Filter 'events.jsonl' -ErrorAction SilentlyContinue |
-                    Select-String -SimpleMatch 'Application initialized.' -Quiet)
+        $started = $process.Start()
+        if (-not $started) {
+            throw "$Label launch smoke did not start."
+        }
+        Write-LaunchStage -Label $Label -Stage "process-started pid=$($process.Id)" -StagePath $stagePath
+        Write-LaunchStage -Label $Label -Stage 'waiting-for-application-initialization-marker' -StagePath $stagePath
+        $deadline = [DateTimeOffset]::UtcNow.AddSeconds($LaunchTimeoutSeconds)
+        while ($true) {
+            try {
+                $initialized = [bool](
+                    Get-ChildItem -LiteralPath (Join-Path $launchData 'Logs') `
+                        -Recurse -File -Filter 'events.jsonl' -ErrorAction SilentlyContinue |
+                        Select-String -SimpleMatch 'Application initialized.' -Quiet)
+            }
+            catch [IO.IOException] {
+                $initialized = $false
+            }
+
             if ($initialized -and -not $process.HasExited) {
+                Write-LaunchStage -Label $Label -Stage 'application-initialization-marker-visible' -StagePath $stagePath
                 break
             }
 
-            Start-Sleep -Milliseconds 25
+            $remaining = $deadline - [DateTimeOffset]::UtcNow
+            if ($remaining -le [TimeSpan]::Zero) {
+                $timedOut = $true
+                Write-LaunchStage -Label $Label -Stage 'application-initialization-timeout' -StagePath $stagePath
+                break
+            }
+
+            $waitMilliseconds = [Math]::Min(25, [Math]::Max(1, [int][Math]::Ceiling($remaining.TotalMilliseconds)))
+            if ($process.WaitForExit($waitMilliseconds)) {
+                $exitCode = $process.ExitCode
+                Write-LaunchStage -Label $Label -Stage "process-exited-before-marker exit-code=$exitCode" -StagePath $stagePath
+                break
+            }
         }
     }
     finally {
-        try {
-            if (-not $process.HasExited) {
-                $process.Kill($true)
+        if ($started) {
+            try {
+                if (-not $process.HasExited) {
+                    Write-LaunchStage -Label $Label -Stage 'process-tree-termination-requested' -StagePath $stagePath
+                    $process.Kill($true)
+                }
             }
-        }
-        catch [InvalidOperationException] {
-            if (-not $process.HasExited) {
-                throw
+            catch [InvalidOperationException] {
+                if (-not $process.HasExited) {
+                    $cleanupFailure = $_.Exception.Message
+                }
+            }
+            catch {
+                $cleanupFailure = $_.Exception.Message
+            }
+
+            $reaped = $process.WaitForExit($ProcessCleanupTimeoutSeconds * 1000)
+            if ($reaped) {
+                $exitCode = $process.ExitCode
+                Write-LaunchStage -Label $Label -Stage "process-reaped exit-code=$exitCode" -StagePath $stagePath
+            }
+            else {
+                Write-LaunchStage -Label $Label -Stage 'process-cleanup-timeout' -StagePath $stagePath
             }
         }
 
-        $process.WaitForExit()
-        $exitCode = $process.ExitCode
-        $null = $standardOutput.GetAwaiter().GetResult()
-        $null = $standardError.GetAwaiter().GetResult()
         $process.Dispose()
     }
 
+    $evidence = "stage=$stagePath; stdout=$standardOutputPath; stderr=$standardErrorPath; logs=$(Join-Path $launchData 'Logs')"
+    if (-not $reaped) {
+        $cleanupDetail = if ([string]::IsNullOrWhiteSpace($cleanupFailure)) {
+            'the process tree did not exit after termination was requested'
+        }
+        else {
+            $cleanupFailure
+        }
+        throw "$Label launch smoke cleanup exceeded $ProcessCleanupTimeoutSeconds seconds: $cleanupDetail. Evidence: $evidence"
+    }
+
     if (-not $initialized) {
-        throw "$Label launch smoke exited before the application initialization marker (exit code $exitCode)."
+        if ($timedOut) {
+            throw "$Label launch smoke did not expose the application initialization marker within $LaunchTimeoutSeconds seconds while the process remained alive. Evidence: $evidence"
+        }
+        throw "$Label launch smoke exited before the application initialization marker (exit code $exitCode). Evidence: $evidence"
     }
 }
 
@@ -242,6 +326,7 @@ function Assert-WindowsBinaryArchitecture {
 }
 
 try {
+    Write-ValidationStage -Stage "package-validation-started kind=$PackageKind runtime=$RuntimeIdentifier"
     if ($PackageKind -cne 'AppImage') {
         New-Item -ItemType Directory -Path $extractDirectory -Force | Out-Null
     }
@@ -251,6 +336,7 @@ try {
             Expand-Archive -LiteralPath $package -DestinationPath $extractDirectory
         }
         'AppImage' {
+            Write-ValidationStage -Stage 'appimage-structure-validation-started'
             Assert-LinuxBinaryArchitecture -Path $package -ExpectedRuntimeIdentifier $RuntimeIdentifier
             Assert-Type2AppImage -Path $package
             $packageMode = [IO.File]::GetUnixFileMode($package)
@@ -269,6 +355,7 @@ try {
             if (-not (Test-Path -LiteralPath $extractDirectory -PathType Container)) {
                 throw 'AppImage-native extraction did not produce squashfs-root.'
             }
+            Write-ValidationStage -Stage 'appimage-extraction-completed'
         }
         'deb' {
             & dpkg-deb --extract $package $extractDirectory
@@ -340,11 +427,13 @@ try {
             -Path $appRun `
             -Arguments @() `
             -Environment $launchEnvironment
+        Write-ValidationStage -Stage 'appimage-app-run-launch-validated'
         Assert-LaunchInitializes `
             -Label 'AppImage runtime' `
             -Path $package `
             -Arguments @('--appimage-extract-and-run') `
             -Environment $launchEnvironment
+        Write-ValidationStage -Stage 'appimage-outer-runtime-launch-validated'
     }
 
     $runtimeCandidates = @(
@@ -467,10 +556,33 @@ try {
     }
     Copy-Item -LiteralPath $expectedManifestPath -Destination $approvedManifestPath
 
+    $validationSucceeded = $true
+    Write-ValidationStage -Stage 'package-validation-completed'
     Write-Output "Validated extracted $PackageKind package: $package"
+}
+catch {
+    Write-ValidationStage -Stage "package-validation-failed exception=$($_.Exception.GetType().Name)"
+    throw
 }
 finally {
     if (Test-Path -LiteralPath $temporaryRoot) {
-        Remove-Item -LiteralPath $temporaryRoot -Recurse -Force
+        if ($validationSucceeded) {
+            Remove-Item -LiteralPath $temporaryRoot -Recurse -Force
+        }
+        else {
+            $diagnosticsParent = Split-Path -Parent $failureDiagnosticsPath
+            if ($diagnosticsParent) {
+                New-Item -ItemType Directory -Path $diagnosticsParent -Force | Out-Null
+            }
+
+            try {
+                Copy-Item -LiteralPath $temporaryRoot -Destination $failureDiagnosticsPath -Recurse -Force
+                Write-Warning "Release package validation diagnostics preserved at: $failureDiagnosticsPath"
+                Remove-Item -LiteralPath $temporaryRoot -Recurse -Force
+            }
+            catch {
+                Write-Warning "Unable to copy release package validation diagnostics; the original remains at: $temporaryRoot"
+            }
+        }
     }
 }

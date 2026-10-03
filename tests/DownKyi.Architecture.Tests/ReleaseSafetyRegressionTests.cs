@@ -40,6 +40,9 @@ public sealed class ReleaseSafetyRegressionTests
         Assert.Contains("LinkType -ceq 'SymbolicLink'", packageValidator, StringComparison.Ordinal);
         Assert.Contains("usr/bin/DownKyi", packageValidator, StringComparison.Ordinal);
         Assert.Contains("Test-ElfFile", packageValidator, StringComparison.Ordinal);
+        Assert.Contains("application-initialization-timeout", packageValidator, StringComparison.Ordinal);
+        Assert.Contains("process-cleanup-timeout", packageValidator, StringComparison.Ordinal);
+        Assert.Contains("*.failure-*", workflow, StringComparison.Ordinal);
         Assert.Contains(
             "Assert-LinuxBinaryArchitecture -Path $executable",
             packageValidator,
@@ -786,6 +789,111 @@ public sealed class ReleaseSafetyRegressionTests
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
         "xUnit",
         "xUnit1013:Public method should be marked as test")]
+    public static void LinuxReleasePackageValidationWaitsForFlushedInitializationMarker()
+    {
+        var root = CreateTemporaryDirectory();
+        try
+        {
+            var fixture = CreateLinuxAppImageFixture(
+                Path.Combine(root, "delayed-flush"),
+                AppRunFixtureKind.ValidSymlink,
+                appRunMarkerFlushDelayMilliseconds: 250);
+            var result = RunPowerShell(
+                Path.Combine(RepositoryRoot, "script", "validate-release-package.ps1"),
+                [
+                    "-PackagePath", fixture.Package,
+                    "-PackageKind", "AppImage",
+                    "-RuntimeIdentifier", "linux-x64",
+                    "-ExpectedManifestPath", fixture.ExpectedManifest,
+                    "-OutputPath", Path.Combine(root, "delayed-flush-manifest.json"),
+                    "-LaunchTimeoutSeconds", "5",
+                    "-ProcessCleanupTimeoutSeconds", "5"
+                ],
+                root);
+
+            Assert.Equal(0, result.ExitCode);
+            Assert.Contains(
+                "label=AppRun stage=application-initialization-marker-visible",
+                result.StandardOutput,
+                StringComparison.Ordinal);
+            Assert.Contains(
+                "label=AppImage runtime stage=application-initialization-marker-visible",
+                result.StandardOutput,
+                StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(root);
+        }
+    }
+
+    [System.Runtime.Versioning.SupportedOSPlatform("linux")]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "xUnit",
+        "xUnit1013:Public method should be marked as test")]
+    public static void LinuxReleasePackageValidationTimesOutAndReapsBufferedProcess()
+    {
+        var root = CreateTemporaryDirectory();
+        try
+        {
+            var outputPath = Path.Combine(root, "buffered-forever-manifest.json");
+            var fixture = CreateLinuxAppImageFixture(
+                Path.Combine(root, "buffered-forever"),
+                AppRunFixtureKind.ValidSymlink,
+                appRunMarkerFlushDelayMilliseconds: -1);
+            var result = RunPowerShell(
+                Path.Combine(RepositoryRoot, "script", "validate-release-package.ps1"),
+                [
+                    "-PackagePath", fixture.Package,
+                    "-PackageKind", "AppImage",
+                    "-RuntimeIdentifier", "linux-x64",
+                    "-ExpectedManifestPath", fixture.ExpectedManifest,
+                    "-OutputPath", outputPath,
+                    "-LaunchTimeoutSeconds", "1",
+                    "-ProcessCleanupTimeoutSeconds", "5"
+                ],
+                root);
+
+            Assert.NotEqual(0, result.ExitCode);
+            var diagnostic = NormalizeDiagnostic(result);
+            Assert.Contains(
+                "did not expose the application initialization marker",
+                diagnostic,
+                StringComparison.Ordinal);
+            Assert.Contains(
+                "within 1 seconds while the process remained alive",
+                diagnostic,
+                StringComparison.Ordinal);
+            Assert.Contains("stage=application-initialization-timeout", diagnostic, StringComparison.Ordinal);
+            Assert.Contains("stage=process-reaped", diagnostic, StringComparison.Ordinal);
+
+            var failureDirectory = Assert.Single(
+                Directory.GetDirectories(root, "buffered-forever-manifest.json.failure-*"));
+            var standardOutputPath = Assert.Single(
+                Directory.GetFiles(failureDirectory, "stdout.txt", SearchOption.AllDirectories));
+            var standardErrorPath = Assert.Single(
+                Directory.GetFiles(failureDirectory, "stderr.txt", SearchOption.AllDirectories));
+            var eventPath = Assert.Single(
+                Directory.GetFiles(failureDirectory, "events.jsonl", SearchOption.AllDirectories));
+            var processIdPath = Assert.Single(
+                Directory.GetFiles(failureDirectory, "fixture.pid", SearchOption.AllDirectories));
+            Assert.Contains("fixture-stdout", File.ReadAllText(standardOutputPath), StringComparison.Ordinal);
+            Assert.Contains("fixture-stderr", File.ReadAllText(standardErrorPath), StringComparison.Ordinal);
+            Assert.Equal(0, new FileInfo(eventPath).Length);
+
+            var processId = int.Parse(File.ReadAllText(processIdPath), System.Globalization.CultureInfo.InvariantCulture);
+            Assert.False(IsProcessAlive(processId));
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(root);
+        }
+    }
+
+    [System.Runtime.Versioning.SupportedOSPlatform("linux")]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "xUnit",
+        "xUnit1013:Public method should be marked as test")]
     public static void LinuxReleasePackageValidationRejectsPackageManagerVersionMismatch()
     {
         var root = CreateTemporaryDirectory();
@@ -1116,8 +1224,11 @@ public sealed class ReleaseSafetyRegressionTests
     private static (string Package, string ExpectedManifest) CreateLinuxAppImageFixture(
         string root,
         AppRunFixtureKind appRunKind,
-        bool outerRuntimeStaysRunning = true)
+        bool outerRuntimeStaysRunning = true,
+        int appRunMarkerFlushDelayMilliseconds = 0)
     {
+        ArgumentOutOfRangeException.ThrowIfLessThan(appRunMarkerFlushDelayMilliseconds, -1);
+
         Directory.CreateDirectory(root);
         var appRoot = Path.Combine(root, "app-root");
         var runtime = Path.Combine(appRoot, "usr", "bin");
@@ -1126,6 +1237,9 @@ public sealed class ReleaseSafetyRegressionTests
 
         File.Copy(typeof(ReleaseSafetyRegressionTests).Assembly.Location, Path.Combine(runtime, "DownKyi.dll"));
         var downKyiSource = Path.Combine(root, "downkyi-fixture.c");
+        var markerVisibility = appRunMarkerFlushDelayMilliseconds < 0
+            ? "for (;;) pause();"
+            : $"usleep({appRunMarkerFlushDelayMilliseconds * 1000}); if (fflush(file) != 0) return 6;";
         File.WriteAllText(
             downKyiSource,
             """
@@ -1139,24 +1253,35 @@ public sealed class ReleaseSafetyRegressionTests
                 char logs[4096];
                 char day[4096];
                 char marker[4096];
+                char pid_path[4096];
                 if (root == NULL ||
                     snprintf(logs, sizeof(logs), "%s/Logs", root) >= (int)sizeof(logs) ||
                     snprintf(day, sizeof(day), "%s/fixture", logs) >= (int)sizeof(day) ||
-                    snprintf(marker, sizeof(marker), "%s/events.jsonl", day) >= (int)sizeof(marker)) return 2;
+                    snprintf(marker, sizeof(marker), "%s/events.jsonl", day) >= (int)sizeof(marker) ||
+                    snprintf(pid_path, sizeof(pid_path), "%s/fixture.pid", root) >= (int)sizeof(pid_path)) return 2;
                 mkdir(root, 0755);
                 mkdir(logs, 0755);
                 mkdir(day, 0755);
+                FILE *pid_file = fopen(pid_path, "w");
+                if (pid_file == NULL) return 3;
+                if (fprintf(pid_file, "%d\n", getpid()) < 0 || fclose(pid_file) != 0) return 4;
+                fputs("fixture-stdout\n", stdout);
+                fflush(stdout);
+                fputs("fixture-stderr\n", stderr);
+                fflush(stderr);
                 FILE *file = fopen(marker, "w");
-                if (file == NULL) return 3;
+                if (file == NULL) return 5;
                 fputs("{\"message\":\"Application initialized. Fixture\"}\n", file);
-                return fclose(file) == 0 ? 0 : 4;
+                __MARKER_VISIBILITY__
+                return fclose(file) == 0 ? 0 : 7;
             }
 
             int main(void) {
                 if (signal_initialized() != 0) return 5;
                 for (;;) pause();
             }
-            """);
+            """
+            .Replace("__MARKER_VISIBILITY__", markerVisibility, StringComparison.Ordinal));
         RunRequired("gcc", ["-O2", "-o", Path.Combine(runtime, "DownKyi"), downKyiSource], root);
         var aria = Path.Combine(runtime, "aria2", "aria2c");
         File.Copy("/bin/true", aria);
@@ -1284,6 +1409,19 @@ public sealed class ReleaseSafetyRegressionTests
         if (result.ExitCode != 0)
         {
             throw new InvalidOperationException($"Failed to create expected publish manifest: {NormalizeDiagnostic(result)}");
+        }
+    }
+
+    private static bool IsProcessAlive(int processId)
+    {
+        try
+        {
+            using var process = Process.GetProcessById(processId);
+            return !process.HasExited;
+        }
+        catch (ArgumentException)
+        {
+            return false;
         }
     }
 

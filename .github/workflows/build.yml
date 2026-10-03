@@ -456,6 +456,13 @@ jobs:
             -OutputPath "script/pupnet/output/publish-manifest-linux-${{ matrix.cpu }}-${{ matrix.kind }}.json"
           $hash = (Get-FileHash -LiteralPath $package.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $($package.Name)" | Set-Content -LiteralPath "$($package.FullName).sha256" -Encoding ascii
+      - name: Upload Linux package validation diagnostics
+        if: ${{ failure() && matrix.cpu == 'x64' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux-${{ matrix.cpu }}-${{ matrix.kind }}-validation-diagnostics
+          path: script/pupnet/output/*.failure-*
+          if-no-files-found: ignore
       - name: Create ARM64 native-validation candidate transport
         if: ${{ matrix.cpu == 'arm64' }}
         run: |

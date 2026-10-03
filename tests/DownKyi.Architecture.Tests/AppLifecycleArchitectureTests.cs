@@ -107,7 +107,10 @@ public sealed class AppLifecycleArchitectureTests
         Assert.DoesNotContain("new Mutex", appSource, StringComparison.Ordinal);
         Assert.DoesNotContain("SHA256", appSource, StringComparison.Ordinal);
         Assert.DoesNotContain("StopHostAsync", appSource, StringComparison.Ordinal);
-        Assert.DoesNotContain("FlushAsync", appSource, StringComparison.Ordinal);
+        var disposeStart = appSource.IndexOf("private async Task DisposeCoreAsync()", StringComparison.Ordinal);
+        var createHostStart = appSource.IndexOf("private void CreateHost()", StringComparison.Ordinal);
+        Assert.True(disposeStart >= 0 && createHostStart > disposeStart);
+        Assert.DoesNotContain("FlushAsync", appSource[disposeStart..createHostStart], StringComparison.Ordinal);
         Assert.Contains("IProcessRestartLauncher", lifecycleSource, StringComparison.Ordinal);
         Assert.Contains("WaitForExitAsync", restartSource, StringComparison.Ordinal);
         Assert.Contains("ArgumentList.Add", restartSource, StringComparison.Ordinal);
@@ -217,6 +220,12 @@ public sealed class AppLifecycleArchitectureTests
         Assert.Contains("using DownKyi.Infrastructure.Logging;", appSource, StringComparison.Ordinal);
         Assert.Contains("services.AddDownKyiDesktop(_loggerFactory, _logProvider)", appSource,
             StringComparison.Ordinal);
+        var initializedMessage = appSource.IndexOf("Application initialized.", StringComparison.Ordinal);
+        var initializationFlush = appSource.IndexOf(
+            "_logProvider.FlushAsync(CancellationToken.None)",
+            StringComparison.Ordinal);
+        Assert.True(initializedMessage >= 0 && initializationFlush > initializedMessage);
+        Assert.Contains("ObserveBackgroundTask(", appSource[initializedMessage..], StringComparison.Ordinal);
         Assert.DoesNotContain("LogManager.", appSource, StringComparison.Ordinal);
         Assert.DoesNotContain("LogManager.", aboutSource, StringComparison.Ordinal);
         Assert.Contains("services.AddSingleton(loggerFactory)", compositionSource, StringComparison.Ordinal);

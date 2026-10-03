@@ -59,6 +59,12 @@ internal partial class App : Avalonia.Application, IAsyncDisposable
         AttachUnhandledExceptionLogging();
         _logger?.LogInformationMessage(
             $"Application initialized. Version={new AppInfo().VersionName}; Portable={ApplicationStorage.IsPortableMode()}");
+        if (_logProvider != null)
+        {
+            ObserveBackgroundTask(
+                _logProvider.FlushAsync(CancellationToken.None),
+                "Application initialization log flush failed.");
+        }
     }
 
     public override void OnFrameworkInitializationCompleted()

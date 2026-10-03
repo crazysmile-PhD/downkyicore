@@ -49,6 +49,20 @@ public sealed class ReleasePackageTests
     }
 
     [Fact]
+    public void FinalPackageValidationWaitsForFlushedInitializationMarker()
+    {
+        ReleaseSafetyRegressionTests
+            .LinuxReleasePackageValidationWaitsForFlushedInitializationMarker();
+    }
+
+    [Fact]
+    public void FinalPackageValidationTimesOutAndReapsBufferedProcess()
+    {
+        ReleaseSafetyRegressionTests
+            .LinuxReleasePackageValidationTimesOutAndReapsBufferedProcess();
+    }
+
+    [Fact]
     public void FinalPackageValidationRejectsPackageManagerVersionMismatch()
     {
         ReleaseSafetyRegressionTests

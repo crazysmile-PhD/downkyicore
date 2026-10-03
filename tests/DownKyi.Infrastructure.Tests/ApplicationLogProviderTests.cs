@@ -17,6 +17,10 @@ public sealed class ApplicationLogProviderTests : IDisposable
         MicrosoftLogLevel.Information,
         new EventId(2, nameof(RecentEntry)),
         "entry={Index}");
+    private static readonly Action<ILogger, Exception?> ApplicationInitialized = LoggerMessage.Define(
+        MicrosoftLogLevel.Information,
+        new EventId(6, nameof(ApplicationInitialized)),
+        "Application initialized. Fixture");
     private static readonly Action<ILogger, int, string, Exception?> RotationEntry = LoggerMessage.Define<int, string>(
         MicrosoftLogLevel.Warning,
         new EventId(3, nameof(RotationEntry)),
@@ -55,6 +59,36 @@ public sealed class ApplicationLogProviderTests : IDisposable
         Assert.Equal(512L * 1024 * 1024, options.MaxTotalBytes);
         Assert.Equal(TimeSpan.FromDays(7), options.MaxRetainedAge);
         Assert.Equal(TimeSpan.FromHours(1), options.MaintenanceInterval);
+    }
+
+    [Fact]
+    public async Task ExplicitFlushMakesBufferedInitializationMarkerExternallyVisible()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var provider = CreateProvider();
+        try
+        {
+            ApplicationInitialized(provider.CreateLogger("DownKyi.App"), null);
+
+            Assert.True(
+                SpinWait.SpinUntil(
+                    () => provider.GetMetrics().BytesWritten > 0 && GetEventFiles().Length == 1,
+                    TimeSpan.FromSeconds(5)),
+                "The production NLog sink did not render the initialization marker.");
+            var path = Assert.Single(GetEventFiles());
+            Assert.Equal(0, new FileInfo(path).Length);
+
+            await provider.FlushAsync(cancellationToken).ConfigureAwait(true);
+
+            Assert.Contains(
+                "Application initialized. Fixture",
+                await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(true),
+                StringComparison.Ordinal);
+        }
+        finally
+        {
+            await provider.DisposeAsync().ConfigureAwait(true);
+        }
     }
 
     [Fact]
