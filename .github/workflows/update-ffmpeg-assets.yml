@@ -94,7 +94,7 @@ jobs:
         with:
           python-version-file: .python-version
       - name: Download candidate metadata
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: ffmpeg-candidate
           path: .ffmpeg-update
@@ -135,7 +135,7 @@ jobs:
         with:
           python-version-file: .python-version
       - name: Download candidate metadata
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: ffmpeg-candidate
           path: .ffmpeg-update

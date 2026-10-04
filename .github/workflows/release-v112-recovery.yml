@@ -523,7 +523,7 @@ jobs:
         with:
           path: tooling
       - name: Download all packages
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
           pattern: recovery-*
@@ -565,7 +565,7 @@ jobs:
           -ReleaseVersion '${{ inputs.release_version }}'
           -SubjectSha '${{ inputs.subject_sha }}'
       - name: Download validated packages
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
           pattern: recovery-*
