@@ -1,9 +1,11 @@
 # Execution Plans
 
-Owner 指派工作的短書籤與中斷 checkpoint 位於 GitHub Issue #137；
+Owner 指派工作、Priority、Status、排序、Draft／待驗證／待決定、In Progress
+與 Done 只由 [DownKyiCore 工作項目](https://github.com/users/crazysmile-PhD/projects/2)
+管理；linked Issue 保存單項工作的背景、scope、evidence、驗收與 PR 關聯。
 `../refactoring-live-plan.md` 只保存穩定 release 與 verification policy，不保存
 branch、SHA、CI 或目前／下一項工作狀態。此目錄只保留仍有獨立產品或架構
-價值的 task plan；完成狀態與 transient evidence 不在 repository 內重複保存。
+價值的 task plan；Project 狀態與 transient evidence 不在 repository 內重複保存。
 
 每個 work item 必須包含：
 

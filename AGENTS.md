@@ -7,14 +7,20 @@ change.
 
 ## Work Continuity
 
-- The owner-only Codex workboard is GitHub Issue
-  [#137](https://github.com/crazysmile-PhD/downkyicore/issues/137). It contains
-  only bookmarks and short interruption checkpoints for work the owner asked
-  Codex to do.
-- Load the selected bookmark and its linked PR or task document. Do not scan
-  community Issues or contributor PRs unless the owner explicitly assigns one.
-- When interrupted, update only the short checkpoint in #137. When work is
-  complete, remove its bookmark. Do not keep a completed-work list.
+- The sole work-management entry is
+  [DownKyiCore 工作項目](https://github.com/users/crazysmile-PhD/projects/2).
+  Its fields and ordering own Priority, Status, items awaiting verification or
+  a decision, Draft items, In Progress and Done.
+- Start from the Project item selected by the owner and load its linked Issue,
+  PR or task document. Do not scan community Issues or contributor PRs for
+  work unless the owner explicitly assigns them through the Project.
+- A GitHub Issue owns one problem, requirement, research question or decision,
+  including its background, scope, evidence, acceptance criteria and PR links.
+  Work without an Issue must be a Project Draft item; do not encode it as a
+  section in another Issue or maintain the same list in repository documents.
+- When interrupted, update the Project Status and keep durable implementation
+  evidence in the linked Issue or PR. When complete, set the Project item to
+  Done; do not manually remove it or create a second completed-work list.
 - Product PRs must not edit `docs/refactoring-live-plan.md` to record Current
   Item, Next Item, branch, SHA, CI state or progress. That file owns stable
   release and verification policy only.
@@ -39,8 +45,9 @@ change.
   `docs/testing/README.md`.
 - External binaries, dependencies and release maintenance:
   `docs/maintenance.md`.
-- Accepted non-derived decisions: `docs/design-docs/`; active work: GitHub Issue
-  #137; user-facing behavior: `README.md`; release history: `CHANGELOG.md`.
+- Accepted non-derived decisions: `docs/design-docs/`; active work:
+  [DownKyiCore 工作項目](https://github.com/users/crazysmile-PhD/projects/2);
+  user-facing behavior: `README.md`; release history: `CHANGELOG.md`.
 
 Open the relevant entry only when the task touches that domain. Stable current
 truth belongs in architecture documents; target designs and baseline snapshots

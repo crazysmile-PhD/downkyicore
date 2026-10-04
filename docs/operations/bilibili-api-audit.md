@@ -10,7 +10,7 @@
 | Envelope、required fields、error semantics | DTO／adapter + deterministic fixtures | Core／Infrastructure contract tests |
 | WBI key validity／refresh | `IWbiKeyProvider` | WBI tests |
 | Optional live status | audit scripts | ignored JSON under `artifacts/bilibili/` |
-| Current work／migration decision | GitHub Issue #137 或被指派的 Issue | Issue／PR evidence |
+| Current work／migration decision | [DownKyiCore 工作項目](https://github.com/users/crazysmile-PhD/projects/2) + linked Issue | Project Status + Issue／PR evidence |
 
 Live result、日期、commit SHA、通過數與第三方當時狀態不得抄回 endpoint 表。它們只對執行時的環境和 exact commit 有效。
 

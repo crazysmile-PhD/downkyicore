@@ -3,6 +3,7 @@ namespace DownKyi.Architecture.Tests;
 public sealed class AgentEnvironmentArchitectureTests
 {
     private static readonly string RepositoryRoot = FindRepositoryRoot();
+    private const string WorkManagementProjectUrl = "https://github.com/users/crazysmile-PhD/projects/2";
 
     [Fact]
     public void RepositoryStructureSeparatesSourceTestsDocumentationConfigurationAndScripts()
@@ -193,13 +194,13 @@ public sealed class AgentEnvironmentArchitectureTests
     }
 
     [Fact]
-    public void AgentEntryUsesProgressiveDisclosureAndLivePlanContainsNoMutableWorkState()
+    public void AgentEntryUsesProgressiveDisclosureAndGitHubProjectOwnsMutableWorkState()
     {
         var agentGuide = Read("AGENTS.md");
         var livePlan = Read("docs/refactoring-live-plan.md");
 
         Assert.Contains("Progressive Disclosure Map", agentGuide, StringComparison.Ordinal);
-        Assert.Contains("issues/137", agentGuide, StringComparison.Ordinal);
+        Assert.Contains(WorkManagementProjectUrl, agentGuide, StringComparison.Ordinal);
         Assert.DoesNotContain("## 強制閱讀順序", agentGuide, StringComparison.Ordinal);
 
         string[] forbiddenLiveState =
@@ -223,7 +224,22 @@ public sealed class AgentEnvironmentArchitectureTests
                 @"(?m)^\s*-\s+\[[ xX]\]|\b[0-9a-fA-F]{40}\b",
                 System.Text.RegularExpressions.RegexOptions.CultureInvariant),
             livePlan);
-        Assert.Contains("issues/137", livePlan, StringComparison.Ordinal);
+        Assert.Contains(WorkManagementProjectUrl, livePlan, StringComparison.Ordinal);
+
+        string[] workManagementEntryPoints =
+        [
+            "README.md",
+            "ARCHITECTURE.md",
+            "docs/design-docs/README.md",
+            "docs/exec-plans/README.md",
+            "docs/maintenance.md",
+            "docs/operations/bilibili-api-audit.md"
+        ];
+
+        foreach (var path in workManagementEntryPoints)
+        {
+            Assert.Contains(WorkManagementProjectUrl, Read(path), StringComparison.Ordinal);
+        }
     }
 
     [Fact]

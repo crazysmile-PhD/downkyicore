@@ -7,7 +7,7 @@
 1. 從 `src/DownKyi.Desktop/Composition/DesktopComposition.cs` 找產品組裝。
 2. 跟進受影響模組的 local composition、contract、constructor 與 focused tests。
 3. 需要正式命令時只讀 `docs/operations/verification-and-rollback.md`。
-4. 目前工作只看 GitHub Issue [#137](https://github.com/crazysmile-PhD/downkyicore/issues/137) 及其連結；完成歷史看 Git、PR 與 `CHANGELOG.md`。
+4. 目前工作只從 [DownKyiCore 工作項目](https://github.com/users/crazysmile-PhD/projects/2) 選取；單一工作的背景、scope、evidence 與驗收看其 linked Issue，完成歷史看 Project、Git、PR 與 `CHANGELOG.md`。
 
 領域路由見 `docs/maintenance.md`；仍有效的設計理由見 `docs/design-docs/README.md`。
 

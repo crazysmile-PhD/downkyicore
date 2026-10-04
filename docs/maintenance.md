@@ -20,7 +20,7 @@ PR 修正文件。
 | CI、timeout、TRX、zero tests、cleanup | `DownKyi.CentralTestRunner` + OS test project | TRX + failure recorder | [Test／CI 卡](#test-ci) |
 | SQLite、migration、history、persistence | Domain task + Application service + SQLite store | transition／migration tests | [下載資料卡](#download-persistence) |
 | queue、retry、resume、media selection、aria2、FFmpeg | selection／media contract + coordinator + backend | focused runtime regression | [傳輸與媒體卡](#transfer-media) |
-| 已知 runtime gap、恢復中斷工作 | owner workboard candidate／linked Issue | current-main repro + owner confirmation | [GitHub Issue #137](https://github.com/crazysmile-PhD/downkyicore/issues/137) |
+| 已知 runtime gap、恢復中斷工作 | GitHub Project item／linked Issue | current-main repro + owner confirmation | [DownKyiCore 工作項目](https://github.com/users/crazysmile-PhD/projects/2) |
 | settings、schema、invalid file、flush | `ISettingsStore`／`SettingsSchemaMigrator` | settings + architecture + Host tests | [Settings 卡](#settings) |
 | logging、redaction、export、retention | `ApplicationLogProvider` + Infrastructure logging owners | provider stress + Host tests | [Logging 卡](#logging) |
 | Desktop、DI、Host、theme、XAML | Desktop composition + design tokens | architecture + XAML + packaged smoke | [Desktop／Host 卡](#desktop-host) |
