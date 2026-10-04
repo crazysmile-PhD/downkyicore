@@ -78,16 +78,20 @@ public sealed class AgentEnvironmentArchitectureTests
 
         var dependencyAuditWorkflow = Read(".github/workflows/dependency-audit.yml");
         Assert.Contains("pull_request:", dependencyAuditWorkflow, StringComparison.Ordinal);
-        Assert.Contains("paths:", dependencyAuditWorkflow, StringComparison.Ordinal);
+        var dependencyAuditPullRequestTrigger = Slice(
+            dependencyAuditWorkflow,
+            "  pull_request:",
+            "  push:");
+        Assert.DoesNotContain("paths:", dependencyAuditPullRequestTrigger, StringComparison.Ordinal);
         Assert.Contains("schedule:", dependencyAuditWorkflow, StringComparison.Ordinal);
+        Assert.Contains("    name: Dependency policy", dependencyAuditWorkflow, StringComparison.Ordinal);
         Assert.Contains("--vulnerable", dependencyAuditWorkflow, StringComparison.Ordinal);
         Assert.Contains("--include-transitive", dependencyAuditWorkflow, StringComparison.Ordinal);
         var deprecatedStep = Slice(
             dependencyAuditWorkflow,
             "      - name: Deprecated package audit",
             "      - name: Upload failure report");
-        Assert.Contains("github.event_name == 'schedule'", deprecatedStep, StringComparison.Ordinal);
-        Assert.Contains("github.event_name == 'workflow_dispatch'", deprecatedStep, StringComparison.Ordinal);
+        Assert.DoesNotContain("if:", deprecatedStep, StringComparison.Ordinal);
         Assert.Contains("--deprecated", deprecatedStep, StringComparison.Ordinal);
 
         var ciInfrastructureWorkflow = Read(".github/workflows/ci-infrastructure.yml");

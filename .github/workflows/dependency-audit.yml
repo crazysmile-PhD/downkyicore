@@ -1,20 +1,7 @@
-name: NuGet dependency audit
+name: Dependency policy
 
 on:
   pull_request:
-    paths:
-      - '.github/workflows/dependency-audit.yml'
-      - 'DownKyi/**/*.csproj'
-      - 'DownKyi.Core/**/*.csproj'
-      - 'src/**/*.csproj'
-      - 'tests/**/*.csproj'
-      - 'tools/**/*.csproj'
-      - 'benchmarks/**/*.csproj'
-      - 'Directory.Build.props'
-      - 'Directory.Build.targets'
-      - 'Directory.Packages.props'
-      - 'DownKyi.sln'
-      - 'global.json'
   push:
     branches:
       - main
@@ -45,7 +32,7 @@ env:
 
 jobs:
   audit:
-    name: NuGet dependency audit
+    name: Dependency policy
     runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
     steps:
       - name: Checkout
@@ -72,7 +59,6 @@ jobs:
             throw "Vulnerable NuGet packages found."
           }
       - name: Deprecated package audit
-        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         shell: pwsh
         run: |
           dotnet package list --project $env:SOLUTION_FILE --deprecated --format json > deprecated-packages.json
