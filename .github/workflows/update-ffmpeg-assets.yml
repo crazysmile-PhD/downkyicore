@@ -44,7 +44,7 @@ jobs:
       - name: Install Python
         uses: actions/setup-python@v6
         with:
-          python-version: '3.12'
+          python-version-file: .python-version
       - name: Verify updater branch authority
         id: authority
         shell: bash
@@ -92,7 +92,7 @@ jobs:
       - name: Install Python
         uses: actions/setup-python@v6
         with:
-          python-version: '3.12'
+          python-version-file: .python-version
       - name: Download candidate metadata
         uses: actions/download-artifact@v7
         with:
@@ -133,7 +133,7 @@ jobs:
       - name: Install Python
         uses: actions/setup-python@v6
         with:
-          python-version: '3.12'
+          python-version-file: .python-version
       - name: Download candidate metadata
         uses: actions/download-artifact@v7
         with:

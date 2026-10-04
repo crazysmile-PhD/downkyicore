@@ -36,6 +36,7 @@ public sealed class AgentEnvironmentArchitectureTests
     {
         AssertPathsExist(
             "global.json",
+            ".python-version",
             "DownKyi.sln",
             "version.txt",
             "Directory.Packages.props",
@@ -52,6 +53,45 @@ public sealed class AgentEnvironmentArchitectureTests
         Assert.Contains("dotnet restore ./DownKyi.sln", operations, StringComparison.Ordinal);
         Assert.Contains("dotnet build ./DownKyi.sln", operations, StringComparison.Ordinal);
         Assert.Contains("script/test-solution.ps1", operations, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ContinuousIntegrationReadsToolchainVersionsFromRepositoryOwners()
+    {
+        Assert.Matches(
+            "\\\"version\\\"\\s*:\\s*\\\"\\d+\\.\\d+\\.\\d+\\\"",
+            Read("global.json"));
+        Assert.Matches(
+            @"^\d+\.\d+(?:\.\d+)?\r?\n?$",
+            Read(".python-version"));
+
+        var workflowsDirectory = Path.Combine(
+            RepositoryRoot,
+            PathFromRepository(".github/workflows"));
+        var workflows = string.Join(
+            Environment.NewLine,
+            Directory.GetFiles(workflowsDirectory, "*.yml").Select(File.ReadAllText));
+        var dotnetSetupCount = workflows.Split(
+            "uses: actions/setup-dotnet@",
+            StringSplitOptions.None).Length - 1;
+        var pythonSetupCount = workflows.Split(
+            "uses: actions/setup-python@",
+            StringSplitOptions.None).Length - 1;
+        var globalJsonInputCount = System.Text.RegularExpressions.Regex.Count(
+            workflows,
+            @"(?m)^[ \t]+global-json-file: (?:global\.json|tooling/global\.json)\r?$");
+        var pythonVersionFileInputCount = System.Text.RegularExpressions.Regex.Count(
+            workflows,
+            @"(?m)^[ \t]+python-version-file: (?:\.python-version|tooling/\.python-version)\r?$");
+
+        Assert.True(dotnetSetupCount > 0, "No setup-dotnet steps were found.");
+        Assert.True(pythonSetupCount > 0, "No setup-python steps were found.");
+        Assert.Equal(dotnetSetupCount, globalJsonInputCount);
+        Assert.Equal(pythonSetupCount, pythonVersionFileInputCount);
+        Assert.DoesNotContain("dotnet-version:", workflows, StringComparison.Ordinal);
+        Assert.DoesNotContain("python-version:", workflows, StringComparison.Ordinal);
+
+        Assert.Contains("      - '.python-version'", Read(".github/workflows/macos-adhoc-package.yml"), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -85,6 +125,10 @@ public sealed class AgentEnvironmentArchitectureTests
         Assert.DoesNotContain("paths:", dependencyAuditPullRequestTrigger, StringComparison.Ordinal);
         Assert.Contains("schedule:", dependencyAuditWorkflow, StringComparison.Ordinal);
         Assert.Contains("    name: Dependency policy", dependencyAuditWorkflow, StringComparison.Ordinal);
+        Assert.Contains("uses: actions/setup-dotnet@", dependencyAuditWorkflow, StringComparison.Ordinal);
+        Assert.Contains("global-json-file: global.json", dependencyAuditWorkflow, StringComparison.Ordinal);
+        Assert.Contains("uses: actions/setup-python@", dependencyAuditWorkflow, StringComparison.Ordinal);
+        Assert.Contains("python-version-file: .python-version", dependencyAuditWorkflow, StringComparison.Ordinal);
         Assert.Contains("--vulnerable", dependencyAuditWorkflow, StringComparison.Ordinal);
         Assert.Contains("--include-transitive", dependencyAuditWorkflow, StringComparison.Ordinal);
         var deprecatedStep = Slice(
