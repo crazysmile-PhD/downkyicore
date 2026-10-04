@@ -68,9 +68,24 @@ public sealed class AgentEnvironmentArchitectureTests
         Assert.Contains("-ExcludeCiInfrastructure", qualityWorkflow, StringComparison.Ordinal);
         Assert.DoesNotContain("Validate targeted resource forensics", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("classify-resource-contention.ps1", qualityWorkflow, StringComparison.Ordinal);
-        Assert.Contains("--vulnerable", qualityWorkflow, StringComparison.Ordinal);
-        Assert.Contains("--deprecated", qualityWorkflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("package-audit:", qualityWorkflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("--vulnerable", qualityWorkflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("--deprecated", qualityWorkflow, StringComparison.Ordinal);
         Assert.DoesNotContain("LogFileName=test-results-${{ matrix.os }}.trx", qualityWorkflow, StringComparison.Ordinal);
+
+        var dependencyAuditWorkflow = Read(".github/workflows/dependency-audit.yml");
+        Assert.Contains("pull_request:", dependencyAuditWorkflow, StringComparison.Ordinal);
+        Assert.Contains("paths:", dependencyAuditWorkflow, StringComparison.Ordinal);
+        Assert.Contains("schedule:", dependencyAuditWorkflow, StringComparison.Ordinal);
+        Assert.Contains("--vulnerable", dependencyAuditWorkflow, StringComparison.Ordinal);
+        Assert.Contains("--include-transitive", dependencyAuditWorkflow, StringComparison.Ordinal);
+        var deprecatedStep = Slice(
+            dependencyAuditWorkflow,
+            "      - name: Deprecated package audit",
+            "      - name: Upload failure report");
+        Assert.Contains("github.event_name == 'schedule'", deprecatedStep, StringComparison.Ordinal);
+        Assert.Contains("github.event_name == 'workflow_dispatch'", deprecatedStep, StringComparison.Ordinal);
+        Assert.Contains("--deprecated", deprecatedStep, StringComparison.Ordinal);
 
         var ciInfrastructureWorkflow = Read(".github/workflows/ci-infrastructure.yml");
         Assert.Contains("pull_request:", ciInfrastructureWorkflow, StringComparison.Ordinal);
