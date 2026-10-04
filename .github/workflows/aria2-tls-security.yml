@@ -135,6 +135,7 @@ jobs:
           }
       - name: Upload sanitized aria2 TLS report
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: aria2-tls-${{ matrix.rid }}

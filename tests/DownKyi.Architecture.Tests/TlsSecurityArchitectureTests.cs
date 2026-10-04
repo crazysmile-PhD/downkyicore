@@ -352,6 +352,10 @@ public sealed class TlsSecurityArchitectureTests
             "run: bash ./script/aria2.sh '${{ matrix.asset-argument }}'",
             aria2TlsWorkflow,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "- name: Upload sanitized aria2 TLS report\n        if: always()\n        continue-on-error: true",
+            aria2TlsWorkflow.Replace("\r\n", "\n", StringComparison.Ordinal),
+            StringComparison.Ordinal);
     }
 
     private static string ReadProductionSource(params string[] segments)
