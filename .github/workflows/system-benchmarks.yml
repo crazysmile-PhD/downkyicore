@@ -2,8 +2,6 @@ name: System Performance Baselines
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '23 3 * * *'
 
 permissions:
   contents: read
