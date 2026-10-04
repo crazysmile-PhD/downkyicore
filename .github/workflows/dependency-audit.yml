@@ -1,0 +1,99 @@
+name: NuGet dependency audit
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/dependency-audit.yml'
+      - 'DownKyi/**/*.csproj'
+      - 'DownKyi.Core/**/*.csproj'
+      - 'src/**/*.csproj'
+      - 'tests/**/*.csproj'
+      - 'tools/**/*.csproj'
+      - 'benchmarks/**/*.csproj'
+      - 'Directory.Build.props'
+      - 'Directory.Build.targets'
+      - 'Directory.Packages.props'
+      - 'DownKyi.sln'
+      - 'global.json'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/dependency-audit.yml'
+      - 'DownKyi/**/*.csproj'
+      - 'DownKyi.Core/**/*.csproj'
+      - 'src/**/*.csproj'
+      - 'tests/**/*.csproj'
+      - 'tools/**/*.csproj'
+      - 'benchmarks/**/*.csproj'
+      - 'Directory.Build.props'
+      - 'Directory.Build.targets'
+      - 'Directory.Packages.props'
+      - 'DownKyi.sln'
+      - 'global.json'
+  schedule:
+    - cron: '31 3 * * 3'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_NOLOGO: '1'
+  SOLUTION_FILE: ./DownKyi.sln
+
+jobs:
+  audit:
+    name: NuGet dependency audit
+    runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Install .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Restore
+        run: dotnet restore ${{ env.SOLUTION_FILE }}
+      - name: Vulnerability audit
+        shell: pwsh
+        run: |
+          dotnet package list --project $env:SOLUTION_FILE --vulnerable --include-transitive --format json > vulnerable-packages.json
+          $audit = Get-Content vulnerable-packages.json -Raw | ConvertFrom-Json
+          $vulnerable = @(
+            $audit.projects |
+              ForEach-Object { $_.frameworks } |
+              ForEach-Object { @($_.topLevelPackages) + @($_.transitivePackages) } |
+              Where-Object { $_ -and $_.vulnerabilities }
+          )
+          if ($vulnerable.Count -gt 0) {
+            $vulnerable | ConvertTo-Json -Depth 10
+            throw "Vulnerable NuGet packages found."
+          }
+      - name: Deprecated package audit
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        shell: pwsh
+        run: |
+          dotnet package list --project $env:SOLUTION_FILE --deprecated --format json > deprecated-packages.json
+          $report = Get-Content deprecated-packages.json -Raw | ConvertFrom-Json
+          $deprecated = @(
+            $report.projects |
+              ForEach-Object { $_.frameworks } |
+              ForEach-Object { $_.topLevelPackages } |
+              Where-Object { $_ -and $_.deprecationReasons }
+          )
+          if ($deprecated.Count -gt 0) {
+            $deprecated | ConvertTo-Json -Depth 10
+            throw "Deprecated NuGet packages found."
+          }
+      - name: Upload failure report
+        if: failure()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: nuget-dependency-audit
+          path: |
+            vulnerable-packages.json
+            deprecated-packages.json
+          if-no-files-found: ignore

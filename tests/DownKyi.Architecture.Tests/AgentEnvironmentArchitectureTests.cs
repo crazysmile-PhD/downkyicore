@@ -66,15 +66,46 @@ public sealed class AgentEnvironmentArchitectureTests
         Assert.Contains("--no-incremental", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("AnalysisMode=All", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("./script/test-solution.ps1", qualityWorkflow, StringComparison.Ordinal);
-        Assert.Contains("Validate targeted resource forensics", qualityWorkflow, StringComparison.Ordinal);
-        Assert.Contains("DOWNKYI_TARGETED_RESOURCE_FORENSICS: '1'", qualityWorkflow, StringComparison.Ordinal);
+        Assert.Contains("-ExcludeCiInfrastructure", qualityWorkflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("Validate targeted resource forensics", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("classify-resource-contention.ps1", qualityWorkflow, StringComparison.Ordinal);
-        Assert.Contains("--vulnerable", qualityWorkflow, StringComparison.Ordinal);
-        Assert.Contains("--deprecated", qualityWorkflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("apt-get", qualityWorkflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("rpm2cpio", qualityWorkflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("package-audit:", qualityWorkflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("--vulnerable", qualityWorkflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("--deprecated", qualityWorkflow, StringComparison.Ordinal);
         Assert.DoesNotContain("LogFileName=test-results-${{ matrix.os }}.trx", qualityWorkflow, StringComparison.Ordinal);
+
+        var dependencyAuditWorkflow = Read(".github/workflows/dependency-audit.yml");
+        Assert.Contains("pull_request:", dependencyAuditWorkflow, StringComparison.Ordinal);
+        Assert.Contains("paths:", dependencyAuditWorkflow, StringComparison.Ordinal);
+        Assert.Contains("schedule:", dependencyAuditWorkflow, StringComparison.Ordinal);
+        Assert.Contains("--vulnerable", dependencyAuditWorkflow, StringComparison.Ordinal);
+        Assert.Contains("--include-transitive", dependencyAuditWorkflow, StringComparison.Ordinal);
+        var deprecatedStep = Slice(
+            dependencyAuditWorkflow,
+            "      - name: Deprecated package audit",
+            "      - name: Upload failure report");
+        Assert.Contains("github.event_name == 'schedule'", deprecatedStep, StringComparison.Ordinal);
+        Assert.Contains("github.event_name == 'workflow_dispatch'", deprecatedStep, StringComparison.Ordinal);
+        Assert.Contains("--deprecated", deprecatedStep, StringComparison.Ordinal);
+
+        var ciInfrastructureWorkflow = Read(".github/workflows/ci-infrastructure.yml");
+        Assert.Contains("pull_request:", ciInfrastructureWorkflow, StringComparison.Ordinal);
+        Assert.Contains("paths:", ciInfrastructureWorkflow, StringComparison.Ordinal);
+        Assert.Equal(
+            2,
+            ciInfrastructureWorkflow.Split("'tests/Directory.Build.props'", StringSplitOptions.None).Length - 1);
+        Assert.Contains("tools/DownKyi.CentralTestRunner/**", ciInfrastructureWorkflow, StringComparison.Ordinal);
+        Assert.Contains("tools/DownKyi.ProcessSupervision/**", ciInfrastructureWorkflow, StringComparison.Ordinal);
+        Assert.Contains("./script/test-ci-infrastructure.ps1", ciInfrastructureWorkflow, StringComparison.Ordinal);
+        Assert.Contains("windows-latest", ciInfrastructureWorkflow, StringComparison.Ordinal);
+        Assert.Contains("vars.UBUNTU_X64_RUNNER", ciInfrastructureWorkflow, StringComparison.Ordinal);
+        Assert.Contains("macos-latest", ciInfrastructureWorkflow, StringComparison.Ordinal);
 
         var testScript = Read("script/test-solution.ps1");
         Assert.Contains("Invoke-DownKyiTestSolution", testScript, StringComparison.Ordinal);
+        Assert.Contains("Get-DownKyiCiInfrastructureTestClassNames", testScript, StringComparison.Ordinal);
         Assert.Contains("exit $result.ExitCode", testScript, StringComparison.Ordinal);
 
         var runnerScript = Read("script/test-project-runner.ps1");
@@ -91,7 +122,7 @@ public sealed class AgentEnvironmentArchitectureTests
     }
 
     [Fact]
-    public void LegacyCaAuditReportsCompleteInventoryWhileReviewedRulesBlockStrictBuild()
+    public void LegacyCaManualAuditReportsCompleteInventoryWhileReviewedRulesBlockStrictBuild()
     {
         var blockingRules = new[]
         {
@@ -144,19 +175,18 @@ public sealed class AgentEnvironmentArchitectureTests
         Assert.Contains("metric-worsened", reportScript, StringComparison.Ordinal);
 
         var qualityWorkflow = Read(".github/workflows/quality.yml");
-        var auditJob = Slice(qualityWorkflow, "  legacy-ca-audit:", "  build-test:");
-        Assert.Contains("./script/audit-code-metrics.ps1", auditJob, StringComparison.Ordinal);
-        Assert.Contains("name: legacy-ca-code-metrics", auditJob, StringComparison.Ordinal);
-        Assert.Contains("path: artifacts/code-metrics", auditJob, StringComparison.Ordinal);
-        Assert.Contains("if-no-files-found: error", auditJob, StringComparison.Ordinal);
-        Assert.DoesNotContain("continue-on-error", auditJob, StringComparison.Ordinal);
+        Assert.DoesNotContain("legacy-ca-audit:", qualityWorkflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("./script/audit-code-metrics.ps1", qualityWorkflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("legacy-ca-code-metrics", qualityWorkflow, StringComparison.Ordinal);
     }
 
     [Fact]
     public void ContinuousIntegrationBoundsEveryTestJobWithoutRetryingTimeouts()
     {
         var qualityWorkflow = Read(".github/workflows/quality.yml");
-        var buildTest = Slice(qualityWorkflow, "  build-test:", "  aria2-tls-security:");
+        var buildTestStart = qualityWorkflow.IndexOf("  build-test:", StringComparison.Ordinal);
+        Assert.True(buildTestStart >= 0, "Could not find the build-test job.");
+        var buildTest = qualityWorkflow[buildTestStart..];
         Assert.Single(System.Text.RegularExpressions.Regex.Matches(
             buildTest,
             @"(?m)^    timeout-minutes: 20\r?$"));
@@ -164,6 +194,10 @@ public sealed class AgentEnvironmentArchitectureTests
         Assert.Contains("runner: windows-latest\n            check_name: windows", buildTest.Replace("\r\n", "\n", StringComparison.Ordinal), StringComparison.Ordinal);
         Assert.Contains("runner: ${{ vars.UBUNTU_X64_RUNNER }}\n            check_name: ubuntu-x64", buildTest.Replace("\r\n", "\n", StringComparison.Ordinal), StringComparison.Ordinal);
         Assert.Contains("runner: macos-latest\n            check_name: macos", buildTest.Replace("\r\n", "\n", StringComparison.Ordinal), StringComparison.Ordinal);
+        Assert.Contains(
+            "- name: Upload test results\n        if: always()\n        continue-on-error: true\n        uses: actions/upload-artifact@v7",
+            buildTest.Replace("\r\n", "\n", StringComparison.Ordinal),
+            StringComparison.Ordinal);
         Assert.DoesNotMatch(
             new System.Text.RegularExpressions.Regex(@"(?m)^\s+needs\s*:", System.Text.RegularExpressions.RegexOptions.CultureInvariant),
             qualityWorkflow);
@@ -304,7 +338,7 @@ public sealed class AgentEnvironmentArchitectureTests
             RepositoryRoot,
             PathFromRepository(".github/workflows"));
         var testInvocation = new System.Text.RegularExpressions.Regex(
-            @"^\s+(?:\. )?\./(?:tooling/)?script/test-(?:project|solution)(?:-runner)?\.ps1\b",
+            @"^\s+(?:\. )?\./(?:tooling/)?script/test-(?:ci-infrastructure|(?:project|solution)(?:-runner)?)\.ps1\b",
             System.Text.RegularExpressions.RegexOptions.CultureInvariant);
         var jobHeader = new System.Text.RegularExpressions.Regex(
             @"^  (?<name>[A-Za-z0-9_-]+):\s*$",

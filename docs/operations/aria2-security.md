@@ -18,7 +18,7 @@ Status: required runtime contract. DownKyi owns the packaged aria2 child and its
 
 ## Six-RID executable evidence
 
-`aria2-tls-security` quality job 必須以 manifest-pinned real binary 覆蓋六個 RID。Case owner 是 `Aria2TlsIntegrationTests`，至少保護：trusted download／resume、RPC control、unknown／expired／not-yet-valid CA、hostname／SAN／chain failure、downgrade、credentialed cross-origin redirect、以及 TLS failure 後 partial preservation。它也必須證明失敗不會觸發 downgrade 或第二套 retry。
+`aria2-tls-security` workflow 在 aria2 binary、installer、TLS runtime 或 case owner 變更時，必須以 manifest-pinned real binary 覆蓋六個 RID；也可手動執行。Case owner 是 `Aria2TlsIntegrationTests`，至少保護：trusted download／resume、RPC control、unknown／expired／not-yet-valid CA、hostname／SAN／chain failure、downgrade、credentialed cross-origin redirect、以及 TLS failure 後 partial preservation。它也必須證明失敗不會觸發 downgrade 或第二套 retry。
 
 | Platform | TLS backend | Trust policy |
 | --- | --- | --- |

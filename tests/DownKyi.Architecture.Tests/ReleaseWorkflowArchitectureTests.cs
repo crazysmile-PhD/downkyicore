@@ -29,6 +29,58 @@ public sealed class ReleaseWorkflowArchitectureTests
     }
 
     [Fact]
+    public void PullRequestPackageUploadsCannotOverrideValidationResults()
+    {
+        var workflow = File.ReadAllText(
+            Path.Combine(RepositoryRoot, ".github", "workflows", "build.yml"));
+
+        AssertStepContinueOnError(
+            GetWorkflowSteps(workflow, "  release-gate:"),
+            "Upload test results and failure diagnostics",
+            "${{ github.event_name == 'pull_request' }}");
+        AssertStepContinueOnError(
+            GetWorkflowSteps(workflow, "  build-windows:"),
+            "Upload build artifacts ${{ matrix.kind }}",
+            "${{ github.event_name == 'pull_request' }}");
+
+        var linuxSteps = GetWorkflowSteps(workflow, "  build-linux:");
+        AssertStepContinueOnError(
+            linuxSteps,
+            "Upload build artifacts ${{ matrix.kind }}",
+            "${{ github.event_name == 'pull_request' }}");
+        AssertStepContinueOnError(
+            linuxSteps,
+            "Upload permission-preserving AppImage transport",
+            "${{ github.event_name == 'pull_request' }}");
+        AssertStepHasNoContinueOnError(
+            linuxSteps,
+            "Upload ARM64 native-validation candidate transport");
+        AssertStepHasNoContinueOnError(
+            GetWorkflowSteps(workflow, "  build-linux-publish:"),
+            "Upload canonical Linux publish transport");
+
+        var arm64Steps = GetWorkflowSteps(workflow, "  validate-linux-arm64:");
+        AssertStepContinueOnError(
+            arm64Steps,
+            "Upload validated ARM64 AppImage transport",
+            "${{ github.event_name == 'pull_request' }}");
+        AssertStepContinueOnError(
+            arm64Steps,
+            "Upload validated ARM64 Debian package",
+            "${{ github.event_name == 'pull_request' }}");
+
+        var macSteps = GetWorkflowSteps(workflow, "  build-macos:");
+        AssertStepContinueOnError(
+            macSteps,
+            "Upload macOS packaging test results and failure diagnostics",
+            "${{ github.event_name == 'pull_request' }}");
+        AssertStepContinueOnError(
+            macSteps,
+            "Upload build artifacts",
+            "${{ github.event_name == 'pull_request' }}");
+    }
+
+    [Fact]
     public void SolutionBuildConsumersUseCompletedImplementationAssemblies()
     {
         var props = XDocument.Load(Path.Combine(RepositoryRoot, "Directory.Build.props"));
@@ -62,21 +114,36 @@ public sealed class ReleaseWorkflowArchitectureTests
     }
 
     [Fact]
-    public void OrdinaryPullRequestProducesSuccessfulFfmpegRequiredCheckWithoutReleaseWork()
+    public void BuildPullRequestTriggerIsRestrictedToFfmpegOwners()
     {
         var workflow = File.ReadAllText(
             Path.Combine(RepositoryRoot, ".github", "workflows", "build.yml"));
         var lines = workflow.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
         var pullRequest = GetYamlBlock(lines, "  pull_request:", 2);
-        var detector = GetYamlBlock(lines, "  detect-production-manifest-change:", 2);
+        var pathBlock = GetYamlBlock(pullRequest.ToArray(), "    paths:", 4);
+        var triggerPaths = pathBlock
+            .Where(line => GetIndent(line) == 6 && line.TrimStart().StartsWith("- ", StringComparison.Ordinal))
+            .Select(line => line.Trim()[2..].Trim('\'', '"'))
+            .ToArray();
         var tooling = GetYamlBlock(lines, "  ffmpeg-tooling:", 2);
         var preflight = GetYamlBlock(lines, "  external-assets-preflight:", 2);
         var gate = GetYamlBlock(lines, "  ffmpeg-required-gate:", 2);
         var release = GetYamlBlock(lines, "  release-gate:", 2);
 
-        Assert.DoesNotContain(pullRequest, line =>
-            GetIndent(line) == 4 && line.Trim() == "paths:");
-        Assert.Contains("    if: ${{ github.event_name != 'pull_request' || needs.detect-production-manifest-change.outputs.ffmpeg_related == 'true' }}", tooling);
+        Assert.Equal(
+            [
+                ".github/workflows/build.yml",
+                ".github/workflows/update-ffmpeg-assets.yml",
+                "script/assets/external-assets.json",
+                "script/download-external-asset.ps1",
+                "script/ffmpeg-assets.py",
+                "script/ffmpeg.ps1",
+                "script/ffmpeg.sh",
+                "script/tests/test_ffmpeg_assets.py"
+            ],
+            triggerPaths);
+        Assert.DoesNotContain("needs: detect-production-manifest-change", tooling);
+        Assert.DoesNotContain("github.event_name != 'pull_request'", tooling);
         Assert.Contains("    if: ${{ always() && !inputs.update_ffmpeg_assets && needs.ffmpeg-tooling.result == 'success' && (github.event_name != 'pull_request' || needs.detect-production-manifest-change.outputs.external_assets == 'true') }}", preflight);
         Assert.Contains("    needs: external-assets-preflight", release);
         Assert.Contains("    name: FFmpeg manifest gate", gate);
@@ -85,11 +152,10 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.Contains("      - ffmpeg-tooling", gate);
         Assert.Contains("      - external-assets-preflight", gate);
         Assert.Contains("          test \"$DETECTION_RESULT\" = success", gate);
-        Assert.Contains("          if [ \"$FFMPEG_RELATED\" = true ]; then", gate);
+        Assert.Contains("          test \"$TOOLING_RESULT\" = success", gate);
         Assert.Contains("          if [ \"$EXTERNAL_ASSETS\" = true ]; then", gate);
-        Assert.Contains("            test \"$TOOLING_RESULT\" = skipped", gate);
         Assert.Contains("            test \"$PREFLIGHT_RESULT\" = skipped", gate);
-        Assert.DoesNotContain("              - 'src/DownKyi.Desktop/**'", detector);
+        Assert.DoesNotContain("src/DownKyi.Desktop/**", triggerPaths);
     }
 
     [Fact]
@@ -102,31 +168,19 @@ public sealed class ReleaseWorkflowArchitectureTests
         var tooling = GetYamlBlock(lines, "  ffmpeg-tooling:", 2);
         var preflight = GetYamlBlock(lines, "  external-assets-preflight:", 2);
         var gate = GetYamlBlock(lines, "  ffmpeg-required-gate:", 2);
-        var ffmpegPaths = GetYamlBlock(detector.ToArray(), "            ffmpeg_related:", 12)
-            .Where(line => GetIndent(line) == 14 && line.TrimStart().StartsWith("- ", StringComparison.Ordinal))
-            .Select(line => line.Trim()[2..].Trim('\'', '"'))
-            .ToArray();
 
-        Assert.Equal(
-            [
-                "script/assets/external-assets.json",
-                "script/ffmpeg-assets.py",
-                "script/ffmpeg.ps1",
-                "script/ffmpeg.sh",
-                "script/tests/test_ffmpeg_assets.py",
-                ".github/workflows/build.yml",
-                ".github/workflows/update-ffmpeg-assets.yml"
-            ], ffmpegPaths);
-        Assert.Contains("    needs: detect-production-manifest-change", tooling);
+        Assert.Contains("              - 'script/assets/external-assets.json'", detector);
+        Assert.DoesNotContain("ffmpeg_related:", detector);
+        Assert.DoesNotContain("    needs: detect-production-manifest-change", tooling);
         Assert.Contains("      - name: Run FFmpeg asset guards", tooling);
         Assert.Contains("        run: python -m unittest script/tests/test_ffmpeg_assets.py -v", tooling);
         Assert.DoesNotContain("continue-on-error: true", tooling);
         Assert.Contains("        run: python script/ffmpeg-assets.py validate-manifest --manifest script/assets/external-assets.json", preflight);
         Assert.Contains("        run: python script/ffmpeg-assets.py preflight --manifest script/assets/external-assets.json --timeout 30", preflight);
         Assert.Contains("          set -e", gate);
-        Assert.Contains("          FFMPEG_RELATED: ${{ needs.detect-production-manifest-change.outputs.ffmpeg_related }}", gate);
+        Assert.DoesNotContain("FFMPEG_RELATED", gate);
         Assert.Contains("          EXTERNAL_ASSETS: ${{ needs.detect-production-manifest-change.outputs.external_assets }}", gate);
-        Assert.Contains("            test \"$TOOLING_RESULT\" = success", gate);
+        Assert.Contains("          test \"$TOOLING_RESULT\" = success", gate);
         Assert.Contains("            test \"$PREFLIGHT_RESULT\" = success", gate);
         Assert.DoesNotContain("continue-on-error: true", gate);
     }
@@ -659,23 +713,35 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.Contains("MACOS_ADHOC_SIGNING: 'true'", workflow, StringComparison.Ordinal);
         foreach (var packageInput in new[]
                  {
-                     "DownKyi/**",
-                     "DownKyi.Core/**",
-                     "src/**",
+                     "DownKyi/**/*.csproj",
+                     "DownKyi.Core/**/*.csproj",
+                     "src/**/*.csproj",
+                     "src/DownKyi.Desktop/Resources/favicon.ico",
+                     "THIRD-PARTY-NOTICES.md",
                      "script/aria2.sh",
                      "script/ffmpeg.sh",
                      "script/ffmpeg-assets.py",
-                     "script/test-project.ps1",
-                     "script/test-project-runner.ps1",
                      "script/validate-publish-output.ps1",
                      "script/assets/**",
-                     "script/macos/**",
-                     "docs/testing/test-runner-policy.json",
+                     "script/macos/**"
+                 })
+        {
+            Assert.Contains(packageInput, triggerPaths);
+        }
+
+        foreach (var broadOrDuplicateInput in new[]
+                 {
+                     "DownKyi/**",
+                     "DownKyi.Core/**",
+                     "src/**",
+                     "script/test-project.ps1",
+                     "script/test-project-runner.ps1",
+                     "tests/DownKyi.MacOS.Tests/**",
                      "tests/PlatformShared/**",
                      "tools/DownKyi.CentralTestRunner/**"
                  })
         {
-            Assert.Contains(packageInput, triggerPaths);
+            Assert.DoesNotContain(broadOrDuplicateInput, triggerPaths);
         }
 
         Assert.Contains("dotnet publish", workflow, StringComparison.Ordinal);
@@ -685,26 +751,14 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.Contains("flags=.*runtime", workflow, StringComparison.Ordinal);
         Assert.Contains("create-dmg", workflow, StringComparison.Ordinal);
         Assert.Contains("./validate-dmg-package.sh", workflow, StringComparison.Ordinal);
+        Assert.Contains(
+            "- name: Upload verified DMG\n        continue-on-error: ${{ github.event_name == 'pull_request' }}",
+            workflow.Replace("\r\n", "\n", StringComparison.Ordinal),
+            StringComparison.Ordinal);
         Assert.DoesNotContain("Verify pre-sign aria2 supply-chain boundary", workflow, StringComparison.Ordinal);
-        var packageSteps = GetWorkflowSteps(workflow, "  package-validation:");
-        AssertStepCondition(
-            packageSteps,
-            "Upload macOS test evidence",
-            "${{ always() }}");
-        var evidenceUpload = FindWorkflowStep(packageSteps, "Upload macOS test evidence");
-        Assert.Contains(
-            evidenceUpload,
-            line => line.Trim() ==
-                    "name: macos-test-evidence-${{ matrix.runtime }}-attempt-${{ github.run_attempt }}");
-        Assert.Contains(
-            evidenceUpload,
-            line => line.Trim() == "artifacts/test-results/macos-packaging-${{ matrix.cpu }}");
-        Assert.Contains(
-            evidenceUpload,
-            line => line.Trim() == "artifacts/test-flight-recorder");
-        Assert.Contains(
-            evidenceUpload,
-            line => line.Trim() == "if-no-files-found: warn");
+        Assert.DoesNotContain("Run macOS packaging regressions", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("Upload macOS test evidence", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("script/test-project.ps1", workflow, StringComparison.Ordinal);
         Assert.DoesNotContain("secrets.", workflow, StringComparison.Ordinal);
         Assert.DoesNotContain("notarytool", workflow, StringComparison.Ordinal);
         Assert.DoesNotContain("stapler", workflow, StringComparison.Ordinal);
@@ -1055,6 +1109,32 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.DoesNotContain(
             step,
             line => GetIndent(line) == 8 && line.Trim().StartsWith("if:", StringComparison.Ordinal));
+    }
+
+    private static void AssertStepContinueOnError(
+        IReadOnlyList<List<string>> steps,
+        string stepName,
+        string expectedValue)
+    {
+        var step = FindWorkflowStep(steps, stepName);
+        Assert.Contains(
+            step,
+            line => GetIndent(line) == 8 &&
+                    string.Equals(
+                        line.Trim(),
+                        $"continue-on-error: {expectedValue}",
+                        StringComparison.Ordinal));
+    }
+
+    private static void AssertStepHasNoContinueOnError(
+        IReadOnlyList<List<string>> steps,
+        string stepName)
+    {
+        var step = FindWorkflowStep(steps, stepName);
+        Assert.DoesNotContain(
+            step,
+            line => GetIndent(line) == 8 &&
+                    line.Trim().StartsWith("continue-on-error:", StringComparison.Ordinal));
     }
 
     private static List<string> FindWorkflowStep(

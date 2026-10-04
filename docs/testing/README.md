@@ -31,6 +31,14 @@
 repository state 的 runner。不要直接新增平行的 `dotnet test` / `vstest`
 repository entry。
 
+PR product gate 以 `script/test-solution.ps1 -ExcludeCiInfrastructure` 排除
+runner、recorder、process cleanup 與 test-fixture 自測；這些 class slice 的唯一清單
+位於 `script/ci-infrastructure-test-slices.ps1`，並由
+`script/test-ci-infrastructure.ps1` 透過同一個 CentralTestRunner 執行。
+`.github/workflows/ci-infrastructure.yml` 只在上述工具、script、fixture 或測試 owner
+路徑改變時執行三平台 slice。未指定 `-ExcludeCiInfrastructure` 的正式本機
+`test-solution.ps1` 仍執行完整測試集合。
+
 ## Lightweight Flight Recorder
 
 CentralTestRunner 從 test process 啟動時記錄 slice identity、root PID 與

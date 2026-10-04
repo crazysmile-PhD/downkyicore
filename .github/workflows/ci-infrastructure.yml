@@ -1,0 +1,108 @@
+name: CI infrastructure tests
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/ci-infrastructure.yml'
+      - '.github/workflows/quality.yml'
+      - 'Directory.Build.*'
+      - 'Directory.Packages.props'
+      - 'global.json'
+      - 'tests/Directory.Build.props'
+      - 'docs/testing/test-runner-policy.json'
+      - 'script/ci-infrastructure-test-slices.ps1'
+      - 'script/classify-resource-contention.ps1'
+      - 'script/test-ci-infrastructure.ps1'
+      - 'script/test-project.ps1'
+      - 'script/test-project-runner.ps1'
+      - 'script/test-solution.ps1'
+      - 'tests/**/*.csproj'
+      - 'tests/DownKyi.Architecture.Tests/CentralTestRunnerCancellationComponentTests.cs'
+      - 'tests/DownKyi.Architecture.Tests/CentralTestRunnerCommandTests.cs'
+      - 'tests/DownKyi.Architecture.Tests/CentralTestRunnerFixtureDispatchTests.cs'
+      - 'tests/DownKyi.Architecture.Tests/CentralTestRunnerRecorderTests.cs'
+      - 'tests/DownKyi.Architecture.Tests/FlightRecorderOutputTests.cs'
+      - 'tests/DownKyi.Architecture.Tests/PowerShellTestEntryContractTests.cs'
+      - 'tests/DownKyi.Windows.Tests/TargetedResourceForensicsWindowsTests.cs'
+      - 'tests/DownKyi.Windows.Tests/TestDataIsolationFixtureWindowsTests.cs'
+      - 'tests/DownKyi.Windows.Tests/WindowsEtwResourceFlightRecorderTests.cs'
+      - 'tests/DownKyi.Windows.Tests/WindowsProcessSnapshotTests.cs'
+      - 'tests/PlatformShared/OwnedProcessScopePlatformTests.cs'
+      - 'tests/TestInfrastructure/**'
+      - 'tools/DownKyi.CentralTestRunner/**'
+      - 'tools/DownKyi.ProcessSupervision/**'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/ci-infrastructure.yml'
+      - '.github/workflows/quality.yml'
+      - 'Directory.Build.*'
+      - 'Directory.Packages.props'
+      - 'global.json'
+      - 'tests/Directory.Build.props'
+      - 'docs/testing/test-runner-policy.json'
+      - 'script/ci-infrastructure-test-slices.ps1'
+      - 'script/classify-resource-contention.ps1'
+      - 'script/test-ci-infrastructure.ps1'
+      - 'script/test-project.ps1'
+      - 'script/test-project-runner.ps1'
+      - 'script/test-solution.ps1'
+      - 'tests/**/*.csproj'
+      - 'tests/DownKyi.Architecture.Tests/CentralTestRunnerCancellationComponentTests.cs'
+      - 'tests/DownKyi.Architecture.Tests/CentralTestRunnerCommandTests.cs'
+      - 'tests/DownKyi.Architecture.Tests/CentralTestRunnerFixtureDispatchTests.cs'
+      - 'tests/DownKyi.Architecture.Tests/CentralTestRunnerRecorderTests.cs'
+      - 'tests/DownKyi.Architecture.Tests/FlightRecorderOutputTests.cs'
+      - 'tests/DownKyi.Architecture.Tests/PowerShellTestEntryContractTests.cs'
+      - 'tests/DownKyi.Windows.Tests/TargetedResourceForensicsWindowsTests.cs'
+      - 'tests/DownKyi.Windows.Tests/TestDataIsolationFixtureWindowsTests.cs'
+      - 'tests/DownKyi.Windows.Tests/WindowsEtwResourceFlightRecorderTests.cs'
+      - 'tests/DownKyi.Windows.Tests/WindowsProcessSnapshotTests.cs'
+      - 'tests/PlatformShared/OwnedProcessScopePlatformTests.cs'
+      - 'tests/TestInfrastructure/**'
+      - 'tools/DownKyi.CentralTestRunner/**'
+      - 'tools/DownKyi.ProcessSupervision/**'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: CI infrastructure (${{ matrix.check_name }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            check_name: windows
+          - runner: ${{ vars.UBUNTU_X64_RUNNER }}
+            check_name: ubuntu-x64
+          - runner: macos-latest
+            check_name: macos
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Install .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Test CI infrastructure owners
+        shell: pwsh
+        run: >
+          ./script/test-ci-infrastructure.ps1
+          -Configuration Release
+          -ResultsDirectory ./TestResults
+          -EvidenceDirectory ./artifacts/test-flight-recorder
+      - name: Upload failure evidence
+        if: failure()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-infrastructure-${{ matrix.check_name }}
+          path: |
+            TestResults/*.trx
+            artifacts/test-flight-recorder
+          if-no-files-found: ignore

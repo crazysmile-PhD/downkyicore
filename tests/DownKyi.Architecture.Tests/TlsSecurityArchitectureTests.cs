@@ -323,6 +323,10 @@ public sealed class TlsSecurityArchitectureTests
         var powerShellInstaller = ReadProductionSource("script", "aria2.ps1");
         var shellInstaller = ReadProductionSource("script", "aria2.sh");
         var qualityWorkflow = ReadProductionSource(".github", "workflows", "quality.yml");
+        var aria2TlsWorkflow = ReadProductionSource(
+            ".github",
+            "workflows",
+            "aria2-tls-security.yml");
 
         Assert.Contains("AppContext.BaseDirectory", server, StringComparison.Ordinal);
         Assert.True(
@@ -338,9 +342,28 @@ public sealed class TlsSecurityArchitectureTests
         Assert.Contains("aria2c.exe.sha256", powerShellInstaller, StringComparison.Ordinal);
         Assert.Contains("binarySha256", shellInstaller, StringComparison.Ordinal);
         Assert.Contains("aria2c.sha256", shellInstaller, StringComparison.Ordinal);
+        Assert.DoesNotContain("aria2-tls-security:", qualityWorkflow, StringComparison.Ordinal);
+        Assert.Contains("pull_request:", aria2TlsWorkflow, StringComparison.Ordinal);
+        Assert.Contains("paths:", aria2TlsWorkflow, StringComparison.Ordinal);
+        Assert.Contains("'script/assets/external-assets.json'", aria2TlsWorkflow, StringComparison.Ordinal);
+        Assert.Equal(
+            2,
+            aria2TlsWorkflow.Split("'script/download-external-asset.ps1'", StringSplitOptions.None).Length - 1);
+        Assert.Equal(
+            2,
+            aria2TlsWorkflow.Split("'DownKyi.Core/DownKyi.Core.csproj'", StringSplitOptions.None).Length - 1);
+        Assert.Contains("'DownKyi.Core/Aria2cNet/**'", aria2TlsWorkflow, StringComparison.Ordinal);
+        Assert.Equal(
+            2,
+            aria2TlsWorkflow.Split("'src/DownKyi.Desktop/DownKyi.Desktop.csproj'", StringSplitOptions.None).Length - 1);
+        Assert.Contains("'src/DownKyi.Desktop/Services/Download/**'", aria2TlsWorkflow, StringComparison.Ordinal);
         Assert.Contains(
             "run: bash ./script/aria2.sh '${{ matrix.asset-argument }}'",
-            qualityWorkflow,
+            aria2TlsWorkflow,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "- name: Upload sanitized aria2 TLS report\n        if: always()\n        continue-on-error: true",
+            aria2TlsWorkflow.Replace("\r\n", "\n", StringComparison.Ordinal),
             StringComparison.Ordinal);
     }
 

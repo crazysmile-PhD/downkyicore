@@ -20,7 +20,7 @@ dotnet run --project .\benchmarks\DownKyi.SystemBenchmarks\DownKyi.SystemBenchma
 
 Omit `--quick` for nightly-sized datasets. Use `--scenario shell|ui|restore|sqlite|transfer|ffmpeg|logging` to isolate one owner；use `--output <path>` for the JSON report. The default `all` runner executes scenarios in separate child processes so Avalonia、SQLite pools、encoder discovery and working-set measurement do not contaminate one another.
 
-BenchmarkDotNet writes under ignored `BenchmarkDotNet.Artifacts/`. Scheduled system runs upload one JSON artifact per runner OS；workflow failure means the scenario failed to execute or report, not that a metric crossed a hidden threshold.
+BenchmarkDotNet writes under ignored `BenchmarkDotNet.Artifacts/`. Manually dispatched system runs upload one JSON artifact per runner OS；workflow failure means the scenario failed to execute or report, not that a metric crossed a hidden threshold.
 
 ## Report contract
 
