@@ -5,10 +5,12 @@ policy. It is not a current-work database. Do not record an active item, next
 item, branch, commit SHA, CI state, progress checklist or completed history
 here.
 
-Owner-requested work that may survive the current Codex context is bookmarked
-in GitHub Issue [#137](https://github.com/crazysmile-PhD/downkyicore/issues/137).
-Each bookmark points to its existing PR or task-specific detail source. Product
-PRs do not update this file merely because their work state changed.
+Owner-requested work that may survive the current Codex context is managed only
+in [DownKyiCore 工作項目](https://github.com/users/crazysmile-PhD/projects/2).
+The Project owns Priority, Status, ordering, Draft items, items awaiting
+verification or a decision, In Progress and Done. Each linked Issue owns one
+work item's background, scope, evidence, acceptance criteria and PR links.
+Product PRs do not update this file merely because their work state changed.
 
 ## Release Policy
 
@@ -41,9 +43,10 @@ directly.
 ## Completion And Rollback
 
 Work is complete only after implementation, focused regressions, required
-documentation, exact-head CI and review are green. Remove its bookmark from
-#137; stable facts go to architecture, maintenance or release documentation.
-Do not add a completed section to the workboard or this policy.
+documentation, exact-head CI and review are green. Set the GitHub Project item
+to Done and retain it there; stable facts go to architecture, maintenance or
+release documentation. Do not add a parallel completed section to this policy
+or another Issue.
 
 Before merge, rollback means closing the draft and deleting only the feature
 branch. After merge, revert the complete change range without modifying user

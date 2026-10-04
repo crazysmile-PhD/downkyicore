@@ -71,7 +71,7 @@ Windows ZIP 必须完整解压到新目录后再运行。`DownKyi.exe` 旁必须
 - [docs/maintenance.md](docs/maintenance.md)：按领域组织的维护卡。
 - [docs/testing/README.md](docs/testing/README.md)：测试基础设施和失败分类。
 - [docs/operations/verification-and-rollback.md](docs/operations/verification-and-rollback.md)：正式验证与回滚命令。
-- [GitHub Issue #137](https://github.com/crazysmile-PhD/downkyicore/issues/137)：当前 workboard；历史执行结果以 Git、PR 与关闭的 Issue 为准。
+- [DownKyiCore 工作項目](https://github.com/users/crazysmile-PhD/projects/2)：唯一工作管理入口，负责 Priority、Status、排序、Draft／待验证／待决定、In Progress 与 Done；单项工作的背景、范围、证据、验收与 PR 关联保存在对应 Issue。
 
 本机运行：
 
