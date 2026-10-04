@@ -698,6 +698,10 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.Contains("flags=.*runtime", workflow, StringComparison.Ordinal);
         Assert.Contains("create-dmg", workflow, StringComparison.Ordinal);
         Assert.Contains("./validate-dmg-package.sh", workflow, StringComparison.Ordinal);
+        Assert.Contains(
+            "- name: Upload verified DMG\n        continue-on-error: ${{ github.event_name == 'pull_request' }}",
+            workflow.Replace("\r\n", "\n", StringComparison.Ordinal),
+            StringComparison.Ordinal);
         Assert.DoesNotContain("Verify pre-sign aria2 supply-chain boundary", workflow, StringComparison.Ordinal);
         Assert.DoesNotContain("Run macOS packaging regressions", workflow, StringComparison.Ordinal);
         Assert.DoesNotContain("Upload macOS test evidence", workflow, StringComparison.Ordinal);

@@ -131,6 +131,7 @@ jobs:
           $hash = (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $([IO.Path]::GetFileName($package))" | Set-Content -LiteralPath "$package.sha256" -Encoding ascii
       - name: Upload verified DMG
+        continue-on-error: ${{ github.event_name == 'pull_request' }}
         uses: actions/upload-artifact@v7
         with:
           name: DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}-adhoc-${{ matrix.os }}
