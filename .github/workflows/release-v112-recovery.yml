@@ -162,7 +162,7 @@ jobs:
           -ReleaseVersion '${{ inputs.release_version }}'
           -SubjectSha '${{ inputs.subject_sha }}'
       - name: Install .NET
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@v6
         with:
           global-json-file: tooling/global.json
       - name: Install Python
@@ -266,7 +266,7 @@ jobs:
           -ReleaseVersion '${{ inputs.release_version }}'
           -SubjectSha '${{ inputs.subject_sha }}'
       - name: Install .NET
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@v6
         with:
           global-json-file: tooling/global.json
       - name: Install Python
@@ -391,7 +391,7 @@ jobs:
           brew untap aws/tap || true
           brew install create-dmg tree
       - name: Install .NET
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@v6
         with:
           global-json-file: tooling/global.json
       - name: Run native recovery tooling regressions
