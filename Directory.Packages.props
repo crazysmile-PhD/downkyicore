@@ -1,7 +1,7 @@
 <Project ToolsVersion="15.0">
   <ItemGroup>
     <PackageVersion Include="Avalonia" Version="12.1.0" />
-    <PackageVersion Include="Avalonia.Controls.DataGrid" Version="12.1.0" />
+    <PackageVersion Include="Avalonia.Controls.DataGrid" Version="12.1.2" />
     <PackageVersion Include="Avalonia.Desktop" Version="12.1.0" />
     <PackageVersion Include="Avalonia.Headless" Version="12.1.0" />
     <PackageVersion Include="Avalonia.Headless.XUnit" Version="12.1.0" />
