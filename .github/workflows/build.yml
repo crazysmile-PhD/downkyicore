@@ -169,6 +169,7 @@ jobs:
           -ResultsDirectory ./artifacts/test-results
       - name: Upload test results and failure diagnostics
         if: always()
+        continue-on-error: ${{ github.event_name == 'pull_request' }}
         uses: actions/upload-artifact@v7
         with:
           name: release-gate-test-results-${{ matrix.os }}
@@ -280,6 +281,7 @@ jobs:
           $hash = (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $([IO.Path]::GetFileName($package))" | Set-Content -LiteralPath "$package.sha256" -Encoding ascii
       - name: Upload build artifacts ${{ matrix.kind }}
+        continue-on-error: ${{ github.event_name == 'pull_request' }}
         uses: actions/upload-artifact@v7
         with:
           name: DownKyi-${{ steps.version.outputs.content }}-1.win-${{ matrix.cpu }}.${{ matrix.kind }}
@@ -470,6 +472,7 @@ jobs:
             "publish-manifest-linux-${{ matrix.cpu }}-${{ matrix.kind }}.json"
       - name: Upload build artifacts ${{ matrix.kind }}
         if: ${{ matrix.kind != 'AppImage' && matrix.cpu == 'x64' }}
+        continue-on-error: ${{ github.event_name == 'pull_request' }}
         uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.package-head }}${{ steps.version.outputs.content }}_linux_${{ matrix.type }}${{ matrix.package-tail }}.${{ matrix.kind }}
@@ -479,6 +482,7 @@ jobs:
             script/pupnet/output/publish-manifest-linux-${{ matrix.cpu }}-${{ matrix.kind }}.json
       - name: Upload permission-preserving AppImage transport
         if: ${{ matrix.kind == 'AppImage' && matrix.cpu == 'x64' }}
+        continue-on-error: ${{ github.event_name == 'pull_request' }}
         uses: actions/upload-artifact@v7
         with:
           name: appimage-${{ matrix.cpu }}-transport
@@ -553,12 +557,14 @@ jobs:
             "publish-manifest-linux-arm64-AppImage.json"
       - name: Upload validated ARM64 AppImage transport
         if: ${{ matrix.kind == 'AppImage' }}
+        continue-on-error: ${{ github.event_name == 'pull_request' }}
         uses: actions/upload-artifact@v7
         with:
           name: appimage-arm64-transport
           path: appimage-arm64.transport.tar
       - name: Upload validated ARM64 Debian package
         if: ${{ matrix.kind == 'deb' }}
+        continue-on-error: ${{ github.event_name == 'pull_request' }}
         uses: actions/upload-artifact@v7
         with:
           name: downkyi_${{ steps.version.outputs.content }}_linux_self-contained_arm64.deb
@@ -628,6 +634,7 @@ jobs:
           -ResultsDirectory ./artifacts/test-results/macos-packaging-${{ matrix.cpu }}
       - name: Upload macOS packaging test results and failure diagnostics
         if: always()
+        continue-on-error: ${{ github.event_name == 'pull_request' }}
         uses: actions/upload-artifact@v7
         with:
           name: macos-packaging-test-results-${{ matrix.cpu }}
@@ -740,6 +747,7 @@ jobs:
           $hash = (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $([IO.Path]::GetFileName($package))" | Set-Content -LiteralPath "$package.sha256" -Encoding ascii
       - name: Upload build artifacts
+        continue-on-error: ${{ github.event_name == 'pull_request' }}
         uses: actions/upload-artifact@v7
         with:
           name: DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg

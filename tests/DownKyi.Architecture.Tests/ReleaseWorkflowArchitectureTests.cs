@@ -29,6 +29,58 @@ public sealed class ReleaseWorkflowArchitectureTests
     }
 
     [Fact]
+    public void PullRequestPackageUploadsCannotOverrideValidationResults()
+    {
+        var workflow = File.ReadAllText(
+            Path.Combine(RepositoryRoot, ".github", "workflows", "build.yml"));
+
+        AssertStepContinueOnError(
+            GetWorkflowSteps(workflow, "  release-gate:"),
+            "Upload test results and failure diagnostics",
+            "${{ github.event_name == 'pull_request' }}");
+        AssertStepContinueOnError(
+            GetWorkflowSteps(workflow, "  build-windows:"),
+            "Upload build artifacts ${{ matrix.kind }}",
+            "${{ github.event_name == 'pull_request' }}");
+
+        var linuxSteps = GetWorkflowSteps(workflow, "  build-linux:");
+        AssertStepContinueOnError(
+            linuxSteps,
+            "Upload build artifacts ${{ matrix.kind }}",
+            "${{ github.event_name == 'pull_request' }}");
+        AssertStepContinueOnError(
+            linuxSteps,
+            "Upload permission-preserving AppImage transport",
+            "${{ github.event_name == 'pull_request' }}");
+        AssertStepHasNoContinueOnError(
+            linuxSteps,
+            "Upload ARM64 native-validation candidate transport");
+        AssertStepHasNoContinueOnError(
+            GetWorkflowSteps(workflow, "  build-linux-publish:"),
+            "Upload canonical Linux publish transport");
+
+        var arm64Steps = GetWorkflowSteps(workflow, "  validate-linux-arm64:");
+        AssertStepContinueOnError(
+            arm64Steps,
+            "Upload validated ARM64 AppImage transport",
+            "${{ github.event_name == 'pull_request' }}");
+        AssertStepContinueOnError(
+            arm64Steps,
+            "Upload validated ARM64 Debian package",
+            "${{ github.event_name == 'pull_request' }}");
+
+        var macSteps = GetWorkflowSteps(workflow, "  build-macos:");
+        AssertStepContinueOnError(
+            macSteps,
+            "Upload macOS packaging test results and failure diagnostics",
+            "${{ github.event_name == 'pull_request' }}");
+        AssertStepContinueOnError(
+            macSteps,
+            "Upload build artifacts",
+            "${{ github.event_name == 'pull_request' }}");
+    }
+
+    [Fact]
     public void SolutionBuildConsumersUseCompletedImplementationAssemblies()
     {
         var props = XDocument.Load(Path.Combine(RepositoryRoot, "Directory.Build.props"));
@@ -1056,6 +1108,32 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.DoesNotContain(
             step,
             line => GetIndent(line) == 8 && line.Trim().StartsWith("if:", StringComparison.Ordinal));
+    }
+
+    private static void AssertStepContinueOnError(
+        IReadOnlyList<List<string>> steps,
+        string stepName,
+        string expectedValue)
+    {
+        var step = FindWorkflowStep(steps, stepName);
+        Assert.Contains(
+            step,
+            line => GetIndent(line) == 8 &&
+                    string.Equals(
+                        line.Trim(),
+                        $"continue-on-error: {expectedValue}",
+                        StringComparison.Ordinal));
+    }
+
+    private static void AssertStepHasNoContinueOnError(
+        IReadOnlyList<List<string>> steps,
+        string stepName)
+    {
+        var step = FindWorkflowStep(steps, stepName);
+        Assert.DoesNotContain(
+            step,
+            line => GetIndent(line) == 8 &&
+                    line.Trim().StartsWith("continue-on-error:", StringComparison.Ordinal));
     }
 
     private static List<string> FindWorkflowStep(
