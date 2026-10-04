@@ -68,6 +68,8 @@ public sealed class AgentEnvironmentArchitectureTests
         Assert.Contains("-ExcludeCiInfrastructure", qualityWorkflow, StringComparison.Ordinal);
         Assert.DoesNotContain("Validate targeted resource forensics", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("classify-resource-contention.ps1", qualityWorkflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("apt-get", qualityWorkflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("rpm2cpio", qualityWorkflow, StringComparison.Ordinal);
         Assert.DoesNotContain("package-audit:", qualityWorkflow, StringComparison.Ordinal);
         Assert.DoesNotContain("--vulnerable", qualityWorkflow, StringComparison.Ordinal);
         Assert.DoesNotContain("--deprecated", qualityWorkflow, StringComparison.Ordinal);
@@ -178,7 +180,9 @@ public sealed class AgentEnvironmentArchitectureTests
     public void ContinuousIntegrationBoundsEveryTestJobWithoutRetryingTimeouts()
     {
         var qualityWorkflow = Read(".github/workflows/quality.yml");
-        var buildTest = Slice(qualityWorkflow, "  build-test:", "  aria2-tls-security:");
+        var buildTestStart = qualityWorkflow.IndexOf("  build-test:", StringComparison.Ordinal);
+        Assert.True(buildTestStart >= 0, "Could not find the build-test job.");
+        var buildTest = qualityWorkflow[buildTestStart..];
         Assert.Single(System.Text.RegularExpressions.Regex.Matches(
             buildTest,
             @"(?m)^    timeout-minutes: 20\r?$"));
