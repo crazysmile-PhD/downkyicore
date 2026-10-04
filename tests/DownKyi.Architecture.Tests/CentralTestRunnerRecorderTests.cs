@@ -174,7 +174,11 @@ public sealed class CentralTestRunnerRecorderTests
                     RecorderPersistence: PersistAsync),
                 cancellation.Token);
 
-            fixturePid = await WaitForProcessMarkerAsync(markerPath);
+            fixturePid = await WaitForProcessMarkerOrOwnerCompletionAsync(
+                markerPath,
+                run,
+                result =>
+                    $"Process execution returned exit code {result.ExitCode} before the fixture process marker was observed.");
             await persistenceEntered.Task.WaitAsync(TestContext.Current.CancellationToken);
             await cancellation.CancelAsync();
 
@@ -509,6 +513,26 @@ public sealed class CentralTestRunnerRecorderTests
     }
 
     [Fact]
+    public async Task ProcessMarkerWaitFailsWhenOwnerCompletesFirst()
+    {
+        var markerPath = Path.Combine(
+            Path.GetTempPath(),
+            $"downkyi-missing-fixture-{Guid.NewGuid():N}.pid");
+
+        var failure = await Assert.ThrowsAsync<InvalidOperationException>(
+            async () => await WaitForProcessMarkerOrOwnerCompletionAsync(
+                markerPath,
+                Task.FromResult(17),
+                exitCode =>
+                    $"Build process returned exit code {exitCode} before the fixture process marker was observed.")
+                .ConfigureAwait(false));
+
+        Assert.Equal(
+            "Build process returned exit code 17 before the fixture process marker was observed.",
+            failure.Message);
+    }
+
+    [Fact]
     public async Task BuildCancellationStopsTheLiveOwnedProcessBeforeReturning()
     {
         var directory = CreateEvidenceDirectory();
@@ -522,7 +546,11 @@ public sealed class CentralTestRunnerRecorderTests
                 cancellation.Token,
                 TimeSpan.FromSeconds(3),
                 captureSnapshotAsync: CaptureControlledSnapshotAsync);
-            processId = await WaitForProcessMarkerAsync(markerPath);
+            processId = await WaitForProcessMarkerOrOwnerCompletionAsync(
+                markerPath,
+                build,
+                exitCode =>
+                    $"Build process returned exit code {exitCode} before the fixture process marker was observed.");
 
             await cancellation.CancelAsync();
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() => build);
@@ -761,7 +789,12 @@ public sealed class CentralTestRunnerRecorderTests
             run,
             "authoritative process startup").ConfigureAwait(false);
         var startup = await startupReady.Task.ConfigureAwait(false);
-        var fixturePid = await WaitForProcessMarkerAsync(markerPath).ConfigureAwait(false);
+        var fixturePid = await WaitForProcessMarkerOrOwnerCompletionAsync(
+            markerPath,
+            run,
+            result =>
+                $"Process execution returned exit code {result.ExitCode} before the fixture process marker was observed.")
+            .ConfigureAwait(false);
         Assert.Equal(fixturePid, startup.RootPid);
         await cancellation.CancelAsync().ConfigureAwait(false);
         var result = await run.WaitAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
@@ -786,7 +819,10 @@ public sealed class CentralTestRunnerRecorderTests
         await signal.ConfigureAwait(false);
     }
 
-    private static async Task<int> WaitForProcessMarkerAsync(string markerPath)
+    private static async Task<int> WaitForProcessMarkerOrOwnerCompletionAsync<TOwnerResult>(
+        string markerPath,
+        Task<TOwnerResult> owner,
+        Func<TOwnerResult, string> describeOwnerCompletion)
     {
         while (true)
         {
@@ -809,7 +845,17 @@ public sealed class CentralTestRunnerRecorderTests
                 }
             }
 
-            await Task.Delay(20, TestContext.Current.CancellationToken).ConfigureAwait(false);
+            var retry = Task.Delay(20, TestContext.Current.CancellationToken);
+            var completed = await Task.WhenAny(retry, owner)
+                .WaitAsync(TestContext.Current.CancellationToken)
+                .ConfigureAwait(false);
+            if (ReferenceEquals(completed, owner))
+            {
+                var result = await owner.ConfigureAwait(false);
+                throw new InvalidOperationException(describeOwnerCompletion(result));
+            }
+
+            await retry.ConfigureAwait(false);
         }
     }
 
