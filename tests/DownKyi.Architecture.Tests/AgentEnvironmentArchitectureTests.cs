@@ -101,7 +101,7 @@ public sealed class AgentEnvironmentArchitectureTests
     }
 
     [Fact]
-    public void LegacyCaAuditReportsCompleteInventoryWhileReviewedRulesBlockStrictBuild()
+    public void LegacyCaManualAuditReportsCompleteInventoryWhileReviewedRulesBlockStrictBuild()
     {
         var blockingRules = new[]
         {
@@ -154,12 +154,9 @@ public sealed class AgentEnvironmentArchitectureTests
         Assert.Contains("metric-worsened", reportScript, StringComparison.Ordinal);
 
         var qualityWorkflow = Read(".github/workflows/quality.yml");
-        var auditJob = Slice(qualityWorkflow, "  legacy-ca-audit:", "  build-test:");
-        Assert.Contains("./script/audit-code-metrics.ps1", auditJob, StringComparison.Ordinal);
-        Assert.Contains("name: legacy-ca-code-metrics", auditJob, StringComparison.Ordinal);
-        Assert.Contains("path: artifacts/code-metrics", auditJob, StringComparison.Ordinal);
-        Assert.Contains("if-no-files-found: error", auditJob, StringComparison.Ordinal);
-        Assert.DoesNotContain("continue-on-error", auditJob, StringComparison.Ordinal);
+        Assert.DoesNotContain("legacy-ca-audit:", qualityWorkflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("./script/audit-code-metrics.ps1", qualityWorkflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("legacy-ca-code-metrics", qualityWorkflow, StringComparison.Ordinal);
     }
 
     [Fact]

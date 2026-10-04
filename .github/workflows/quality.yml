@@ -35,30 +35,6 @@ jobs:
       - name: Verify formatting
         run: dotnet format ${{ env.SOLUTION_FILE }} --verify-no-changes --no-restore --verbosity diagnostic
 
-  legacy-ca-audit:
-    name: Legacy CA and code metrics audit
-    runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
-    timeout-minutes: 20
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-      - name: Install .NET
-        uses: actions/setup-dotnet@v5
-        with:
-          dotnet-version: '10.0.x'
-      - name: Restore
-        run: dotnet restore ${{ env.SOLUTION_FILE }}
-      - name: Report advisory findings
-        shell: pwsh
-        run: ./script/audit-code-metrics.ps1 -Configuration Release -NoRestore
-      - name: Upload advisory report
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: legacy-ca-code-metrics
-          path: artifacts/code-metrics
-          if-no-files-found: error
-
   build-test:
     name: Build and test (${{ matrix.check_name }})
     runs-on: ${{ matrix.runner }}
