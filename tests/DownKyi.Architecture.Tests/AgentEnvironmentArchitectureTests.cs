@@ -138,6 +138,30 @@ public sealed class AgentEnvironmentArchitectureTests
         Assert.DoesNotContain("if:", deprecatedStep, StringComparison.Ordinal);
         Assert.Contains("--deprecated", deprecatedStep, StringComparison.Ordinal);
 
+        var dependabotConfiguration = Read(".github/dependabot.yml");
+        Assert.Contains("package-ecosystem: nuget", dependabotConfiguration, StringComparison.Ordinal);
+        Assert.Contains("package-ecosystem: dotnet-sdk", dependabotConfiguration, StringComparison.Ordinal);
+        Assert.Contains("package-ecosystem: github-actions", dependabotConfiguration, StringComparison.Ordinal);
+        Assert.Equal(
+            3,
+            dependabotConfiguration.Split("interval: weekly", StringSplitOptions.None).Length - 1);
+
+        var dependabotAutoMergeWorkflow = Read(".github/workflows/dependabot-auto-merge.yml");
+        Assert.Contains("pull_request:", dependabotAutoMergeWorkflow, StringComparison.Ordinal);
+        Assert.Contains("contents: write", dependabotAutoMergeWorkflow, StringComparison.Ordinal);
+        Assert.Contains("pull-requests: write", dependabotAutoMergeWorkflow, StringComparison.Ordinal);
+        Assert.Contains(
+            "github.event.pull_request.user.login == 'dependabot[bot]'",
+            dependabotAutoMergeWorkflow,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "github.event.pull_request.base.ref == github.event.repository.default_branch",
+            dependabotAutoMergeWorkflow,
+            StringComparison.Ordinal);
+        Assert.Contains("gh pr merge --auto --merge", dependabotAutoMergeWorkflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("actions/checkout", dependabotAutoMergeWorkflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("pull_request_target:", dependabotAutoMergeWorkflow, StringComparison.Ordinal);
+
         var ciInfrastructureWorkflow = Read(".github/workflows/ci-infrastructure.yml");
         Assert.Contains("pull_request:", ciInfrastructureWorkflow, StringComparison.Ordinal);
         Assert.Contains("paths:", ciInfrastructureWorkflow, StringComparison.Ordinal);
