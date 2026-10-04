@@ -11,7 +11,7 @@ namespace DownKyi.Desktop.Tests;
 
 public sealed class ReleaseNotesMarkdownViewTests
 {
-    private static readonly string[] ExpectedNestedListMarkers = ["3.", "•", "4."];
+    private static readonly string[] ExpectedNestedListMarkers = ["3.", "•", "4.", "5."];
 
     [AvaloniaFact]
     public void RepresentativeReleaseBodyRendersSemanticsWithoutActiveContent()
@@ -87,7 +87,8 @@ public sealed class ReleaseNotesMarkdownViewTests
             Markdown = """
                 3. Third
                    - Nested
-                4. Fourth
+                1. Fourth
+                1. Fifth
                 """
         };
         var window = new Window
@@ -108,6 +109,54 @@ public sealed class ReleaseNotesMarkdownViewTests
                 .ToArray();
 
             Assert.Equal(ExpectedNestedListMarkers, markers);
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    [AvaloniaFact]
+    public void CjkEmphasisAndAutolinksRetainVisibleTextWithoutNavigation()
+    {
+        var view = new ReleaseNotesMarkdownView
+        {
+            Markdown = """
+                **修复。**这是后续说明
+
+                <https://example.test> <user@example.com>
+
+                **foo*
+                """
+        };
+        var window = new Window
+        {
+            Content = view
+        };
+
+        try
+        {
+            window.Show();
+            window.UpdateLayout();
+
+            var descendants = view.GetVisualDescendants().ToArray();
+            var textBlocks = descendants.OfType<TextBlock>().ToArray();
+            var visibleText = string.Join('\n', textBlocks.Select(GetText));
+            var inlines = GetInlines(textBlocks);
+
+            Assert.Contains("修复。这是后续说明", visibleText, StringComparison.Ordinal);
+            Assert.DoesNotContain("**修复。**", visibleText, StringComparison.Ordinal);
+            Assert.Contains("https://example.test", visibleText, StringComparison.Ordinal);
+            Assert.Contains("user@example.com", visibleText, StringComparison.Ordinal);
+            Assert.DoesNotContain("mailto:", visibleText, StringComparison.Ordinal);
+            Assert.Contains("*foo", visibleText, StringComparison.Ordinal);
+            Assert.Contains(
+                inlines,
+                inline => inline.Classes.Contains(ReleaseNotesMarkdownView.StrongClass));
+            Assert.Equal(
+                2,
+                inlines.Count(inline => inline.Classes.Contains(ReleaseNotesMarkdownView.LinkClass)));
+            Assert.Empty(descendants.OfType<HyperlinkButton>());
         }
         finally
         {
