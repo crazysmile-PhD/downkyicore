@@ -125,6 +125,10 @@ public sealed class AgentEnvironmentArchitectureTests
         Assert.DoesNotContain("paths:", dependencyAuditPullRequestTrigger, StringComparison.Ordinal);
         Assert.Contains("schedule:", dependencyAuditWorkflow, StringComparison.Ordinal);
         Assert.Contains("    name: Dependency policy", dependencyAuditWorkflow, StringComparison.Ordinal);
+        Assert.Contains("uses: actions/setup-dotnet@", dependencyAuditWorkflow, StringComparison.Ordinal);
+        Assert.Contains("global-json-file: global.json", dependencyAuditWorkflow, StringComparison.Ordinal);
+        Assert.Contains("uses: actions/setup-python@", dependencyAuditWorkflow, StringComparison.Ordinal);
+        Assert.Contains("python-version-file: .python-version", dependencyAuditWorkflow, StringComparison.Ordinal);
         Assert.Contains("--vulnerable", dependencyAuditWorkflow, StringComparison.Ordinal);
         Assert.Contains("--include-transitive", dependencyAuditWorkflow, StringComparison.Ordinal);
         var deprecatedStep = Slice(
