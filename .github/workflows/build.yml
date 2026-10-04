@@ -42,7 +42,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
       - name: Install Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version-file: .python-version
       - name: Validate GitHub Actions workflow syntax
@@ -74,7 +74,7 @@ jobs:
       - name: Detect FFmpeg changes in the PR diff
         id: filter
         if: github.event_name == 'pull_request'
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@v4
         with:
           filters: |
             external_assets:
@@ -91,7 +91,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
       - name: Install Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version-file: .python-version
       - name: Validate immutable FFmpeg manifest
@@ -227,7 +227,7 @@ jobs:
         with:
           global-json-file: global.json
       - name: Install Python for FFmpeg manifest verification
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version-file: .python-version
       - name: Read Version Text
@@ -305,7 +305,7 @@ jobs:
         with:
           global-json-file: global.json
       - name: Install Python for FFmpeg manifest verification
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version-file: .python-version
       - name: Read Version Text
@@ -417,7 +417,7 @@ jobs:
           if ! apt-cache show "$fuse_package" >/dev/null 2>&1; then fuse_package=libfuse2t64; fi
           sudo apt-get install -y cpio "$fuse_package" rpm rpm2cpio xauth xvfb
       - name: Download canonical Linux publish
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: linux-${{ matrix.cpu }}-canonical-publish
           path: canonical
@@ -520,7 +520,7 @@ jobs:
           if ! apt-cache show "$fuse_package" >/dev/null 2>&1; then fuse_package=libfuse2t64; fi
           sudo apt-get install -y "$fuse_package" xauth xvfb
       - name: Download ARM64 native-validation candidate
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: linux-arm64-${{ matrix.kind }}-candidate
           path: candidate
@@ -644,7 +644,7 @@ jobs:
             artifacts/test-flight-recorder
           if-no-files-found: ignore
       - name: Install Python for FFmpeg manifest verification
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version-file: .python-version
       - name: Read Version Text
@@ -767,7 +767,7 @@ jobs:
       - name: Checkout release validators
         uses: actions/checkout@v7
       - name: Download build artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: true
