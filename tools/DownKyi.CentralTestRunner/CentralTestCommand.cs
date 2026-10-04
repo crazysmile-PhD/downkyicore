@@ -138,9 +138,12 @@ internal static class CentralTestCommand
         var evidenceDirectory = string.IsNullOrWhiteSpace(options.EvidenceDirectory)
             ? Path.Combine(repositoryRoot, "artifacts", "test-flight-recorder")
             : Path.GetFullPath(options.EvidenceDirectory, repositoryRoot);
-        var testIdentity = options.Classes.Length > 0
+        var selectedIdentity = options.Classes.Length > 0
             ? string.Join(",", options.Classes.Order(StringComparer.Ordinal))
             : string.IsNullOrWhiteSpace(options.Filter) ? "all" : options.Filter;
+        var testIdentity = options.ExcludedClasses.Length == 0
+            ? selectedIdentity
+            : $"{selectedIdentity};exclude={string.Join(',', options.ExcludedClasses.Order(StringComparer.Ordinal))}";
 
         var result = await FlightRecorderExecution.RunAsync(
             new ProcessExecutionRequest(

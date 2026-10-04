@@ -65,15 +65,26 @@ public sealed class AgentEnvironmentArchitectureTests
         Assert.Contains("--no-incremental", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("AnalysisMode=All", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("./script/test-solution.ps1", qualityWorkflow, StringComparison.Ordinal);
-        Assert.Contains("Validate targeted resource forensics", qualityWorkflow, StringComparison.Ordinal);
-        Assert.Contains("DOWNKYI_TARGETED_RESOURCE_FORENSICS: '1'", qualityWorkflow, StringComparison.Ordinal);
+        Assert.Contains("-ExcludeCiInfrastructure", qualityWorkflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("Validate targeted resource forensics", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("classify-resource-contention.ps1", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("--vulnerable", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("--deprecated", qualityWorkflow, StringComparison.Ordinal);
         Assert.DoesNotContain("LogFileName=test-results-${{ matrix.os }}.trx", qualityWorkflow, StringComparison.Ordinal);
 
+        var ciInfrastructureWorkflow = Read(".github/workflows/ci-infrastructure.yml");
+        Assert.Contains("pull_request:", ciInfrastructureWorkflow, StringComparison.Ordinal);
+        Assert.Contains("paths:", ciInfrastructureWorkflow, StringComparison.Ordinal);
+        Assert.Contains("tools/DownKyi.CentralTestRunner/**", ciInfrastructureWorkflow, StringComparison.Ordinal);
+        Assert.Contains("tools/DownKyi.ProcessSupervision/**", ciInfrastructureWorkflow, StringComparison.Ordinal);
+        Assert.Contains("./script/test-ci-infrastructure.ps1", ciInfrastructureWorkflow, StringComparison.Ordinal);
+        Assert.Contains("windows-latest", ciInfrastructureWorkflow, StringComparison.Ordinal);
+        Assert.Contains("vars.UBUNTU_X64_RUNNER", ciInfrastructureWorkflow, StringComparison.Ordinal);
+        Assert.Contains("macos-latest", ciInfrastructureWorkflow, StringComparison.Ordinal);
+
         var testScript = Read("script/test-solution.ps1");
         Assert.Contains("Invoke-DownKyiTestSolution", testScript, StringComparison.Ordinal);
+        Assert.Contains("Get-DownKyiCiInfrastructureTestClassNames", testScript, StringComparison.Ordinal);
         Assert.Contains("exit $result.ExitCode", testScript, StringComparison.Ordinal);
 
         var runnerScript = Read("script/test-project-runner.ps1");

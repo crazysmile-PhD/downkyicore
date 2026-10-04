@@ -117,6 +117,7 @@ function Invoke-DownKyiTestSolution {
         [switch]$NoRestore,
         [switch]$NoBuild,
         [string]$ResultsDirectory,
+        [string[]]$ExcludedClassNames = @(),
         [string]$EvidenceDirectory
     )
 
@@ -137,6 +138,9 @@ function Invoke-DownKyiTestSolution {
     }
     if (-not [string]::IsNullOrWhiteSpace($ResultsDirectory)) {
         $arguments += @("--results-directory", $ResultsDirectory)
+    }
+    foreach ($className in @($ExcludedClassNames | Sort-Object -Unique)) {
+        $arguments += @("--exclude-class", $className)
     }
     if (-not [string]::IsNullOrWhiteSpace($EvidenceDirectory)) {
         $arguments += @("--evidence-directory", $EvidenceDirectory)

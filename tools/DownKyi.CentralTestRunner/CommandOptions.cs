@@ -9,6 +9,7 @@ internal sealed record CommandOptions(
     string? ResultsDirectory,
     string? TrxName,
     string[] Classes,
+    string[] ExcludedClasses,
     string? Filter,
     string? EvidenceDirectory)
 {
@@ -22,6 +23,7 @@ internal sealed record CommandOptions(
         string? resultsDirectory = null;
         string? trxName = null;
         var classes = new List<string>();
+        var excludedClasses = new List<string>();
         string? filter = null;
         string? evidenceDirectory = null;
 
@@ -53,6 +55,9 @@ internal sealed record CommandOptions(
                 case "--class":
                     classes.Add(ReadValue(args, ref index));
                     break;
+                case "--exclude-class":
+                    excludedClasses.Add(ReadValue(args, ref index));
+                    break;
                 case "--filter":
                     filter = ReadValue(args, ref index);
                     break;
@@ -77,6 +82,7 @@ internal sealed record CommandOptions(
             resultsDirectory,
             trxName,
             classes.ToArray(),
+            excludedClasses.ToArray(),
             filter,
             evidenceDirectory);
     }

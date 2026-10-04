@@ -14,6 +14,71 @@ public sealed class CentralTestRunnerCommandTests
     }
 
     [Fact]
+    public void CommandOptionsCollectsExcludedClasses()
+    {
+        var options = CommandOptions.Parse(
+            ["--exclude-class", "Fixture.Tests.B", "--exclude-class", "Fixture.Tests.A"]);
+
+        Assert.Equal(["Fixture.Tests.B", "Fixture.Tests.A"], options.ExcludedClasses);
+    }
+
+    [Fact]
+    public void VstestInvocationExcludesClassesAfterApplyingTheSelectedClassFilter()
+    {
+        var options = CommandOptions.Parse(
+            [
+                "--class", "Fixture.Tests.Included",
+                "--exclude-class", "Fixture.Tests.ExcludedB",
+                "--exclude-class", "Fixture.Tests.ExcludedA"
+            ]);
+
+        var startInfo = TestInvocationFactory.CreateVstestStartInfo(
+            "fixture.csproj",
+            options,
+            resultsDirectory: null,
+            trxName: "fixture.trx");
+        var arguments = startInfo.ArgumentList.ToArray();
+        var filterIndex = Array.IndexOf(arguments, "--filter");
+
+        Assert.True(filterIndex >= 0);
+        Assert.Equal(
+            "(FullyQualifiedName~Fixture.Tests.Included)&" +
+            "FullyQualifiedName!~Fixture.Tests.ExcludedA&" +
+            "FullyQualifiedName!~Fixture.Tests.ExcludedB",
+            arguments[filterIndex + 1]);
+    }
+
+    [Fact]
+    public void InProcessXunitInvocationUsesNativeClassExclusions()
+    {
+        var options = CommandOptions.Parse(
+            ["--exclude-class", "Fixture.Tests.ExcludedB", "--exclude-class", "Fixture.Tests.ExcludedA"]);
+        var projectDirectory = Path.Combine(
+            Path.GetTempPath(),
+            $"downkyi-in-process-exclusion-{Guid.NewGuid():N}");
+        var assemblyDirectory = Path.Combine(projectDirectory, "bin", "Release", "net10.0");
+        Directory.CreateDirectory(assemblyDirectory);
+        File.WriteAllText(Path.Combine(assemblyDirectory, "Fixture.Tests.dll"), string.Empty);
+        try
+        {
+            var startInfo = TestInvocationFactory.CreateInProcessXunitStartInfo(
+                Path.Combine(projectDirectory, "Fixture.Tests.csproj"),
+                "net10.0",
+                options,
+                trxPath: null);
+            var arguments = startInfo.ArgumentList.ToArray();
+
+            Assert.Equal(2, arguments.Count(argument => argument == "-class-"));
+            Assert.Contains("Fixture.Tests.ExcludedA", arguments);
+            Assert.Contains("Fixture.Tests.ExcludedB", arguments);
+        }
+        finally
+        {
+            Directory.Delete(projectDirectory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task RunSolutionRejectsEmptyProjectDiscovery()
     {
         var repositoryRoot = await CreateRepositoryAsync();

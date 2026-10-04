@@ -31,6 +31,18 @@ internal static class TestInvocationFactory
                     .Distinct(StringComparer.Ordinal)
                     .Select(className => $"FullyQualifiedName~{className}"));
         }
+        if (options.ExcludedClasses.Length > 0)
+        {
+            var excludedFilter = string.Join(
+                '&',
+                options.ExcludedClasses
+                    .Order(StringComparer.Ordinal)
+                    .Distinct(StringComparer.Ordinal)
+                    .Select(className => $"FullyQualifiedName!~{className}"));
+            filter = string.IsNullOrWhiteSpace(filter)
+                ? excludedFilter
+                : $"({filter})&{excludedFilter}";
+        }
         if (!string.IsNullOrWhiteSpace(filter))
         {
             startInfo.ArgumentList.Add("--filter");
@@ -85,6 +97,11 @@ internal static class TestInvocationFactory
         foreach (var className in options.Classes.Order(StringComparer.Ordinal).Distinct(StringComparer.Ordinal))
         {
             startInfo.ArgumentList.Add("-class");
+            startInfo.ArgumentList.Add(className);
+        }
+        foreach (var className in options.ExcludedClasses.Order(StringComparer.Ordinal).Distinct(StringComparer.Ordinal))
+        {
+            startInfo.ArgumentList.Add("-class-");
             startInfo.ArgumentList.Add(className);
         }
         if (trxPath is not null)
