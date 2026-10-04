@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
@@ -30,6 +31,7 @@ internal sealed class ReleaseNotesMarkdownView : StackPanel
 
     private static readonly MarkdownPipeline MarkdownPipeline = new MarkdownPipelineBuilder()
         .UseAutoLinks()
+        .UseCjkFriendlyEmphasis()
         .Build();
 
     public static readonly StyledProperty<string?> MarkdownProperty =
@@ -124,11 +126,18 @@ internal sealed class ReleaseNotesMarkdownView : StackPanel
         };
         listPanel.Classes.Add(ListClass);
 
+        var orderedItemIndex = 0;
+        var orderedStart = 1;
         foreach (var block in list)
         {
             if (block is not ListItemBlock item)
             {
                 continue;
+            }
+
+            if (list.IsOrdered && orderedItemIndex == 0)
+            {
+                orderedStart = item.Order;
             }
 
             var row = new Grid
@@ -140,7 +149,11 @@ internal sealed class ReleaseNotesMarkdownView : StackPanel
 
             var marker = new TextBlock
             {
-                Text = list.IsOrdered ? string.Concat(item.Order, ".") : "•",
+                Text = list.IsOrdered
+                    ? string.Concat(
+                        (orderedStart + orderedItemIndex).ToString(CultureInfo.InvariantCulture),
+                        ".")
+                    : "•",
                 VerticalAlignment = VerticalAlignment.Top
             };
             marker.Classes.Add(ListMarkerClass);
@@ -155,6 +168,11 @@ internal sealed class ReleaseNotesMarkdownView : StackPanel
             row.Children.Add(marker);
             row.Children.Add(content);
             listPanel.Children.Add(row);
+
+            if (list.IsOrdered)
+            {
+                orderedItemIndex++;
+            }
         }
 
         return listPanel;
@@ -236,6 +254,9 @@ internal sealed class ReleaseNotesMarkdownView : StackPanel
                     break;
                 case HtmlInline:
                     break;
+                case AutolinkInline autolink:
+                    target.Add(CreateAutolinkSpan(autolink));
+                    break;
                 case LinkInline link:
                     target.Add(CreateLinkSpan(link));
                     break;
@@ -249,6 +270,14 @@ internal sealed class ReleaseNotesMarkdownView : StackPanel
                     break;
             }
         }
+    }
+
+    private static Span CreateAutolinkSpan(AutolinkInline autolink)
+    {
+        var span = CreateSpan();
+        span.Classes.Add(LinkClass);
+        span.Inlines.Add(new Run(autolink.Url));
+        return span;
     }
 
     private static Span CreateLinkSpan(LinkInline link)
