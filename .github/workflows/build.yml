@@ -42,7 +42,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
       - name: Install Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version-file: .python-version
       - name: Validate GitHub Actions workflow syntax
@@ -91,7 +91,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
       - name: Install Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version-file: .python-version
       - name: Validate immutable FFmpeg manifest
@@ -227,7 +227,7 @@ jobs:
         with:
           global-json-file: global.json
       - name: Install Python for FFmpeg manifest verification
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version-file: .python-version
       - name: Read Version Text
@@ -305,7 +305,7 @@ jobs:
         with:
           global-json-file: global.json
       - name: Install Python for FFmpeg manifest verification
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version-file: .python-version
       - name: Read Version Text
@@ -644,7 +644,7 @@ jobs:
             artifacts/test-flight-recorder
           if-no-files-found: ignore
       - name: Install Python for FFmpeg manifest verification
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version-file: .python-version
       - name: Read Version Text

@@ -166,7 +166,7 @@ jobs:
         with:
           global-json-file: tooling/global.json
       - name: Install Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version-file: tooling/.python-version
       - name: Install PupNet
@@ -270,7 +270,7 @@ jobs:
         with:
           global-json-file: tooling/global.json
       - name: Install Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version-file: tooling/.python-version
       - name: Install PupNet
@@ -411,7 +411,7 @@ jobs:
             tooling/artifacts/test-flight-recorder
           if-no-files-found: ignore
       - name: Install Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version-file: tooling/.python-version
       - name: Get exact-subject dependencies
