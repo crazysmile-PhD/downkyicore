@@ -13,15 +13,72 @@ public sealed class CentralTestRunnerRecorderTests
     public async Task CanceledTestProcessPreservesIdentityCleanupSnapshotAndGuidance()
     {
         var evidenceDirectory = CreateEvidenceDirectory();
+        var processStartPersistenceFailed = 0;
         try
         {
+            Task PersistAsync(string path, string json, CancellationToken cancellationToken)
+            {
+                if (LastEventMatches(json, "process_start") &&
+                    Interlocked.Exchange(ref processStartPersistenceFailed, 1) == 0)
+                {
+                    return FailProcessStartPersistenceAsync(path, json, cancellationToken);
+                }
+
+                return File.WriteAllTextAsync(path, json, cancellationToken);
+            }
+
+            static async Task FailProcessStartPersistenceAsync(
+                string path,
+                string json,
+                CancellationToken cancellationToken)
+            {
+                // Reproduce the FileShare.Read collision from the former JSON readiness probe.
+                using var reader = new FileStream(
+                    path,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.Read,
+                    bufferSize: 4096,
+                    FileOptions.Asynchronous);
+                using var persistedReport = await JsonDocument.ParseAsync(
+                    reader,
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
+                var persistedEvents = persistedReport.RootElement
+                    .GetProperty("Events")
+                    .EnumerateArray()
+                    .ToArray();
+                Assert.DoesNotContain(
+                    persistedEvents,
+                    item => string.Equals(
+                        item.GetProperty("Event").GetString(),
+                        "process_start",
+                        StringComparison.Ordinal));
+                var lastPersistedEvent = persistedEvents[^1];
+                Assert.Equal(
+                    "scope_launch_phase",
+                    lastPersistedEvent.GetProperty("Event").GetString());
+                Assert.Equal(
+                    "handshake_received",
+                    lastPersistedEvent.GetProperty("Detail").GetString());
+
+                if (OperatingSystem.IsWindows())
+                {
+                    await File.WriteAllTextAsync(path, json, cancellationToken).ConfigureAwait(false);
+                    return;
+                }
+
+                throw new IOException("process_start diagnostic persistence failed");
+            }
+
             var (result, fixturePid) = await RunCanceledFixtureAsync(
                 "fixture.cancellation.slice",
                 "fixture.cancellation.test",
                 TimeSpan.FromSeconds(3),
-                evidenceDirectory);
+                evidenceDirectory,
+                recorderPersistence: PersistAsync);
 
             Assert.Equal(130, result.ExitCode);
+            Assert.Equal(1, processStartPersistenceFailed);
             Assert.Equal(fixturePid, result.RootPid);
             Assert.True(result.RootPid > 0);
             Assert.NotNull(result.RootStartTimeUtc);
@@ -42,6 +99,7 @@ public sealed class CentralTestRunnerRecorderTests
                 .Select(item => item.GetProperty("Event").GetString())
                 .ToArray();
             Assert.Contains("process_start", events);
+            Assert.Contains("recorder_persistence_failed", events);
             Assert.Contains("cancellation", events);
             Assert.Contains("bounded_stop_requested", events);
             Assert.Contains("process_exit", events);
@@ -676,9 +734,12 @@ public sealed class CentralTestRunnerRecorderTests
         TimeSpan cleanupTimeout,
         string evidenceDirectory,
         Func<string, ProcessStartInfo>? startInfoFactory = null,
-        Func<int, TimeSpan, Task<FinalProcessSnapshot>>? snapshotCapture = null)
+        Func<int, TimeSpan, Task<FinalProcessSnapshot>>? snapshotCapture = null,
+        Func<string, string, CancellationToken, Task>? recorderPersistence = null)
     {
         var markerPath = Path.Combine(evidenceDirectory, $"fixture-{Guid.NewGuid():N}.pid");
+        var startupReady = new TaskCompletionSource<ProcessExecutionStartup>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
         var startInfo = startInfoFactory is null
             ? CreateFixtureStartInfo("fixture-hold-marker", markerPath)
             : startInfoFactory(markerPath);
@@ -690,51 +751,39 @@ public sealed class CentralTestRunnerRecorderTests
                 startInfo,
                 cleanupTimeout,
                 evidenceDirectory,
-                snapshotCapture),
+                snapshotCapture,
+                RecorderPersistence: recorderPersistence,
+                StartupReady: startup => startupReady.TrySetResult(startup)),
             cancellation.Token);
 
+        await WaitForSignalOrRunCompletionAsync(
+            startupReady.Task,
+            run,
+            "authoritative process startup").ConfigureAwait(false);
+        var startup = await startupReady.Task.ConfigureAwait(false);
         var fixturePid = await WaitForProcessMarkerAsync(markerPath).ConfigureAwait(false);
-        await WaitForProcessStartAsync(evidenceDirectory, fixturePid).ConfigureAwait(false);
+        Assert.Equal(fixturePid, startup.RootPid);
         await cancellation.CancelAsync().ConfigureAwait(false);
         var result = await run.WaitAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
         return (result, fixturePid);
     }
 
-    private static async Task WaitForProcessStartAsync(string evidenceDirectory, int fixturePid)
+    private static async Task WaitForSignalOrRunCompletionAsync(
+        Task signal,
+        Task<ProcessExecutionResult> run,
+        string signalName)
     {
-        while (true)
+        var completed = await Task.WhenAny(signal, run)
+            .WaitAsync(TestContext.Current.CancellationToken)
+            .ConfigureAwait(false);
+        if (ReferenceEquals(completed, run))
         {
-            foreach (var evidencePath in Directory.EnumerateFiles(evidenceDirectory, "*.json"))
-            {
-                try
-                {
-                    using var report = JsonDocument.Parse(await File.ReadAllTextAsync(
-                        evidencePath,
-                        TestContext.Current.CancellationToken).ConfigureAwait(false));
-                    if (report.RootElement.TryGetProperty("RootProcess", out var rootProcess) &&
-                        rootProcess.GetProperty("Pid").GetInt32() == fixturePid &&
-                        report.RootElement.GetProperty("Events")
-                            .EnumerateArray()
-                            .Any(item => string.Equals(
-                                item.GetProperty("Event").GetString(),
-                                "process_start",
-                                StringComparison.Ordinal)))
-                    {
-                        return;
-                    }
-                }
-                catch (IOException)
-                {
-                    // The recorder is writing the report while this readiness probe reads it.
-                }
-                catch (JsonException)
-                {
-                    // The recorder has not finished writing the report yet.
-                }
-            }
-
-            await Task.Delay(20, TestContext.Current.CancellationToken).ConfigureAwait(false);
+            var result = await run.ConfigureAwait(false);
+            Assert.Fail(
+                $"Process execution returned exit code {result.ExitCode} before {signalName} was observed.");
         }
+
+        await signal.ConfigureAwait(false);
     }
 
     private static async Task<int> WaitForProcessMarkerAsync(string markerPath)
@@ -764,14 +813,15 @@ public sealed class CentralTestRunnerRecorderTests
         }
     }
 
-    private static bool LastEventMatches(string json, string eventName, string detail)
+    private static bool LastEventMatches(string json, string eventName, string? detail = null)
     {
         using var report = JsonDocument.Parse(json);
         var events = report.RootElement.GetProperty("Events").EnumerateArray().ToArray();
         var lastEvent = events[^1];
         return string.Equals(lastEvent.GetProperty("Event").GetString(), eventName, StringComparison.Ordinal) &&
-               lastEvent.TryGetProperty("Detail", out var actualDetail) &&
-               string.Equals(actualDetail.GetString(), detail, StringComparison.Ordinal);
+               (detail is null ||
+                lastEvent.TryGetProperty("Detail", out var actualDetail) &&
+                string.Equals(actualDetail.GetString(), detail, StringComparison.Ordinal));
     }
 
     private static bool IsProcessAlive(int processId)
