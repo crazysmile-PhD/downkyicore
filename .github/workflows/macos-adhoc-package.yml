@@ -10,6 +10,7 @@ on:
       - 'src/DownKyi.Desktop/Resources/favicon.ico'
       - 'Directory.Build.*'
       - 'Directory.Packages.props'
+      - '.python-version'
       - 'global.json'
       - 'version.txt'
       - 'THIRD-PARTY-NOTICES.md'
@@ -58,11 +59,11 @@ jobs:
       - name: Install .NET
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: '10.0.x'
+          global-json-file: global.json
       - name: Install Python for FFmpeg manifest verification
         uses: actions/setup-python@v6
         with:
-          python-version: '3.12'
+          python-version-file: .python-version
       - name: Read version
         id: version
         run: echo "content=$(tr -d '\r\n' < version.txt)" >> "$GITHUB_OUTPUT"

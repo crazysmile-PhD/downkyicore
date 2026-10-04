@@ -164,11 +164,11 @@ jobs:
       - name: Install .NET
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: 10.0.x
+          global-json-file: tooling/global.json
       - name: Install Python
         uses: actions/setup-python@v6
         with:
-          python-version: '3.12'
+          python-version-file: tooling/.python-version
       - name: Install PupNet
         run: dotnet tool install --tool-path .\tooling\.tools KuiperZone.PupNet --version 1.8.0
       - name: Get exact-subject dependencies
@@ -268,11 +268,11 @@ jobs:
       - name: Install .NET
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: 10.0.x
+          global-json-file: tooling/global.json
       - name: Install Python
         uses: actions/setup-python@v6
         with:
-          python-version: '3.12'
+          python-version-file: tooling/.python-version
       - name: Install PupNet
         run: |
           dotnet tool install --tool-path ./tooling/.tools KuiperZone.PupNet --version 1.8.0
@@ -393,7 +393,7 @@ jobs:
       - name: Install .NET
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: 10.0.x
+          global-json-file: tooling/global.json
       - name: Run native recovery tooling regressions
         shell: pwsh
         run: >
@@ -413,7 +413,7 @@ jobs:
       - name: Install Python
         uses: actions/setup-python@v6
         with:
-          python-version: '3.12'
+          python-version-file: tooling/.python-version
       - name: Get exact-subject dependencies
         working-directory: subject/script
         run: |

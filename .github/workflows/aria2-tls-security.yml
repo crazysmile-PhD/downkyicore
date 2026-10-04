@@ -90,7 +90,7 @@ jobs:
       - name: Install .NET
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: '10.0.x'
+          global-json-file: global.json
       - name: Fetch and verify Windows aria2 asset
         if: startsWith(matrix.rid, 'win-')
         shell: pwsh
