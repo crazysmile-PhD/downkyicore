@@ -88,7 +88,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
       - name: Install .NET
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
       - name: Fetch and verify Windows aria2 asset
