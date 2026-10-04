@@ -324,6 +324,12 @@ public sealed class OwnedProcessScopePlatformTests
         var directory = Path.Combine(Path.GetTempPath(), $"downkyi-scope-{Guid.NewGuid():N}");
         Directory.CreateDirectory(directory);
         var marker = Path.Combine(directory, "pipe-holder.pid");
+        var releaseName = OperatingSystem.IsWindows()
+            ? $"Local\\downkyi-scope-pipe-holder-release-{Guid.NewGuid():N}"
+            : null;
+        using var release = releaseName is null
+            ? null
+            : new EventWaitHandle(initialState: false, EventResetMode.ManualReset, releaseName);
         int? childPid = null;
         try
         {
@@ -337,6 +343,10 @@ public sealed class OwnedProcessScopePlatformTests
             startInfo.ArgumentList.Add("fixture-exit-with-pipe-holder");
             startInfo.ArgumentList.Add(runtimeConfig);
             startInfo.ArgumentList.Add(marker);
+            if (releaseName is not null)
+            {
+                startInfo.ArgumentList.Add(releaseName);
+            }
 
             var run = FlightRecorderExecution.RunAsync(new ProcessExecutionRequest(
                 "scope.root-exited", "pipe-holder", startInfo,
@@ -344,6 +354,7 @@ public sealed class OwnedProcessScopePlatformTests
                 TestContext.Current.CancellationToken);
             childPid = await ReadMarkerAsync(marker).ConfigureAwait(true);
             Assert.True(IsAlive(childPid.Value));
+            release?.Set();
             var result = await run.ConfigureAwait(true);
             Assert.Equal(2, result.ExitCode);
             Assert.False(IsAlive(result.RootPid));
@@ -354,6 +365,7 @@ public sealed class OwnedProcessScopePlatformTests
         }
         finally
         {
+            release?.Set();
             StopIfAlive(childPid);
             if (OperatingSystem.IsWindows())
             {

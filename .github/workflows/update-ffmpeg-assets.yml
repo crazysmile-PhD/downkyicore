@@ -42,7 +42,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
       - name: Install Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version-file: .python-version
       - name: Verify updater branch authority
@@ -90,11 +90,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
       - name: Install Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version-file: .python-version
       - name: Download candidate metadata
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: ffmpeg-candidate
           path: .ffmpeg-update
@@ -131,11 +131,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
       - name: Install Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version-file: .python-version
       - name: Download candidate metadata
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: ffmpeg-candidate
           path: .ffmpeg-update
@@ -208,7 +208,7 @@ jobs:
             --output .ffmpeg-update/pr-body.md
       - name: Create manifest pull request
         id: cpr
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.DOWNKYI_AUTOMATION_TOKEN }}
           add-paths: script/assets/external-assets.json
