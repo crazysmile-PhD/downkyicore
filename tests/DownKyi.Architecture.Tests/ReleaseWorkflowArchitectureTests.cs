@@ -135,6 +135,7 @@ public sealed class ReleaseWorkflowArchitectureTests
                 ".github/workflows/build.yml",
                 ".github/workflows/update-ffmpeg-assets.yml",
                 "script/assets/external-assets.json",
+                "script/download-external-asset.ps1",
                 "script/ffmpeg-assets.py",
                 "script/ffmpeg.ps1",
                 "script/ffmpeg.sh",

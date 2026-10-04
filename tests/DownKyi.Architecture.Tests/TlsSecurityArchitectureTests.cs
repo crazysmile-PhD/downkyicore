@@ -348,6 +348,9 @@ public sealed class TlsSecurityArchitectureTests
         Assert.Contains("'script/assets/external-assets.json'", aria2TlsWorkflow, StringComparison.Ordinal);
         Assert.Equal(
             2,
+            aria2TlsWorkflow.Split("'script/download-external-asset.ps1'", StringSplitOptions.None).Length - 1);
+        Assert.Equal(
+            2,
             aria2TlsWorkflow.Split("'DownKyi.Core/DownKyi.Core.csproj'", StringSplitOptions.None).Length - 1);
         Assert.Contains("'DownKyi.Core/Aria2cNet/**'", aria2TlsWorkflow, StringComparison.Ordinal);
         Assert.Equal(
