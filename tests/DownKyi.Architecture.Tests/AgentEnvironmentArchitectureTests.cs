@@ -92,6 +92,9 @@ public sealed class AgentEnvironmentArchitectureTests
         var ciInfrastructureWorkflow = Read(".github/workflows/ci-infrastructure.yml");
         Assert.Contains("pull_request:", ciInfrastructureWorkflow, StringComparison.Ordinal);
         Assert.Contains("paths:", ciInfrastructureWorkflow, StringComparison.Ordinal);
+        Assert.Equal(
+            2,
+            ciInfrastructureWorkflow.Split("'tests/Directory.Build.props'", StringSplitOptions.None).Length - 1);
         Assert.Contains("tools/DownKyi.CentralTestRunner/**", ciInfrastructureWorkflow, StringComparison.Ordinal);
         Assert.Contains("tools/DownKyi.ProcessSupervision/**", ciInfrastructureWorkflow, StringComparison.Ordinal);
         Assert.Contains("./script/test-ci-infrastructure.ps1", ciInfrastructureWorkflow, StringComparison.Ordinal);
@@ -319,7 +322,7 @@ public sealed class AgentEnvironmentArchitectureTests
             RepositoryRoot,
             PathFromRepository(".github/workflows"));
         var testInvocation = new System.Text.RegularExpressions.Regex(
-            @"^\s+(?:\. )?\./(?:tooling/)?script/test-(?:project|solution)(?:-runner)?\.ps1\b",
+            @"^\s+(?:\. )?\./(?:tooling/)?script/test-(?:ci-infrastructure|(?:project|solution)(?:-runner)?)\.ps1\b",
             System.Text.RegularExpressions.RegexOptions.CultureInvariant);
         var jobHeader = new System.Text.RegularExpressions.Regex(
             @"^  (?<name>[A-Za-z0-9_-]+):\s*$",

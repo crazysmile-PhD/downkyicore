@@ -8,6 +8,7 @@ on:
       - 'Directory.Build.*'
       - 'Directory.Packages.props'
       - 'global.json'
+      - 'tests/Directory.Build.props'
       - 'docs/testing/test-runner-policy.json'
       - 'script/ci-infrastructure-test-slices.ps1'
       - 'script/classify-resource-contention.ps1'
@@ -39,6 +40,7 @@ on:
       - 'Directory.Build.*'
       - 'Directory.Packages.props'
       - 'global.json'
+      - 'tests/Directory.Build.props'
       - 'docs/testing/test-runner-policy.json'
       - 'script/ci-infrastructure-test-slices.ps1'
       - 'script/classify-resource-contention.ps1'
@@ -69,6 +71,7 @@ jobs:
   test:
     name: CI infrastructure (${{ matrix.check_name }})
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:

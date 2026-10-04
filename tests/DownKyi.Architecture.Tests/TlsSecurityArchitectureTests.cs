@@ -346,7 +346,13 @@ public sealed class TlsSecurityArchitectureTests
         Assert.Contains("pull_request:", aria2TlsWorkflow, StringComparison.Ordinal);
         Assert.Contains("paths:", aria2TlsWorkflow, StringComparison.Ordinal);
         Assert.Contains("'script/assets/external-assets.json'", aria2TlsWorkflow, StringComparison.Ordinal);
+        Assert.Equal(
+            2,
+            aria2TlsWorkflow.Split("'DownKyi.Core/DownKyi.Core.csproj'", StringSplitOptions.None).Length - 1);
         Assert.Contains("'DownKyi.Core/Aria2cNet/**'", aria2TlsWorkflow, StringComparison.Ordinal);
+        Assert.Equal(
+            2,
+            aria2TlsWorkflow.Split("'src/DownKyi.Desktop/DownKyi.Desktop.csproj'", StringSplitOptions.None).Length - 1);
         Assert.Contains("'src/DownKyi.Desktop/Services/Download/**'", aria2TlsWorkflow, StringComparison.Ordinal);
         Assert.Contains(
             "run: bash ./script/aria2.sh '${{ matrix.asset-argument }}'",
