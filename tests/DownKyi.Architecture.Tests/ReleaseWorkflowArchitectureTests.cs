@@ -62,21 +62,35 @@ public sealed class ReleaseWorkflowArchitectureTests
     }
 
     [Fact]
-    public void OrdinaryPullRequestProducesSuccessfulFfmpegRequiredCheckWithoutReleaseWork()
+    public void BuildPullRequestTriggerIsRestrictedToFfmpegOwners()
     {
         var workflow = File.ReadAllText(
             Path.Combine(RepositoryRoot, ".github", "workflows", "build.yml"));
         var lines = workflow.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
         var pullRequest = GetYamlBlock(lines, "  pull_request:", 2);
-        var detector = GetYamlBlock(lines, "  detect-production-manifest-change:", 2);
+        var pathBlock = GetYamlBlock(pullRequest.ToArray(), "    paths:", 4);
+        var triggerPaths = pathBlock
+            .Where(line => GetIndent(line) == 6 && line.TrimStart().StartsWith("- ", StringComparison.Ordinal))
+            .Select(line => line.Trim()[2..].Trim('\'', '"'))
+            .ToArray();
         var tooling = GetYamlBlock(lines, "  ffmpeg-tooling:", 2);
         var preflight = GetYamlBlock(lines, "  external-assets-preflight:", 2);
         var gate = GetYamlBlock(lines, "  ffmpeg-required-gate:", 2);
         var release = GetYamlBlock(lines, "  release-gate:", 2);
 
-        Assert.DoesNotContain(pullRequest, line =>
-            GetIndent(line) == 4 && line.Trim() == "paths:");
-        Assert.Contains("    if: ${{ github.event_name != 'pull_request' || needs.detect-production-manifest-change.outputs.ffmpeg_related == 'true' }}", tooling);
+        Assert.Equal(
+            [
+                ".github/workflows/build.yml",
+                ".github/workflows/update-ffmpeg-assets.yml",
+                "script/assets/external-assets.json",
+                "script/ffmpeg-assets.py",
+                "script/ffmpeg.ps1",
+                "script/ffmpeg.sh",
+                "script/tests/test_ffmpeg_assets.py"
+            ],
+            triggerPaths);
+        Assert.DoesNotContain("needs: detect-production-manifest-change", tooling);
+        Assert.DoesNotContain("github.event_name != 'pull_request'", tooling);
         Assert.Contains("    if: ${{ always() && !inputs.update_ffmpeg_assets && needs.ffmpeg-tooling.result == 'success' && (github.event_name != 'pull_request' || needs.detect-production-manifest-change.outputs.external_assets == 'true') }}", preflight);
         Assert.Contains("    needs: external-assets-preflight", release);
         Assert.Contains("    name: FFmpeg manifest gate", gate);
@@ -85,11 +99,10 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.Contains("      - ffmpeg-tooling", gate);
         Assert.Contains("      - external-assets-preflight", gate);
         Assert.Contains("          test \"$DETECTION_RESULT\" = success", gate);
-        Assert.Contains("          if [ \"$FFMPEG_RELATED\" = true ]; then", gate);
+        Assert.Contains("          test \"$TOOLING_RESULT\" = success", gate);
         Assert.Contains("          if [ \"$EXTERNAL_ASSETS\" = true ]; then", gate);
-        Assert.Contains("            test \"$TOOLING_RESULT\" = skipped", gate);
         Assert.Contains("            test \"$PREFLIGHT_RESULT\" = skipped", gate);
-        Assert.DoesNotContain("              - 'src/DownKyi.Desktop/**'", detector);
+        Assert.DoesNotContain("src/DownKyi.Desktop/**", triggerPaths);
     }
 
     [Fact]
@@ -102,31 +115,19 @@ public sealed class ReleaseWorkflowArchitectureTests
         var tooling = GetYamlBlock(lines, "  ffmpeg-tooling:", 2);
         var preflight = GetYamlBlock(lines, "  external-assets-preflight:", 2);
         var gate = GetYamlBlock(lines, "  ffmpeg-required-gate:", 2);
-        var ffmpegPaths = GetYamlBlock(detector.ToArray(), "            ffmpeg_related:", 12)
-            .Where(line => GetIndent(line) == 14 && line.TrimStart().StartsWith("- ", StringComparison.Ordinal))
-            .Select(line => line.Trim()[2..].Trim('\'', '"'))
-            .ToArray();
 
-        Assert.Equal(
-            [
-                "script/assets/external-assets.json",
-                "script/ffmpeg-assets.py",
-                "script/ffmpeg.ps1",
-                "script/ffmpeg.sh",
-                "script/tests/test_ffmpeg_assets.py",
-                ".github/workflows/build.yml",
-                ".github/workflows/update-ffmpeg-assets.yml"
-            ], ffmpegPaths);
-        Assert.Contains("    needs: detect-production-manifest-change", tooling);
+        Assert.Contains("              - 'script/assets/external-assets.json'", detector);
+        Assert.DoesNotContain("ffmpeg_related:", detector);
+        Assert.DoesNotContain("    needs: detect-production-manifest-change", tooling);
         Assert.Contains("      - name: Run FFmpeg asset guards", tooling);
         Assert.Contains("        run: python -m unittest script/tests/test_ffmpeg_assets.py -v", tooling);
         Assert.DoesNotContain("continue-on-error: true", tooling);
         Assert.Contains("        run: python script/ffmpeg-assets.py validate-manifest --manifest script/assets/external-assets.json", preflight);
         Assert.Contains("        run: python script/ffmpeg-assets.py preflight --manifest script/assets/external-assets.json --timeout 30", preflight);
         Assert.Contains("          set -e", gate);
-        Assert.Contains("          FFMPEG_RELATED: ${{ needs.detect-production-manifest-change.outputs.ffmpeg_related }}", gate);
+        Assert.DoesNotContain("FFMPEG_RELATED", gate);
         Assert.Contains("          EXTERNAL_ASSETS: ${{ needs.detect-production-manifest-change.outputs.external_assets }}", gate);
-        Assert.Contains("            test \"$TOOLING_RESULT\" = success", gate);
+        Assert.Contains("          test \"$TOOLING_RESULT\" = success", gate);
         Assert.Contains("            test \"$PREFLIGHT_RESULT\" = success", gate);
         Assert.DoesNotContain("continue-on-error: true", gate);
     }

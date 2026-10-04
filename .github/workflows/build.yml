@@ -12,6 +12,14 @@ on:
     branches:
       - main
       - release/v1.1.1-integration
+    paths:
+      - '.github/workflows/build.yml'
+      - '.github/workflows/update-ffmpeg-assets.yml'
+      - 'script/assets/external-assets.json'
+      - 'script/ffmpeg-assets.py'
+      - 'script/ffmpeg.ps1'
+      - 'script/ffmpeg.sh'
+      - 'script/tests/test_ffmpeg_assets.py'
   workflow_dispatch:
     inputs:
       update_ffmpeg_assets:
@@ -28,8 +36,6 @@ on:
 jobs:
   ffmpeg-tooling:
     name: FFmpeg tooling / implementation gate
-    needs: detect-production-manifest-change
-    if: ${{ github.event_name != 'pull_request' || needs.detect-production-manifest-change.outputs.ffmpeg_related == 'true' }}
     runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
     steps:
       - name: Checkout
@@ -63,7 +69,6 @@ jobs:
     runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
     outputs:
       external_assets: ${{ steps.filter.outputs.external_assets }}
-      ffmpeg_related: ${{ steps.filter.outputs.ffmpeg_related }}
     steps:
       - name: Detect FFmpeg changes in the PR diff
         id: filter
@@ -73,14 +78,6 @@ jobs:
           filters: |
             external_assets:
               - 'script/assets/external-assets.json'
-            ffmpeg_related:
-              - 'script/assets/external-assets.json'
-              - 'script/ffmpeg-assets.py'
-              - 'script/ffmpeg.ps1'
-              - 'script/ffmpeg.sh'
-              - 'script/tests/test_ffmpeg_assets.py'
-              - '.github/workflows/build.yml'
-              - '.github/workflows/update-ffmpeg-assets.yml'
 
   external-assets-preflight:
     name: Production manifest preflight
@@ -115,16 +112,11 @@ jobs:
           DETECTION_RESULT: ${{ needs.detect-production-manifest-change.result }}
           TOOLING_RESULT: ${{ needs.ffmpeg-tooling.result }}
           PREFLIGHT_RESULT: ${{ needs.external-assets-preflight.result }}
-          FFMPEG_RELATED: ${{ needs.detect-production-manifest-change.outputs.ffmpeg_related }}
           EXTERNAL_ASSETS: ${{ needs.detect-production-manifest-change.outputs.external_assets }}
         run: |
           set -e
           test "$DETECTION_RESULT" = success
-          if [ "$FFMPEG_RELATED" = true ]; then
-            test "$TOOLING_RESULT" = success
-          else
-            test "$TOOLING_RESULT" = skipped
-          fi
+          test "$TOOLING_RESULT" = success
           if [ "$EXTERNAL_ASSETS" = true ]; then
             test "$PREFLIGHT_RESULT" = success
           else
