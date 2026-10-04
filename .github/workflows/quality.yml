@@ -83,6 +83,7 @@ jobs:
           -OutputPath ./artifacts/test-flight-recorder/resource-contention-classification.json
       - name: Upload test results
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: test-results-${{ matrix.check_name }}

@@ -190,6 +190,10 @@ public sealed class AgentEnvironmentArchitectureTests
         Assert.Contains("runner: windows-latest\n            check_name: windows", buildTest.Replace("\r\n", "\n", StringComparison.Ordinal), StringComparison.Ordinal);
         Assert.Contains("runner: ${{ vars.UBUNTU_X64_RUNNER }}\n            check_name: ubuntu-x64", buildTest.Replace("\r\n", "\n", StringComparison.Ordinal), StringComparison.Ordinal);
         Assert.Contains("runner: macos-latest\n            check_name: macos", buildTest.Replace("\r\n", "\n", StringComparison.Ordinal), StringComparison.Ordinal);
+        Assert.Contains(
+            "- name: Upload test results\n        if: always()\n        continue-on-error: true\n        uses: actions/upload-artifact@v7",
+            buildTest.Replace("\r\n", "\n", StringComparison.Ordinal),
+            StringComparison.Ordinal);
         Assert.DoesNotMatch(
             new System.Text.RegularExpressions.Regex(@"(?m)^\s+needs\s*:", System.Text.RegularExpressions.RegexOptions.CultureInvariant),
             qualityWorkflow);
