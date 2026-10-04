@@ -659,23 +659,35 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.Contains("MACOS_ADHOC_SIGNING: 'true'", workflow, StringComparison.Ordinal);
         foreach (var packageInput in new[]
                  {
-                     "DownKyi/**",
-                     "DownKyi.Core/**",
-                     "src/**",
+                     "DownKyi/**/*.csproj",
+                     "DownKyi.Core/**/*.csproj",
+                     "src/**/*.csproj",
+                     "src/DownKyi.Desktop/Resources/favicon.ico",
+                     "THIRD-PARTY-NOTICES.md",
                      "script/aria2.sh",
                      "script/ffmpeg.sh",
                      "script/ffmpeg-assets.py",
-                     "script/test-project.ps1",
-                     "script/test-project-runner.ps1",
                      "script/validate-publish-output.ps1",
                      "script/assets/**",
-                     "script/macos/**",
-                     "docs/testing/test-runner-policy.json",
+                     "script/macos/**"
+                 })
+        {
+            Assert.Contains(packageInput, triggerPaths);
+        }
+
+        foreach (var broadOrDuplicateInput in new[]
+                 {
+                     "DownKyi/**",
+                     "DownKyi.Core/**",
+                     "src/**",
+                     "script/test-project.ps1",
+                     "script/test-project-runner.ps1",
+                     "tests/DownKyi.MacOS.Tests/**",
                      "tests/PlatformShared/**",
                      "tools/DownKyi.CentralTestRunner/**"
                  })
         {
-            Assert.Contains(packageInput, triggerPaths);
+            Assert.DoesNotContain(broadOrDuplicateInput, triggerPaths);
         }
 
         Assert.Contains("dotnet publish", workflow, StringComparison.Ordinal);
@@ -686,25 +698,9 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.Contains("create-dmg", workflow, StringComparison.Ordinal);
         Assert.Contains("./validate-dmg-package.sh", workflow, StringComparison.Ordinal);
         Assert.DoesNotContain("Verify pre-sign aria2 supply-chain boundary", workflow, StringComparison.Ordinal);
-        var packageSteps = GetWorkflowSteps(workflow, "  package-validation:");
-        AssertStepCondition(
-            packageSteps,
-            "Upload macOS test evidence",
-            "${{ always() }}");
-        var evidenceUpload = FindWorkflowStep(packageSteps, "Upload macOS test evidence");
-        Assert.Contains(
-            evidenceUpload,
-            line => line.Trim() ==
-                    "name: macos-test-evidence-${{ matrix.runtime }}-attempt-${{ github.run_attempt }}");
-        Assert.Contains(
-            evidenceUpload,
-            line => line.Trim() == "artifacts/test-results/macos-packaging-${{ matrix.cpu }}");
-        Assert.Contains(
-            evidenceUpload,
-            line => line.Trim() == "artifacts/test-flight-recorder");
-        Assert.Contains(
-            evidenceUpload,
-            line => line.Trim() == "if-no-files-found: warn");
+        Assert.DoesNotContain("Run macOS packaging regressions", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("Upload macOS test evidence", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("script/test-project.ps1", workflow, StringComparison.Ordinal);
         Assert.DoesNotContain("secrets.", workflow, StringComparison.Ordinal);
         Assert.DoesNotContain("notarytool", workflow, StringComparison.Ordinal);
         Assert.DoesNotContain("stapler", workflow, StringComparison.Ordinal);
