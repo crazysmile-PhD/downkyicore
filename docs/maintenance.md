@@ -64,7 +64,7 @@ cross-platform stress proof，不得移除。
 
 - **Use when**：NuGet、version、restore、vulnerability、deprecated。
 - **Owner**：managed package version 只在 `Directory.Packages.props`。
-- **Invariant**：dependency update 不混入非必要 refactor；deprecated report 需要人工判讀。
+- **Invariant**：dependency update 不混入非必要 refactor；每個 PR 都產生 `Dependency policy`，restore 與 vulnerable／deprecated audit 不因 path filter 跳過；deprecated report 的修復仍需人工判讀。
 - **Do**：只改 central version；先 focused proof，再跑風險相稱的 gate。
 - **Proof**：restore、strict build、applicable tests、vulnerable／deprecated package audit。
 - **Stop**：若 dependency change 迫使產品語義改變，拆成獨立 scope。
