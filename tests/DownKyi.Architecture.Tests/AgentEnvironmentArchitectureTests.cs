@@ -210,9 +210,21 @@ public sealed class AgentEnvironmentArchitectureTests
         var qualityWorkflow = Read(".github/workflows/quality.yml");
 
         Assert.Contains("pull_request:", qualityWorkflow, StringComparison.Ordinal);
+        var qualityPullRequestTrigger = Slice(qualityWorkflow, "  pull_request:", "  push:");
+        Assert.DoesNotContain("paths:", qualityPullRequestTrigger, StringComparison.Ordinal);
         Assert.Contains("windows-latest", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("vars.UBUNTU_X64_RUNNER", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("macos-latest", qualityWorkflow, StringComparison.Ordinal);
+        var normalizedQualityWorkflow = qualityWorkflow.Replace("\r\n", "\n", StringComparison.Ordinal);
+        Assert.Contains(
+            "- name: Upload local-action round-trip fixture\n        uses: $/.github/actions/upload-artifact",
+            normalizedQualityWorkflow,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "- name: Download local-action round-trip fixture\n        uses: $/.github/actions/download-artifact",
+            normalizedQualityWorkflow,
+            StringComparison.Ordinal);
+        Assert.Contains("- name: Verify local-action round trip", normalizedQualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("--no-incremental", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("AnalysisMode=All", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("./script/test-solution.ps1", qualityWorkflow, StringComparison.Ordinal);

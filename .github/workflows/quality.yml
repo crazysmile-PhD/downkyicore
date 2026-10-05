@@ -29,6 +29,33 @@ jobs:
         run: dotnet restore ${{ env.SOLUTION_FILE }}
       - name: Verify formatting
         run: dotnet format ${{ env.SOLUTION_FILE }} --verify-no-changes --no-restore --verbosity diagnostic
+      - name: Create local-action round-trip fixture
+        shell: pwsh
+        run: |
+          $fixturePath = Join-Path $env:RUNNER_TEMP 'downkyi-local-action-fixture.txt'
+          Set-Content -LiteralPath $fixturePath -Value 'downkyi-local-action-round-trip' -NoNewline
+      - name: Upload local-action round-trip fixture
+        uses: $/.github/actions/upload-artifact
+        with:
+          name: local-action-round-trip-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/downkyi-local-action-fixture.txt
+          if-no-files-found: error
+          retention-days: 1
+      - name: Download local-action round-trip fixture
+        uses: $/.github/actions/download-artifact
+        with:
+          name: local-action-round-trip-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/downkyi-local-action-round-trip
+      - name: Verify local-action round trip
+        shell: pwsh
+        run: |
+          $downloadedPath = Join-Path $env:RUNNER_TEMP 'downkyi-local-action-round-trip/downkyi-local-action-fixture.txt'
+          if (-not (Test-Path -LiteralPath $downloadedPath -PathType Leaf)) {
+            throw 'The local upload/download action round trip did not produce the fixture.'
+          }
+          if ((Get-Content -LiteralPath $downloadedPath -Raw) -cne 'downkyi-local-action-round-trip') {
+            throw 'The local upload/download action round trip changed the fixture content.'
+          }
 
   build-test:
     name: Build and test (${{ matrix.check_name }})
