@@ -19,8 +19,13 @@ function Invoke-RepositoryGit {
     return $output
 }
 
-$releaseTagsByCommit = @{}
-$tagLines = @(Invoke-RepositoryGit for-each-ref '--format=%(refname:short) %(objecttype) %(*objectname)' refs/tags)
+$head = (Invoke-RepositoryGit rev-parse HEAD | Select-Object -First 1).Trim().ToLowerInvariant()
+$tagLines = @(
+    Invoke-RepositoryGit for-each-ref `
+        '--sort=-version:refname' `
+        '--format=%(refname:short) %(objecttype) %(*objectname)' `
+        refs/tags
+)
 foreach ($tagLine in $tagLines) {
     if ($tagLine -notmatch '^(?<name>\S+) tag (?<commit>[0-9a-fA-F]+)$') {
         continue
@@ -32,27 +37,21 @@ foreach ($tagLine in $tagLines) {
         continue
     }
 
-    if (-not $releaseTagsByCommit.ContainsKey($commit)) {
-        $releaseTagsByCommit[$commit] = [System.Collections.Generic.List[string]]::new()
-    }
-    $releaseTagsByCommit[$commit].Add($tagName)
-}
-
-$history = @(Invoke-RepositoryGit rev-list --first-parent HEAD)
-$skipCount = if ($IncludeHead) { 0 } else { 1 }
-foreach ($commit in ($history | Select-Object -Skip $skipCount)) {
-    $normalizedCommit = $commit.Trim().ToLowerInvariant()
-    if (-not $releaseTagsByCommit.ContainsKey($normalizedCommit)) {
+    if (-not $IncludeHead -and $commit -eq $head) {
         continue
     }
 
-    $releaseTags = @($releaseTagsByCommit[$normalizedCommit])
-    if ($releaseTags.Count -ne 1) {
-        throw "Release history is ambiguous at $commit; found annotated SemVer tags: $($releaseTags -join ', ')."
+    & git -C $repository merge-base --is-ancestor $commit HEAD *> $null
+    $reachabilityExitCode = $LASTEXITCODE
+    if ($reachabilityExitCode -eq 1) {
+        continue
+    }
+    if ($reachabilityExitCode -ne 0) {
+        throw "Unable to determine whether release tag $tagName at $commit is reachable from HEAD."
     }
 
-    Write-Output $releaseTags[0]
+    Write-Output $tagName
     return
 }
 
-throw 'No previous annotated stable SemVer release tag exists on the first-parent history before HEAD.'
+throw 'No reachable annotated stable SemVer release tag exists before HEAD.'

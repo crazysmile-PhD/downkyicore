@@ -69,7 +69,7 @@ public sealed class ReleaseSafetyRegressionTests
     }
 
     [Fact]
-    public void PreviousReleaseTagResolutionUsesAnnotatedFirstParentSemVerHistory()
+    public void PreviousReleaseTagResolutionUsesHighestReachableAnnotatedSemVerTag()
     {
         var root = CreateTemporaryDirectory();
         var repository = Path.Combine(root, "repository");
@@ -105,6 +105,13 @@ public sealed class ReleaseSafetyRegressionTests
             RunRequired("git", ["commit", "-m", "current release fixture"], repository);
             RunRequired("git", ["tag", "-a", "v2.0.0", "-m", "v2.0.0"], repository);
 
+            RunRequired("git", ["checkout", "-b", "unmerged-release-fixture"], repository);
+            File.WriteAllText(Path.Combine(repository, "unmerged.txt"), "unreachable release tag");
+            RunRequired("git", ["add", "unmerged.txt"], repository);
+            RunRequired("git", ["commit", "-m", "unreachable release fixture"], repository);
+            RunRequired("git", ["tag", "-a", "v3.0.0", "-m", "v3.0.0"], repository);
+            RunRequired("git", ["checkout", "main"], repository);
+
             var result = RunPowerShell(
                 resolver,
                 ["-RepositoryRoot", repository],
@@ -112,7 +119,7 @@ public sealed class ReleaseSafetyRegressionTests
                 new Dictionary<string, string> { ["GITHUB_REF"] = "refs/tags/v2.0.0" });
 
             Assert.Equal(0, result.ExitCode);
-            Assert.Equal("v1.8.0", result.StandardOutput.Trim());
+            Assert.Equal("v1.9.5", result.StandardOutput.Trim());
 
             var includingHead = RunPowerShell(
                 resolver,
@@ -259,6 +266,7 @@ public sealed class ReleaseSafetyRegressionTests
     {
         var root = CreateTemporaryDirectory();
         var output = Path.Combine(root, "github-output.txt");
+        var changedOutput = Path.Combine(root, "changed-github-output.txt");
         var reader = Path.Combine(RepositoryRoot, "script", "read-release-candidate-marker.ps1");
         const string candidateSha = "0123456789abcdef0123456789abcdef01234567";
         const string changedSha = "89abcdef0123456789abcdef0123456789abcdef";
@@ -276,10 +284,10 @@ public sealed class ReleaseSafetyRegressionTests
 
             var changed = RunPowerShell(
                 reader,
-                ["-PullRequestBody", marker, "-ActualHeadSha", changedSha],
+                ["-PullRequestBody", marker, "-ActualHeadSha", changedSha, "-GitHubOutputPath", changedOutput],
                 root);
             Assert.NotEqual(0, changed.ExitCode);
-            Assert.Contains("run Prepare Release again", NormalizeDiagnostic(changed), StringComparison.Ordinal);
+            Assert.False(File.Exists(changedOutput));
 
             var ordinaryPullRequest = RunPowerShell(
                 reader,
@@ -464,7 +472,9 @@ public sealed class ReleaseSafetyRegressionTests
                 ],
                 repository);
             Assert.NotEqual(0, different.ExitCode);
-            Assert.Contains("instead of candidate", NormalizeDiagnostic(different), StringComparison.Ordinal);
+            Assert.Equal(
+                sourceSha,
+                RunRequired("git", ["--git-dir", remote, "rev-parse", "refs/tags/v9.0.0^{}"], root).StandardOutput.Trim());
         }
         finally
         {

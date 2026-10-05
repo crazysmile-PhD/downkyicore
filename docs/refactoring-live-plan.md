@@ -24,6 +24,9 @@ Product PRs do not update this file merely because their work state changed.
   the parent of one metadata-only commit, then runs strict quality, CodeQL and
   Windows/Linux/macOS package validation for that exact candidate and seals the
   resulting artifacts.
+- Release history is the highest stable annotated SemVer tag reachable from the
+  selected source across its complete ancestry. The PowerShell resolver owns
+  that choice; `git-cliff` only renders the resulting range.
 - Merging the generated Release PR is the only publication approval. The merge
   workflow tags the recorded candidate commit and publishes the sealed
   artifacts from its Prepare run; it does not select current `main` or rebuild.
