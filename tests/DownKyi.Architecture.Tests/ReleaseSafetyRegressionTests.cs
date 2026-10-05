@@ -111,8 +111,8 @@ public sealed class ReleaseSafetyRegressionTests
         AssertArm64PromotionContract(workflow);
         Assert.ThrowsAny<Exception>(() => AssertArm64PromotionContract(
             workflow.Replace(
-                "needs: [changelog, build-windows, build-linux, validate-linux-arm64, build-macos]",
-                "needs: [changelog, build-windows, build-linux, build-macos]",
+                "needs: [release-codeql, changelog, build-windows, build-linux, validate-linux-arm64, build-macos]",
+                "needs: [release-codeql, changelog, build-windows, build-linux, build-macos]",
                 StringComparison.Ordinal)));
         Assert.ThrowsAny<Exception>(() => AssertArm64PromotionContract(
             workflow.Replace(
@@ -375,6 +375,40 @@ public sealed class ReleaseSafetyRegressionTests
                 repository);
             Assert.NotEqual(0, wrongRef.ExitCode);
             Assert.Contains("refs/heads/main", NormalizeDiagnostic(wrongRef), StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(root);
+        }
+    }
+
+    [Fact]
+    public void OneClickReleaseGitFailureRedactsTheCheckoutPath()
+    {
+        var root = CreateTemporaryDirectory();
+        var repository = Path.Combine(root, "private-runner-profile", "release-subject");
+        var publisher = Path.Combine(RepositoryRoot, "script", "publish-release-tag.ps1");
+
+        try
+        {
+            Directory.CreateDirectory(repository);
+            File.WriteAllText(Path.Combine(repository, "version.txt"), "9.8.7");
+
+            var result = RunPowerShell(
+                publisher,
+                [
+                    "-SubjectSha", new string('a', 40),
+                    "-GitRef", "refs/heads/main",
+                    "-RepositoryRoot", repository,
+                    "-ValidateOnly"
+                ],
+                repository);
+
+            Assert.NotEqual(0, result.ExitCode);
+            var diagnostic = NormalizeDiagnostic(result);
+            Assert.Contains("<release-subject>", diagnostic, StringComparison.Ordinal);
+            Assert.DoesNotContain(repository, diagnostic, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain(repository.Replace('\\', '/'), diagnostic, StringComparison.OrdinalIgnoreCase);
         }
         finally
         {
@@ -1610,7 +1644,7 @@ public sealed class ReleaseSafetyRegressionTests
             StringComparison.Ordinal);
 
         Assert.Contains(
-            "needs: [changelog, build-windows, build-linux, validate-linux-arm64, build-macos]",
+            "needs: [release-codeql, changelog, build-windows, build-linux, validate-linux-arm64, build-macos]",
             release,
             StringComparison.Ordinal);
         Assert.Contains(

@@ -33,15 +33,25 @@ public sealed class ReleaseWorkflowArchitectureTests
     {
         var workflow = File.ReadAllText(Path.Combine(RepositoryRoot, ".github", "workflows", "build.yml"));
         var lines = workflow.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+        var releaseCodeQl = string.Join('\n', GetYamlBlock(lines, "  release-codeql:", 2));
         var changelog = string.Join('\n', GetYamlBlock(lines, "  changelog:", 2));
         var release = string.Join('\n', GetYamlBlock(lines, "  release:", 2));
+        var codeQl = File.ReadAllText(Path.Combine(RepositoryRoot, ".github", "workflows", "codeql.yml"));
 
         Assert.Contains("      publish_release:", workflow, StringComparison.Ordinal);
         Assert.Contains("Publish the prepared main commit after every release gate passes.", workflow, StringComparison.Ordinal);
         Assert.Contains("Validate one-click release admission", changelog, StringComparison.Ordinal);
         Assert.Contains("./script/publish-release-tag.ps1 @parameters", changelog, StringComparison.Ordinal);
+        Assert.Contains("  workflow_call:", codeQl, StringComparison.Ordinal);
+        Assert.Contains("uses: ./.github/workflows/codeql.yml", releaseCodeQl, StringComparison.Ordinal);
+        Assert.Contains("security-events: write", releaseCodeQl, StringComparison.Ordinal);
+        Assert.Contains("github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')", releaseCodeQl, StringComparison.Ordinal);
+        Assert.Contains("github.event_name == 'workflow_dispatch' && inputs.publish_release", releaseCodeQl, StringComparison.Ordinal);
         Assert.Contains("group: release-publication", release, StringComparison.Ordinal);
+        Assert.Contains("needs: [release-codeql, changelog, build-windows, build-linux, validate-linux-arm64, build-macos]", release, StringComparison.Ordinal);
+        Assert.Contains("github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')", release, StringComparison.Ordinal);
         Assert.Contains("github.event_name == 'workflow_dispatch' && inputs.publish_release", release, StringComparison.Ordinal);
+        Assert.DoesNotContain("startsWith(github.ref, 'refs/tags/') ||", release, StringComparison.Ordinal);
         Assert.Contains("- name: Create annotated release tag", release, StringComparison.Ordinal);
         Assert.Contains("artifactErrorsFailBuild: true", release, StringComparison.Ordinal);
         Assert.Contains("commit: ${{ github.sha }}", release, StringComparison.Ordinal);

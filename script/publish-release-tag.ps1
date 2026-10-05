@@ -18,7 +18,17 @@ function Invoke-SubjectGit {
 
     $output = & git -C $subject @Arguments 2>&1
     if ($LASTEXITCODE -ne 0) {
-        throw "git -C $subject $($Arguments -join ' ') failed: $($output -join [Environment]::NewLine)"
+        $diagnostic = ($output -join [Environment]::NewLine).
+            Replace($subject, '<release-subject>', [StringComparison]::OrdinalIgnoreCase)
+        $portableSubject = $subject.Replace('\', '/')
+        if (-not [string]::Equals($portableSubject, $subject, [StringComparison]::Ordinal)) {
+            $diagnostic = $diagnostic.Replace(
+                $portableSubject,
+                '<release-subject>',
+                [StringComparison]::OrdinalIgnoreCase)
+        }
+
+        throw "git in <release-subject> $($Arguments -join ' ') failed: $diagnostic"
     }
 
     return ($output -join [Environment]::NewLine).Trim()
