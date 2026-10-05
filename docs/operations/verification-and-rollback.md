@@ -76,9 +76,16 @@ Core 只保存外部 binary catalog，不得選擇平台內容或設定 SDK
 `RuntimeIdentifier`。exe 專案必須從明確的 publish RID 建立 asset RID，
 沒有 publish RID 時才可依本機 host 提供開發 fallback，並直接把對應
 catalog 檔案加入 output/publish；自訂 RID 不得跨 ProjectReference。
-推 tag 前手動執行 `build.yml`，下載每個 artifact，重算 package
-sidecar，並檢查 manifest、版本、必要 binary、Fluent theme 與使用者
-資料排除。macOS artifact 另需確認 x64 與 arm64 final app 均已完成簽章並
+正式發布前，先把 `version.txt` 與 `CHANGELOG.md` 的 release-preparation PR
+合併到 `main`。接著在 GitHub Actions 的 `Build` workflow 選擇 `main`、勾選
+`publish_release` 並執行一次；同一個 run 會完成 release gates、package 與
+artifact 驗證，確認 subject 仍是精確 `main` 後建立 annotated tag、發布
+GitHub Release，再以 GitHub API 核對 Latest、stable、非 draft、asset 名稱、
+大小與公開下載 URL。操作人不需要下載 artifacts、另行推 tag 或在前景輪詢
+workflow。未勾選 `publish_release` 的手動執行仍只做 rehearsal，不建立 tag
+或 release；既有 tag-triggered 路徑保留作相容與復原用途。
+
+macOS artifact 仍需確認 x64 與 arm64 final app 均已完成簽章並
 通過 `codesign --verify --deep --strict`；缺少 Apple credentials 時使用 ad-hoc
 簽章，Developer ID、notarization、stapling、Gatekeeper 與 signed-DMG 驗證會
 跳過，產物不得宣稱具備這些信任屬性。具備完整 Apple credentials 時才要求

@@ -33,6 +33,11 @@ on:
         required: false
         default: false
         type: boolean
+      publish_release:
+        description: 'Publish the prepared main commit after every release gate passes.'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   ffmpeg-tooling:
@@ -52,6 +57,15 @@ jobs:
           fail-on-error: true
           pyflakes: true
           shellcheck: true
+      - name: Validate workflow mode
+        shell: pwsh
+        run: |
+          if ('${{ inputs.publish_release }}' -eq 'true' -and '${{ inputs.update_ffmpeg_assets }}' -eq 'true') {
+            throw 'Release publication and the FFmpeg mirror updater are mutually exclusive.'
+          }
+          if ('${{ inputs.publish_release }}' -eq 'true' -and '${{ github.ref }}' -ne 'refs/heads/main') {
+            throw 'One-click release publication must be dispatched from main.'
+          }
       - name: Run FFmpeg asset guards
         run: python -m unittest script/tests/test_ffmpeg_assets.py -v
 
@@ -195,6 +209,20 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         shell: pwsh
         run: ./script/validate-release-subject.ps1 -SubjectDirectory . -ReleaseVersion '${{ github.ref_name }}' -SubjectSha '${{ github.sha }}'
+      - name: Validate one-click release admission
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_release }}
+        shell: pwsh
+        run: |
+          $parameters = @{
+            SubjectSha = '${{ github.sha }}'
+            GitRef = '${{ github.ref }}'
+            RepositoryRoot = '.'
+            ValidateOnly = $true
+          }
+          if ('${{ github.run_attempt }}' -ne '1') {
+            $parameters.AllowExistingExactTag = $true
+          }
+          ./script/publish-release-tag.ps1 @parameters
       - name: Resolve previous release tag
         id: previous-release
         shell: pwsh
@@ -766,13 +794,18 @@ jobs:
   release:
     name: Publish release
     runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
+    concurrency:
+      group: release-publication
+      cancel-in-progress: false
     permissions:
       contents: write
     needs: [changelog, build-windows, build-linux, validate-linux-arm64, build-macos]
-    if: ${{ startsWith(github.ref, 'refs/tags/') }}
+    if: ${{ startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.publish_release) }}
     steps:
       - name: Checkout release validators
         uses: $/.github/actions/checkout
+        with:
+          fetch-depth: 0
       - name: Download build artifacts
         uses: $/.github/actions/download-artifact
         with:
@@ -812,10 +845,46 @@ jobs:
               throw "Transported AppImage does not match its validated checksum: $($appImage.Name)"
             }
           }
+      - name: Resolve release metadata
+        id: release-metadata
+        shell: pwsh
+        run: |
+          $version = (Get-Content -LiteralPath ./version.txt -Raw).Trim()
+          $tag = "v$version"
+          ./script/validate-release-version.ps1 -GitRef "refs/tags/$tag"
+          "tag=$tag" | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+      - name: Create annotated release tag
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_release }}
+        shell: pwsh
+        run: |
+          $parameters = @{
+            SubjectSha = '${{ github.sha }}'
+            GitRef = '${{ github.ref }}'
+            RepositoryRoot = '.'
+          }
+          if ('${{ github.run_attempt }}' -ne '1') {
+            $parameters.AllowExistingExactTag = $true
+          }
+          ./script/publish-release-tag.ps1 @parameters
       - name: Release
         uses: $/.github/actions/release
         with:
           allowUpdates: true
+          artifactErrorsFailBuild: true
           replacesArtifacts: true
           artifacts: artifacts/*
           body: ${{ needs.changelog.outputs.release_body }}
+          commit: ${{ github.sha }}
+          draft: false
+          makeLatest: true
+          prerelease: false
+          tag: ${{ steps.release-metadata.outputs.tag }}
+      - name: Validate published release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          ./script/validate-published-release.ps1
+          -ArtifactsDirectory ./artifacts
+          -ExpectedTag '${{ steps.release-metadata.outputs.tag }}'
+          -Repository '${{ github.repository }}'

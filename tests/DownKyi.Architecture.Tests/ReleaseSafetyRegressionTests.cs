@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Diagnostics;
 using System.IO.Compression;
+using System.Text.Json;
 
 namespace DownKyi.Architecture.Tests;
 
@@ -299,6 +300,146 @@ public sealed class ReleaseSafetyRegressionTests
                 ["-SubjectDirectory", repository, "-ReleaseVersion", releaseTag, "-SubjectSha", releaseOnlyCommit],
                 repository);
             Assert.NotEqual(0, nonMain.ExitCode);
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(root);
+        }
+    }
+
+    [Fact]
+    public void OneClickReleaseCreatesOneImmutableAnnotatedTagFromExactMain()
+    {
+        var root = CreateTemporaryDirectory();
+        var remote = Path.Combine(root, "remote.git");
+        var repository = Path.Combine(root, "repository");
+        var publisher = Path.Combine(RepositoryRoot, "script", "publish-release-tag.ps1");
+        const string version = "9.8.7";
+        var tag = $"v{version}";
+
+        try
+        {
+            RunRequired("git", ["init", "--bare", remote], root);
+            RunRequired("git", ["init", "-b", "main", repository], root);
+            RunRequired("git", ["config", "user.name", "Release Fixture"], repository);
+            RunRequired("git", ["config", "user.email", "release-fixture@example.invalid"], repository);
+            File.WriteAllText(Path.Combine(repository, "version.txt"), version);
+            File.WriteAllText(Path.Combine(repository, "fixture.txt"), "prepared main");
+            RunRequired("git", ["add", "version.txt", "fixture.txt"], repository);
+            RunRequired("git", ["commit", "-m", "prepared main fixture"], repository);
+            RunRequired("git", ["remote", "add", "origin", remote], repository);
+            RunRequired("git", ["push", "-u", "origin", "main"], repository);
+            var subjectSha = RunRequired("git", ["rev-parse", "HEAD"], repository).StandardOutput.Trim();
+
+            var validation = RunPowerShell(
+                publisher,
+                [
+                    "-SubjectSha", subjectSha,
+                    "-GitRef", "refs/heads/main",
+                    "-RepositoryRoot", repository,
+                    "-ValidateOnly"
+                ],
+                repository);
+            Assert.Equal(0, validation.ExitCode);
+            Assert.DoesNotContain(tag, RunRequired("git", ["tag", "--list"], repository).StandardOutput, StringComparison.Ordinal);
+
+            var publication = RunPowerShell(
+                publisher,
+                ["-SubjectSha", subjectSha, "-GitRef", "refs/heads/main", "-RepositoryRoot", repository],
+                repository);
+            Assert.True(publication.ExitCode == 0, NormalizeDiagnostic(publication));
+            Assert.Equal("tag", RunRequired("git", ["--git-dir", remote, "cat-file", "-t", tag], root).StandardOutput.Trim());
+            Assert.Equal(subjectSha, RunRequired("git", ["--git-dir", remote, "rev-list", "-n", "1", tag], root).StandardOutput.Trim());
+
+            var duplicate = RunPowerShell(
+                publisher,
+                ["-SubjectSha", subjectSha, "-GitRef", "refs/heads/main", "-RepositoryRoot", repository],
+                repository);
+            Assert.NotEqual(0, duplicate.ExitCode);
+            Assert.Contains("immutable", NormalizeDiagnostic(duplicate), StringComparison.OrdinalIgnoreCase);
+
+            var retry = RunPowerShell(
+                publisher,
+                [
+                    "-SubjectSha", subjectSha,
+                    "-GitRef", "refs/heads/main",
+                    "-RepositoryRoot", repository,
+                    "-AllowExistingExactTag"
+                ],
+                repository);
+            Assert.Equal(0, retry.ExitCode);
+
+            var wrongRef = RunPowerShell(
+                publisher,
+                ["-SubjectSha", subjectSha, "-GitRef", "refs/heads/release", "-RepositoryRoot", repository],
+                repository);
+            Assert.NotEqual(0, wrongRef.ExitCode);
+            Assert.Contains("refs/heads/main", NormalizeDiagnostic(wrongRef), StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(root);
+        }
+    }
+
+    [Fact]
+    public void PublishedReleaseValidationRequiresLatestExactPublicAssets()
+    {
+        var root = CreateTemporaryDirectory();
+        var artifacts = Path.Combine(root, "artifacts");
+        var releaseJson = Path.Combine(root, "release.json");
+        var latestJson = Path.Combine(root, "latest.json");
+        var validator = Path.Combine(RepositoryRoot, "script", "validate-published-release.ps1");
+        const string tag = "v9.8.7";
+
+        try
+        {
+            Directory.CreateDirectory(artifacts);
+            File.WriteAllText(Path.Combine(artifacts, "DownKyi.zip"), "package");
+            File.WriteAllText(Path.Combine(artifacts, "DownKyi.zip.sha256"), "checksum");
+            var assets = Directory.GetFiles(artifacts)
+                .Select(path => new
+                {
+                    name = Path.GetFileName(path),
+                    size = new FileInfo(path).Length,
+                    state = "uploaded",
+                    browser_download_url = $"https://example.invalid/{Path.GetFileName(path)}"
+                })
+                .ToArray();
+            var release = new
+            {
+                id = 42,
+                tag_name = tag,
+                draft = false,
+                prerelease = false,
+                assets
+            };
+            File.WriteAllText(releaseJson, JsonSerializer.Serialize(release));
+            File.WriteAllText(latestJson, JsonSerializer.Serialize(new { id = 42 }));
+
+            var valid = RunPowerShell(
+                validator,
+                [
+                    "-ArtifactsDirectory", artifacts,
+                    "-ExpectedTag", tag,
+                    "-ReleaseJsonPath", releaseJson,
+                    "-LatestReleaseJsonPath", latestJson
+                ],
+                root);
+            Assert.Equal(0, valid.ExitCode);
+
+            File.WriteAllText(latestJson, JsonSerializer.Serialize(new { id = 41 }));
+            var notLatest = RunPowerShell(
+                validator,
+                [
+                    "-ArtifactsDirectory", artifacts,
+                    "-ExpectedTag", tag,
+                    "-ReleaseJsonPath", releaseJson,
+                    "-LatestReleaseJsonPath", latestJson
+                ],
+                root);
+            Assert.NotEqual(0, notLatest.ExitCode);
+            Assert.Contains("Latest", NormalizeDiagnostic(notLatest), StringComparison.Ordinal);
         }
         finally
         {
