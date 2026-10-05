@@ -18,11 +18,11 @@ if ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne [Runtime.In
 
 $manifest = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json
 $appImageTool = $manifest.appimagetool
-if ($null -eq $appImageTool -or $null -eq $appImageTool.asset) {
-    throw "The external asset manifest does not define appimagetool.asset."
+if ($null -eq $appImageTool -or $null -eq $appImageTool.assets.'linux-x64') {
+    throw "The external asset manifest does not define appimagetool.assets.linux-x64."
 }
 
-$asset = $appImageTool.asset
+$asset = $appImageTool.assets.'linux-x64'
 $url = [string]$asset.url
 $sha256 = ([string]$asset.sha256).ToLowerInvariant()
 $fileName = [string]$asset.fileName
