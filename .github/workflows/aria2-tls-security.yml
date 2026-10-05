@@ -86,9 +86,9 @@ jobs:
             binary: DownKyi.Core/Binary/osx-arm64/aria2/aria2c
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: $/.github/actions/checkout
       - name: Install .NET
-        uses: actions/setup-dotnet@v6
+        uses: $/.github/actions/setup-dotnet
         with:
           global-json-file: global.json
       - name: Fetch and verify Windows aria2 asset
@@ -142,7 +142,7 @@ jobs:
       - name: Upload sanitized aria2 TLS report
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@v7
+        uses: $/.github/actions/upload-artifact
         with:
           name: aria2-tls-${{ matrix.rid }}
           path: |

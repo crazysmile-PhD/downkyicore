@@ -45,12 +45,12 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Checkout recovery tooling
-        uses: actions/checkout@v7
+        uses: $/.github/actions/checkout
         with:
           path: tooling
           fetch-depth: 0
       - name: Checkout immutable release subject
-        uses: actions/checkout@v7
+        uses: $/.github/actions/checkout
         with:
           ref: ${{ inputs.subject_sha }}
           path: subject
@@ -127,9 +127,10 @@ jobs:
             fi
           done
       - name: Validate recovery workflow syntax
-        uses: raven-actions/actionlint@v2
+        uses: $/.github/actions/actionlint
         with:
           files: tooling/.github/workflows/release-v112-recovery.yml
+          flags: -config-file tooling/.github/actionlint.yaml
           fail-on-error: true
           pyflakes: true
           shellcheck: true
@@ -144,11 +145,11 @@ jobs:
         cpu: [x64, x86]
     steps:
       - name: Checkout recovery tooling
-        uses: actions/checkout@v7
+        uses: $/.github/actions/checkout
         with:
           path: tooling
       - name: Checkout immutable release subject
-        uses: actions/checkout@v7
+        uses: $/.github/actions/checkout
         with:
           ref: ${{ inputs.subject_sha }}
           path: subject
@@ -162,15 +163,16 @@ jobs:
           -ReleaseVersion '${{ inputs.release_version }}'
           -SubjectSha '${{ inputs.subject_sha }}'
       - name: Install .NET
-        uses: actions/setup-dotnet@v6
+        uses: $/.github/actions/setup-dotnet
         with:
           global-json-file: tooling/global.json
       - name: Install Python
-        uses: actions/setup-python@v7
+        uses: $/.github/actions/setup-python
         with:
           python-version-file: tooling/.python-version
       - name: Install PupNet
-        run: dotnet tool install --tool-path .\tooling\.tools KuiperZone.PupNet --version 1.8.0
+        shell: pwsh
+        run: ./tooling/script/install-pupnet.ps1 -ToolPath ./tooling/.tools
       - name: Get exact-subject dependencies
         shell: pwsh
         working-directory: subject/script
@@ -214,7 +216,7 @@ jobs:
             -ReleaseVersion '${{ inputs.release_version }}' `
             -SubjectSha '${{ inputs.subject_sha }}'
       - name: Upload Windows package
-        uses: actions/upload-artifact@v7
+        uses: $/.github/actions/upload-artifact
         with:
           name: recovery-DownKyi-1.1.2-1.win-${{ matrix.cpu }}.zip
           path: |
@@ -248,11 +250,11 @@ jobs:
             package: downkyi_1.1.2_linux_self-contained_arm64.deb
     steps:
       - name: Checkout recovery tooling
-        uses: actions/checkout@v7
+        uses: $/.github/actions/checkout
         with:
           path: tooling
       - name: Checkout immutable release subject
-        uses: actions/checkout@v7
+        uses: $/.github/actions/checkout
         with:
           ref: ${{ inputs.subject_sha }}
           path: subject
@@ -266,16 +268,16 @@ jobs:
           -ReleaseVersion '${{ inputs.release_version }}'
           -SubjectSha '${{ inputs.subject_sha }}'
       - name: Install .NET
-        uses: actions/setup-dotnet@v6
+        uses: $/.github/actions/setup-dotnet
         with:
           global-json-file: tooling/global.json
       - name: Install Python
-        uses: actions/setup-python@v7
+        uses: $/.github/actions/setup-python
         with:
           python-version-file: tooling/.python-version
       - name: Install PupNet
         run: |
-          dotnet tool install --tool-path ./tooling/.tools KuiperZone.PupNet --version 1.8.0
+          pwsh ./tooling/script/install-pupnet.ps1 -ToolPath ./tooling/.tools
           sudo apt-get update
           sudo apt-get install -y libfuse2
       - name: Get exact-subject dependencies
@@ -327,7 +329,7 @@ jobs:
             -ReleaseVersion '${{ inputs.release_version }}' `
             -SubjectSha '${{ inputs.subject_sha }}'
       - name: Upload Linux package
-        uses: actions/upload-artifact@v7
+        uses: $/.github/actions/upload-artifact
         with:
           name: recovery-${{ matrix.package }}
           path: |
@@ -353,11 +355,11 @@ jobs:
             os: macos-15
     steps:
       - name: Checkout recovery tooling
-        uses: actions/checkout@v7
+        uses: $/.github/actions/checkout
         with:
           path: tooling
       - name: Checkout immutable release subject
-        uses: actions/checkout@v7
+        uses: $/.github/actions/checkout
         with:
           ref: ${{ inputs.subject_sha }}
           path: subject
@@ -372,7 +374,7 @@ jobs:
           -SubjectSha '${{ inputs.subject_sha }}'
       - name: Import Apple certificate
         if: ${{ env.HAS_MACOS_SIGNING == 'true' }}
-        uses: apple-actions/import-codesign-certs@v7
+        uses: $/.github/actions/import-codesign-certs
         with:
           p12-file-base64: ${{ secrets.MACOS_CERTIFICATE }}
           p12-password: ${{ secrets.MACOS_CERTIFICATE_PWD }}
@@ -391,7 +393,7 @@ jobs:
           brew untap aws/tap || true
           brew install create-dmg tree
       - name: Install .NET
-        uses: actions/setup-dotnet@v6
+        uses: $/.github/actions/setup-dotnet
         with:
           global-json-file: tooling/global.json
       - name: Run native recovery tooling regressions
@@ -403,7 +405,7 @@ jobs:
           -ResultsDirectory ./artifacts/test-results/macos-recovery-${{ matrix.cpu }}
       - name: Upload recovery tooling test results and failure diagnostics
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: $/.github/actions/upload-artifact
         with:
           name: recovery-tooling-test-results-${{ matrix.cpu }}
           path: |
@@ -411,7 +413,7 @@ jobs:
             tooling/artifacts/test-flight-recorder
           if-no-files-found: ignore
       - name: Install Python
-        uses: actions/setup-python@v7
+        uses: $/.github/actions/setup-python
         with:
           python-version-file: tooling/.python-version
       - name: Get exact-subject dependencies
@@ -420,14 +422,19 @@ jobs:
           /bin/bash ./aria2.sh osx-${{ matrix.cpu }}
           /bin/bash ./ffmpeg.sh mac ${{ matrix.cpu }}
       - name: Build exact release subject
+        id: publish-output
         working-directory: subject
         run: |
           dotnet restore DownKyi/DownKyi.csproj -r osx-${{ matrix.cpu }}
           dotnet publish DownKyi/DownKyi.csproj --no-restore --self-contained -r osx-${{ matrix.cpu }} -c Release -p:Version=1.1.2 -p:DebugType=None -p:DebugSymbols=false
+          target_framework="$(dotnet msbuild DownKyi/DownKyi.csproj -nologo -verbosity:quiet -getProperty:TargetFramework -p:Configuration=Release)"
+          test -n "$target_framework"
+          test "${target_framework#*$'\n'}" = "$target_framework"
+          printf 'directory=subject/DownKyi/bin/Release/%s/osx-%s/publish\n' "$target_framework" '${{ matrix.cpu }}' >> "$GITHUB_OUTPUT"
       - name: Package app with recovery tooling
         working-directory: tooling/script/macos
         env:
-          PUBLISH_OUTPUT_DIRECTORY: ${{ github.workspace }}/subject/DownKyi/bin/Release/net10.0/osx-${{ matrix.cpu }}/publish/.
+          PUBLISH_OUTPUT_DIRECTORY: ${{ github.workspace }}/${{ steps.publish-output.outputs.directory }}/.
         run: |
           chmod +x package.sh prepare-app-layout.sh codesign-common.sh
           release_version="${EXPECTED_RELEASE_VERSION#v}"
@@ -436,7 +443,7 @@ jobs:
         shell: pwsh
         run: >
           ./tooling/script/validate-publish-output.ps1
-          -PublishDirectory 'subject/DownKyi/bin/Release/net10.0/osx-${{ matrix.cpu }}/publish'
+          -PublishDirectory '${{ steps.publish-output.outputs.directory }}'
           -RuntimeIdentifier 'osx-${{ matrix.cpu }}'
           -ExpectedVersion '1.1.2'
           -OutputPath 'tooling/script/macos/publish-manifest-osx-${{ matrix.cpu }}.json'
@@ -504,7 +511,7 @@ jobs:
             -ReleaseVersion '${{ inputs.release_version }}' `
             -SubjectSha '${{ inputs.subject_sha }}'
       - name: Upload macOS DMG
-        uses: actions/upload-artifact@v7
+        uses: $/.github/actions/upload-artifact
         with:
           name: recovery-DownKyi-1.1.2-osx-${{ matrix.cpu }}.dmg
           path: |
@@ -519,11 +526,11 @@ jobs:
     runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
     steps:
       - name: Checkout recovery tooling
-        uses: actions/checkout@v7
+        uses: $/.github/actions/checkout
         with:
           path: tooling
       - name: Download all packages
-        uses: actions/download-artifact@v8
+        uses: $/.github/actions/download-artifact
         with:
           path: artifacts
           pattern: recovery-*
@@ -532,7 +539,7 @@ jobs:
         shell: pwsh
         run: ./tooling/script/validate-v112-release-artifacts.ps1 -ArtifactsDirectory ./artifacts
       - name: Preserve validated rehearsal evidence
-        uses: actions/upload-artifact@v7
+        uses: $/.github/actions/upload-artifact
         with:
           name: v1.1.2-recovery-validated-assets-${{ github.run_attempt }}
           path: artifacts
@@ -547,11 +554,11 @@ jobs:
       contents: write
     steps:
       - name: Checkout recovery tooling
-        uses: actions/checkout@v7
+        uses: $/.github/actions/checkout
         with:
           path: tooling
       - name: Checkout immutable release subject
-        uses: actions/checkout@v7
+        uses: $/.github/actions/checkout
         with:
           ref: ${{ inputs.subject_sha }}
           path: subject
@@ -565,7 +572,7 @@ jobs:
           -ReleaseVersion '${{ inputs.release_version }}'
           -SubjectSha '${{ inputs.subject_sha }}'
       - name: Download validated packages
-        uses: actions/download-artifact@v8
+        uses: $/.github/actions/download-artifact
         with:
           path: artifacts
           pattern: recovery-*
@@ -580,7 +587,7 @@ jobs:
           -TrustMode '${{ needs.authority.outputs.macos_trust_mode }}'
           -OutputPath ./tooling/artifacts/v1.1.2-release-notes.md
       - name: Publish to existing v1.1.2 tag
-        uses: ncipollo/release-action@v1
+        uses: $/.github/actions/release
         with:
           tag: v1.1.2
           commit: 16c690d8719f86eb6eecb56c24efabc1afc41d55

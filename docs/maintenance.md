@@ -16,7 +16,7 @@ PR 修正文件。
 
 | 問題／觸發詞 | Authoritative owner | 最少證據 | 操作卡／詳情 |
 | --- | --- | --- | --- |
-| NuGet、package、SDK、Python、version、restore | `Directory.Packages.props`／`global.json`／`.python-version` | restore、strict build、tests、package audit | [依賴卡](#dependency) |
+| NuGet、package、SDK、TFM、Python、tool、Action version、restore | `Directory.Packages.props`／`Directory.Build.props`／`global.json`／`.python-version`／`.config/dotnet-tools.json`／`.github/actions` | restore、strict build、tests、workflow lint、package audit | [依賴卡](#dependency) |
 | CI、timeout、TRX、zero tests、cleanup | `DownKyi.CentralTestRunner` + OS test project | TRX + failure recorder | [Test／CI 卡](#test-ci) |
 | SQLite、migration、history、persistence | Domain task + Application service + SQLite store | transition／migration tests | [下載資料卡](#download-persistence) |
 | queue、retry、resume、media selection、aria2、FFmpeg | selection／media contract + coordinator + backend | focused runtime regression | [傳輸與媒體卡](#transfer-media) |
@@ -62,9 +62,9 @@ cross-platform stress proof，不得移除。
 
 ## 依賴卡
 
-- **Use when**：NuGet、SDK、Python、version、restore、vulnerability、deprecated。
-- **Owner**：managed package version 只在 `Directory.Packages.props`；.NET SDK 只在 `global.json`；Python 只在 `.python-version`。
-- **Invariant**：workflow 只引用 toolchain owner file，不重複版本值；`Dependency policy` 在每個 PR 解析兩個 toolchain owner，無效內容 fail closed，restore 與 vulnerable／deprecated audit 不因 path filter 跳過；Dependabot 每日 UTC 00:00 分別檢查 NuGet、.NET SDK 與 GitHub Actions，預設每個依賴各自開 PR，只有必須同步版本的 Avalonia runtime package family 合併為一張 PR；每張 PR 只在既有 required checks 全部通過後由 GitHub auto-merge；dependency update 不混入非必要 refactor；deprecated report 的修復仍需人工判讀。
+- **Use when**：NuGet、SDK、target framework、Python、dotnet tool、GitHub Action version、restore、vulnerability、deprecated。
+- **Owner**：managed package version 只在 `Directory.Packages.props`（同步升級的 Avalonia runtime family 共用 `AvaloniaRuntimeVersion`）；repo target framework 只在 `Directory.Build.props`；.NET SDK 只在 `global.json`；Python 只在 `.python-version`；PupNet 只在 `.config/dotnet-tools.json`；重複使用的 GitHub Action 版本各自由 `.github/actions/<name>/action.yml` 擁有。
+- **Invariant**：project、script 與 workflow 只引用上述 owner，不重複版本值；同一 upstream 但不同入口的 CodeQL `init`／`analyze` 因 `uses` 不支援版本變數而保留兩個靜態入口，architecture guard 要求兩者版本一致；floating `*-latest` runner 自動跟隨 GitHub 更新，固定 runner label 是各 release／compatibility job 的獨立相容性決策，不合併成一個假 owner。`Dependency policy` 在每個 PR 解析 toolchain owner，無效內容 fail closed，restore 與 vulnerable／deprecated audit 不因 path filter 跳過；Dependabot 每日 UTC 00:00 分別檢查 NuGet、.NET SDK、workflow 與本地 action owner，預設每個依賴各自開 PR，只有必須同步版本的 Avalonia runtime package family 合併為一張 PR；每張 PR 只在既有 required checks 全部通過後由 GitHub auto-merge；dependency update 不混入非必要 refactor；deprecated report 的修復仍需人工判讀。
 - **Do**：只改對應 central version owner；先 focused proof，再跑風險相稱的 gate；CI 是自動合併的唯一版本風險判斷，不另做 major／minor 分流；紅燈只封鎖該依賴 PR，交由人工或 Agent 分析，不自動改產品語義。
 - **Proof**：restore、strict build、applicable tests、workflow lint、vulnerable／deprecated package audit。
 - **Stop**：若 dependency change 迫使產品語義改變，拆成獨立 scope。

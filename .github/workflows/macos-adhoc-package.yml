@@ -46,7 +46,7 @@ jobs:
             os: macos-26
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: $/.github/actions/checkout
       - name: Record runner identity
         run: |
           sw_vers
@@ -57,11 +57,11 @@ jobs:
           brew untap aws/tap || true
           brew install create-dmg tree
       - name: Install .NET
-        uses: actions/setup-dotnet@v6
+        uses: $/.github/actions/setup-dotnet
         with:
           global-json-file: global.json
       - name: Install Python for FFmpeg manifest verification
-        uses: actions/setup-python@v7
+        uses: $/.github/actions/setup-python
         with:
           python-version-file: .python-version
       - name: Read version
@@ -74,9 +74,14 @@ jobs:
           ./aria2.sh osx-${{ matrix.cpu }}
           ./ffmpeg.sh mac ${{ matrix.cpu }}
       - name: Publish ${{ matrix.cpu }} app
+        id: publish-output
         run: |
           dotnet restore DownKyi/DownKyi.csproj -r osx-${{ matrix.cpu }}
           dotnet publish DownKyi/DownKyi.csproj --no-restore --self-contained -r osx-${{ matrix.cpu }} -c Release -p:DebugType=None -p:DebugSymbols=false
+          target_framework="$(dotnet msbuild DownKyi/DownKyi.csproj -nologo -verbosity:quiet -getProperty:TargetFramework -p:Configuration=Release)"
+          test -n "$target_framework"
+          test "${target_framework#*$'\n'}" = "$target_framework"
+          printf 'directory=DownKyi/bin/Release/%s/osx-%s/publish\n' "$target_framework" '${{ matrix.cpu }}' >> "$GITHUB_OUTPUT"
       - name: Package app bundle
         working-directory: ./script/macos
         run: |
@@ -86,7 +91,7 @@ jobs:
         shell: pwsh
         run: |
           ./script/validate-publish-output.ps1 `
-            -PublishDirectory "DownKyi/bin/Release/net10.0/osx-${{ matrix.cpu }}/publish" `
+            -PublishDirectory "${{ steps.publish-output.outputs.directory }}" `
             -RuntimeIdentifier "osx-${{ matrix.cpu }}" `
             -ExpectedVersion "${{ steps.version.outputs.content }}" `
             -OutputPath "script/macos/publish-manifest-osx-${{ matrix.cpu }}.json"
@@ -133,7 +138,7 @@ jobs:
           "$hash  $([IO.Path]::GetFileName($package))" | Set-Content -LiteralPath "$package.sha256" -Encoding ascii
       - name: Upload verified DMG
         continue-on-error: ${{ github.event_name == 'pull_request' }}
-        uses: actions/upload-artifact@v7
+        uses: $/.github/actions/upload-artifact
         with:
           name: DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}-adhoc-${{ matrix.os }}
           path: |

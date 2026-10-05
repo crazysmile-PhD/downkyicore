@@ -85,7 +85,7 @@ public sealed class PowerShellTestEntryContractTests
                 "DownKyi.CentralTestRunner",
                 "bin",
                 "Release",
-                "net10.0",
+                "fixture-tfm",
                 "DownKyi.CentralTestRunner.dll");
             Directory.CreateDirectory(Path.GetDirectoryName(runnerAssembly)!);
             await File.WriteAllTextAsync(
@@ -103,6 +103,11 @@ public sealed class PowerShellTestEntryContractTests
                 $ErrorActionPreference = 'Stop'
                 function global:dotnet {
                     if ($args.Count -gt 0 -and [string]$args[0] -eq 'build') {
+                        $global:LASTEXITCODE = 0
+                        return
+                    }
+                    if ($args.Count -gt 0 -and [string]$args[0] -eq 'msbuild') {
+                        Write-Output $env:DOWNKYI_FAKE_RUNNER_ASSEMBLY
                         $global:LASTEXITCODE = 0
                         return
                     }
@@ -137,7 +142,8 @@ public sealed class PowerShellTestEntryContractTests
                 fixtureRoot,
                 new Dictionary<string, string>(StringComparer.Ordinal)
                 {
-                    ["DOWNKYI_FAKE_EXIT_CODE"] = "37"
+                    ["DOWNKYI_FAKE_EXIT_CODE"] = "37",
+                    ["DOWNKYI_FAKE_RUNNER_ASSEMBLY"] = runnerAssembly
                 }).ConfigureAwait(true);
 
             Assert.Equal(0, result.ExitCode);

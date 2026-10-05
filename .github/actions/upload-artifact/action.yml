@@ -1,0 +1,29 @@
+name: Upload artifact
+description: Repository-owned version outlet for actions/upload-artifact.
+
+inputs:
+  name:
+    description: Artifact name.
+    required: true
+  path:
+    description: File, directory, or wildcard pattern to upload.
+    required: true
+  if-no-files-found:
+    description: Behavior when the path matches no files.
+    required: false
+    default: warn
+  retention-days:
+    description: Artifact retention in days; zero uses the repository default.
+    required: false
+    default: '0'
+
+runs:
+  using: composite
+  steps:
+    - name: Upload artifact
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ inputs.name }}
+        path: ${{ inputs.path }}
+        if-no-files-found: ${{ inputs.if-no-files-found }}
+        retention-days: ${{ inputs.retention-days }}

@@ -56,14 +56,15 @@ public sealed class CentralTestRunnerCommandTests
         var projectDirectory = Path.Combine(
             Path.GetTempPath(),
             $"downkyi-in-process-exclusion-{Guid.NewGuid():N}");
-        var assemblyDirectory = Path.Combine(projectDirectory, "bin", "Release", "net10.0");
+        const string targetFramework = "fixture-tfm";
+        var assemblyDirectory = Path.Combine(projectDirectory, "bin", "Release", targetFramework);
         Directory.CreateDirectory(assemblyDirectory);
         File.WriteAllText(Path.Combine(assemblyDirectory, "Fixture.Tests.dll"), string.Empty);
         try
         {
             var startInfo = TestInvocationFactory.CreateInProcessXunitStartInfo(
                 Path.Combine(projectDirectory, "Fixture.Tests.csproj"),
-                "net10.0",
+                targetFramework,
                 options,
                 trxPath: null);
             var arguments = startInfo.ArgumentList.ToArray();

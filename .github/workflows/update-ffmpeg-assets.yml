@@ -40,9 +40,9 @@ jobs:
       manifest_base: ${{ steps.authority.outputs.manifest_base }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: $/.github/actions/checkout
       - name: Install Python
-        uses: actions/setup-python@v7
+        uses: $/.github/actions/setup-python
         with:
           python-version-file: .python-version
       - name: Verify updater branch authority
@@ -72,7 +72,7 @@ jobs:
             --linux-x64-runner '${{ vars.UBUNTU_X64_RUNNER }}' >> "$GITHUB_OUTPUT"
       - name: Upload candidate metadata
         if: steps.candidate.outputs.no_op != 'true'
-        uses: actions/upload-artifact@v7
+        uses: $/.github/actions/upload-artifact
         with:
           name: ffmpeg-candidate
           path: .ffmpeg-update/candidates.json
@@ -88,13 +88,13 @@ jobs:
       matrix: ${{ fromJSON(needs.discover.outputs.matrix) }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: $/.github/actions/checkout
       - name: Install Python
-        uses: actions/setup-python@v7
+        uses: $/.github/actions/setup-python
         with:
           python-version-file: .python-version
       - name: Download candidate metadata
-        uses: actions/download-artifact@v8
+        uses: $/.github/actions/download-artifact
         with:
           name: ffmpeg-candidate
           path: .ffmpeg-update
@@ -129,13 +129,13 @@ jobs:
       DOWNKYI_AUTOMATION_TOKEN: ${{ secrets.DOWNKYI_AUTOMATION_TOKEN }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: $/.github/actions/checkout
       - name: Install Python
-        uses: actions/setup-python@v7
+        uses: $/.github/actions/setup-python
         with:
           python-version-file: .python-version
       - name: Download candidate metadata
-        uses: actions/download-artifact@v8
+        uses: $/.github/actions/download-artifact
         with:
           name: ffmpeg-candidate
           path: .ffmpeg-update

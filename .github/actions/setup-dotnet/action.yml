@@ -1,0 +1,15 @@
+name: Install .NET
+description: Repository-owned version outlet for actions/setup-dotnet.
+
+inputs:
+  global-json-file:
+    description: Repository path to the authoritative global.json.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Install .NET
+      uses: actions/setup-dotnet@v6
+      with:
+        global-json-file: ${{ inputs.global-json-file }}

@@ -18,8 +18,7 @@ internal sealed record TestRunnerPolicyDocument(
 
 internal sealed record TestRunnerPolicyProject(
     string Project,
-    string Runner,
-    string? TargetFramework);
+    string Runner);
 
 internal static class TestProjectCatalog
 {
@@ -66,6 +65,10 @@ internal static class TestProjectCatalog
             }
         }
 
+        var inProcessTargetFramework = policies.Count == 0
+            ? null
+            : ReadRepositoryTargetFramework(repositoryRoot);
+
         var projects = Directory.EnumerateFiles(
                 testsDirectory,
                 "*.Tests.csproj",
@@ -83,17 +86,11 @@ internal static class TestProjectCatalog
                     throw new InvalidDataException(
                         $"Test project '{project}' has unsupported runner '{runnerPolicy.Runner}'.");
                 }
-                if (runnerPolicy is not null && string.IsNullOrWhiteSpace(runnerPolicy.TargetFramework))
-                {
-                    throw new InvalidDataException(
-                        $"Test project '{project}' requires a target framework for xunit-in-process.");
-                }
-
                 policies.Remove(project);
                 return new TestProjectDefinition(
                     project,
                     platforms,
-                    runnerPolicy?.TargetFramework);
+                    runnerPolicy is null ? null : inProcessTargetFramework);
             })
             .ToArray();
 
@@ -104,6 +101,41 @@ internal static class TestProjectCatalog
         }
 
         return projects;
+    }
+
+    private static string ReadRepositoryTargetFramework(string repositoryRoot)
+    {
+        var propsPath = Path.Combine(repositoryRoot, "Directory.Build.props");
+        if (!File.Exists(propsPath))
+        {
+            throw new FileNotFoundException("The repository build properties are missing.", propsPath);
+        }
+
+        var declarations = XDocument.Load(propsPath)
+            .Descendants()
+            .Where(element => string.Equals(
+                element.Name.LocalName,
+                "DownKyiTargetFramework",
+                StringComparison.Ordinal))
+            .ToArray();
+        if (declarations.Length != 1 ||
+            declarations[0].AncestorsAndSelf().Any(element =>
+                element.Attributes().Any(attribute => string.Equals(
+                    attribute.Name.LocalName,
+                    "Condition",
+                    StringComparison.Ordinal))))
+        {
+            throw new InvalidDataException(
+                "Directory.Build.props must declare one unconditional DownKyiTargetFramework value.");
+        }
+
+        var targetFramework = declarations[0].Value.Trim();
+        if (string.IsNullOrWhiteSpace(targetFramework) || targetFramework.Contains("$(", StringComparison.Ordinal))
+        {
+            throw new InvalidDataException("DownKyiTargetFramework must be a concrete value.");
+        }
+
+        return targetFramework;
     }
 
     internal static string GetCurrentPlatform()
