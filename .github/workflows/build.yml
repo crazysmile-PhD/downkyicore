@@ -239,7 +239,7 @@ jobs:
           $tag = ./script/resolve-previous-release-tag.ps1
           "tag=$tag" | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
       - name: Generate a changelog
-        uses: orhun/git-cliff-action@v4
+        uses: $/.github/actions/git-cliff
         id: git-cliff
         with:
           config: cliff.toml

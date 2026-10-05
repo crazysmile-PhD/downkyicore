@@ -80,7 +80,9 @@ catalog 檔案加入 output/publish；自訂 RID 不得跨 ProjectReference。
 輸入下一個 stable SemVer。workflow 只會從 first-parent release history 產生
 release notes、更新 `version.txt` 與 `CHANGELOG.md`，再建立受一般 review 與
 required checks 約束的 release-preparation PR；它不會自動合併、建立 tag 或
-發布。該 PR 合併到 `main` 後，在 `Build` workflow 選擇 `main`、勾選
+發布。`CHANGELOG.md` 會保存生成時的精確 `main` SHA；PR 與最終發布 gate 都會
+拒絕 base 已前進或修改超出這兩個檔案的準備結果，必須從新的 `main` 重新生成。
+該 PR 合併到 `main` 後，在 `Build` workflow 選擇 `main`、勾選
 `publish_release` 並執行一次；同一個 run 會完成 release gates、package 與
 artifact 驗證，確認 subject 仍是精確 `main` 後建立 annotated tag、發布
 GitHub Release，再以 GitHub API 核對 Latest、stable、非 draft、asset 名稱、

@@ -67,13 +67,18 @@ public sealed class ReleaseWorkflowArchitectureTests
             Path.Combine(RepositoryRoot, ".github", "workflows", "prepare-release.yml"));
 
         Assert.Contains("  workflow_dispatch:", workflow, StringComparison.Ordinal);
+        Assert.Contains("  pull_request:", workflow, StringComparison.Ordinal);
         Assert.Contains("      version:", workflow, StringComparison.Ordinal);
         Assert.Contains("group: release-preparation", workflow, StringComparison.Ordinal);
         Assert.Contains("./script/resolve-previous-release-tag.ps1 -IncludeHead", workflow, StringComparison.Ordinal);
-        Assert.Contains("uses: orhun/git-cliff-action@v4", workflow, StringComparison.Ordinal);
+        Assert.Contains("uses: $/.github/actions/git-cliff", workflow, StringComparison.Ordinal);
+        Assert.Contains("--ignore-tags '.*'", workflow, StringComparison.Ordinal);
+        Assert.Contains("GIT_CLIFF_TAG: v${{ inputs.version }}", workflow, StringComparison.Ordinal);
         Assert.Contains("./script/prepare-release.ps1", workflow, StringComparison.Ordinal);
-        Assert.Contains("uses: peter-evans/create-pull-request@v8", workflow, StringComparison.Ordinal);
+        Assert.Contains("./script/validate-release-preparation.ps1", workflow, StringComparison.Ordinal);
+        Assert.Contains("uses: $/.github/actions/create-pull-request", workflow, StringComparison.Ordinal);
         Assert.Contains("token: ${{ secrets.DOWNKYI_AUTOMATION_TOKEN }}", workflow, StringComparison.Ordinal);
+        Assert.Contains("commit-message: \"chore(release): prepare for v${{ inputs.version }}\"", workflow, StringComparison.Ordinal);
         Assert.Contains("            version.txt\n            CHANGELOG.md", workflow.Replace("\r\n", "\n", StringComparison.Ordinal), StringComparison.Ordinal);
         Assert.DoesNotContain("auto-merge", workflow, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("gh pr merge", workflow, StringComparison.Ordinal);

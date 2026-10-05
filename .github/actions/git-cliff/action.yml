@@ -1,0 +1,38 @@
+name: Generate changelog
+description: Repository-owned version outlet for orhun/git-cliff-action.
+
+inputs:
+  config:
+    description: git-cliff configuration file.
+    required: false
+    default: cliff.toml
+  args:
+    description: Arguments passed to git-cliff.
+    required: false
+    default: -v
+  github-token:
+    description: GitHub token used for remote metadata.
+    required: false
+    default: ''
+
+outputs:
+  changelog:
+    description: Path to the generated changelog.
+    value: ${{ steps.generate.outputs.changelog }}
+  content:
+    description: Generated changelog content.
+    value: ${{ steps.generate.outputs.content }}
+  version:
+    description: Latest generated release version.
+    value: ${{ steps.generate.outputs.version }}
+
+runs:
+  using: composite
+  steps:
+    - name: Generate changelog
+      id: generate
+      uses: orhun/git-cliff-action@v4
+      with:
+        config: ${{ inputs.config }}
+        args: ${{ inputs.args }}
+        github_token: ${{ inputs.github-token }}

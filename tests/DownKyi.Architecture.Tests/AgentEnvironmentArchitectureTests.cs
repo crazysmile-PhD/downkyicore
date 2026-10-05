@@ -169,7 +169,9 @@ public sealed class AgentEnvironmentArchitectureTests
         [
             ("actionlint", "raven-actions/actionlint"),
             ("checkout", "actions/checkout"),
+            ("create-pull-request", "peter-evans/create-pull-request"),
             ("download-artifact", "actions/download-artifact"),
+            ("git-cliff", "orhun/git-cliff-action"),
             ("import-codesign-certs", "apple-actions/import-codesign-certs"),
             ("release", "ncipollo/release-action"),
             ("setup-dotnet", "actions/setup-dotnet"),

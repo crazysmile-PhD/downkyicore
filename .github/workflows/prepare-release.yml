@@ -1,6 +1,12 @@
 name: Prepare release
 
 on:
+  pull_request:
+    branches: [ main ]
+    types: [ opened, reopened, synchronize ]
+    paths:
+      - 'CHANGELOG.md'
+      - 'version.txt'
   workflow_dispatch:
     inputs:
       version:
@@ -16,7 +22,23 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  validate-release-preparation:
+    if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'automation/release-v')
+    name: Validate release-preparation subject
+    runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
+    steps:
+      - name: Checkout pull request merge subject
+        uses: $/.github/actions/checkout
+        with:
+          fetch-depth: 0
+      - name: Validate exact preparation base and changed paths
+        shell: pwsh
+        run: >
+          ./script/validate-release-preparation.ps1
+          -SubjectSha '${{ github.sha }}'
+
   prepare-release:
+    if: github.event_name == 'workflow_dispatch'
     name: Open release-preparation PR
     runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
     env:
@@ -43,11 +65,12 @@ jobs:
         shell: pwsh
         run: New-Item -ItemType Directory -Path .release-preparation -Force | Out-Null
       - name: Generate release notes from accepted main history
-        uses: orhun/git-cliff-action@v4
+        uses: $/.github/actions/git-cliff
         with:
           config: cliff.toml
-          args: -vv ${{ steps.previous-release.outputs.tag }}..HEAD --strip header
+          args: -vv ${{ steps.previous-release.outputs.tag }}..HEAD --ignore-tags '.*' --strip header
         env:
+          GIT_CLIFF_TAG: v${{ inputs.version }}
           OUTPUT: .release-preparation/release-notes.md
       - name: Prepare version and changelog
         shell: pwsh
@@ -58,13 +81,13 @@ jobs:
           -SubjectSha '${{ github.sha }}'
           -GitRef '${{ github.ref }}'
       - name: Create release-preparation pull request
-        uses: peter-evans/create-pull-request@v8
+        uses: $/.github/actions/create-pull-request
         with:
           token: ${{ secrets.DOWNKYI_AUTOMATION_TOKEN }}
           add-paths: |
             version.txt
             CHANGELOG.md
-          commit-message: "chore(release): prepare v${{ inputs.version }}"
+          commit-message: "chore(release): prepare for v${{ inputs.version }}"
           branch: automation/release-v${{ inputs.version }}
           base: main
           delete-branch: true

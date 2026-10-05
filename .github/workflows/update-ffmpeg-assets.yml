@@ -208,7 +208,7 @@ jobs:
             --output .ffmpeg-update/pr-body.md
       - name: Create manifest pull request
         id: cpr
-        uses: peter-evans/create-pull-request@v8
+        uses: $/.github/actions/create-pull-request
         with:
           token: ${{ secrets.DOWNKYI_AUTOMATION_TOKEN }}
           add-paths: script/assets/external-assets.json

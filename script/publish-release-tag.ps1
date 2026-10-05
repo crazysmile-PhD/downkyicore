@@ -12,6 +12,7 @@ $ErrorActionPreference = 'Stop'
 $subject = (Resolve-Path -LiteralPath $RepositoryRoot).Path
 $versionValidator = Join-Path $PSScriptRoot 'validate-release-version.ps1'
 $releaseSubjectValidator = Join-Path $PSScriptRoot 'validate-release-subject.ps1'
+$releasePreparationValidator = Join-Path $PSScriptRoot 'validate-release-preparation.ps1'
 
 function Invoke-SubjectGit {
     param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments)
@@ -78,6 +79,10 @@ $mainCommit = Invoke-SubjectGit rev-parse 'refs/remotes/origin/main^{commit}'
 if (-not [string]::Equals($SubjectSha, $mainCommit, [StringComparison]::OrdinalIgnoreCase)) {
     throw "Release subject $SubjectSha does not equal current main $mainCommit."
 }
+
+& $releasePreparationValidator `
+    -SubjectSha $SubjectSha `
+    -RepositoryRoot $subject | Out-Null
 
 $tagRef = "refs/tags/$tag"
 $peeledRef = "$tagRef^{}"

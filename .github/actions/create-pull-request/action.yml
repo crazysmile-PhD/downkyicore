@@ -1,0 +1,57 @@
+name: Create pull request
+description: Repository-owned version outlet for peter-evans/create-pull-request.
+
+inputs:
+  token:
+    description: Token used to create the branch and pull request.
+    required: true
+  add-paths:
+    description: Paths included in the pull request commit.
+    required: false
+    default: ''
+  commit-message:
+    description: Pull request commit message.
+    required: true
+  branch:
+    description: Branch used for the pull request.
+    required: true
+  base:
+    description: Pull request base branch.
+    required: true
+  delete-branch:
+    description: Whether to delete the branch after the pull request closes.
+    required: false
+    default: 'false'
+  title:
+    description: Pull request title.
+    required: true
+  body:
+    description: Pull request body.
+    required: false
+    default: ''
+  body-path:
+    description: Path containing the pull request body.
+    required: false
+    default: ''
+
+outputs:
+  pull-request-number:
+    description: Number of the created or updated pull request.
+    value: ${{ steps.create.outputs.pull-request-number }}
+
+runs:
+  using: composite
+  steps:
+    - name: Create pull request
+      id: create
+      uses: peter-evans/create-pull-request@v8
+      with:
+        token: ${{ inputs.token }}
+        add-paths: ${{ inputs.add-paths }}
+        commit-message: ${{ inputs.commit-message }}
+        branch: ${{ inputs.branch }}
+        base: ${{ inputs.base }}
+        delete-branch: ${{ inputs.delete-branch }}
+        title: ${{ inputs.title }}
+        body: ${{ inputs.body }}
+        body-path: ${{ inputs.body-path }}
