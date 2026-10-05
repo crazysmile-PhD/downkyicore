@@ -162,6 +162,19 @@ public sealed class AgentEnvironmentArchitectureTests
         Assert.Matches(@"^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$", pupnetVersion);
         Assert.DoesNotMatch(@"dotnet tool install[^\r\n]+--version\s+\d", workflowSources);
         Assert.Contains(".config/dotnet-tools.json", Read("script/install-pupnet.ps1"), StringComparison.Ordinal);
+
+        using var externalAssets = JsonDocument.Parse(Read("script/assets/external-assets.json"));
+        var appImageTool = externalAssets.RootElement.GetProperty("appimagetool");
+        var appImageToolAsset = appImageTool.GetProperty("asset");
+        Assert.Matches(@"^[0-9a-f]{40}$", appImageTool.GetProperty("version").GetString());
+        Assert.Equal("appimagetool-x86_64.AppImage", appImageToolAsset.GetProperty("fileName").GetString());
+        Assert.Matches(@"^[0-9a-f]{64}$", appImageToolAsset.GetProperty("sha256").GetString());
+        Assert.StartsWith(
+            "https://github.com/crazysmile-PhD/downkyi-runtime-assets/releases/download/appimagetool-",
+            appImageToolAsset.GetProperty("url").GetString());
+        Assert.Contains("external-assets.json", Read("script/install-appimagetool.ps1"), StringComparison.Ordinal);
+        Assert.Contains("install-appimagetool.ps1", workflowSources, StringComparison.Ordinal);
+
         Assert.DoesNotMatch(@"\.nuget/packages/grpc\.tools/\d", workflowSources);
         Assert.Contains("-getProperty:PkgGrpc_Tools", workflowSources, StringComparison.Ordinal);
 
