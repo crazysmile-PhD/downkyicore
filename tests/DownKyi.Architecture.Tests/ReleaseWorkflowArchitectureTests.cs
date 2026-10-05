@@ -44,6 +44,10 @@ public sealed class ReleaseWorkflowArchitectureTests
             "${{ github.event_name == 'pull_request' }}");
 
         var linuxSteps = GetWorkflowSteps(workflow, "  build-linux:");
+        AssertStepHasNoCondition(linuxSteps, "Install mirrored AppImage packaging assets");
+        Assert.DoesNotContain(
+            FindWorkflowStep(linuxSteps, "Install mirrored AppImage packaging assets"),
+            line => line.Contains("matrix.cpu", StringComparison.Ordinal));
         AssertStepContinueOnError(
             linuxSteps,
             "Upload build artifacts ${{ matrix.kind }}",
@@ -136,7 +140,7 @@ public sealed class ReleaseWorkflowArchitectureTests
                 ".github/workflows/update-ffmpeg-assets.yml",
                 "script/assets/external-assets.json",
                 "script/download-external-asset.ps1",
-                "script/install-appimagetool.ps1",
+                "script/install-appimage-assets.ps1",
                 "script/ffmpeg-assets.py",
                 "script/ffmpeg.ps1",
                 "script/ffmpeg.sh",
@@ -171,6 +175,8 @@ public sealed class ReleaseWorkflowArchitectureTests
         var gate = GetYamlBlock(lines, "  ffmpeg-required-gate:", 2);
 
         Assert.Contains("              - 'script/assets/external-assets.json'", detector);
+        Assert.Contains("              - 'script/download-external-asset.ps1'", detector);
+        Assert.Contains("              - 'script/install-appimage-assets.ps1'", detector);
         Assert.DoesNotContain("ffmpeg_related:", detector);
         Assert.DoesNotContain("    needs: detect-production-manifest-change", tooling);
         Assert.Contains("      - name: Run FFmpeg asset guards", tooling);
@@ -178,6 +184,7 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.DoesNotContain("continue-on-error: true", tooling);
         Assert.Contains("        run: python script/ffmpeg-assets.py validate-manifest --manifest script/assets/external-assets.json", preflight);
         Assert.Contains("        run: python script/ffmpeg-assets.py preflight --manifest script/assets/external-assets.json --timeout 30", preflight);
+        Assert.Contains("        run: ./script/install-appimage-assets.ps1 -ToolPath '${{ runner.temp }}/appimage-assets-preflight'", preflight);
         Assert.Contains("          set -e", gate);
         Assert.DoesNotContain("FFMPEG_RELATED", gate);
         Assert.Contains("          EXTERNAL_ASSETS: ${{ needs.detect-production-manifest-change.outputs.external_assets }}", gate);
@@ -420,6 +427,10 @@ public sealed class ReleaseWorkflowArchitectureTests
             . '{{helperPath.Replace("'", "''", StringComparison.Ordinal)}}'
             $successPath = [IO.Path]::GetTempFileName()
             $failurePath = [IO.Path]::GetTempFileName()
+            $installRoot = Join-Path ([IO.Path]::GetTempPath()) ('verified-asset-' + [Guid]::NewGuid().ToString('N'))
+            $stagingPath = Join-Path $installRoot 'staging'
+            $verifiedDestination = Join-Path $installRoot 'formal/verified.bin'
+            $rejectedDestination = Join-Path $installRoot 'formal/rejected.bin'
             try {
                 $successAttempts = 0
                 Invoke-ExternalAssetDownload `
@@ -463,11 +474,70 @@ public sealed class ReleaseWorkflowArchitectureTests
                 if (Test-Path -LiteralPath $failurePath) {
                     throw 'Retry exhaustion left an unverified partial asset behind.'
                 }
+
+                $script:verifiedBytes = [Text.Encoding]::UTF8.GetBytes('verified')
+                $script:rejectedBytes = [Text.Encoding]::UTF8.GetBytes('tampered')
+                $verifiedSha = [Convert]::ToHexString(
+                    [Security.Cryptography.SHA256]::HashData($script:verifiedBytes)).ToLowerInvariant()
+                Install-VerifiedExternalAsset `
+                    -Uri 'https://example.invalid/verified.bin' `
+                    -Destination $verifiedDestination `
+                    -StagingDirectory $stagingPath `
+                    -Sha256 $verifiedSha `
+                    -ExpectedSize $script:verifiedBytes.Length `
+                    -MaximumAttempts 1 `
+                    -RetryDelaySeconds 0 `
+                    -TransferOperation {
+                        param($source, $destination)
+                        [IO.File]::WriteAllBytes($destination, $script:verifiedBytes)
+                    }
+                if (-not (Test-Path -LiteralPath $verifiedDestination -PathType Leaf)) {
+                    throw 'A verified external asset was not committed to its formal destination.'
+                }
+
+                $checksumRejected = $false
+                try {
+                    Install-VerifiedExternalAsset `
+                        -Uri 'https://example.invalid/rejected.bin' `
+                        -Destination $rejectedDestination `
+                        -StagingDirectory $stagingPath `
+                        -Sha256 $verifiedSha `
+                        -ExpectedSize $script:rejectedBytes.Length `
+                        -MaximumAttempts 1 `
+                        -RetryDelaySeconds 0 `
+                        -TransferOperation {
+                            param($source, $destination)
+                            [IO.File]::WriteAllBytes($destination, $script:rejectedBytes)
+                        }
+                }
+                catch [IO.InvalidDataException] {
+                    $checksumRejected = $true
+                }
+                if (-not $checksumRejected) {
+                    throw 'A checksum mismatch was not rejected.'
+                }
+                if (Test-Path -LiteralPath $rejectedDestination) {
+                    throw 'A rejected external asset reached its formal destination.'
+                }
+                if (@(Get-ChildItem -LiteralPath $stagingPath -Force).Count -ne 0) {
+                    throw 'A rejected external asset remained in staging.'
+                }
             }
             finally {
                 foreach ($path in @($successPath, $failurePath)) {
                     if (Test-Path -LiteralPath $path) {
                         Remove-Item -LiteralPath $path -Force
+                    }
+                }
+                if (Test-Path -LiteralPath $verifiedDestination) {
+                    Remove-Item -LiteralPath $verifiedDestination -Force
+                }
+                foreach ($directory in @(
+                    $stagingPath,
+                    (Join-Path $installRoot 'formal'),
+                    $installRoot)) {
+                    if (Test-Path -LiteralPath $directory) {
+                        Remove-Item -LiteralPath $directory -Force
                     }
                 }
             }
@@ -767,171 +837,6 @@ public sealed class ReleaseWorkflowArchitectureTests
     }
 
     [Fact]
-    public void V112RecoverySeparatesControlPlaneFromImmutableReleaseSubject()
-    {
-        var workflow = File.ReadAllText(
-            Path.Combine(RepositoryRoot, ".github", "workflows", "release-v112-recovery.yml"));
-        var subjectValidator = File.ReadAllText(
-            Path.Combine(RepositoryRoot, "script", "validate-v112-recovery-subject.ps1"));
-        var artifactValidator = File.ReadAllText(
-            Path.Combine(RepositoryRoot, "script", "validate-v112-release-artifacts.ps1"));
-
-        Assert.Contains("workflow_dispatch:", workflow, StringComparison.Ordinal);
-        Assert.DoesNotContain("push:", workflow, StringComparison.Ordinal);
-        Assert.Contains("path: tooling", workflow, StringComparison.Ordinal);
-        Assert.Contains("path: subject", workflow, StringComparison.Ordinal);
-        Assert.Contains("ref: ${{ inputs.subject_sha }}", workflow, StringComparison.Ordinal);
-        Assert.Contains("dotnet publish ./subject/DownKyi/DownKyi.csproj", workflow, StringComparison.Ordinal);
-        Assert.Contains("working-directory: subject", workflow, StringComparison.Ordinal);
-        var criticalPathsStart = workflow.IndexOf("critical_paths=(", StringComparison.Ordinal);
-        Assert.InRange(criticalPathsStart, 0, workflow.Length - 1);
-        var criticalPathsEnd = workflow.IndexOf(')', criticalPathsStart);
-        Assert.InRange(criticalPathsEnd, criticalPathsStart + 1, workflow.Length - 1);
-        var criticalPaths = workflow[criticalPathsStart..criticalPathsEnd];
-        Assert.Contains("script/test-project.ps1", criticalPaths, StringComparison.Ordinal);
-        Assert.Contains("script/test-project-runner.ps1", criticalPaths, StringComparison.Ordinal);
-        Assert.Contains("docs/testing/test-runner-policy.json", criticalPaths, StringComparison.Ordinal);
-        Assert.Contains("tools/DownKyi.CentralTestRunner", criticalPaths, StringComparison.Ordinal);
-        Assert.Contains("tools/DownKyi.ProcessSupervision", criticalPaths, StringComparison.Ordinal);
-        Assert.Contains("Resolve macOS release trust mode", workflow, StringComparison.Ordinal);
-        Assert.Contains("macos_trust_mode: ${{ steps.macos_trust.outputs.macos_trust_mode }}", workflow, StringComparison.Ordinal);
-        Assert.Contains("HAS_MACOS_SIGNING: ${{ needs.authority.outputs.has_macos_signing }}", workflow, StringComparison.Ordinal);
-        Assert.Contains("MACOS_ADHOC_SIGNING: ${{ env.HAS_MACOS_SIGNING != 'true' }}", workflow, StringComparison.Ordinal);
-        Assert.Contains("if: ${{ env.HAS_MACOS_SIGNING == 'true' }}", workflow, StringComparison.Ordinal);
-        Assert.Contains("Verify signed app trust", workflow, StringComparison.Ordinal);
-        Assert.Contains("./validate-dmg-package.sh", workflow, StringComparison.Ordinal);
-        Assert.Contains("Render release notes for selected trust mode", workflow, StringComparison.Ordinal);
-        Assert.Contains("bodyFile: tooling/artifacts/v1.1.2-release-notes.md", workflow, StringComparison.Ordinal);
-        Assert.DoesNotContain("Require Apple credentials for formal publish", workflow, StringComparison.Ordinal);
-
-        var macSteps = GetWorkflowSteps(workflow, "  build-macos:");
-        AssertStepCondition(macSteps, "Import Apple certificate", "${{ env.HAS_MACOS_SIGNING == 'true' }}");
-        AssertStepCondition(macSteps, "Resolve Developer ID identity", "${{ env.HAS_MACOS_SIGNING == 'true' }}");
-        AssertStepCondition(macSteps, "Notarize and verify app", "${{ env.HAS_MACOS_SIGNING == 'true' }}");
-        AssertStepCondition(macSteps, "Sign, notarize, and verify DMG", "${{ env.HAS_MACOS_SIGNING == 'true' }}");
-        AssertStepHasNoCondition(macSteps, "Verify signed app trust");
-        AssertStepHasNoCondition(macSteps, "Verify signed aria2 integrity");
-        AssertStepHasNoCondition(macSteps, "Validate mounted and installed macOS package contracts");
-        var signAppStep = FindWorkflowStep(macSteps, "Sign app");
-        Assert.Contains(
-            signAppStep,
-            line => line.TrimStart().StartsWith("chmod +x ", StringComparison.Ordinal) &&
-                    line.Contains("verify-runtime-architecture.sh", StringComparison.Ordinal));
-        var packageStep = FindWorkflowStep(macSteps, "Package app with recovery tooling");
-        Assert.Contains(
-            packageStep,
-            line => line.Trim() == "release_version=\"${EXPECTED_RELEASE_VERSION#v}\"");
-        Assert.Contains(
-            packageStep,
-            line => line.Trim() == "./package.sh ${{ matrix.cpu }} \"$release_version\"");
-        var verifyDmgStep = FindWorkflowStep(
-            macSteps,
-            "Validate mounted and installed macOS package contracts");
-        Assert.Contains(
-            verifyDmgStep,
-            line => line.Trim() == "DownKyi-1.1.2-osx-${{ matrix.cpu }}.dmg \\");
-        Assert.Contains(
-            verifyDmgStep,
-            line => line.Trim() == "\"$release_version\" \\");
-        Assert.Contains(
-            verifyDmgStep,
-            line => line.Trim() == "osx-${{ matrix.cpu }}");
-        Assert.Contains("tag: v1.1.2", workflow, StringComparison.Ordinal);
-        Assert.Contains("commit: 16c690d8719f86eb6eecb56c24efabc1afc41d55", workflow, StringComparison.Ordinal);
-        Assert.Contains("prerelease: false", workflow, StringComparison.Ordinal);
-        Assert.Contains("makeLatest: true", workflow, StringComparison.Ordinal);
-        Assert.DoesNotContain("git tag", workflow, StringComparison.Ordinal);
-        Assert.DoesNotContain("push --force", workflow, StringComparison.Ordinal);
-
-        Assert.Contains("$expectedReleaseVersion = 'v1.1.2'", subjectValidator, StringComparison.Ordinal);
-        Assert.Contains("$expectedSubjectSha = '16c690d8719f86eb6eecb56c24efabc1afc41d55'", subjectValidator, StringComparison.Ordinal);
-        Assert.Contains("cat-file -t $expectedReleaseVersion", subjectValidator, StringComparison.Ordinal);
-        Assert.Contains("status --porcelain --untracked-files=no", subjectValidator, StringComparison.Ordinal);
-        Assert.Contains("Validated $($expected.Count) v1.1.2 packages", artifactValidator, StringComparison.Ordinal);
-        Assert.Contains("Get-FileHash", artifactValidator, StringComparison.Ordinal);
-        Assert.Contains("Publish manifest contract failed", artifactValidator, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void V112MacosTrustResolverRequiresZeroOrAllCredentials()
-    {
-        var script = Path.Combine(RepositoryRoot, "script", "resolve-v112-macos-trust.ps1");
-        var outputPath = Path.GetTempFileName();
-
-        try
-        {
-            var adHoc = RunPowerShellScript(
-                script,
-                ["-OutputPath", outputPath],
-                new Dictionary<string, string>());
-            Assert.Equal(0, adHoc.ExitCode);
-            Assert.Contains("ad-hoc", File.ReadAllText(outputPath), StringComparison.Ordinal);
-            Assert.DoesNotContain("developer-id", File.ReadAllText(outputPath), StringComparison.Ordinal);
-
-            IReadOnlyDictionary<string, string> developerIdEnvironment = new Dictionary<string, string>
-            {
-                ["MACOS_CERTIFICATE"] = "fixture-certificate",
-                ["MACOS_CERTIFICATE_PWD"] = "fixture-password",
-                ["APPLE_ID"] = "fixture@example.invalid",
-                ["TEAM_ID"] = "FIXTURETEAM",
-                ["APP_SPECIFIC_PASSWORD"] = "fixture-app-password"
-            };
-            var developerId = RunPowerShellScript(
-                script,
-                ["-OutputPath", outputPath],
-                developerIdEnvironment);
-            Assert.Equal(0, developerId.ExitCode);
-            Assert.Contains("developer-id", File.ReadAllText(outputPath), StringComparison.Ordinal);
-
-            var partial = RunPowerShellScript(
-                script,
-                ["-OutputPath", outputPath],
-                new Dictionary<string, string> { ["APPLE_ID"] = "fixture@example.invalid" });
-            Assert.NotEqual(0, partial.ExitCode);
-            Assert.Contains("Partial Apple credentials", partial.StandardError, StringComparison.Ordinal);
-        }
-        finally
-        {
-            File.Delete(outputPath);
-        }
-    }
-
-    [Fact]
-    public void V112RecoveryReleaseNotesDiscloseSelectedTrustMode()
-    {
-        var script = Path.Combine(RepositoryRoot, "script", "render-v112-recovery-release-notes.ps1");
-        var outputPath = Path.GetTempFileName();
-
-        try
-        {
-            var adHoc = RunPowerShellScript(
-                script,
-                ["-TrustMode", "ad-hoc", "-OutputPath", outputPath],
-                new Dictionary<string, string>());
-            Assert.Equal(0, adHoc.ExitCode);
-            var adHocNotes = File.ReadAllText(outputPath);
-            Assert.Contains("ad-hoc identity", adHocNotes, StringComparison.Ordinal);
-            Assert.Contains("not notarized", adHocNotes, StringComparison.Ordinal);
-            Assert.Contains("does not have Gatekeeper distribution trust", adHocNotes, StringComparison.Ordinal);
-
-            var developerId = RunPowerShellScript(
-                script,
-                ["-TrustMode", "developer-id", "-OutputPath", outputPath],
-                new Dictionary<string, string>());
-            Assert.Equal(0, developerId.ExitCode);
-            var developerIdNotes = File.ReadAllText(outputPath);
-            Assert.Contains("Developer ID", developerIdNotes, StringComparison.Ordinal);
-            Assert.Contains("notarization", developerIdNotes, StringComparison.Ordinal);
-            Assert.Contains("stapling", developerIdNotes, StringComparison.Ordinal);
-            Assert.DoesNotContain("not notarized", developerIdNotes, StringComparison.Ordinal);
-        }
-        finally
-        {
-            File.Delete(outputPath);
-        }
-    }
-
-    [Fact]
     public void VersionFileIsTheOnlyProjectVersionSourceAndControlsAssemblyMetadata()
     {
         var versionText = File.ReadAllText(Path.Combine(RepositoryRoot, "version.txt")).Trim();
@@ -992,56 +897,6 @@ public sealed class ReleaseWorkflowArchitectureTests
                settings[0].Attribute("Condition") is null &&
                string.Equals(settings[0].Value.Trim(), "false", StringComparison.OrdinalIgnoreCase);
     }
-
-    private static PowerShellResult RunPowerShellScript(
-        string script,
-        IReadOnlyList<string> arguments,
-        IReadOnlyDictionary<string, string> environment)
-    {
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = "pwsh",
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
-        startInfo.ArgumentList.Add("-NoLogo");
-        startInfo.ArgumentList.Add("-NoProfile");
-        startInfo.ArgumentList.Add("-File");
-        startInfo.ArgumentList.Add(script);
-        foreach (var argument in arguments)
-        {
-            startInfo.ArgumentList.Add(argument);
-        }
-
-        string[] credentialNames =
-        [
-            "MACOS_CERTIFICATE",
-            "MACOS_CERTIFICATE_PWD",
-            "APPLE_ID",
-            "TEAM_ID",
-            "APP_SPECIFIC_PASSWORD"
-        ];
-        foreach (var name in credentialNames)
-        {
-            startInfo.Environment.Remove(name);
-        }
-
-        foreach (var pair in environment)
-        {
-            startInfo.Environment[pair.Key] = pair.Value;
-        }
-
-        using var process = Process.Start(startInfo);
-        Assert.NotNull(process);
-        var standardOutput = process.StandardOutput.ReadToEnd();
-        var standardError = process.StandardError.ReadToEnd();
-        process.WaitForExit();
-        return new PowerShellResult(process.ExitCode, standardOutput, standardError);
-    }
-
-    private sealed record PowerShellResult(int ExitCode, string StandardOutput, string StandardError);
 
     private static void AssertInOrder(string source, params string[] fragments)
     {

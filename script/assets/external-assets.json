@@ -62,6 +62,49 @@
       "tagPrefix": "appimagetool-"
     }
   },
+  "appimageRuntime": {
+    "version": "8f39b89e2ac31e1640b3d3f7e9a5108e6ce805fa",
+    "repository": "https://github.com/AppImage/type2-runtime",
+    "assets": {
+      "linux-x64": {
+        "url": "https://github.com/crazysmile-PhD/downkyi-runtime-assets/releases/download/appimage-runtime-8f39b89e2ac31e1640b3d3f7e9a5108e6ce805fa/runtime-x86_64",
+        "sha256": "156f4bdbde9c52d01814600013e0a273f0118dc2de98975f3c8c63427ec79074",
+        "fileName": "runtime-x86_64",
+        "size": 944632,
+        "provenance": {
+          "upstreamRepository": "https://github.com/AppImage/type2-runtime",
+          "upstreamRelease": "continuous",
+          "upstreamCommit": "8f39b89e2ac31e1640b3d3f7e9a5108e6ce805fa",
+          "upstreamAssetId": 596078161,
+          "originalAssetName": "runtime-x86_64",
+          "mirroredRelease": "appimage-runtime-8f39b89e2ac31e1640b3d3f7e9a5108e6ce805fa"
+        }
+      },
+      "linux-arm64": {
+        "url": "https://github.com/crazysmile-PhD/downkyi-runtime-assets/releases/download/appimage-runtime-8f39b89e2ac31e1640b3d3f7e9a5108e6ce805fa/runtime-aarch64",
+        "sha256": "b4ff0030242d0c3bb12ce40541828303cf167493f4793456f0436edd6255c39d",
+        "fileName": "runtime-aarch64",
+        "size": 936456,
+        "provenance": {
+          "upstreamRepository": "https://github.com/AppImage/type2-runtime",
+          "upstreamRelease": "continuous",
+          "upstreamCommit": "8f39b89e2ac31e1640b3d3f7e9a5108e6ce805fa",
+          "upstreamAssetId": 596077442,
+          "originalAssetName": "runtime-aarch64",
+          "mirroredRelease": "appimage-runtime-8f39b89e2ac31e1640b3d3f7e9a5108e6ce805fa"
+        }
+      }
+    },
+    "requiredRids": [
+      "linux-x64",
+      "linux-arm64"
+    ],
+    "mirror": {
+      "repository": "crazysmile-PhD/downkyi-runtime-assets",
+      "retention": "never-delete",
+      "tagPrefix": "appimage-runtime-"
+    }
+  },
   "ffmpeg": {
     "version": "btbn-autobuild-2026-10-04-20-51",
     "repository": "Windows x64/Linux: https://github.com/BtbN/FFmpeg-Builds; Windows x86: https://github.com/yt-dlp/FFmpeg-Builds; macOS: https://ffmpeg.martin-riedl.de",

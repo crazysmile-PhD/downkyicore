@@ -166,6 +166,7 @@ public sealed class AgentEnvironmentArchitectureTests
         using var externalAssets = JsonDocument.Parse(Read("script/assets/external-assets.json"));
         var appImageTool = externalAssets.RootElement.GetProperty("appimagetool");
         var appImageToolAsset = appImageTool.GetProperty("assets").GetProperty("linux-x64");
+        var appImageRuntime = externalAssets.RootElement.GetProperty("appimageRuntime");
         Assert.Matches(@"^[0-9a-f]{40}$", appImageTool.GetProperty("version").GetString());
         Assert.Equal("appimagetool-x86_64.AppImage", appImageToolAsset.GetProperty("fileName").GetString());
         Assert.Matches(@"^[0-9a-f]{64}$", appImageToolAsset.GetProperty("sha256").GetString());
@@ -173,8 +174,35 @@ public sealed class AgentEnvironmentArchitectureTests
             "https://github.com/crazysmile-PhD/downkyi-runtime-assets/releases/download/appimagetool-",
             appImageToolAsset.GetProperty("url").GetString(),
             StringComparison.Ordinal);
-        Assert.Contains("external-assets.json", Read("script/install-appimagetool.ps1"), StringComparison.Ordinal);
-        Assert.Contains("install-appimagetool.ps1", workflowSources, StringComparison.Ordinal);
+        Assert.Matches(@"^[0-9a-f]{40}$", appImageRuntime.GetProperty("version").GetString());
+        Assert.Equal(
+            ["linux-x64", "linux-arm64"],
+            appImageRuntime.GetProperty("requiredRids").EnumerateArray().Select(element => element.GetString()));
+        foreach (var expected in new[]
+                 {
+                     (Rid: "linux-x64", FileName: "runtime-x86_64"),
+                     (Rid: "linux-arm64", FileName: "runtime-aarch64")
+                 })
+        {
+            var runtimeAsset = appImageRuntime.GetProperty("assets").GetProperty(expected.Rid);
+            Assert.Equal(expected.FileName, runtimeAsset.GetProperty("fileName").GetString());
+            Assert.True(runtimeAsset.GetProperty("size").GetInt64() > 0);
+            Assert.Matches(@"^[0-9a-f]{64}$", runtimeAsset.GetProperty("sha256").GetString());
+            Assert.StartsWith(
+                "https://github.com/crazysmile-PhD/downkyi-runtime-assets/releases/download/appimage-runtime-",
+                runtimeAsset.GetProperty("url").GetString(),
+                StringComparison.Ordinal);
+        }
+
+        var appImageInstaller = Read("script/install-appimage-assets.ps1");
+        Assert.Contains("external-assets.json", appImageInstaller, StringComparison.Ordinal);
+        Assert.Contains("download-external-asset.ps1", appImageInstaller, StringComparison.Ordinal);
+        Assert.Contains("Install-VerifiedExternalAsset", appImageInstaller, StringComparison.Ordinal);
+        Assert.Contains("install-appimage-assets.ps1", workflowSources, StringComparison.Ordinal);
+        Assert.Contains(
+            "AppImageRuntimePath = ../../.tools/appimage-runtimes",
+            Read("script/pupnet/DownKyi.pupnet.conf"),
+            StringComparison.Ordinal);
 
         Assert.DoesNotMatch(@"\.nuget/packages/grpc\.tools/\d", workflowSources);
         Assert.Contains("-getProperty:PkgGrpc_Tools", workflowSources, StringComparison.Ordinal);

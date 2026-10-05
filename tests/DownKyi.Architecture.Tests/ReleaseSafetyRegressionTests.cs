@@ -26,7 +26,7 @@ public sealed class ReleaseSafetyRegressionTests
         Assert.DoesNotContain("args: -vv --latest --strip header", workflow, StringComparison.Ordinal);
         Assert.DoesNotContain($"v{RepositoryVersion}", workflow, StringComparison.Ordinal);
         Assert.DoesNotContain($"'{RepositoryVersion}'", packageValidator, StringComparison.Ordinal);
-        Assert.Contains("resolve-v112-macos-trust.ps1", workflow, StringComparison.Ordinal);
+        Assert.Contains("resolve-macos-release-trust.ps1", workflow, StringComparison.Ordinal);
         Assert.DoesNotContain("HAS_MACOS_SIGNING: ${{ secrets.", workflow, StringComparison.Ordinal);
         Assert.Equal(3, CountOccurrences(workflow, "validate-release-package.ps1"));
         Assert.Equal(3, CountOccurrences(workflow, "-ExpectedManifestPath"));
@@ -311,7 +311,7 @@ public sealed class ReleaseSafetyRegressionTests
     {
         var root = CreateTemporaryDirectory();
         var output = Path.Combine(root, "trust.json");
-        var resolver = Path.Combine(RepositoryRoot, "script", "resolve-v112-macos-trust.ps1");
+        var resolver = Path.Combine(RepositoryRoot, "script", "resolve-macos-release-trust.ps1");
 
         try
         {
