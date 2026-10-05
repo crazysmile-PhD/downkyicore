@@ -142,9 +142,22 @@ public sealed class AgentEnvironmentArchitectureTests
         Assert.Contains("package-ecosystem: nuget", dependabotConfiguration, StringComparison.Ordinal);
         Assert.Contains("package-ecosystem: dotnet-sdk", dependabotConfiguration, StringComparison.Ordinal);
         Assert.Contains("package-ecosystem: github-actions", dependabotConfiguration, StringComparison.Ordinal);
+        Assert.Contains("multi-ecosystem-groups:", dependabotConfiguration, StringComparison.Ordinal);
+        Assert.Contains("  routine-updates:", dependabotConfiguration, StringComparison.Ordinal);
+        Assert.Contains("day: monday", dependabotConfiguration, StringComparison.Ordinal);
+        Assert.Contains("time: '00:00'", dependabotConfiguration, StringComparison.Ordinal);
+        Assert.Contains("timezone: Etc/UTC", dependabotConfiguration, StringComparison.Ordinal);
+        Assert.Equal(
+            1,
+            dependabotConfiguration.Split("interval: weekly", StringSplitOptions.None).Length - 1);
         Assert.Equal(
             3,
-            dependabotConfiguration.Split("interval: weekly", StringSplitOptions.None).Length - 1);
+            dependabotConfiguration.Split("patterns: ['*']", StringSplitOptions.None).Length - 1);
+        Assert.Equal(
+            3,
+            dependabotConfiguration.Split(
+                "multi-ecosystem-group: routine-updates",
+                StringSplitOptions.None).Length - 1);
 
         var dependabotAutoMergeWorkflow = Read(".github/workflows/dependabot-auto-merge.yml");
         Assert.Contains("pull_request:", dependabotAutoMergeWorkflow, StringComparison.Ordinal);

@@ -1,29 +1,25 @@
 version: 2
 
+multi-ecosystem-groups:
+  routine-updates:
+    schedule:
+      interval: weekly
+      day: monday
+      time: '00:00'
+      timezone: Etc/UTC
+
 updates:
   - package-ecosystem: nuget
     directory: /
-    schedule:
-      interval: weekly
-      day: monday
-      time: '03:00'
-      timezone: Asia/Taipei
-    open-pull-requests-limit: 5
+    patterns: ['*']
+    multi-ecosystem-group: routine-updates
 
   - package-ecosystem: dotnet-sdk
     directory: /
-    schedule:
-      interval: weekly
-      day: monday
-      time: '03:15'
-      timezone: Asia/Taipei
-    open-pull-requests-limit: 1
+    patterns: ['*']
+    multi-ecosystem-group: routine-updates
 
   - package-ecosystem: github-actions
     directory: /
-    schedule:
-      interval: weekly
-      day: monday
-      time: '03:30'
-      timezone: Asia/Taipei
-    open-pull-requests-limit: 5
+    patterns: ['*']
+    multi-ecosystem-group: routine-updates
