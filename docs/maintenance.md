@@ -64,8 +64,8 @@ cross-platform stress proof，不得移除。
 
 - **Use when**：NuGet、SDK、Python、version、restore、vulnerability、deprecated。
 - **Owner**：managed package version 只在 `Directory.Packages.props`；.NET SDK 只在 `global.json`；Python 只在 `.python-version`。
-- **Invariant**：workflow 只引用 toolchain owner file，不重複版本值；`Dependency policy` 在每個 PR 解析兩個 toolchain owner，無效內容 fail closed，restore 與 vulnerable／deprecated audit 不因 path filter 跳過；Dependabot 每週一 UTC 00:00 把 NuGet、.NET SDK 與 GitHub Actions 合併為一張 PR，且只在既有 required checks 全部通過後由 GitHub auto-merge；dependency update 不混入非必要 refactor；deprecated report 的修復仍需人工判讀。
-- **Do**：只改對應 central version owner；先 focused proof，再跑風險相稱的 gate；紅燈 PR 保持開啟，交由人工或 Agent 分析，不自動改產品語義。
+- **Invariant**：workflow 只引用 toolchain owner file，不重複版本值；`Dependency policy` 在每個 PR 解析兩個 toolchain owner，無效內容 fail closed，restore 與 vulnerable／deprecated audit 不因 path filter 跳過；Dependabot 每日 UTC 00:00 分別檢查 NuGet、.NET SDK 與 GitHub Actions，預設每個依賴各自開 PR，只有必須同步版本的 Avalonia runtime package family 合併為一張 PR；每張 PR 只在既有 required checks 全部通過後由 GitHub auto-merge；dependency update 不混入非必要 refactor；deprecated report 的修復仍需人工判讀。
+- **Do**：只改對應 central version owner；先 focused proof，再跑風險相稱的 gate；CI 是自動合併的唯一版本風險判斷，不另做 major／minor 分流；紅燈只封鎖該依賴 PR，交由人工或 Agent 分析，不自動改產品語義。
 - **Proof**：restore、strict build、applicable tests、workflow lint、vulnerable／deprecated package audit。
 - **Stop**：若 dependency change 迫使產品語義改變，拆成獨立 scope。
 - **Details**：[正式驗證與回滾](operations/verification-and-rollback.md)。

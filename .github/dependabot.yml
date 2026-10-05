@@ -1,25 +1,31 @@
 version: 2
 
-multi-ecosystem-groups:
-  routine-updates:
-    schedule:
-      interval: weekly
-      day: monday
-      time: '00:00'
-      timezone: Etc/UTC
-
 updates:
   - package-ecosystem: nuget
     directory: /
-    patterns: ['*']
-    multi-ecosystem-group: routine-updates
+    schedule:
+      interval: daily
+      time: '00:00'
+      timezone: Etc/UTC
+    groups:
+      avalonia-runtime:
+        patterns:
+          - Avalonia
+          - Avalonia.Desktop
+          - Avalonia.Headless
+          - Avalonia.Headless.XUnit
+          - Avalonia.Themes.Fluent
 
   - package-ecosystem: dotnet-sdk
     directory: /
-    patterns: ['*']
-    multi-ecosystem-group: routine-updates
+    schedule:
+      interval: daily
+      time: '00:00'
+      timezone: Etc/UTC
 
   - package-ecosystem: github-actions
     directory: /
-    patterns: ['*']
-    multi-ecosystem-group: routine-updates
+    schedule:
+      interval: daily
+      time: '00:00'
+      timezone: Etc/UTC
