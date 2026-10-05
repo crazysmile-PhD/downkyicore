@@ -99,6 +99,9 @@ jobs:
         run: python script/ffmpeg-assets.py validate-manifest --manifest script/assets/external-assets.json
       - name: Check external asset availability
         run: python script/ffmpeg-assets.py preflight --manifest script/assets/external-assets.json --timeout 30
+      - name: Verify mirrored appimagetool
+        shell: pwsh
+        run: ./script/install-appimagetool.ps1 -ToolPath '${{ runner.temp }}/appimagetool-preflight'
 
   ffmpeg-required-gate:
     name: FFmpeg manifest gate
