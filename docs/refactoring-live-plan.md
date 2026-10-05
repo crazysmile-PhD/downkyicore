@@ -20,15 +20,21 @@ Product PRs do not update this file merely because their work state changed.
   but do not grow an unmerged release stack beyond roughly two or three layers
   or material divergence from `main`. Consolidate accepted semantics onto one
   clean current-main integration branch and validate that exact head.
-- Publish only from one clean final commit after strict quality, CodeQL and
-  Windows/Linux/macOS package validation pass for that exact commit.
+- `Prepare Release` owns candidate creation. It records the selected source as
+  the parent of one metadata-only commit, then runs strict quality, CodeQL and
+  Windows/Linux/macOS package validation for that exact candidate and seals the
+  resulting artifacts.
+- Merging the generated Release PR is the only publication approval. The merge
+  workflow tags the recorded candidate commit and publishes the sealed
+  artifacts from its Prepare run; it does not select current `main` or rebuild.
 - Preserve settings JSON, legacy SQLite, unfinished tasks, GID, partial-file
   maps, completed keys and resume fixtures unless an approved migration with
   rollback evidence explicitly changes them.
 - Source and packages must not contain Cookie values, account data, local
   Config/Logs/Cache/Storage or developer artifacts.
-- Existing tags are immutable. Do not change `version.txt`, create a tag or
-  publish a release while any release blocker or required gate is unresolved.
+- Existing tags are immutable. A missing tag is created as an annotated tag for
+  the candidate; a retry may reuse it only when it resolves to that same
+  candidate. A tag resolving elsewhere fails closed.
 
 ## Verification
 

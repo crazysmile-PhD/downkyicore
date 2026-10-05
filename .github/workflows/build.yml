@@ -5,9 +5,12 @@ permissions:
   pull-requests: read
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_call:
+    inputs:
+      candidate_sha:
+        description: 'Immutable release candidate commit to build and package.'
+        required: true
+        type: string
   pull_request:
     branches:
       - main
@@ -41,6 +44,8 @@ jobs:
     steps:
       - name: Checkout
         uses: $/.github/actions/checkout
+        with:
+          ref: ${{ inputs.candidate_sha || github.sha }}
       - name: Install Python
         uses: $/.github/actions/setup-python
         with:
@@ -90,6 +95,8 @@ jobs:
     steps:
       - name: Checkout
         uses: $/.github/actions/checkout
+        with:
+          ref: ${{ inputs.candidate_sha || github.sha }}
       - name: Install Python
         uses: $/.github/actions/setup-python
         with:
@@ -129,6 +136,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     needs: external-assets-preflight
+    if: ${{ needs.external-assets-preflight.result == 'success' && (inputs.candidate_sha != '' || github.event_name == 'pull_request') }}
     strategy:
       fail-fast: false
       matrix:
@@ -139,6 +147,8 @@ jobs:
     steps:
       - name: Checkout
         uses: $/.github/actions/checkout
+        with:
+          ref: ${{ inputs.candidate_sha || github.sha }}
       - name: Validate version and tag contract
         shell: pwsh
         run: ./script/validate-release-version.ps1
@@ -179,41 +189,9 @@ jobs:
             artifacts/test-flight-recorder
           if-no-files-found: ignore
 
-  changelog:
-    name: Generate changelog
-    runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
-    needs: release-gate
-    if: ${{ always() && needs.release-gate.result == 'success' }}
-    outputs:
-      release_body: ${{ steps.git-cliff.outputs.content }}
-    steps:
-      - name: Checkout
-        uses: $/.github/actions/checkout
-        with:
-          fetch-depth: 0
-      - name: Validate exact release subject
-        if: startsWith(github.ref, 'refs/tags/')
-        shell: pwsh
-        run: ./script/validate-release-subject.ps1 -SubjectDirectory . -ReleaseVersion '${{ github.ref_name }}' -SubjectSha '${{ github.sha }}'
-      - name: Resolve previous release tag
-        id: previous-release
-        shell: pwsh
-        run: |
-          $tag = ./script/resolve-previous-release-tag.ps1
-          "tag=$tag" | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
-      - name: Generate a changelog
-        uses: orhun/git-cliff-action@v4
-        id: git-cliff
-        with:
-          config: cliff.toml
-          args: -vv ${{ steps.previous-release.outputs.tag }}..HEAD --strip header
-        env:
-          OUTPUT: CHANGELOG.md
-      - name: Print the changelog
-        run: cat "${{ steps.git-cliff.outputs.changelog }}"
   build-windows:
     runs-on: windows-latest
-    needs: changelog
+    needs: release-gate
     strategy:
       fail-fast: false
       matrix:
@@ -222,6 +200,8 @@ jobs:
     steps:
       - name: Checkout
         uses: $/.github/actions/checkout
+        with:
+          ref: ${{ inputs.candidate_sha || github.sha }}
       - name: Install .NET
         uses: $/.github/actions/setup-dotnet
         with:
@@ -292,7 +272,7 @@ jobs:
             script/pupnet/output/publish-manifest-win-${{ matrix.cpu }}.json
   build-linux-publish:
     runs-on: ubuntu-22.04
-    needs: changelog
+    needs: release-gate
     strategy:
       fail-fast: false
       matrix:
@@ -300,6 +280,8 @@ jobs:
     steps:
       - name: Checkout
         uses: $/.github/actions/checkout
+        with:
+          ref: ${{ inputs.candidate_sha || github.sha }}
       - name: Install .NET
         uses: $/.github/actions/setup-dotnet
         with:
@@ -364,7 +346,7 @@ jobs:
           retention-days: 1
   build-linux:
     runs-on: ${{ matrix.os }}
-    needs: [changelog, build-linux-publish]
+    needs: [release-gate, build-linux-publish]
     strategy:
       fail-fast: false
       matrix:
@@ -403,6 +385,8 @@ jobs:
     steps:
       - name: Checkout packagers
         uses: $/.github/actions/checkout
+        with:
+          ref: ${{ inputs.candidate_sha || github.sha }}
       - name: Install .NET
         uses: $/.github/actions/setup-dotnet
         with:
@@ -511,6 +495,8 @@ jobs:
     steps:
       - name: Checkout validators
         uses: $/.github/actions/checkout
+        with:
+          ref: ${{ inputs.candidate_sha || github.sha }}
       - name: Read Version Text
         id: version
         run: |
@@ -578,7 +564,7 @@ jobs:
   build-macos:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
-    needs: changelog
+    needs: release-gate
     strategy:
       fail-fast: false
       matrix:
@@ -590,6 +576,8 @@ jobs:
     steps:
       - name: Checkout
         uses: $/.github/actions/checkout
+        with:
+          ref: ${{ inputs.candidate_sha || github.sha }}
       - name: Resolve macOS release trust mode
         shell: pwsh
         env:
@@ -763,59 +751,3 @@ jobs:
             script/macos/DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg
             script/macos/DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg.sha256
             script/macos/publish-manifest-osx-${{ matrix.cpu }}.json
-  release:
-    name: Publish release
-    runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
-    permissions:
-      contents: write
-    needs: [changelog, build-windows, build-linux, validate-linux-arm64, build-macos]
-    if: ${{ startsWith(github.ref, 'refs/tags/') }}
-    steps:
-      - name: Checkout release validators
-        uses: $/.github/actions/checkout
-      - name: Download build artifacts
-        uses: $/.github/actions/download-artifact
-        with:
-          path: artifacts
-          merge-multiple: true
-      - name: Remove internal canonical and candidate transports
-        shell: pwsh
-        run: |
-          Get-ChildItem artifacts -File -Filter '*.internal.transport.tar' | Remove-Item
-          $remainingInternalFiles = @(Get-ChildItem artifacts -Recurse -File -Filter '*.internal.*')
-          if ($remainingInternalFiles.Count -ne 0) {
-            throw "Internal canonical or candidate transports reached the release publication input."
-          }
-      - name: Restore and verify validated AppImages
-        shell: pwsh
-        run: |
-          $archives = @(Get-ChildItem artifacts -File -Filter 'appimage-*.transport.tar')
-          if ($archives.Count -ne 2) { throw "Expected exactly two AppImage transport archives, found $($archives.Count)." }
-          foreach ($archive in $archives) {
-            & tar -xf $archive.FullName -C artifacts
-            if ($LASTEXITCODE -ne 0) { throw "Failed to extract $($archive.Name)." }
-            Remove-Item -LiteralPath $archive.FullName
-          }
-
-          $appImages = @(Get-ChildItem artifacts -File -Filter '*.AppImage')
-          if ($appImages.Count -ne 2) { throw "Expected exactly two transported AppImages, found $($appImages.Count)." }
-          foreach ($appImage in $appImages) {
-            $mode = [IO.File]::GetUnixFileMode($appImage.FullName)
-            if (($mode -band [IO.UnixFileMode]::OtherExecute) -eq 0) {
-              throw "Transported AppImage lost non-owner execute permission: $($appImage.Name)"
-            }
-            $sidecar = "$($appImage.FullName).sha256"
-            $expectedHash = ((Get-Content -LiteralPath $sidecar -Raw).Trim() -split '\s+')[0]
-            if ($expectedHash -notmatch '^[a-fA-F0-9]{64}$') { throw "Malformed AppImage checksum: $sidecar" }
-            $actualHash = (Get-FileHash -LiteralPath $appImage.FullName -Algorithm SHA256).Hash
-            if (-not [String]::Equals($actualHash, $expectedHash, [StringComparison]::OrdinalIgnoreCase)) {
-              throw "Transported AppImage does not match its validated checksum: $($appImage.Name)"
-            }
-          }
-      - name: Release
-        uses: $/.github/actions/release
-        with:
-          allowUpdates: true
-          replacesArtifacts: true
-          artifacts: artifacts/*
-          body: ${{ needs.changelog.outputs.release_body }}

@@ -1,6 +1,12 @@
 name: CodeQL
 
 on:
+  workflow_call:
+    inputs:
+      candidate_sha:
+        description: 'Immutable release candidate commit to analyze.'
+        required: true
+        type: string
   pull_request:
   push:
     branches:
@@ -25,6 +31,8 @@ jobs:
     steps:
       - name: Checkout
         uses: $/.github/actions/checkout
+        with:
+          ref: ${{ inputs.candidate_sha || github.sha }}
       - name: Install .NET
         uses: $/.github/actions/setup-dotnet
         with:

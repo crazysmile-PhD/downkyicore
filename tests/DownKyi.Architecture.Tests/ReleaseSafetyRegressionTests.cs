@@ -1,6 +1,8 @@
 using System.Buffers.Binary;
 using System.Diagnostics;
 using System.IO.Compression;
+using System.Security.Cryptography;
+using System.Text.Json;
 
 namespace DownKyi.Architecture.Tests;
 
@@ -11,38 +13,54 @@ public sealed class ReleaseSafetyRegressionTests
         File.ReadAllText(Path.Combine(RepositoryRoot, "version.txt")).Trim();
 
     [Fact]
-    public void GenericReleaseWorkflowInvokesFailClosedReleaseGates()
+    public void ReleaseAutomationFreezesOneCandidateAndPublishesItsSealedArtifacts()
     {
-        var workflow = File.ReadAllText(Path.Combine(RepositoryRoot, ".github", "workflows", "build.yml"));
+        var buildWorkflow = File.ReadAllText(Path.Combine(RepositoryRoot, ".github", "workflows", "build.yml"));
+        var prepareWorkflow = File.ReadAllText(Path.Combine(RepositoryRoot, ".github", "workflows", "prepare-release.yml"));
+        var releasePrWorkflow = File.ReadAllText(Path.Combine(RepositoryRoot, ".github", "workflows", "release-pr.yml"));
+        var publisher = File.ReadAllText(Path.Combine(RepositoryRoot, "script", "publish-release-candidate.ps1"));
         var packageValidator = File.ReadAllText(
             Path.Combine(RepositoryRoot, "script", "validate-release-package.ps1"));
 
-        Assert.Contains("validate-release-subject.ps1", workflow, StringComparison.Ordinal);
-        Assert.Contains("resolve-previous-release-tag.ps1", workflow, StringComparison.Ordinal);
+        Assert.Contains("workflow_call:", buildWorkflow, StringComparison.Ordinal);
+        Assert.Contains("candidate_sha:", buildWorkflow, StringComparison.Ordinal);
+        Assert.Contains("inputs.candidate_sha != '' || github.event_name == 'pull_request'", buildWorkflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("push:\n    tags:", buildWorkflow.Replace("\r\n", "\n", StringComparison.Ordinal), StringComparison.Ordinal);
+        Assert.DoesNotContain("  release:", buildWorkflow, StringComparison.Ordinal);
+        Assert.Contains("resolve-previous-release-tag.ps1 -IncludeHead", prepareWorkflow, StringComparison.Ordinal);
         Assert.Contains(
-            "args: -vv ${{ steps.previous-release.outputs.tag }}..HEAD --strip header",
-            workflow,
+            "args: -vv ${{ steps.history.outputs.previous_tag }}..HEAD --tag v${{ inputs.version }} --strip header",
+            prepareWorkflow,
             StringComparison.Ordinal);
-        Assert.DoesNotContain("args: -vv --latest --strip header", workflow, StringComparison.Ordinal);
-        Assert.DoesNotContain($"v{RepositoryVersion}", workflow, StringComparison.Ordinal);
+        Assert.Contains("uses: ./.github/workflows/build.yml", prepareWorkflow, StringComparison.Ordinal);
+        Assert.Contains("uses: ./.github/workflows/codeql.yml", prepareWorkflow, StringComparison.Ordinal);
+        Assert.Contains("script/seal-release-candidate.ps1", prepareWorkflow, StringComparison.Ordinal);
+        Assert.Contains("github.event.pull_request.merged == true", releasePrWorkflow, StringComparison.Ordinal);
+        Assert.Contains("run-id: ${{ needs.inspect.outputs.run_id }}", releasePrWorkflow, StringComparison.Ordinal);
+        Assert.Contains("script/publish-release-candidate.ps1", releasePrWorkflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("publish_release", prepareWorkflow + releasePrWorkflow, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("current main", prepareWorkflow + releasePrWorkflow, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("@('cat-file', '-t', $tag)", publisher, StringComparison.Ordinal);
+        Assert.Contains("MaximumAttempts = 3", publisher, StringComparison.Ordinal);
+        Assert.Contains("retrying the same candidate and artifacts", publisher, StringComparison.Ordinal);
+        Assert.DoesNotContain($"v{RepositoryVersion}", buildWorkflow, StringComparison.Ordinal);
         Assert.DoesNotContain($"'{RepositoryVersion}'", packageValidator, StringComparison.Ordinal);
-        Assert.Contains("resolve-v112-macos-trust.ps1", workflow, StringComparison.Ordinal);
-        Assert.DoesNotContain("HAS_MACOS_SIGNING: ${{ secrets.", workflow, StringComparison.Ordinal);
-        Assert.Equal(3, CountOccurrences(workflow, "validate-release-package.ps1"));
-        Assert.Equal(3, CountOccurrences(workflow, "-ExpectedManifestPath"));
-        Assert.Contains("validate-dmg-package.sh DownKyi-", workflow, StringComparison.Ordinal);
-        Assert.Contains("ubuntu-24.04-arm", workflow, StringComparison.Ordinal);
-        Assert.Contains("validate-linux-arm64:", workflow, StringComparison.Ordinal);
-        Assert.Contains("linux-arm64-${{ matrix.kind }}.candidate.internal.transport.tar", workflow, StringComparison.Ordinal);
-        Assert.Contains("appimage-${{ matrix.cpu }}.transport.tar", workflow, StringComparison.Ordinal);
-        Assert.Contains("Transported AppImage lost non-owner execute permission", workflow, StringComparison.Ordinal);
+        Assert.Contains("resolve-v112-macos-trust.ps1", buildWorkflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("HAS_MACOS_SIGNING: ${{ secrets.", buildWorkflow, StringComparison.Ordinal);
+        Assert.Equal(3, CountOccurrences(buildWorkflow, "validate-release-package.ps1"));
+        Assert.Equal(3, CountOccurrences(buildWorkflow, "-ExpectedManifestPath"));
+        Assert.Contains("validate-dmg-package.sh DownKyi-", buildWorkflow, StringComparison.Ordinal);
+        Assert.Contains("ubuntu-24.04-arm", buildWorkflow, StringComparison.Ordinal);
+        Assert.Contains("validate-linux-arm64:", buildWorkflow, StringComparison.Ordinal);
+        Assert.Contains("linux-arm64-${{ matrix.kind }}.candidate.internal.transport.tar", buildWorkflow, StringComparison.Ordinal);
+        Assert.Contains("appimage-${{ matrix.cpu }}.transport.tar", buildWorkflow, StringComparison.Ordinal);
         Assert.Contains("'--appimage-extract'", packageValidator, StringComparison.Ordinal);
         Assert.Contains("LinkType -ceq 'SymbolicLink'", packageValidator, StringComparison.Ordinal);
         Assert.Contains("usr/bin/DownKyi", packageValidator, StringComparison.Ordinal);
         Assert.Contains("Test-ElfFile", packageValidator, StringComparison.Ordinal);
         Assert.Contains("application-initialization-timeout", packageValidator, StringComparison.Ordinal);
         Assert.Contains("process-cleanup-timeout", packageValidator, StringComparison.Ordinal);
-        Assert.Contains("*.failure-*", workflow, StringComparison.Ordinal);
+        Assert.Contains("*.failure-*", buildWorkflow, StringComparison.Ordinal);
         Assert.Contains(
             "Assert-LinuxBinaryArchitecture -Path $executable",
             packageValidator,
@@ -95,6 +113,14 @@ public sealed class ReleaseSafetyRegressionTests
 
             Assert.Equal(0, result.ExitCode);
             Assert.Equal("v1.8.0", result.StandardOutput.Trim());
+
+            var includingHead = RunPowerShell(
+                resolver,
+                ["-RepositoryRoot", repository, "-IncludeHead"],
+                repository,
+                new Dictionary<string, string> { ["GITHUB_REF"] = "refs/heads/main" });
+            Assert.Equal(0, includingHead.ExitCode);
+            Assert.Equal("v2.0.0", includingHead.StandardOutput.Trim());
         }
         finally
         {
@@ -107,27 +133,30 @@ public sealed class ReleaseSafetyRegressionTests
     {
         var workflow = File.ReadAllText(Path.Combine(RepositoryRoot, ".github", "workflows", "build.yml"));
 
-        AssertArm64PromotionContract(workflow);
+        var sealer = File.ReadAllText(Path.Combine(RepositoryRoot, "script", "seal-release-candidate.ps1"));
+
+        AssertArm64PromotionContract(workflow, sealer);
         Assert.ThrowsAny<Exception>(() => AssertArm64PromotionContract(
             workflow.Replace(
-                "needs: [changelog, build-windows, build-linux, validate-linux-arm64, build-macos]",
-                "needs: [changelog, build-windows, build-linux, build-macos]",
-                StringComparison.Ordinal)));
+                "needs: build-linux",
+                "needs: release-gate",
+                StringComparison.Ordinal),
+            sealer));
         Assert.ThrowsAny<Exception>(() => AssertArm64PromotionContract(
             workflow.Replace(
                 "name: linux-arm64-${{ matrix.kind }}-candidate",
                 "name: appimage-arm64-transport",
-                StringComparison.Ordinal)));
+                StringComparison.Ordinal),
+            sealer));
         Assert.ThrowsAny<Exception>(() => AssertArm64PromotionContract(
             workflow.Replace(
                 "path: candidate/*.failure-*",
                 "path: candidate/missing-validation-diagnostics",
-                StringComparison.Ordinal)));
+                StringComparison.Ordinal),
+            sealer));
         Assert.ThrowsAny<Exception>(() => AssertArm64PromotionContract(
-            workflow.Replace(
-                "Get-ChildItem artifacts -File -Filter '*.internal.transport.tar'",
-                "Get-ChildItem artifacts -File -Filter '*.candidate.transport.tar'",
-                StringComparison.Ordinal)));
+            workflow,
+            sealer.Replace("$appImageTransports.Count -ne 2", "$appImageTransports.Count -ne 1", StringComparison.Ordinal)));
     }
 
     [Fact]
@@ -155,7 +184,7 @@ public sealed class ReleaseSafetyRegressionTests
         Assert.Contains("cpu: [ x64, arm64 ]", linuxPublish, StringComparison.Ordinal);
         Assert.DoesNotContain("kind: [ AppImage, deb, rpm ]", linuxPublish, StringComparison.Ordinal);
         Assert.DoesNotContain("dotnet publish ./DownKyi/DownKyi.csproj", linuxPackages, StringComparison.Ordinal);
-        Assert.Contains("needs: [changelog, build-linux-publish]", linuxPackages, StringComparison.Ordinal);
+        Assert.Contains("needs: [release-gate, build-linux-publish]", linuxPackages, StringComparison.Ordinal);
         Assert.Contains("tools/linux_x64/protoc", workflow, StringComparison.Ordinal);
         Assert.Contains("file artifacts/publish/linux-arm64/DownKyi | grep -qi 'ELF.*aarch64'", workflow, StringComparison.Ordinal);
         Assert.DoesNotContain("p7zip-full", workflow, StringComparison.Ordinal);
@@ -226,13 +255,140 @@ public sealed class ReleaseSafetyRegressionTests
     }
 
     [Fact]
-    public void ReleaseTagProvenanceRejectsLightweightAndNonMainTags()
+    public void ReleaseCandidateMarkerRejectsAChangedPullRequestHead()
+    {
+        var root = CreateTemporaryDirectory();
+        var output = Path.Combine(root, "github-output.txt");
+        var reader = Path.Combine(RepositoryRoot, "script", "read-release-candidate-marker.ps1");
+        const string candidateSha = "0123456789abcdef0123456789abcdef01234567";
+        const string changedSha = "89abcdef0123456789abcdef0123456789abcdef";
+        const string marker = "<!-- downkyi-release-candidate run-id=123 candidate-sha=0123456789abcdef0123456789abcdef01234567 -->";
+
+        try
+        {
+            var valid = RunPowerShell(
+                reader,
+                ["-PullRequestBody", marker, "-ActualHeadSha", candidateSha, "-GitHubOutputPath", output],
+                root);
+            Assert.Equal(0, valid.ExitCode);
+            Assert.Contains("is_candidate=true", File.ReadAllText(output), StringComparison.Ordinal);
+            Assert.Contains("run_id=123", File.ReadAllText(output), StringComparison.Ordinal);
+
+            var changed = RunPowerShell(
+                reader,
+                ["-PullRequestBody", marker, "-ActualHeadSha", changedSha],
+                root);
+            Assert.NotEqual(0, changed.ExitCode);
+            Assert.Contains("run Prepare Release again", NormalizeDiagnostic(changed), StringComparison.Ordinal);
+
+            var ordinaryPullRequest = RunPowerShell(
+                reader,
+                ["-PullRequestBody", "ordinary PR", "-ActualHeadSha", changedSha, "-GitHubOutputPath", output],
+                root);
+            Assert.Equal(0, ordinaryPullRequest.ExitCode);
+            Assert.Contains("is_candidate=false", File.ReadAllText(output), StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(root);
+        }
+    }
+
+    [Fact]
+    public void SealedCandidateValidatorRejectsChangedArtifactBytes()
+    {
+        var root = CreateTemporaryDirectory();
+        var repository = Path.Combine(root, "repository");
+        var candidateDirectory = Path.Combine(root, "candidate");
+        var validator = Path.Combine(RepositoryRoot, "script", "validate-release-candidate.ps1");
+
+        try
+        {
+            Directory.CreateDirectory(repository);
+            Directory.CreateDirectory(candidateDirectory);
+            RunRequired("git", ["init", "-b", "main"], repository);
+            RunRequired("git", ["config", "user.name", "Release Fixture"], repository);
+            RunRequired("git", ["config", "user.email", "release-fixture@example.invalid"], repository);
+            File.WriteAllText(Path.Combine(repository, "version.txt"), "1.2.1\n");
+            File.WriteAllText(Path.Combine(repository, "CHANGELOG.md"), "# 更新日志\n");
+            RunRequired("git", ["add", "version.txt", "CHANGELOG.md"], repository);
+            RunRequired("git", ["commit", "-m", "source"], repository);
+            var sourceSha = RunRequired("git", ["rev-parse", "HEAD"], repository).StandardOutput.Trim();
+
+            File.WriteAllText(Path.Combine(repository, "version.txt"), "1.2.2\n");
+            File.AppendAllText(Path.Combine(repository, "CHANGELOG.md"), "\n## [1.2.2]\n");
+            RunRequired("git", ["add", "version.txt", "CHANGELOG.md"], repository);
+            RunRequired("git", ["commit", "-m", "chore(release): prepare for v1.2.2"], repository);
+            var candidateSha = RunRequired("git", ["rev-parse", "HEAD"], repository).StandardOutput.Trim();
+
+            var assetEntries = new List<object>();
+            var packageExtensions = new[] { "zip", "zip", "AppImage", "deb", "rpm", "AppImage", "deb", "dmg", "dmg" };
+            for (var index = 0; index < packageExtensions.Length; index++)
+            {
+                var packageName = $"package-{index}.{packageExtensions[index]}";
+                WriteCandidateAsset(candidateDirectory, packageName, $"package-{index}", assetEntries);
+                WriteCandidateAsset(candidateDirectory, $"{packageName}.sha256", $"sidecar-{index}", assetEntries);
+                WriteCandidateAsset(candidateDirectory, $"publish-manifest-{index}.json", $"manifest-{index}", assetEntries);
+            }
+            var notesPath = Path.Combine(candidateDirectory, "release-notes.md");
+            File.WriteAllText(notesPath, "## [1.2.2]\n");
+            var manifest = new
+            {
+                schemaVersion = 1,
+                version = "1.2.2",
+                tag = "v1.2.2",
+                sourceSha,
+                candidateSha,
+                prepareRunId = 123,
+                releaseNotes = new
+                {
+                    name = "release-notes.md",
+                    sha256 = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(notesPath)))
+                },
+                assets = assetEntries
+            };
+            File.WriteAllText(
+                Path.Combine(candidateDirectory, "candidate.json"),
+                JsonSerializer.Serialize(manifest));
+
+            var valid = RunPowerShell(
+                validator,
+                [
+                    "-CandidateDirectory", candidateDirectory,
+                    "-ExpectedCandidateSha", candidateSha,
+                    "-ExpectedPrepareRunId", "123",
+                    "-RepositoryRoot", repository
+                ],
+                repository);
+            Assert.Equal(0, valid.ExitCode);
+
+            File.AppendAllText(Path.Combine(candidateDirectory, "package-0.zip"), "tampered");
+            var tampered = RunPowerShell(
+                validator,
+                [
+                    "-CandidateDirectory", candidateDirectory,
+                    "-ExpectedCandidateSha", candidateSha,
+                    "-ExpectedPrepareRunId", "123",
+                    "-RepositoryRoot", repository
+                ],
+                repository);
+            Assert.NotEqual(0, tampered.ExitCode);
+            Assert.Contains("changed", NormalizeDiagnostic(tampered), StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(root);
+        }
+    }
+
+    [Fact]
+    public void ReleasePublisherCreatesReusesAndRejectsCandidateTagsByExactTarget()
     {
         var root = CreateTemporaryDirectory();
         var remote = Path.Combine(root, "remote.git");
         var repository = Path.Combine(root, "repository");
-        var validator = Path.Combine(RepositoryRoot, "script", "validate-release-subject.ps1");
-        var releaseTag = $"v{RepositoryVersion}";
+        var candidateDirectory = Path.Combine(root, "candidate");
+        var publisher = Path.Combine(RepositoryRoot, "script", "publish-release-candidate.ps1");
 
         try
         {
@@ -240,65 +396,75 @@ public sealed class ReleaseSafetyRegressionTests
             RunRequired("git", ["init", "-b", "main", repository], root);
             RunRequired("git", ["config", "user.name", "Release Fixture"], repository);
             RunRequired("git", ["config", "user.email", "release-fixture@example.invalid"], repository);
-            File.WriteAllText(Path.Combine(repository, "fixture.txt"), "main");
-            File.WriteAllText(Path.Combine(repository, "version.txt"), RepositoryVersion);
-            RunRequired("git", ["add", "fixture.txt", "version.txt"], repository);
-            RunRequired("git", ["commit", "-m", "main fixture"], repository);
+            File.WriteAllText(Path.Combine(repository, "source.txt"), "source");
+            RunRequired("git", ["add", "source.txt"], repository);
+            RunRequired("git", ["commit", "-m", "source"], repository);
+            var sourceSha = RunRequired("git", ["rev-parse", "HEAD"], repository).StandardOutput.Trim();
+            File.AppendAllText(Path.Combine(repository, "source.txt"), "\ncandidate");
+            RunRequired("git", ["add", "source.txt"], repository);
+            RunRequired("git", ["commit", "-m", "candidate"], repository);
+            var candidateSha = RunRequired("git", ["rev-parse", "HEAD"], repository).StandardOutput.Trim();
             RunRequired("git", ["remote", "add", "origin", remote], repository);
             RunRequired("git", ["push", "-u", "origin", "main"], repository);
-            var mainCommit = RunRequired("git", ["rev-parse", "HEAD"], repository).StandardOutput.Trim();
 
-            RunRequired("git", ["tag", "-a", releaseTag, "-m", releaseTag], repository);
-            var valid = RunPowerShell(
-                validator,
-                ["-SubjectDirectory", repository, "-ReleaseVersion", releaseTag, "-SubjectSha", mainCommit],
+            Directory.CreateDirectory(candidateDirectory);
+            File.WriteAllText(Path.Combine(candidateDirectory, "release-notes.md"), "notes");
+            File.WriteAllText(
+                Path.Combine(candidateDirectory, "candidate.json"),
+                JsonSerializer.Serialize(new
+                {
+                    tag = "v9.0.0",
+                    candidateSha,
+                    releaseNotes = new { name = "release-notes.md" },
+                    assets = Array.Empty<object>()
+                }));
+
+            var absent = RunPowerShell(
+                publisher,
+                [
+                    "-CandidateDirectory", candidateDirectory,
+                    "-RepositoryRoot", repository,
+                    "-MaximumAttempts", "1",
+                    "-RetryDelaySeconds", "0"
+                ],
                 repository);
-            Assert.Equal(0, valid.ExitCode);
+            Assert.NotEqual(0, absent.ExitCode);
+            var absentDiagnostic = NormalizeDiagnostic(absent);
+            Assert.True(
+                absentDiagnostic.Contains("Created annotated release tag", StringComparison.Ordinal),
+                absentDiagnostic);
+            Assert.Equal(
+                "tag",
+                RunRequired("git", ["--git-dir", remote, "cat-file", "-t", "refs/tags/v9.0.0"], root).StandardOutput.Trim());
+            Assert.Equal(
+                candidateSha,
+                RunRequired("git", ["--git-dir", remote, "rev-parse", "refs/tags/v9.0.0^{}"], root).StandardOutput.Trim());
 
-            RunRequired("git", ["tag", "-d", releaseTag], repository);
-            RunRequired("git", ["tag", releaseTag], repository);
-            var lightweight = RunPowerShell(
-                validator,
-                ["-SubjectDirectory", repository, "-ReleaseVersion", releaseTag, "-SubjectSha", mainCommit],
+            var same = RunPowerShell(
+                publisher,
+                [
+                    "-CandidateDirectory", candidateDirectory,
+                    "-RepositoryRoot", repository,
+                    "-MaximumAttempts", "1",
+                    "-RetryDelaySeconds", "0"
+                ],
                 repository);
-            Assert.NotEqual(0, lightweight.ExitCode);
-            Assert.Contains("annotated tag", NormalizeDiagnostic(lightweight), StringComparison.OrdinalIgnoreCase);
+            Assert.NotEqual(0, same.ExitCode);
+            Assert.Contains("already points to the candidate", NormalizeDiagnostic(same), StringComparison.Ordinal);
 
-            RunRequired("git", ["tag", "-d", releaseTag], repository);
-            File.WriteAllText(Path.Combine(repository, "version.txt"), "0.0.0");
-            RunRequired("git", ["add", "version.txt"], repository);
-            RunRequired("git", ["commit", "-m", "mismatched version fixture"], repository);
-            RunRequired("git", ["push", "origin", "main"], repository);
-            var mismatchedMainCommit = RunRequired("git", ["rev-parse", "HEAD"], repository).StandardOutput.Trim();
-            RunRequired("git", ["tag", "-a", releaseTag, "-m", releaseTag], repository);
-            var mismatchedVersion = RunPowerShell(
-                validator,
-                ["-SubjectDirectory", repository, "-ReleaseVersion", releaseTag, "-SubjectSha", mismatchedMainCommit],
+            RunRequired("git", ["tag", "-f", "-a", "v9.0.0", sourceSha, "-m", "wrong target"], repository);
+            RunRequired("git", ["push", "--force", "origin", "refs/tags/v9.0.0"], repository);
+            var different = RunPowerShell(
+                publisher,
+                [
+                    "-CandidateDirectory", candidateDirectory,
+                    "-RepositoryRoot", repository,
+                    "-MaximumAttempts", "1",
+                    "-RetryDelaySeconds", "0"
+                ],
                 repository);
-            Assert.NotEqual(0, mismatchedVersion.ExitCode);
-            Assert.Contains("does not match version.txt", NormalizeDiagnostic(mismatchedVersion), StringComparison.Ordinal);
-
-            File.WriteAllText(Path.Combine(repository, "version.txt"), RepositoryVersion);
-            RunRequired("git", ["add", "version.txt"], repository);
-            RunRequired("git", ["commit", "-m", "restore release version fixture"], repository);
-            RunRequired("git", ["push", "origin", "main"], repository);
-
-            RunRequired("git", ["checkout", "-b", "release-fixture"], repository);
-            File.AppendAllText(Path.Combine(repository, "fixture.txt"), "\nrelease-only");
-            RunRequired("git", ["add", "fixture.txt"], repository);
-            RunRequired("git", ["commit", "-m", "release-only fixture"], repository);
-            var releaseOnlyCommit = RunRequired("git", ["rev-parse", "HEAD"], repository).StandardOutput.Trim();
-            RunRequired("git", ["tag", "-f", "-a", releaseTag, "-m", releaseTag], repository);
-            var remoteMain = RunRequired("git", ["rev-parse", "refs/remotes/origin/main"], repository).StandardOutput.Trim();
-            Assert.NotEqual(remoteMain, releaseOnlyCommit);
-            Assert.Equal("tag", RunRequired("git", ["cat-file", "-t", releaseTag], repository).StandardOutput.Trim());
-            Assert.Equal(releaseOnlyCommit, RunRequired("git", ["rev-list", "-n", "1", releaseTag], repository).StandardOutput.Trim());
-            Assert.Equal(RepositoryVersion, File.ReadAllText(Path.Combine(repository, "version.txt")));
-            var nonMain = RunPowerShell(
-                validator,
-                ["-SubjectDirectory", repository, "-ReleaseVersion", releaseTag, "-SubjectSha", releaseOnlyCommit],
-                repository);
-            Assert.NotEqual(0, nonMain.ExitCode);
+            Assert.NotEqual(0, different.ExitCode);
+            Assert.Contains("instead of candidate", NormalizeDiagnostic(different), StringComparison.Ordinal);
         }
         finally
         {
@@ -1437,11 +1603,27 @@ public sealed class ReleaseSafetyRegressionTests
     private static int CountOccurrences(string source, string value) =>
         source.Split(value, StringSplitOptions.None).Length - 1;
 
-    private static void AssertArm64PromotionContract(string workflow)
+    private static void WriteCandidateAsset(
+        string directory,
+        string name,
+        string content,
+        List<object> entries)
+    {
+        var path = Path.Combine(directory, name);
+        File.WriteAllText(path, content);
+        var bytes = File.ReadAllBytes(path);
+        entries.Add(new
+        {
+            name,
+            size = bytes.Length,
+            sha256 = Convert.ToHexString(SHA256.HashData(bytes))
+        });
+    }
+
+    private static void AssertArm64PromotionContract(string workflow, string sealer)
     {
         var buildLinux = GetWorkflowJob(workflow, "build-linux");
         var validateArm64 = GetWorkflowJob(workflow, "validate-linux-arm64");
-        var release = GetWorkflowJob(workflow, "release");
 
         Assert.Contains(
             "name: linux-arm64-${{ matrix.kind }}-candidate",
@@ -1468,18 +1650,11 @@ public sealed class ReleaseSafetyRegressionTests
             validateArm64,
             StringComparison.Ordinal);
 
-        Assert.Contains(
-            "needs: [changelog, build-windows, build-linux, validate-linux-arm64, build-macos]",
-            release,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "Get-ChildItem artifacts -File -Filter '*.internal.transport.tar'",
-            release,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "Get-ChildItem artifacts -Recurse -File -Filter '*.internal.*'",
-            release,
-            StringComparison.Ordinal);
+        Assert.Contains("$appImageTransports.Count -ne 2", sealer, StringComparison.Ordinal);
+        Assert.Contains("$packages.Count -ne 9", sealer, StringComparison.Ordinal);
+        Assert.Contains("$sidecars.Count -ne 9", sealer, StringComparison.Ordinal);
+        Assert.Contains("$publishManifests.Count -ne 9", sealer, StringComparison.Ordinal);
+        Assert.DoesNotContain("  release:", workflow, StringComparison.Ordinal);
     }
 
     private static string GetWorkflowJob(string workflow, string jobName)

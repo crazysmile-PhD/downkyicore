@@ -76,22 +76,33 @@ Core 只保存外部 binary catalog，不得選擇平台內容或設定 SDK
 `RuntimeIdentifier`。exe 專案必須從明確的 publish RID 建立 asset RID，
 沒有 publish RID 時才可依本機 host 提供開發 fallback，並直接把對應
 catalog 檔案加入 output/publish；自訂 RID 不得跨 ProjectReference。
-推 tag 前手動執行 `build.yml`，下載每個 artifact，重算 package
-sidecar，並檢查 manifest、版本、必要 binary、Fluent theme 與使用者
-資料排除。macOS artifact 另需確認 x64 與 arm64 final app 均已完成簽章並
+正式發布從 GitHub Actions 手動啟動 `Prepare Release`，在 UI 選定 source
+ref 並輸入下一個 stable SemVer。該 run 會固定 candidate SHA、執行完整
+build/test/CodeQL/package、封存可下載的 candidate artifacts，並建立只修改
+`version.txt` 與 `CHANGELOG.md` 的 Release PR。下載該 run 的 sealed candidate
+进行实际验证；发现问题时不 merge，修复后重新执行 `Prepare Release`。
+
+Release PR 的 merge 是唯一发布批准。`Release PR` workflow 会把原 candidate
+SHA 建立为 annotated tag，并发布原 Prepare run 的 sealed artifacts；不得手动
+建立 tag、重新选择 current `main` 或重新 build。candidate branch 一旦变化，
+旧验证立即失效，必须重新执行 `Prepare Release`。
+
+下载 candidate 后重算 package sidecar，并检查 manifest、版本、必要 binary、
+Fluent theme 与使用者资料排除。macOS artifact 另需确认 x64 与 arm64 final app
+均已完成签章并
 通過 `codesign --verify --deep --strict`；缺少 Apple credentials 時使用 ad-hoc
 簽章，Developer ID、notarization、stapling、Gatekeeper 與 signed-DMG 驗證會
 跳過，產物不得宣稱具備這些信任屬性。具備完整 Apple credentials 時才要求
 上述額外步驟全部通過。任何 final app bundle 完整性失敗仍必須 fail closed。
 
-正式 tag 前及 workflow 中均執行：
+本地 package 验证仍可执行：
 
 ```powershell
-$version = (Get-Content ./version.txt -Raw).Trim()
-pwsh ./script/validate-release-version.ps1 -GitRef "refs/tags/v$version"
+pwsh ./script/validate-release-version.ps1
 ```
 
-這個檢查要求 tag 與 `version.txt` 完全一致；不得移動或重用既有 tag。
+tag identity 由 merged Release PR 的 candidate manifest 与 publish workflow
+负责；不得移动或重用既有 tag。
 
 登入態 API audit 只能由明確授權的 operator 執行：
 

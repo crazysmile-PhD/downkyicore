@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-    [string]$RepositoryRoot = (Split-Path -Parent $PSScriptRoot)
+    [string]$RepositoryRoot = (Split-Path -Parent $PSScriptRoot),
+    [switch]$IncludeHead
 )
 
 $ErrorActionPreference = 'Stop'
@@ -38,7 +39,8 @@ foreach ($tagLine in $tagLines) {
 }
 
 $history = @(Invoke-RepositoryGit rev-list --first-parent HEAD)
-foreach ($commit in ($history | Select-Object -Skip 1)) {
+$skipCount = if ($IncludeHead) { 0 } else { 1 }
+foreach ($commit in ($history | Select-Object -Skip $skipCount)) {
     $normalizedCommit = $commit.Trim().ToLowerInvariant()
     if (-not $releaseTagsByCommit.ContainsKey($normalizedCommit)) {
         continue

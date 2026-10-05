@@ -1,0 +1,176 @@
+name: Prepare Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Stable release version, for example 1.2.0.'
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+  pull-requests: write
+  security-events: write
+
+concurrency:
+  group: downkyi-release
+  cancel-in-progress: false
+
+jobs:
+  prepare-candidate:
+    name: Freeze release candidate
+    runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
+    outputs:
+      branch: ${{ steps.candidate.outputs.branch }}
+      candidate_sha: ${{ steps.candidate.outputs.candidate_sha }}
+      source_sha: ${{ steps.candidate.outputs.source_sha }}
+      version: ${{ steps.candidate.outputs.version }}
+    steps:
+      - name: Checkout selected source commit
+        uses: $/.github/actions/checkout
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Resolve release history range
+        id: history
+        shell: pwsh
+        run: |
+          $tag = ./script/resolve-previous-release-tag.ps1 -IncludeHead
+          "previous_tag=$tag" | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+      - name: Create release notes directory
+        shell: pwsh
+        run: New-Item -ItemType Directory -Path artifacts/release-inputs -Force | Out-Null
+      - name: Generate release notes from the owned range
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: -vv ${{ steps.history.outputs.previous_tag }}..HEAD --tag v${{ inputs.version }} --strip header
+        env:
+          OUTPUT: artifacts/release-inputs/release-notes.md
+      - name: Generate repository release metadata
+        shell: pwsh
+        run: >
+          ./script/prepare-release-metadata.ps1
+          -Version '${{ inputs.version }}'
+          -PreviousReleaseTag '${{ steps.history.outputs.previous_tag }}'
+          -ReleaseNotesPath artifacts/release-inputs/release-notes.md
+      - name: Commit and push immutable candidate
+        id: candidate
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          $sourceSha = (git rev-parse HEAD).Trim()
+          $changes = @(git diff --name-only)
+          if ([string]::Join("`n", $changes) -ne "CHANGELOG.md`nversion.txt") {
+            throw "Prepare Release may change only CHANGELOG.md and version.txt; found: $($changes -join ', ')"
+          }
+          $branch = "release/v$env:RELEASE_VERSION-candidate-${{ github.run_id }}"
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git switch -c $branch
+          git add -- CHANGELOG.md version.txt
+          git commit -m "chore(release): prepare for v$env:RELEASE_VERSION"
+          $candidateSha = (git rev-parse HEAD).Trim()
+          git push origin "HEAD:refs/heads/$branch"
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to push the release candidate branch.' }
+          @(
+            "branch=$branch"
+            "candidate_sha=$candidateSha"
+            "source_sha=$sourceSha"
+            "version=$env:RELEASE_VERSION"
+          ) | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+      - name: Save generated release notes
+        uses: $/.github/actions/upload-artifact
+        with:
+          name: release-inputs
+          path: artifacts/release-inputs/release-notes.md
+          retention-days: 90
+
+  build-test-package:
+    name: Build, test, and package candidate
+    needs: prepare-candidate
+    uses: ./.github/workflows/build.yml
+    with:
+      candidate_sha: ${{ needs.prepare-candidate.outputs.candidate_sha }}
+    secrets: inherit
+
+  codeql:
+    name: CodeQL candidate
+    needs: prepare-candidate
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    uses: ./.github/workflows/codeql.yml
+    with:
+      candidate_sha: ${{ needs.prepare-candidate.outputs.candidate_sha }}
+
+  seal-and-open-pr:
+    name: Seal candidate and open Release PR
+    needs:
+      - prepare-candidate
+      - build-test-package
+      - codeql
+    runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
+    steps:
+      - name: Checkout candidate
+        uses: $/.github/actions/checkout
+        with:
+          ref: ${{ needs.prepare-candidate.outputs.candidate_sha }}
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Download candidate build outputs
+        uses: $/.github/actions/download-artifact
+        with:
+          path: artifacts/candidate-inputs
+      - name: Seal the tested candidate artifacts
+        shell: pwsh
+        run: >
+          ./script/seal-release-candidate.ps1
+          -InputDirectory artifacts/candidate-inputs
+          -OutputDirectory artifacts/release-candidate
+          -ReleaseNotesPath artifacts/candidate-inputs/release-inputs/release-notes.md
+          -Version '${{ needs.prepare-candidate.outputs.version }}'
+          -SourceSha '${{ needs.prepare-candidate.outputs.source_sha }}'
+          -CandidateSha '${{ needs.prepare-candidate.outputs.candidate_sha }}'
+          -PrepareRunId '${{ github.run_id }}'
+      - name: Upload downloadable release candidate
+        uses: $/.github/actions/upload-artifact
+        with:
+          name: release-candidate-${{ needs.prepare-candidate.outputs.version }}-${{ needs.prepare-candidate.outputs.candidate_sha }}
+          path: artifacts/release-candidate
+          retention-days: 90
+      - name: Create Release PR body
+        shell: pwsh
+        run: |
+          @'
+          ## Release candidate
+
+          - Version: `v${{ needs.prepare-candidate.outputs.version }}`
+          - Source commit: `${{ needs.prepare-candidate.outputs.source_sha }}`
+          - Candidate commit: `${{ needs.prepare-candidate.outputs.candidate_sha }}`
+          - Download and test the sealed artifacts from [Prepare Release run ${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}).
+
+          Merge is the only formal release approval. If the candidate branch changes or testing finds a problem, do not merge this PR; abandon it and run Prepare Release again.
+
+          <!-- downkyi-release-candidate run-id=${{ github.run_id }} candidate-sha=${{ needs.prepare-candidate.outputs.candidate_sha }} -->
+          '@ | Set-Content -LiteralPath artifacts/release-pr-body.md -Encoding utf8
+      - name: Open Release PR
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.DOWNKYI_AUTOMATION_TOKEN }}
+          RELEASE_BRANCH: ${{ needs.prepare-candidate.outputs.branch }}
+          RELEASE_VERSION: ${{ needs.prepare-candidate.outputs.version }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:GH_TOKEN)) {
+            throw 'DOWNKYI_AUTOMATION_TOKEN is required to create the Release PR.'
+          }
+          gh pr create `
+            --base main `
+            --head $env:RELEASE_BRANCH `
+            --title "chore(release): prepare for v$env:RELEASE_VERSION" `
+            --body-file artifacts/release-pr-body.md

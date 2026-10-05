@@ -17,6 +17,14 @@ inputs:
     description: Whether multiple matched artifacts share the destination directory.
     required: false
     default: 'false'
+  github-token:
+    description: Token used when downloading from another workflow run.
+    required: false
+    default: ''
+  run-id:
+    description: Workflow run containing the artifact.
+    required: false
+    default: ''
 
 runs:
   using: composite
@@ -28,3 +36,5 @@ runs:
         path: ${{ inputs.path }}
         pattern: ${{ inputs.pattern }}
         merge-multiple: ${{ inputs.merge-multiple }}
+        github-token: ${{ inputs.github-token }}
+        run-id: ${{ inputs.run-id }}
