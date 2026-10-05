@@ -25,11 +25,11 @@ jobs:
           - macos-15
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: $/.github/actions/checkout
         with:
           fetch-depth: 1
       - name: Install .NET
-        uses: actions/setup-dotnet@v6
+        uses: $/.github/actions/setup-dotnet
         with:
           global-json-file: global.json
       - name: Install FFmpeg (Windows)
@@ -73,7 +73,7 @@ jobs:
           dotnet run --project $env:BENCHMARK_PROJECT -c Release --no-build -- --output $report
       - name: Upload baseline report
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: $/.github/actions/upload-artifact
         with:
           name: system-baseline-${{ runner.os }}-${{ runner.arch }}
           path: BenchmarkDotNet.Artifacts/system-*.json

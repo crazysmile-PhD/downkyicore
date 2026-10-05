@@ -1,0 +1,15 @@
+name: Install Python
+description: Repository-owned version outlet for actions/setup-python.
+
+inputs:
+  python-version-file:
+    description: Repository path to the authoritative Python version file.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Install Python
+      uses: actions/setup-python@v7
+      with:
+        python-version-file: ${{ inputs.python-version-file }}

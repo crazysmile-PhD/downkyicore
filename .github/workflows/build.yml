@@ -40,13 +40,13 @@ jobs:
     runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: $/.github/actions/checkout
       - name: Install Python
-        uses: actions/setup-python@v7
+        uses: $/.github/actions/setup-python
         with:
           python-version-file: .python-version
       - name: Validate GitHub Actions workflow syntax
-        uses: raven-actions/actionlint@v2
+        uses: $/.github/actions/actionlint
         with:
           files: .github/workflows/build.yml,.github/workflows/update-ffmpeg-assets.yml
           fail-on-error: true
@@ -89,9 +89,9 @@ jobs:
     runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: $/.github/actions/checkout
       - name: Install Python
-        uses: actions/setup-python@v7
+        uses: $/.github/actions/setup-python
         with:
           python-version-file: .python-version
       - name: Validate immutable FFmpeg manifest
@@ -138,12 +138,12 @@ jobs:
           - macos-15
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: $/.github/actions/checkout
       - name: Validate version and tag contract
         shell: pwsh
         run: ./script/validate-release-version.ps1
       - name: Install .NET
-        uses: actions/setup-dotnet@v6
+        uses: $/.github/actions/setup-dotnet
         with:
           global-json-file: global.json
       - name: Restore
@@ -171,7 +171,7 @@ jobs:
       - name: Upload test results and failure diagnostics
         if: always()
         continue-on-error: ${{ github.event_name == 'pull_request' }}
-        uses: actions/upload-artifact@v7
+        uses: $/.github/actions/upload-artifact
         with:
           name: release-gate-test-results-${{ matrix.os }}
           path: |
@@ -188,7 +188,7 @@ jobs:
       release_body: ${{ steps.git-cliff.outputs.content }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: $/.github/actions/checkout
         with:
           fetch-depth: 0
       - name: Validate exact release subject
@@ -221,13 +221,13 @@ jobs:
         kind: [ zip ]
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: $/.github/actions/checkout
       - name: Install .NET
-        uses: actions/setup-dotnet@v6
+        uses: $/.github/actions/setup-dotnet
         with:
           global-json-file: global.json
       - name: Install Python for FFmpeg manifest verification
-        uses: actions/setup-python@v7
+        uses: $/.github/actions/setup-python
         with:
           python-version-file: .python-version
       - name: Read Version Text
@@ -237,8 +237,8 @@ jobs:
           $version = (Get-Content -Raw version.txt).Trim()
           "content=$version" >> $env:GITHUB_OUTPUT
       - name: Install Pupnet
-        run: |
-          dotnet tool install --tool-path .\.tools KuiperZone.PupNet --version 1.8.0
+        shell: pwsh
+        run: ./script/install-pupnet.ps1 -ToolPath ./.tools
       - name: Get Deps
         run: |
           .\ffmpeg.ps1 ${{ matrix.cpu }}
@@ -283,7 +283,7 @@ jobs:
           "$hash  $([IO.Path]::GetFileName($package))" | Set-Content -LiteralPath "$package.sha256" -Encoding ascii
       - name: Upload build artifacts ${{ matrix.kind }}
         continue-on-error: ${{ github.event_name == 'pull_request' }}
-        uses: actions/upload-artifact@v7
+        uses: $/.github/actions/upload-artifact
         with:
           name: DownKyi-${{ steps.version.outputs.content }}-1.win-${{ matrix.cpu }}.${{ matrix.kind }}
           path: |
@@ -299,13 +299,13 @@ jobs:
         cpu: [ x64, arm64 ]
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: $/.github/actions/checkout
       - name: Install .NET
-        uses: actions/setup-dotnet@v6
+        uses: $/.github/actions/setup-dotnet
         with:
           global-json-file: global.json
       - name: Install Python for FFmpeg manifest verification
-        uses: actions/setup-python@v7
+        uses: $/.github/actions/setup-python
         with:
           python-version-file: .python-version
       - name: Read Version Text
@@ -342,7 +342,9 @@ jobs:
         if: ${{ matrix.cpu == 'arm64' }}
         run: |
           test "$(uname -m)" = x86_64
-          protoc="$HOME/.nuget/packages/grpc.tools/2.82.0/tools/linux_x64/protoc"
+          grpc_tools_path="$(dotnet msbuild DownKyi.Core/DownKyi.Core.csproj -nologo -verbosity:quiet -getProperty:PkgGrpc_Tools -p:Configuration=Release)"
+          test -n "$grpc_tools_path"
+          protoc="$grpc_tools_path/tools/linux_x64/protoc"
           test -x "$protoc"
           file "$protoc" | grep -q 'x86-64'
           "$protoc" --version
@@ -355,7 +357,7 @@ jobs:
             "publish/linux-${{ matrix.cpu }}" \
             "canonical-transport/expected-publish-manifest-linux-${{ matrix.cpu }}.json"
       - name: Upload canonical Linux publish transport
-        uses: actions/upload-artifact@v7
+        uses: $/.github/actions/upload-artifact
         with:
           name: linux-${{ matrix.cpu }}-canonical-publish
           path: linux-${{ matrix.cpu }}.canonical-publish.internal.transport.tar
@@ -400,9 +402,9 @@ jobs:
             cpu: arm64
     steps:
       - name: Checkout packagers
-        uses: actions/checkout@v7
+        uses: $/.github/actions/checkout
       - name: Install .NET
-        uses: actions/setup-dotnet@v6
+        uses: $/.github/actions/setup-dotnet
         with:
           global-json-file: global.json
       - name: Read Version Text
@@ -411,13 +413,13 @@ jobs:
           echo "content=$(tr -d '\r\n' < version.txt)" >> "$GITHUB_OUTPUT"
       - name: Install Pupnet and package validators
         run: |
-          dotnet tool install --tool-path ./.tools KuiperZone.PupNet --version 1.8.0
+          pwsh ./script/install-pupnet.ps1 -ToolPath ./.tools
           sudo apt-get update
           fuse_package=libfuse2
           if ! apt-cache show "$fuse_package" >/dev/null 2>&1; then fuse_package=libfuse2t64; fi
           sudo apt-get install -y cpio "$fuse_package" rpm rpm2cpio xauth xvfb
       - name: Download canonical Linux publish
-        uses: actions/download-artifact@v8
+        uses: $/.github/actions/download-artifact
         with:
           name: linux-${{ matrix.cpu }}-canonical-publish
           path: canonical
@@ -453,7 +455,7 @@ jobs:
           "$hash  $($package.Name)" | Set-Content -LiteralPath "$($package.FullName).sha256" -Encoding ascii
       - name: Upload Linux package validation diagnostics
         if: ${{ failure() && matrix.cpu == 'x64' }}
-        uses: actions/upload-artifact@v7
+        uses: $/.github/actions/upload-artifact
         with:
           name: linux-${{ matrix.cpu }}-${{ matrix.kind }}-validation-diagnostics
           path: script/pupnet/output/*.failure-*
@@ -474,7 +476,7 @@ jobs:
       - name: Upload build artifacts ${{ matrix.kind }}
         if: ${{ matrix.kind != 'AppImage' && matrix.cpu == 'x64' }}
         continue-on-error: ${{ github.event_name == 'pull_request' }}
-        uses: actions/upload-artifact@v7
+        uses: $/.github/actions/upload-artifact
         with:
           name: ${{ matrix.package-head }}${{ steps.version.outputs.content }}_linux_${{ matrix.type }}${{ matrix.package-tail }}.${{ matrix.kind }}
           path: |
@@ -484,13 +486,13 @@ jobs:
       - name: Upload permission-preserving AppImage transport
         if: ${{ matrix.kind == 'AppImage' && matrix.cpu == 'x64' }}
         continue-on-error: ${{ github.event_name == 'pull_request' }}
-        uses: actions/upload-artifact@v7
+        uses: $/.github/actions/upload-artifact
         with:
           name: appimage-${{ matrix.cpu }}-transport
           path: appimage-${{ matrix.cpu }}.transport.tar
       - name: Upload ARM64 native-validation candidate transport
         if: ${{ matrix.cpu == 'arm64' }}
-        uses: actions/upload-artifact@v7
+        uses: $/.github/actions/upload-artifact
         with:
           name: linux-arm64-${{ matrix.kind }}-candidate
           path: linux-arm64-${{ matrix.kind }}.candidate.internal.transport.tar
@@ -508,7 +510,7 @@ jobs:
             package-filter: '*_arm64.deb'
     steps:
       - name: Checkout validators
-        uses: actions/checkout@v7
+        uses: $/.github/actions/checkout
       - name: Read Version Text
         id: version
         run: |
@@ -520,7 +522,7 @@ jobs:
           if ! apt-cache show "$fuse_package" >/dev/null 2>&1; then fuse_package=libfuse2t64; fi
           sudo apt-get install -y "$fuse_package" xauth xvfb
       - name: Download ARM64 native-validation candidate
-        uses: actions/download-artifact@v8
+        uses: $/.github/actions/download-artifact
         with:
           name: linux-arm64-${{ matrix.kind }}-candidate
           path: candidate
@@ -544,7 +546,7 @@ jobs:
           "$hash  $($packages[0].Name)" | Set-Content -LiteralPath "$($packages[0].FullName).sha256" -Encoding ascii
       - name: Upload ARM64 package validation diagnostics
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v7
+        uses: $/.github/actions/upload-artifact
         with:
           name: linux-arm64-${{ matrix.kind }}-validation-diagnostics
           path: candidate/*.failure-*
@@ -559,14 +561,14 @@ jobs:
       - name: Upload validated ARM64 AppImage transport
         if: ${{ matrix.kind == 'AppImage' }}
         continue-on-error: ${{ github.event_name == 'pull_request' }}
-        uses: actions/upload-artifact@v7
+        uses: $/.github/actions/upload-artifact
         with:
           name: appimage-arm64-transport
           path: appimage-arm64.transport.tar
       - name: Upload validated ARM64 Debian package
         if: ${{ matrix.kind == 'deb' }}
         continue-on-error: ${{ github.event_name == 'pull_request' }}
-        uses: actions/upload-artifact@v7
+        uses: $/.github/actions/upload-artifact
         with:
           name: downkyi_${{ steps.version.outputs.content }}_linux_self-contained_arm64.deb
           path: |
@@ -587,7 +589,7 @@ jobs:
             os: macos-15
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: $/.github/actions/checkout
       - name: Resolve macOS release trust mode
         shell: pwsh
         env:
@@ -604,7 +606,7 @@ jobs:
           "MACOS_TRUST_MODE=$($trust.macosTrustMode)" | Add-Content -LiteralPath $env:GITHUB_ENV -Encoding utf8
       - name: Import certificate
         if: ${{ env.HAS_MACOS_SIGNING == 'true' }}
-        uses: apple-actions/import-codesign-certs@v7
+        uses: $/.github/actions/import-codesign-certs
         with:
           p12-file-base64: ${{ secrets.MACOS_CERTIFICATE }}
           p12-password: ${{ secrets.MACOS_CERTIFICATE_PWD }}
@@ -623,7 +625,7 @@ jobs:
           brew untap aws/tap || true
           brew install create-dmg tree
       - name: Install .NET
-        uses: actions/setup-dotnet@v6
+        uses: $/.github/actions/setup-dotnet
         with:
           global-json-file: global.json
       - name: Run macOS packaging regressions
@@ -636,7 +638,7 @@ jobs:
       - name: Upload macOS packaging test results and failure diagnostics
         if: always()
         continue-on-error: ${{ github.event_name == 'pull_request' }}
-        uses: actions/upload-artifact@v7
+        uses: $/.github/actions/upload-artifact
         with:
           name: macos-packaging-test-results-${{ matrix.cpu }}
           path: |
@@ -644,7 +646,7 @@ jobs:
             artifacts/test-flight-recorder
           if-no-files-found: ignore
       - name: Install Python for FFmpeg manifest verification
-        uses: actions/setup-python@v7
+        uses: $/.github/actions/setup-python
         with:
           python-version-file: .python-version
       - name: Read Version Text
@@ -659,9 +661,14 @@ jobs:
           ./ffmpeg.sh mac ${{ matrix.cpu }}
         working-directory: ./script
       - name: Build ${{ matrix.cpu }}
+        id: publish-output
         run: |
           dotnet restore DownKyi/DownKyi.csproj -r osx-${{ matrix.cpu }}
           dotnet publish DownKyi/DownKyi.csproj --no-restore --self-contained -r osx-${{ matrix.cpu }} -c Release -p:DebugType=None -p:DebugSymbols=false
+          target_framework="$(dotnet msbuild DownKyi/DownKyi.csproj -nologo -verbosity:quiet -getProperty:TargetFramework -p:Configuration=Release)"
+          test -n "$target_framework"
+          test "${target_framework#*$'\n'}" = "$target_framework"
+          printf 'directory=DownKyi/bin/Release/%s/osx-%s/publish\n' "$target_framework" '${{ matrix.cpu }}' >> "$GITHUB_OUTPUT"
       - name: Package app
         run: |
           chmod +x package.sh set-bundle-version.sh
@@ -671,7 +678,7 @@ jobs:
         shell: pwsh
         run: |
           ./script/validate-publish-output.ps1 `
-            -PublishDirectory "DownKyi/bin/Release/net10.0/osx-${{ matrix.cpu }}/publish" `
+            -PublishDirectory "${{ steps.publish-output.outputs.directory }}" `
             -RuntimeIdentifier "osx-${{ matrix.cpu }}" `
             -ExpectedVersion "${{ steps.version.outputs.content }}" `
             -OutputPath "script/macos/publish-manifest-osx-${{ matrix.cpu }}.json"
@@ -749,7 +756,7 @@ jobs:
           "$hash  $([IO.Path]::GetFileName($package))" | Set-Content -LiteralPath "$package.sha256" -Encoding ascii
       - name: Upload build artifacts
         continue-on-error: ${{ github.event_name == 'pull_request' }}
-        uses: actions/upload-artifact@v7
+        uses: $/.github/actions/upload-artifact
         with:
           name: DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg
           path: |
@@ -765,9 +772,9 @@ jobs:
     if: ${{ startsWith(github.ref, 'refs/tags/') }}
     steps:
       - name: Checkout release validators
-        uses: actions/checkout@v7
+        uses: $/.github/actions/checkout
       - name: Download build artifacts
-        uses: actions/download-artifact@v8
+        uses: $/.github/actions/download-artifact
         with:
           path: artifacts
           merge-multiple: true
@@ -806,7 +813,7 @@ jobs:
             }
           }
       - name: Release
-        uses: ncipollo/release-action@v1
+        uses: $/.github/actions/release
         with:
           allowUpdates: true
           replacesArtifacts: true

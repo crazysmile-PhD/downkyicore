@@ -1,0 +1,31 @@
+name: Checkout repository
+description: Repository-owned version outlet for actions/checkout.
+
+inputs:
+  ref:
+    description: Branch, tag, or SHA to check out.
+    required: false
+    default: ''
+  path:
+    description: Relative path under the workspace where the repository is placed.
+    required: false
+    default: ''
+  fetch-depth:
+    description: Number of commits to fetch; zero fetches all history.
+    required: false
+    default: '1'
+  fetch-tags:
+    description: Whether to fetch tags when fetch-depth is greater than zero.
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: Checkout repository
+      uses: actions/checkout@v7
+      with:
+        ref: ${{ inputs.ref }}
+        path: ${{ inputs.path }}
+        fetch-depth: ${{ inputs.fetch-depth }}
+        fetch-tags: ${{ inputs.fetch-tags }}

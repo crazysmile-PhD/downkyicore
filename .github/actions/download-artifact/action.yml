@@ -1,0 +1,30 @@
+name: Download artifact
+description: Repository-owned version outlet for actions/download-artifact.
+
+inputs:
+  name:
+    description: Artifact name; leave empty when using a pattern.
+    required: false
+    default: ''
+  path:
+    description: Destination path.
+    required: true
+  pattern:
+    description: Glob matching artifact names.
+    required: false
+    default: ''
+  merge-multiple:
+    description: Whether multiple matched artifacts share the destination directory.
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: Download artifact
+      uses: actions/download-artifact@v8
+      with:
+        name: ${{ inputs.name }}
+        path: ${{ inputs.path }}
+        pattern: ${{ inputs.pattern }}
+        merge-multiple: ${{ inputs.merge-multiple }}

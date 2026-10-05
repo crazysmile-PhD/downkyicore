@@ -1,0 +1,36 @@
+name: Validate workflow syntax
+description: Repository-owned version outlet for raven-actions/actionlint.
+
+inputs:
+  files:
+    description: Comma-separated workflow file patterns to validate.
+    required: false
+    default: ''
+  flags:
+    description: Additional actionlint command-line flags.
+    required: false
+    default: ''
+  fail-on-error:
+    description: Whether findings fail the step.
+    required: false
+    default: 'true'
+  pyflakes:
+    description: Whether to validate embedded Python.
+    required: false
+    default: 'true'
+  shellcheck:
+    description: Whether to validate embedded shell scripts.
+    required: false
+    default: 'true'
+
+runs:
+  using: composite
+  steps:
+    - name: Validate workflow syntax
+      uses: raven-actions/actionlint@v2
+      with:
+        files: ${{ inputs.files }}
+        flags: ${{ inputs.flags }}
+        fail-on-error: ${{ inputs.fail-on-error }}
+        pyflakes: ${{ inputs.pyflakes }}
+        shellcheck: ${{ inputs.shellcheck }}

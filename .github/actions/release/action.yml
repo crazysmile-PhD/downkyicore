@@ -1,0 +1,71 @@
+name: Publish GitHub release
+description: Repository-owned version outlet for ncipollo/release-action.
+
+inputs:
+  allowUpdates:
+    description: Whether an existing release may be updated.
+    required: false
+    default: ''
+  artifactErrorsFailBuild:
+    description: Whether artifact errors fail the action.
+    required: false
+    default: ''
+  artifacts:
+    description: Paths or globs for release assets.
+    required: false
+    default: ''
+  body:
+    description: Release body.
+    required: false
+    default: ''
+  bodyFile:
+    description: Path to the release body file.
+    required: false
+    default: ''
+  commit:
+    description: Commit used when creating the tag.
+    required: false
+    default: ''
+  draft:
+    description: Whether the release is a draft.
+    required: false
+    default: ''
+  makeLatest:
+    description: Whether the release is marked latest.
+    required: false
+    default: legacy
+  name:
+    description: Release name.
+    required: false
+    default: ''
+  prerelease:
+    description: Whether the release is a prerelease.
+    required: false
+    default: ''
+  replacesArtifacts:
+    description: Whether existing assets are replaced.
+    required: false
+    default: 'true'
+  tag:
+    description: Release tag.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Publish GitHub release
+      uses: ncipollo/release-action@v1
+      with:
+        allowUpdates: ${{ inputs.allowUpdates }}
+        artifactErrorsFailBuild: ${{ inputs.artifactErrorsFailBuild }}
+        artifacts: ${{ inputs.artifacts }}
+        body: ${{ inputs.body }}
+        bodyFile: ${{ inputs.bodyFile }}
+        commit: ${{ inputs.commit }}
+        draft: ${{ inputs.draft }}
+        makeLatest: ${{ inputs.makeLatest }}
+        name: ${{ inputs.name }}
+        prerelease: ${{ inputs.prerelease }}
+        replacesArtifacts: ${{ inputs.replacesArtifacts }}
+        tag: ${{ inputs.tag }}

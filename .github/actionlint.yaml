@@ -1,0 +1,5 @@
+paths:
+  .github/workflows/**/*.{yml,yaml}:
+    ignore:
+      # actionlint does not yet understand GitHub's recommended same-repository $/ action syntax.
+      - 'specifying action "\$/\.github/actions/(actionlint|checkout|download-artifact|import-codesign-certs|release|setup-dotnet|setup-python|upload-artifact)" in invalid format because ref is missing\.'

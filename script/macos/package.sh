@@ -4,7 +4,14 @@ set -euo pipefail
 arch=$1
 version=${2:?Release version is required.}
 APP_NAME="./哔哩下载姬.app"
-PUBLISH_OUTPUT_DIRECTORY="${PUBLISH_OUTPUT_DIRECTORY:-../../DownKyi/bin/Release/net10.0/osx-$arch/publish/.}"
+if [ -z "${PUBLISH_OUTPUT_DIRECTORY:-}" ]; then
+  target_framework="$(dotnet msbuild ../../DownKyi/DownKyi.csproj -nologo -verbosity:quiet -getProperty:TargetFramework -p:Configuration=Release)"
+  if [ -z "$target_framework" ] || [[ "$target_framework" == *$'\n'* ]]; then
+    echo 'Could not resolve the DownKyi target framework.' >&2
+    exit 1
+  fi
+  PUBLISH_OUTPUT_DIRECTORY="../../DownKyi/bin/Release/$target_framework/osx-$arch/publish/."
+fi
 
 INFO_PLIST="./Info.plist"
 ICON_FILE="./logo.icns"

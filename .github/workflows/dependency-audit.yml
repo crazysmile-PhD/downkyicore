@@ -37,13 +37,13 @@ jobs:
     runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: $/.github/actions/checkout
       - name: Install .NET
-        uses: actions/setup-dotnet@v6
+        uses: $/.github/actions/setup-dotnet
         with:
           global-json-file: global.json
       - name: Install Python
-        uses: actions/setup-python@v7
+        uses: $/.github/actions/setup-python
         with:
           python-version-file: .python-version
       - name: Restore
@@ -81,7 +81,7 @@ jobs:
       - name: Upload failure report
         if: failure()
         continue-on-error: true
-        uses: actions/upload-artifact@v7
+        uses: $/.github/actions/upload-artifact
         with:
           name: nuget-dependency-audit
           path: |

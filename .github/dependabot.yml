@@ -24,7 +24,9 @@ updates:
       timezone: Etc/UTC
 
   - package-ecosystem: github-actions
-    directory: /
+    directories:
+      - /
+      - /.github/actions/*
     schedule:
       interval: daily
       time: '00:00'

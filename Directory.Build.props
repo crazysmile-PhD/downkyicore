@@ -1,5 +1,7 @@
 <Project>
   <PropertyGroup>
+    <DownKyiTargetFramework>net10.0</DownKyiTargetFramework>
+    <TargetFramework Condition="'$(TargetFramework)' == '' and '$(TargetFrameworks)' == ''">$(DownKyiTargetFramework)</TargetFramework>
     <Nullable>enable</Nullable>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <Version Condition="Exists('$(MSBuildThisFileDirectory)version.txt')">$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)version.txt').Trim())</Version>

@@ -1,3 +1,7 @@
+using System.Text.Json;
+using System.Text.RegularExpressions;
+using System.Xml.Linq;
+
 namespace DownKyi.Architecture.Tests;
 
 public sealed class AgentEnvironmentArchitectureTests
@@ -72,10 +76,10 @@ public sealed class AgentEnvironmentArchitectureTests
             Environment.NewLine,
             Directory.GetFiles(workflowsDirectory, "*.yml").Select(File.ReadAllText));
         var dotnetSetupCount = workflows.Split(
-            "uses: actions/setup-dotnet@",
+            "uses: $/.github/actions/setup-dotnet",
             StringSplitOptions.None).Length - 1;
         var pythonSetupCount = workflows.Split(
-            "uses: actions/setup-python@",
+            "uses: $/.github/actions/setup-python",
             StringSplitOptions.None).Length - 1;
         var globalJsonInputCount = System.Text.RegularExpressions.Regex.Count(
             workflows,
@@ -92,6 +96,112 @@ public sealed class AgentEnvironmentArchitectureTests
         Assert.DoesNotContain("python-version:", workflows, StringComparison.Ordinal);
 
         Assert.Contains("      - '.python-version'", Read(".github/workflows/macos-adhoc-package.yml"), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RepositoryOwnedDependencyVersionsHaveSingleCodeOwners()
+    {
+        var workflowSources = string.Join(
+            Environment.NewLine,
+            Directory.GetFiles(
+                Path.Combine(RepositoryRoot, ".github", "workflows"),
+                "*.yml").Select(File.ReadAllText));
+        var buildProperties = XDocument.Load(Path.Combine(RepositoryRoot, "Directory.Build.props"));
+        var targetFrameworkOwner = Assert.Single(
+            buildProperties.Descendants(),
+            element => element.Name.LocalName == "DownKyiTargetFramework");
+        var targetFramework = targetFrameworkOwner.Value.Trim();
+        Assert.Matches(@"^net\d+\.\d+(?:-[A-Za-z0-9.-]+)?$", targetFramework);
+        var targetFrameworkConsumer = Assert.Single(
+            buildProperties.Descendants(),
+            element => element.Name.LocalName == "TargetFramework");
+        Assert.Equal("$(DownKyiTargetFramework)", targetFrameworkConsumer.Value.Trim());
+
+        var projectTargetFrameworkDeclarations = Directory
+            .EnumerateFiles(RepositoryRoot, "*.csproj", SearchOption.AllDirectories)
+            .Where(path => !IsBuildOutput(path))
+            .SelectMany(path => XDocument.Load(path)
+                .Descendants()
+                .Where(element => element.Name.LocalName is "TargetFramework" or "TargetFrameworks")
+                .Select(element => Path.GetRelativePath(RepositoryRoot, path)))
+            .ToArray();
+        Assert.Empty(projectTargetFrameworkDeclarations);
+        Assert.DoesNotContain(targetFramework, Read("docs/testing/test-runner-policy.json"), StringComparison.Ordinal);
+        Assert.DoesNotContain(targetFramework, Read("script/test-project-runner.ps1"), StringComparison.Ordinal);
+        Assert.DoesNotContain(targetFramework, Read("script/macos/package.sh"), StringComparison.Ordinal);
+        Assert.DoesNotContain(targetFramework, workflowSources, StringComparison.Ordinal);
+
+        var packages = XDocument.Load(Path.Combine(RepositoryRoot, "Directory.Packages.props"));
+        var avaloniaVersionOwner = Assert.Single(
+            packages.Descendants(),
+            element => element.Name.LocalName == "AvaloniaRuntimeVersion");
+        Assert.Matches(@"^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$", avaloniaVersionOwner.Value.Trim());
+        string[] avaloniaRuntimePackages =
+        [
+            "Avalonia",
+            "Avalonia.Desktop",
+            "Avalonia.Headless",
+            "Avalonia.Headless.XUnit",
+            "Avalonia.Themes.Fluent"
+        ];
+        foreach (var package in avaloniaRuntimePackages)
+        {
+            var packageVersion = Assert.Single(
+                packages.Descendants(),
+                element => element.Name.LocalName == "PackageVersion" &&
+                           (string?)element.Attribute("Include") == package);
+            Assert.Equal("$(AvaloniaRuntimeVersion)", (string?)packageVersion.Attribute("Version"));
+        }
+
+        using var toolManifest = JsonDocument.Parse(Read(".config/dotnet-tools.json"));
+        var pupnetVersion = toolManifest.RootElement
+            .GetProperty("tools")
+            .GetProperty("kuiperzone.pupnet")
+            .GetProperty("version")
+            .GetString();
+        Assert.Matches(@"^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$", pupnetVersion);
+        Assert.DoesNotMatch(@"dotnet tool install[^\r\n]+--version\s+\d", workflowSources);
+        Assert.Contains(".config/dotnet-tools.json", Read("script/install-pupnet.ps1"), StringComparison.Ordinal);
+        Assert.DoesNotMatch(@"\.nuget/packages/grpc\.tools/\d", workflowSources);
+        Assert.Contains("-getProperty:PkgGrpc_Tools", workflowSources, StringComparison.Ordinal);
+
+        (string LocalName, string Upstream)[] actionOwners =
+        [
+            ("actionlint", "raven-actions/actionlint"),
+            ("checkout", "actions/checkout"),
+            ("download-artifact", "actions/download-artifact"),
+            ("import-codesign-certs", "apple-actions/import-codesign-certs"),
+            ("release", "ncipollo/release-action"),
+            ("setup-dotnet", "actions/setup-dotnet"),
+            ("setup-python", "actions/setup-python"),
+            ("upload-artifact", "actions/upload-artifact")
+        ];
+        foreach (var (localName, upstream) in actionOwners)
+        {
+            var ownerSource = Read($".github/actions/{localName}/action.yml");
+            Assert.Single(Regex.Matches(
+                ownerSource,
+                $@"(?m)^\s*uses:\s*{Regex.Escape(upstream)}@\S+\s*$"));
+            Assert.Contains($"uses: $/.github/actions/{localName}", workflowSources, StringComparison.Ordinal);
+            Assert.DoesNotContain($"uses: {upstream}@", workflowSources, StringComparison.Ordinal);
+        }
+
+        var repeatedDirectActionFamilies = Regex.Matches(
+                workflowSources,
+                @"(?m)^\s*uses:\s*(?<family>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)(?:/[^@\s]+)?@(?<version>\S+)\s*$")
+            .Cast<Match>()
+            .GroupBy(match => match.Groups["family"].Value, StringComparer.Ordinal)
+            .Where(group => group.Count() > 1)
+            .ToArray();
+        var codeQlFamily = Assert.Single(repeatedDirectActionFamilies);
+        Assert.Equal("github/codeql-action", codeQlFamily.Key);
+        Assert.Single(codeQlFamily.Select(match => match.Groups["version"].Value).Distinct(StringComparer.Ordinal));
+
+        var dependabot = Read(".github/dependabot.yml");
+        Assert.Contains("directories:", dependabot, StringComparison.Ordinal);
+        Assert.Contains("      - /.github/actions/*", dependabot, StringComparison.Ordinal);
+        var actionlint = Read(".github/actionlint.yaml");
+        Assert.Contains("GitHub's recommended same-repository $/ action syntax", actionlint, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -125,9 +235,9 @@ public sealed class AgentEnvironmentArchitectureTests
         Assert.DoesNotContain("paths:", dependencyAuditPullRequestTrigger, StringComparison.Ordinal);
         Assert.Contains("schedule:", dependencyAuditWorkflow, StringComparison.Ordinal);
         Assert.Contains("    name: Dependency policy", dependencyAuditWorkflow, StringComparison.Ordinal);
-        Assert.Contains("uses: actions/setup-dotnet@", dependencyAuditWorkflow, StringComparison.Ordinal);
+        Assert.Contains("uses: $/.github/actions/setup-dotnet", dependencyAuditWorkflow, StringComparison.Ordinal);
         Assert.Contains("global-json-file: global.json", dependencyAuditWorkflow, StringComparison.Ordinal);
-        Assert.Contains("uses: actions/setup-python@", dependencyAuditWorkflow, StringComparison.Ordinal);
+        Assert.Contains("uses: $/.github/actions/setup-python", dependencyAuditWorkflow, StringComparison.Ordinal);
         Assert.Contains("python-version-file: .python-version", dependencyAuditWorkflow, StringComparison.Ordinal);
         Assert.Contains("--vulnerable", dependencyAuditWorkflow, StringComparison.Ordinal);
         Assert.Contains("--include-transitive", dependencyAuditWorkflow, StringComparison.Ordinal);
@@ -142,6 +252,7 @@ public sealed class AgentEnvironmentArchitectureTests
         Assert.Contains("package-ecosystem: nuget", dependabotConfiguration, StringComparison.Ordinal);
         Assert.Contains("package-ecosystem: dotnet-sdk", dependabotConfiguration, StringComparison.Ordinal);
         Assert.Contains("package-ecosystem: github-actions", dependabotConfiguration, StringComparison.Ordinal);
+        Assert.Contains("      - /.github/actions/*", dependabotConfiguration, StringComparison.Ordinal);
         Assert.DoesNotContain("multi-ecosystem-groups:", dependabotConfiguration, StringComparison.Ordinal);
         Assert.DoesNotContain("multi-ecosystem-group:", dependabotConfiguration, StringComparison.Ordinal);
         Assert.Contains("      avalonia-runtime:", dependabotConfiguration, StringComparison.Ordinal);
@@ -282,7 +393,7 @@ public sealed class AgentEnvironmentArchitectureTests
         Assert.Contains("runner: ${{ vars.UBUNTU_X64_RUNNER }}\n            check_name: ubuntu-x64", buildTest.Replace("\r\n", "\n", StringComparison.Ordinal), StringComparison.Ordinal);
         Assert.Contains("runner: macos-latest\n            check_name: macos", buildTest.Replace("\r\n", "\n", StringComparison.Ordinal), StringComparison.Ordinal);
         Assert.Contains(
-            "- name: Upload test results\n        if: always()\n        continue-on-error: true\n        uses: actions/upload-artifact@v7",
+            "- name: Upload test results\n        if: always()\n        continue-on-error: true\n        uses: $/.github/actions/upload-artifact",
             buildTest.Replace("\r\n", "\n", StringComparison.Ordinal),
             StringComparison.Ordinal);
         Assert.DoesNotMatch(
@@ -491,6 +602,13 @@ public sealed class AgentEnvironmentArchitectureTests
     private static string PathFromRepository(string path)
     {
         return path.Replace('/', Path.DirectorySeparatorChar);
+    }
+
+    private static bool IsBuildOutput(string path)
+    {
+        return path.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            .Any(segment => string.Equals(segment, "bin", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(segment, "obj", StringComparison.OrdinalIgnoreCase));
     }
 
     private static string FindRepositoryRoot()

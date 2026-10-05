@@ -23,9 +23,20 @@ function Build-DownKyiCentralTestRunner {
         throw "The compiled CentralTestRunner build failed with exit code $LASTEXITCODE."
     }
 
-    $runnerAssembly = Join-Path $RepositoryRoot (
-        "tools/DownKyi.CentralTestRunner/bin/$Configuration/net10.0/" +
-        "DownKyi.CentralTestRunner.dll")
+    $targetPathOutput = @(& dotnet msbuild $runnerProject `
+        -nologo `
+        -verbosity:quiet `
+        -getProperty:TargetPath `
+        "-p:Configuration=$Configuration")
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not resolve the compiled CentralTestRunner output path."
+    }
+    $runnerPaths = @($targetPathOutput | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    if ($runnerPaths.Count -ne 1) {
+        throw "Expected one compiled CentralTestRunner output path, found $($runnerPaths.Count)."
+    }
+
+    $runnerAssembly = $runnerPaths[0]
     if (-not (Test-Path -LiteralPath $runnerAssembly -PathType Leaf)) {
         throw "The compiled CentralTestRunner output is missing: $runnerAssembly"
     }

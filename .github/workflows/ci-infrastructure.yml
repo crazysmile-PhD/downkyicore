@@ -84,9 +84,9 @@ jobs:
             check_name: macos
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: $/.github/actions/checkout
       - name: Install .NET
-        uses: actions/setup-dotnet@v6
+        uses: $/.github/actions/setup-dotnet
         with:
           global-json-file: global.json
       - name: Test CI infrastructure owners
@@ -99,7 +99,7 @@ jobs:
       - name: Upload failure evidence
         if: failure()
         continue-on-error: true
-        uses: actions/upload-artifact@v7
+        uses: $/.github/actions/upload-artifact
         with:
           name: ci-infrastructure-${{ matrix.check_name }}
           path: |
