@@ -1,4 +1,5 @@
 using Avalonia.Markup.Xaml.Styling;
+using Avalonia.Platform;
 using Avalonia.Styling;
 
 namespace DownKyi.Desktop.Tests;
@@ -11,20 +12,16 @@ internal static class DesktopTestResources
             ?? throw new InvalidOperationException("Avalonia application is not initialized.");
         if (!application.TryGetResource("Waiting", ThemeVariant.Default, out _))
         {
-            application.Resources.MergedDictionaries.Add(new ResourceInclude(
-                new Uri("avares://DownKyi.Desktop.Tests/"))
-            {
-                Source = new Uri("avares://DownKyi.Desktop/Languages/Default.axaml")
-            });
+            AddProductResource(
+                application,
+                new Uri("avares://DownKyi.Desktop/Languages/Default.axaml"));
         }
 
         if (!application.TryGetResource("videoUpDrawingImage", ThemeVariant.Default, out _))
         {
-            application.Resources.MergedDictionaries.Add(new ResourceInclude(
-                new Uri("avares://DownKyi.Desktop.Tests/"))
-            {
-                Source = new Uri("avares://DownKyi.Desktop/Resources/Bilibili/BilibiliImages.axaml")
-            });
+            AddProductResource(
+                application,
+                new Uri("avares://DownKyi.Desktop/Resources/Bilibili/BilibiliImages.axaml"));
         }
 
         return application;
@@ -36,22 +33,48 @@ internal static class DesktopTestResources
             ?? throw new InvalidOperationException("Avalonia application is not initialized.");
         if (!application.TryGetResource("DownKyiRadiusMedium", ThemeVariant.Default, out _))
         {
-            application.Resources.MergedDictionaries.Add(new ResourceInclude(
-                new Uri("avares://DownKyi.Desktop.Tests/"))
-            {
-                Source = new Uri("avares://DownKyi.Desktop/Themes/DesignTokens.axaml")
-            });
+            AddProductResource(
+                application,
+                new Uri("avares://DownKyi.Desktop/Themes/DesignTokens.axaml"));
         }
 
         if (!application.TryGetResource("ImageBtnStyle", ThemeVariant.Default, out _))
         {
-            application.Resources.MergedDictionaries.Add(new ResourceInclude(
-                new Uri("avares://DownKyi.Desktop.Tests/"))
-            {
-                Source = new Uri("avares://DownKyi.Desktop/Themes/ThemeDefault.axaml")
-            });
+            AddProductResource(
+                application,
+                new Uri("avares://DownKyi.Desktop/Themes/ThemeDefault.axaml"));
         }
 
         return application;
+    }
+
+    private static void AddProductResource(Avalonia.Application application, Uri source)
+    {
+        try
+        {
+            application.Resources.MergedDictionaries.Add(new ResourceInclude(
+                new Uri("avares://DownKyi.Desktop.Tests/"))
+            {
+                Source = source
+            });
+        }
+        catch (Exception exception)
+        {
+            var productAssembly = typeof(DesktopApplication).Assembly;
+            var resolvedAssembly = AssetLoader.GetAssembly(source);
+            var productResources = string.Join(", ", productAssembly.GetManifestResourceNames());
+            var relativeLocation = Path.GetRelativePath(AppContext.BaseDirectory, productAssembly.Location);
+            var resolvedIdentity = resolvedAssembly?.FullName ?? "<not resolved>";
+            var assetExists = AssetLoader.Exists(source);
+
+            throw new InvalidOperationException(
+                $"Unable to load {source}. " +
+                $"Product assembly={productAssembly.FullName}; " +
+                $"location={relativeLocation}; " +
+                $"manifest resources=[{productResources}]; " +
+                $"resolved assembly={resolvedIdentity}; " +
+                $"asset exists={assetExists}.",
+                exception);
+        }
     }
 }

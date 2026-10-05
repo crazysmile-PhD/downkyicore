@@ -9,6 +9,9 @@
   </PropertyGroup>
   <ItemGroup>
     <AvaloniaResource Include="Resources\**" />
+    <!-- URI-loaded dictionaries have no x:Class and must remain explicit resources. -->
+    <AvaloniaXaml Remove="Languages/**/*.axaml;Themes/**/*.axaml" />
+    <AvaloniaResource Include="Languages/**/*.axaml;Themes/**/*.axaml" />
     <TrimmerRootDescriptor Include="Linker.xml" />
   </ItemGroup>
   <ItemGroup>
