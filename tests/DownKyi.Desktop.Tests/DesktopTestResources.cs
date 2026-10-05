@@ -50,31 +50,20 @@ internal static class DesktopTestResources
 
     private static void AddProductResource(Avalonia.Application application, Uri source)
     {
-        try
+        var productAssembly = typeof(DesktopApplication).Assembly;
+        var resolvedAssembly = AssetLoader.GetAssembly(source);
+        if (!ReferenceEquals(resolvedAssembly, productAssembly))
         {
-            application.Resources.MergedDictionaries.Add(new ResourceInclude(
-                new Uri("avares://DownKyi.Desktop.Tests/"))
-            {
-                Source = source
-            });
-        }
-        catch (Exception exception)
-        {
-            var productAssembly = typeof(DesktopApplication).Assembly;
-            var resolvedAssembly = AssetLoader.GetAssembly(source);
-            var productResources = string.Join(", ", productAssembly.GetManifestResourceNames());
-            var relativeLocation = Path.GetRelativePath(AppContext.BaseDirectory, productAssembly.Location);
-            var resolvedIdentity = resolvedAssembly?.FullName ?? "<not resolved>";
-            var assetExists = AssetLoader.Exists(source);
-
             throw new InvalidOperationException(
-                $"Unable to load {source}. " +
-                $"Product assembly={productAssembly.FullName}; " +
-                $"location={relativeLocation}; " +
-                $"manifest resources=[{productResources}]; " +
-                $"resolved assembly={resolvedIdentity}; " +
-                $"asset exists={assetExists}.",
-                exception);
+                $"Avalonia resource {source} resolved to " +
+                $"{resolvedAssembly?.GetName().Name ?? "<no assembly>"} instead of " +
+                $"{productAssembly.GetName().Name}.");
         }
+
+        application.Resources.MergedDictionaries.Add(new ResourceInclude(
+            new Uri("avares://DownKyi.Desktop.Tests/"))
+        {
+            Source = source
+        });
     }
 }
