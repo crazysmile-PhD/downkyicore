@@ -96,6 +96,15 @@ public sealed class ReleaseSafetyRegressionTests
 
             Assert.Equal(0, result.ExitCode);
             Assert.Equal("v1.8.0", result.StandardOutput.Trim());
+
+            var includingHead = RunPowerShell(
+                resolver,
+                ["-RepositoryRoot", repository, "-IncludeHead"],
+                repository,
+                new Dictionary<string, string> { ["GITHUB_REF"] = "refs/heads/main" });
+
+            Assert.Equal(0, includingHead.ExitCode);
+            Assert.Equal("v2.0.0", includingHead.StandardOutput.Trim());
         }
         finally
         {
@@ -474,6 +483,94 @@ public sealed class ReleaseSafetyRegressionTests
                 root);
             Assert.NotEqual(0, notLatest.ExitCode);
             Assert.Contains("Latest", NormalizeDiagnostic(notLatest), StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(root);
+        }
+    }
+
+    [Fact]
+    public void ReleasePreparationAdvancesVersionAndPrependsGeneratedNotesOnly()
+    {
+        var root = CreateTemporaryDirectory();
+        var remote = Path.Combine(root, "remote.git");
+        var repository = Path.Combine(root, "repository");
+        var notes = Path.Combine(root, "release-notes.md");
+        var emptyNotes = Path.Combine(root, "empty-notes.md");
+        var preparer = Path.Combine(RepositoryRoot, "script", "prepare-release.ps1");
+
+        try
+        {
+            RunRequired("git", ["init", "--bare", remote], root);
+            RunRequired("git", ["init", "-b", "main", repository], root);
+            RunRequired("git", ["config", "user.name", "Release Fixture"], repository);
+            RunRequired("git", ["config", "user.email", "release-fixture@example.invalid"], repository);
+            File.WriteAllText(Path.Combine(repository, "version.txt"), "1.2.1\n");
+            File.WriteAllText(Path.Combine(repository, "CHANGELOG.md"), "# 更新日志\n\n## [1.2.1] - 2026-10-01\n\n- Previous release.\n");
+            File.WriteAllText(Path.Combine(repository, "fixture.txt"), "released");
+            RunRequired("git", ["add", "version.txt", "CHANGELOG.md", "fixture.txt"], repository);
+            RunRequired("git", ["commit", "-m", "release fixture"], repository);
+            RunRequired("git", ["tag", "-a", "v1.2.1", "-m", "v1.2.1"], repository);
+            RunRequired("git", ["remote", "add", "origin", remote], repository);
+            RunRequired("git", ["push", "-u", "origin", "main", "--tags"], repository);
+
+            File.AppendAllText(Path.Combine(repository, "fixture.txt"), "\nunreleased");
+            RunRequired("git", ["add", "fixture.txt"], repository);
+            RunRequired("git", ["commit", "-m", "feat: unreleased fixture"], repository);
+            RunRequired("git", ["push", "origin", "main"], repository);
+            var subjectSha = RunRequired("git", ["rev-parse", "HEAD"], repository).StandardOutput.Trim();
+            File.WriteAllText(notes, "### Features\n\n- Generated release note.\n");
+            File.WriteAllText(emptyNotes, "  \n");
+
+            var nonAdvancing = RunPowerShell(
+                preparer,
+                [
+                    "-Version", "1.2.1",
+                    "-GeneratedNotesPath", notes,
+                    "-SubjectSha", subjectSha,
+                    "-GitRef", "refs/heads/main",
+                    "-RepositoryRoot", repository
+                ],
+                repository);
+            Assert.NotEqual(0, nonAdvancing.ExitCode);
+            Assert.Contains("greater", NormalizeDiagnostic(nonAdvancing), StringComparison.OrdinalIgnoreCase);
+
+            var empty = RunPowerShell(
+                preparer,
+                [
+                    "-Version", "1.3.0",
+                    "-GeneratedNotesPath", emptyNotes,
+                    "-SubjectSha", subjectSha,
+                    "-GitRef", "refs/heads/main",
+                    "-RepositoryRoot", repository
+                ],
+                repository);
+            Assert.NotEqual(0, empty.ExitCode);
+            Assert.Contains("empty", NormalizeDiagnostic(empty), StringComparison.OrdinalIgnoreCase);
+
+            var valid = RunPowerShell(
+                preparer,
+                [
+                    "-Version", "1.3.0",
+                    "-GeneratedNotesPath", notes,
+                    "-SubjectSha", subjectSha,
+                    "-GitRef", "refs/heads/main",
+                    "-RepositoryRoot", repository,
+                    "-ReleaseDate", "2026-10-05"
+                ],
+                repository);
+            Assert.True(valid.ExitCode == 0, NormalizeDiagnostic(valid));
+            Assert.Equal("1.3.0\n", File.ReadAllText(Path.Combine(repository, "version.txt")).Replace("\r\n", "\n", StringComparison.Ordinal));
+            var changelog = File.ReadAllText(Path.Combine(repository, "CHANGELOG.md")).Replace("\r\n", "\n", StringComparison.Ordinal);
+            Assert.StartsWith("# 更新日志\n\n## [1.3.0] - 2026-10-05\n\n### Features\n\n- Generated release note.", changelog, StringComparison.Ordinal);
+            Assert.Contains("## [1.2.1] - 2026-10-01", changelog, StringComparison.Ordinal);
+            Assert.Equal(
+                ["CHANGELOG.md", "version.txt"],
+                RunRequired("git", ["diff", "--name-only"], repository)
+                    .StandardOutput
+                    .Replace("\r\n", "\n", StringComparison.Ordinal)
+                    .Split('\n', StringSplitOptions.RemoveEmptyEntries));
         }
         finally
         {

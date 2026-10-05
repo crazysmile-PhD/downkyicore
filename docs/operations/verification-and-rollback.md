@@ -76,8 +76,11 @@ Core 只保存外部 binary catalog，不得選擇平台內容或設定 SDK
 `RuntimeIdentifier`。exe 專案必須從明確的 publish RID 建立 asset RID，
 沒有 publish RID 時才可依本機 host 提供開發 fallback，並直接把對應
 catalog 檔案加入 output/publish；自訂 RID 不得跨 ProjectReference。
-正式發布前，先把 `version.txt` 與 `CHANGELOG.md` 的 release-preparation PR
-合併到 `main`。接著在 GitHub Actions 的 `Build` workflow 選擇 `main`、勾選
+正式發布前，在 GitHub Actions 的 `Prepare release` workflow 選擇 `main` 並
+輸入下一個 stable SemVer。workflow 只會從 first-parent release history 產生
+release notes、更新 `version.txt` 與 `CHANGELOG.md`，再建立受一般 review 與
+required checks 約束的 release-preparation PR；它不會自動合併、建立 tag 或
+發布。該 PR 合併到 `main` 後，在 `Build` workflow 選擇 `main`、勾選
 `publish_release` 並執行一次；同一個 run 會完成 release gates、package 與
 artifact 驗證，確認 subject 仍是精確 `main` 後建立 annotated tag、發布
 GitHub Release，再以 GitHub API 核對 Latest、stable、非 draft、asset 名稱、

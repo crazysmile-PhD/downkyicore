@@ -61,6 +61,27 @@ public sealed class ReleaseWorkflowArchitectureTests
     }
 
     [Fact]
+    public void ReleasePreparationOpensAReviewableTwoFilePullRequest()
+    {
+        var workflow = File.ReadAllText(
+            Path.Combine(RepositoryRoot, ".github", "workflows", "prepare-release.yml"));
+
+        Assert.Contains("  workflow_dispatch:", workflow, StringComparison.Ordinal);
+        Assert.Contains("      version:", workflow, StringComparison.Ordinal);
+        Assert.Contains("group: release-preparation", workflow, StringComparison.Ordinal);
+        Assert.Contains("./script/resolve-previous-release-tag.ps1 -IncludeHead", workflow, StringComparison.Ordinal);
+        Assert.Contains("uses: orhun/git-cliff-action@v4", workflow, StringComparison.Ordinal);
+        Assert.Contains("./script/prepare-release.ps1", workflow, StringComparison.Ordinal);
+        Assert.Contains("uses: peter-evans/create-pull-request@v8", workflow, StringComparison.Ordinal);
+        Assert.Contains("token: ${{ secrets.DOWNKYI_AUTOMATION_TOKEN }}", workflow, StringComparison.Ordinal);
+        Assert.Contains("            version.txt\n            CHANGELOG.md", workflow.Replace("\r\n", "\n", StringComparison.Ordinal), StringComparison.Ordinal);
+        Assert.DoesNotContain("auto-merge", workflow, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("gh pr merge", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("push:", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("schedule:", workflow, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void PullRequestPackageUploadsCannotOverrideValidationResults()
     {
         var workflow = File.ReadAllText(

@@ -1,0 +1,143 @@
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $true)]
+    [string]$Version,
+    [Parameter(Mandatory = $true)]
+    [string]$GeneratedNotesPath,
+    [Parameter(Mandatory = $true)]
+    [string]$SubjectSha,
+    [string]$GitRef = $env:GITHUB_REF,
+    [string]$RepositoryRoot = (Split-Path -Parent $PSScriptRoot),
+    [datetime]$ReleaseDate = (Get-Date).ToUniversalTime().Date
+)
+
+$ErrorActionPreference = 'Stop'
+$repository = (Resolve-Path -LiteralPath $RepositoryRoot).Path
+$notesPath = (Resolve-Path -LiteralPath $GeneratedNotesPath).Path
+$versionPath = Join-Path $repository 'version.txt'
+$changelogPath = Join-Path $repository 'CHANGELOG.md'
+$versionValidator = Join-Path $PSScriptRoot 'validate-release-version.ps1'
+$utf8NoBom = [Text.UTF8Encoding]::new($false)
+
+function Invoke-RepositoryGit {
+    param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments)
+
+    $startInfo = [Diagnostics.ProcessStartInfo]::new('git')
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $startInfo.ArgumentList.Add('-C')
+    $startInfo.ArgumentList.Add($repository)
+    foreach ($argument in $Arguments) {
+        $startInfo.ArgumentList.Add($argument)
+    }
+
+    $process = [Diagnostics.Process]::Start($startInfo)
+    if ($null -eq $process) {
+        throw 'Failed to start git.'
+    }
+
+    try {
+        $standardOutput = $process.StandardOutput.ReadToEnd()
+        $standardError = $process.StandardError.ReadToEnd()
+        $process.WaitForExit()
+        if ($process.ExitCode -ne 0) {
+            throw "git -C $repository $($Arguments -join ' ') failed: $standardError"
+        }
+
+        return $standardOutput.Trim()
+    }
+    finally {
+        $process.Dispose()
+    }
+}
+
+function ConvertTo-VersionParts {
+    param([Parameter(Mandatory = $true)][string]$Value)
+
+    if ($Value -notmatch '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$') {
+        throw "Version '$Value' must be a stable semantic version in major.minor.patch form without leading zeroes."
+    }
+
+    return @($Value.Split('.') | ForEach-Object { [long]::Parse($_, [Globalization.CultureInfo]::InvariantCulture) })
+}
+
+function Compare-VersionParts {
+    param(
+        [Parameter(Mandatory = $true)][long[]]$Left,
+        [Parameter(Mandatory = $true)][long[]]$Right
+    )
+
+    for ($index = 0; $index -lt 3; $index++) {
+        if ($Left[$index] -lt $Right[$index]) { return -1 }
+        if ($Left[$index] -gt $Right[$index]) { return 1 }
+    }
+
+    return 0
+}
+
+if (-not [string]::Equals($GitRef, 'refs/heads/main', [StringComparison]::Ordinal)) {
+    throw "Release preparation must be dispatched from refs/heads/main; received '$GitRef'."
+}
+
+$head = Invoke-RepositoryGit rev-parse 'HEAD^{commit}'
+if (-not [string]::Equals($head, $SubjectSha, [StringComparison]::OrdinalIgnoreCase)) {
+    throw "Release-preparation subject HEAD is $head; expected $SubjectSha."
+}
+
+$trackedChanges = Invoke-RepositoryGit status --porcelain --untracked-files=no
+if ($trackedChanges) {
+    throw "Release-preparation subject contains tracked changes:`n$trackedChanges"
+}
+
+Invoke-RepositoryGit fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main' | Out-Null
+$mainCommit = Invoke-RepositoryGit rev-parse 'refs/remotes/origin/main^{commit}'
+if (-not [string]::Equals($SubjectSha, $mainCommit, [StringComparison]::OrdinalIgnoreCase)) {
+    throw "Release-preparation subject $SubjectSha does not equal current main $mainCommit."
+}
+
+$currentVersion = (Get-Content -LiteralPath $versionPath -Raw).Trim()
+$currentParts = ConvertTo-VersionParts -Value $currentVersion
+$nextParts = ConvertTo-VersionParts -Value $Version
+if ((Compare-VersionParts -Left $nextParts -Right $currentParts) -le 0) {
+    throw "Release version $Version must be greater than current version $currentVersion."
+}
+
+$tag = "v$Version"
+$tagRef = "refs/tags/$tag"
+$remoteTag = Invoke-RepositoryGit ls-remote --tags origin $tagRef "$tagRef^{}"
+if ($remoteTag -or (Invoke-RepositoryGit tag --list $tag)) {
+    throw "Release tag '$tag' already exists. Existing release tags are immutable."
+}
+
+$notes = (Get-Content -LiteralPath $notesPath -Raw).Trim()
+if ([string]::IsNullOrWhiteSpace($notes)) {
+    throw 'Generated release notes are empty; refusing to create a version-only release PR.'
+}
+$notes = $notes.Replace("`r`n", "`n", [StringComparison]::Ordinal)
+
+$changelog = Get-Content -LiteralPath $changelogPath -Raw
+if ($changelog -notmatch '\A# 更新日志\r?\n') {
+    throw 'CHANGELOG.md must begin with the authoritative 更新日志 heading.'
+}
+if ($changelog -match "(?m)^## \[$([regex]::Escape($Version))\](?:\s|$)") {
+    throw "CHANGELOG.md already contains a $Version release section."
+}
+
+$existingBody = $changelog -replace '\A# 更新日志\r?\n+', ''
+$dateText = $ReleaseDate.ToString('yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture)
+$updatedChangelog = "# 更新日志`n`n## [$Version] - $dateText`n`n$notes`n`n$($existingBody.TrimStart([char[]]"`r`n"))"
+
+[IO.File]::WriteAllText($versionPath, "$Version`n", $utf8NoBom)
+[IO.File]::WriteAllText($changelogPath, $updatedChangelog, $utf8NoBom)
+& $versionValidator -RepositoryRoot $repository -GitRef "refs/tags/$tag" | Out-Null
+
+$changedOutput = Invoke-RepositoryGit diff --name-only
+$changedPaths = @($changedOutput -split '\r?\n') | Where-Object { $_ }
+$expectedPaths = @('CHANGELOG.md', 'version.txt')
+$pathDifference = @(Compare-Object -ReferenceObject $expectedPaths -DifferenceObject ($changedPaths | Sort-Object))
+if ($pathDifference.Count -ne 0) {
+    throw "Release preparation changed files outside its authority: $($changedPaths -join ', ')."
+}
+
+Write-Output "Prepared release PR content for $tag from $SubjectSha."

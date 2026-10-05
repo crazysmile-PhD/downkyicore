@@ -1,0 +1,77 @@
+name: Prepare release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Next stable version in major.minor.patch form.'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-preparation
+  cancel-in-progress: false
+
+jobs:
+  prepare-release:
+    name: Open release-preparation PR
+    runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
+    steps:
+      - name: Checkout exact main
+        uses: $/.github/actions/checkout
+        with:
+          fetch-depth: 0
+      - name: Validate GitHub Actions workflow syntax
+        uses: $/.github/actions/actionlint
+        with:
+          files: .github/workflows/prepare-release.yml
+          fail-on-error: true
+          pyflakes: true
+          shellcheck: true
+      - name: Resolve current release base
+        id: previous-release
+        shell: pwsh
+        run: |
+          $tag = ./script/resolve-previous-release-tag.ps1 -IncludeHead
+          "tag=$tag" | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+      - name: Create generated release notes directory
+        shell: pwsh
+        run: New-Item -ItemType Directory -Path .release-preparation -Force | Out-Null
+      - name: Generate release notes from accepted main history
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: -vv ${{ steps.previous-release.outputs.tag }}..HEAD --strip header
+        env:
+          OUTPUT: .release-preparation/release-notes.md
+      - name: Prepare version and changelog
+        shell: pwsh
+        run: >
+          ./script/prepare-release.ps1
+          -Version $env:RELEASE_VERSION
+          -GeneratedNotesPath ./.release-preparation/release-notes.md
+          -SubjectSha '${{ github.sha }}'
+          -GitRef '${{ github.ref }}'
+      - name: Create release-preparation pull request
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ secrets.DOWNKYI_AUTOMATION_TOKEN }}
+          add-paths: |
+            version.txt
+            CHANGELOG.md
+          commit-message: "chore(release): prepare v${{ inputs.version }}"
+          branch: automation/release-v${{ inputs.version }}
+          base: main
+          delete-branch: true
+          title: "chore(release): prepare v${{ inputs.version }}"
+          body: |
+            Prepares `v${{ inputs.version }}` from the exact `main` commit selected by this workflow.
+
+            - Updates the single version source.
+            - Prepends release notes generated from the accepted first-parent history.
+            - Does not merge, tag, publish, or bypass required reviews and checks.
