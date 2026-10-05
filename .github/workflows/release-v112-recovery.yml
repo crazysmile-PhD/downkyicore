@@ -97,6 +97,8 @@ jobs:
           critical_paths=(
             .github/workflows/build.yml
             .github/workflows/release-v112-recovery.yml
+            script/assets/external-assets.json
+            script/install-appimagetool.ps1
             docs/operations/v1.1.2-release-notes.md
             script/resolve-v112-macos-trust.ps1
             script/render-v112-recovery-release-notes.ps1
@@ -280,6 +282,11 @@ jobs:
           pwsh ./tooling/script/install-pupnet.ps1 -ToolPath ./tooling/.tools
           sudo apt-get update
           sudo apt-get install -y libfuse2
+      - name: Install mirrored appimagetool
+        if: ${{ matrix.kind == 'AppImage' }}
+        run: |
+          pwsh ./tooling/script/install-appimagetool.ps1 -ToolPath ./tooling/.tools
+          echo "$GITHUB_WORKSPACE/tooling/.tools" >> "$GITHUB_PATH"
       - name: Get exact-subject dependencies
         working-directory: subject/script
         run: |

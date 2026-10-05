@@ -114,7 +114,7 @@ public sealed class ReleaseWorkflowArchitectureTests
     }
 
     [Fact]
-    public void BuildPullRequestTriggerIsRestrictedToFfmpegOwners()
+    public void BuildPullRequestTriggerIsRestrictedToExternalAssetOwners()
     {
         var workflow = File.ReadAllText(
             Path.Combine(RepositoryRoot, ".github", "workflows", "build.yml"));
@@ -136,6 +136,7 @@ public sealed class ReleaseWorkflowArchitectureTests
                 ".github/workflows/update-ffmpeg-assets.yml",
                 "script/assets/external-assets.json",
                 "script/download-external-asset.ps1",
+                "script/install-appimagetool.ps1",
                 "script/ffmpeg-assets.py",
                 "script/ffmpeg.ps1",
                 "script/ffmpeg.sh",

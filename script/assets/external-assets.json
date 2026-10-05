@@ -37,6 +37,31 @@
       }
     }
   },
+  "appimagetool": {
+    "version": "854e19e951900cf141245b384d45735942521abe",
+    "repository": "https://github.com/AppImage/appimagetool",
+    "assets": {
+      "linux-x64": {
+        "url": "https://github.com/crazysmile-PhD/downkyi-runtime-assets/releases/download/appimagetool-854e19e951900cf141245b384d45735942521abe/appimagetool-x86_64.AppImage",
+        "sha256": "95cbe7cce9717fce90c484e34052ee7c7f1d7635b33c12525b4776826a7d29b6",
+        "fileName": "appimagetool-x86_64.AppImage",
+        "size": 15092216,
+        "provenance": {
+          "upstreamRepository": "https://github.com/AppImage/appimagetool",
+          "upstreamRelease": "continuous",
+          "upstreamCommit": "854e19e951900cf141245b384d45735942521abe",
+          "upstreamAssetId": 610035789,
+          "originalAssetName": "appimagetool-x86_64.AppImage",
+          "mirroredRelease": "appimagetool-854e19e951900cf141245b384d45735942521abe"
+        }
+      }
+    },
+    "mirror": {
+      "repository": "crazysmile-PhD/downkyi-runtime-assets",
+      "retention": "never-delete",
+      "tagPrefix": "appimagetool-"
+    }
+  },
   "ffmpeg": {
     "version": "btbn-autobuild-2026-10-04-20-51",
     "repository": "Windows x64/Linux: https://github.com/BtbN/FFmpeg-Builds; Windows x86: https://github.com/yt-dlp/FFmpeg-Builds; macOS: https://ffmpeg.martin-riedl.de",
