@@ -17,6 +17,7 @@ on:
       - '.github/workflows/update-ffmpeg-assets.yml'
       - 'script/assets/external-assets.json'
       - 'script/download-external-asset.ps1'
+      - 'script/install-appimagetool.ps1'
       - 'script/ffmpeg-assets.py'
       - 'script/ffmpeg.ps1'
       - 'script/ffmpeg.sh'
@@ -418,6 +419,11 @@ jobs:
           fuse_package=libfuse2
           if ! apt-cache show "$fuse_package" >/dev/null 2>&1; then fuse_package=libfuse2t64; fi
           sudo apt-get install -y cpio "$fuse_package" rpm rpm2cpio xauth xvfb
+      - name: Install mirrored appimagetool
+        if: ${{ matrix.kind == 'AppImage' }}
+        run: |
+          pwsh ./script/install-appimagetool.ps1 -ToolPath ./.tools
+          echo "$GITHUB_WORKSPACE/.tools" >> "$GITHUB_PATH"
       - name: Download canonical Linux publish
         uses: $/.github/actions/download-artifact
         with:
