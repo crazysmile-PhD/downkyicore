@@ -32,7 +32,7 @@ internal interface ISeasonsSeriesCoordinator
         int pageSize,
         CancellationToken cancellationToken);
 
-    Task<int?> AddToDownloadAsync(
+    Task<ContentDownloadBatchResult?> AddToDownloadAsync(
         IReadOnlyList<SeasonsSeriesDownloadItem> items,
         bool onlySelected,
         CancellationToken cancellationToken);
@@ -106,7 +106,7 @@ internal sealed class SeasonsSeriesCoordinator : ISeasonsSeriesCoordinator
         }
     }
 
-    public Task<int?> AddToDownloadAsync(
+    public Task<ContentDownloadBatchResult?> AddToDownloadAsync(
         IReadOnlyList<SeasonsSeriesDownloadItem> items,
         bool onlySelected,
         CancellationToken cancellationToken)

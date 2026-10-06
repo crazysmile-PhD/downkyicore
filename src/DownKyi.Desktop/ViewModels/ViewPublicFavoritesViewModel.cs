@@ -275,19 +275,17 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
         var items = FavoritesSelectionPolicy.CreateDownloadItems(FavoritesMedias);
         try
         {
-            var addedCount = await _downloadCoordinator.AddAsync(
+            var result = await _downloadCoordinator.AddAsync(
                 items,
                 isOnlySelected,
                 cancellationToken).ConfigureAwait(true);
             cancellationToken.ThrowIfCancellationRequested();
-            if (addedCount == null)
+            if (result == null)
             {
                 return;
             }
 
-            Notifications.Show(addedCount <= 0
-                ? DictionaryResource.GetString("TipAddDownloadingZero")
-                : $"{DictionaryResource.GetString("TipAddDownloadingFinished1")}{addedCount}{DictionaryResource.GetString("TipAddDownloadingFinished2")}");
+            Notifications.Show(ContentDownloadNotificationFormatter.Format(result.Value));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

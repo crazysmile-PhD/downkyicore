@@ -60,7 +60,7 @@ internal sealed class ContentDownloadBatchOwner : IContentDownloadCoordinator, I
         return Task.CompletedTask;
     }
 
-    public async Task<int?> AddAsync(
+    public async Task<ContentDownloadBatchResult?> AddAsync(
         IReadOnlyList<ContentDownloadItem> items,
         bool onlySelected,
         CancellationToken cancellationToken)
@@ -153,7 +153,7 @@ internal sealed class ContentDownloadBatchOwner : IContentDownloadCoordinator, I
         private const int Completed = 2;
         private readonly CancellationTokenSource _operationScope;
         private readonly CancellationTokenRegistration _cancellationRegistration;
-        private readonly TaskCompletionSource<int?> _completion =
+        private readonly TaskCompletionSource<ContentDownloadBatchResult?> _completion =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
         private int _state = Queued;
 
@@ -176,14 +176,14 @@ internal sealed class ContentDownloadBatchOwner : IContentDownloadCoordinator, I
 
         public CancellationToken CancellationToken => _operationScope.Token;
 
-        public Task<int?> Completion => _completion.Task;
+        public Task<ContentDownloadBatchResult?> Completion => _completion.Task;
 
         public bool TryStart()
         {
             return Interlocked.CompareExchange(ref _state, Running, Queued) == Queued;
         }
 
-        public void TrySetResult(int? result)
+        public void TrySetResult(ContentDownloadBatchResult? result)
         {
             if (Interlocked.CompareExchange(ref _state, Completed, Running) == Running)
             {
