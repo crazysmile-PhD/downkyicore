@@ -19,6 +19,7 @@ using DownKyi.CustomControl;
 using DownKyi.Images;
 using DownKyi.Presentation;
 using DownKyi.Services.Download;
+using DownKyi.Services.Media;
 using DownKyi.Services.UserSpace;
 using DownKyi.Utils;
 using Microsoft.Extensions.Logging;
@@ -224,21 +225,19 @@ internal class ViewSeasonsSeriesDetailViewModel : ViewModelBase
             .ToArray();
         try
         {
-            var addedCount = await _coordinator
+            var result = await _coordinator
                 .AddToDownloadAsync(
                     items,
                     onlySelected,
                     cancellationToken)
                 .ConfigureAwait(true);
             cancellationToken.ThrowIfCancellationRequested();
-            if (addedCount == null)
+            if (result == null)
             {
                 return;
             }
 
-            Notifications.Show(addedCount <= 0
-                ? DictionaryResource.GetString("TipAddDownloadingZero")
-                : $"{DictionaryResource.GetString("TipAddDownloadingFinished1")}{addedCount}{DictionaryResource.GetString("TipAddDownloadingFinished2")}");
+            Notifications.Show(ContentDownloadNotificationFormatter.Format(result.Value));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

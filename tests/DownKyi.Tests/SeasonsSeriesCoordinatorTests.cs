@@ -110,7 +110,7 @@ public sealed class SeasonsSeriesCoordinatorTests
 
     private sealed class ThrowingDownloadCoordinator : IContentDownloadCoordinator
     {
-        public Task<int?> AddAsync(
+        public Task<ContentDownloadBatchResult?> AddAsync(
             IReadOnlyList<ContentDownloadItem> items,
             bool onlySelected,
             CancellationToken cancellationToken)

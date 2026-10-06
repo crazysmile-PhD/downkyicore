@@ -38,7 +38,7 @@ public sealed class ContentDownloadBatchOwnerTests
                         secondStarted.TrySetResult();
                     }
 
-                    return 1;
+                    return new ContentDownloadBatchResult(1, 0);
                 }
                 finally
                 {
@@ -62,8 +62,8 @@ public sealed class ContentDownloadBatchOwnerTests
             Assert.False(secondStarted.Task.IsCompleted);
             releaseFirst.TrySetResult();
 
-            Assert.Equal(1, await first.ConfigureAwait(true));
-            Assert.Equal(1, await second.ConfigureAwait(true));
+            Assert.Equal(new ContentDownloadBatchResult(1, 0), await first.ConfigureAwait(true));
+            Assert.Equal(new ContentDownloadBatchResult(1, 0), await second.ConfigureAwait(true));
             Assert.Equal(["first", "second"], executionOrder);
             Assert.Equal(1, maximumActiveCount);
         }
@@ -94,7 +94,7 @@ public sealed class ContentDownloadBatchOwnerTests
                     await releaseFirst.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
                 }
 
-                return 1;
+                return new ContentDownloadBatchResult(1, 0);
             });
         await owner.StartAsync(TestContext.Current.CancellationToken);
 
@@ -115,7 +115,7 @@ public sealed class ContentDownloadBatchOwnerTests
             Assert.Equal(["first"], executedSources);
 
             releaseFirst.TrySetResult();
-            Assert.Equal(1, await first.ConfigureAwait(true));
+            Assert.Equal(new ContentDownloadBatchResult(1, 0), await first.ConfigureAwait(true));
         }
         finally
         {
@@ -136,7 +136,7 @@ public sealed class ContentDownloadBatchOwnerTests
             {
                 started.TrySetResult();
                 await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
-                return 1;
+                return new ContentDownloadBatchResult(1, 0);
             });
         await owner.StartAsync(TestContext.Current.CancellationToken);
 
@@ -167,7 +167,7 @@ public sealed class ContentDownloadBatchOwnerTests
                 try
                 {
                     await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
-                    return 1;
+                    return new ContentDownloadBatchResult(1, 0);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -214,7 +214,7 @@ public sealed class ContentDownloadBatchOwnerTests
                 try
                 {
                     await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
-                    return 1;
+                    return new ContentDownloadBatchResult(1, 0);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -263,17 +263,17 @@ public sealed class ContentDownloadBatchOwnerTests
 
     private static ContentDownloadBatchOwner CreateOwner(
         ApplicationCancellation applicationCancellation,
-        Func<IReadOnlyList<ContentDownloadItem>, bool, CancellationToken, Task<int?>> executeAsync) =>
+        Func<IReadOnlyList<ContentDownloadItem>, bool, CancellationToken, Task<ContentDownloadBatchResult?>> executeAsync) =>
         new(new StubContentDownloadCoordinator(executeAsync), applicationCancellation);
 
     private static ContentDownloadItem CreateItem(string source) =>
         new(source, DownloadInfoKind.Video, IsSelected: true);
 
     private sealed class StubContentDownloadCoordinator(
-        Func<IReadOnlyList<ContentDownloadItem>, bool, CancellationToken, Task<int?>> executeAsync)
+        Func<IReadOnlyList<ContentDownloadItem>, bool, CancellationToken, Task<ContentDownloadBatchResult?>> executeAsync)
         : IContentDownloadCoordinator
     {
-        public Task<int?> AddAsync(
+        public Task<ContentDownloadBatchResult?> AddAsync(
             IReadOnlyList<ContentDownloadItem> items,
             bool onlySelected,
             CancellationToken cancellationToken) =>

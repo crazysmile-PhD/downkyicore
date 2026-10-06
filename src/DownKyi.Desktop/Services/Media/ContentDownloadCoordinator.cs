@@ -4,12 +4,16 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Bilibili;
+using DownKyi.Application.Diagnostics;
 using DownKyi.Application.Downloads;
+using DownKyi.Core.BiliApi;
 using DownKyi.Core.BiliApi.Sign;
+using DownKyi.Core.BiliApi.Video;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.Settings;
 using DownKyi.Services.Download;
 using DownKyi.Services.Video;
+using Microsoft.Extensions.Logging;
 
 namespace DownKyi.Services.Media;
 
@@ -20,6 +24,8 @@ internal enum DownloadInfoKind
 }
 
 internal sealed record ContentDownloadItem(string Source, DownloadInfoKind Kind, bool IsSelected);
+
+internal readonly record struct ContentDownloadBatchResult(int AddedCount, int SkippedCount);
 
 internal interface IContentInfoServiceFactory
 {
@@ -76,7 +82,7 @@ internal sealed class ContentInfoServiceFactory : IContentInfoServiceFactory
 
 internal interface IContentDownloadCoordinator
 {
-    Task<int?> AddAsync(
+    Task<ContentDownloadBatchResult?> AddAsync(
         IReadOnlyList<ContentDownloadItem> items,
         bool onlySelected,
         CancellationToken cancellationToken);
@@ -87,19 +93,22 @@ internal sealed class ContentDownloadCoordinator : IContentDownloadCoordinator
     private readonly IAddToDownloadServiceFactory _serviceFactory;
     private readonly IContentInfoServiceFactory _infoServiceFactory;
     private readonly DownloadContentConflictResolver _contentConflictResolver;
+    private readonly ILogger<ContentDownloadCoordinator> _logger;
 
     public ContentDownloadCoordinator(
         IAddToDownloadServiceFactory serviceFactory,
         IContentInfoServiceFactory infoServiceFactory,
-        DownloadContentConflictResolver contentConflictResolver)
+        DownloadContentConflictResolver contentConflictResolver,
+        ILogger<ContentDownloadCoordinator> logger)
     {
         _serviceFactory = serviceFactory ?? throw new ArgumentNullException(nameof(serviceFactory));
         _infoServiceFactory = infoServiceFactory ?? throw new ArgumentNullException(nameof(infoServiceFactory));
         _contentConflictResolver = contentConflictResolver
             ?? throw new ArgumentNullException(nameof(contentConflictResolver));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public async Task<int?> AddAsync(
+    public async Task<ContentDownloadBatchResult?> AddAsync(
         IReadOnlyList<ContentDownloadItem> items,
         bool onlySelected,
         CancellationToken cancellationToken)
@@ -112,7 +121,7 @@ internal sealed class ContentDownloadCoordinator : IContentDownloadCoordinator
             : items.ToArray();
         if (selectedItems.Length == 0)
         {
-            return 0;
+            return new ContentDownloadBatchResult(AddedCount: 0, SkippedCount: 0);
         }
 
         var addToDownloadSession = _serviceFactory.Create(ToPlayStreamType(selectedItems[0].Kind));
@@ -127,7 +136,7 @@ internal sealed class ContentDownloadCoordinator : IContentDownloadCoordinator
             cancellationToken).ConfigureAwait(true);
     }
 
-    private Task<int> AddItemsAsync(
+    private Task<ContentDownloadBatchResult> AddItemsAsync(
         IAddToDownloadSession addToDownloadSession,
         IReadOnlyList<ContentDownloadItem> items,
         DownloadAddSelection selection,
@@ -136,19 +145,35 @@ internal sealed class ContentDownloadCoordinator : IContentDownloadCoordinator
         return Task.Run(async () =>
         {
             var addedCount = 0;
+            var skippedCount = 0;
             var conflictChoices = new DownloadContentConflictChoices();
             foreach (var item in items)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var infoService = await _infoServiceFactory
-                    .CreateAsync(item, cancellationToken)
-                    .ConfigureAwait(false);
-                var preparedDownload = await addToDownloadSession
-                    .PrepareAsync(infoService, cancellationToken)
-                    .ConfigureAwait(false);
+                PreparedDownload? preparedDownload;
+                try
+                {
+                    var infoService = await _infoServiceFactory
+                        .CreateAsync(item, cancellationToken)
+                        .ConfigureAwait(false);
+                    preparedDownload = await addToDownloadSession
+                        .PrepareAsync(infoService, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (BilibiliApiResponseException exception) when (IsUnavailableVideo(exception))
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    skippedCount++;
+                    _logger.LogWarningMessage(
+                        $"A content download item was skipped because Bilibili reported it unavailable; " +
+                        $"operation={exception.Operation}; code={exception.Code}.",
+                        exception);
+                    continue;
+                }
+
                 if (preparedDownload == null)
                 {
-                    addedCount--;
+                    skippedCount++;
                     continue;
                 }
 
@@ -166,9 +191,16 @@ internal sealed class ContentDownloadCoordinator : IContentDownloadCoordinator
                     .ConfigureAwait(false);
             }
 
-            return addedCount;
+            return new ContentDownloadBatchResult(addedCount, skippedCount);
         }, cancellationToken);
     }
+
+    private static bool IsUnavailableVideo(BilibiliApiResponseException exception) =>
+        exception.Code == 62002
+        && string.Equals(
+            exception.Operation,
+            nameof(VideoInfo.VideoViewInfoAsync),
+            StringComparison.Ordinal);
 
     private static PlayStreamType ToPlayStreamType(DownloadInfoKind kind)
     {

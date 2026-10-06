@@ -1,5 +1,7 @@
 using DownKyi.Application.Bilibili;
 using DownKyi.Application.Downloads;
+using DownKyi.Core.BiliApi;
+using DownKyi.Core.BiliApi.Video;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.BiliApi.VideoStream.Models;
 using DownKyi.Domain.Downloads;
@@ -7,6 +9,7 @@ using DownKyi.Presentation;
 using DownKyi.Services;
 using DownKyi.Services.Download;
 using DownKyi.Services.Media;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DownKyi.Tests;
 
@@ -40,7 +43,7 @@ public sealed class ContentDownloadCoordinatorTests
             onlySelected: true,
             TestContext.Current.CancellationToken);
 
-        Assert.Equal(0, result);
+        Assert.Equal(new ContentDownloadBatchResult(0, 0), result);
         Assert.Equal(0, factory.CreateCount);
         Assert.Equal(0, session.DirectorySelectionCount);
     }
@@ -104,7 +107,7 @@ public sealed class ContentDownloadCoordinatorTests
             onlySelected: false,
             TestContext.Current.CancellationToken);
 
-        Assert.Equal(2, result);
+        Assert.Equal(new ContentDownloadBatchResult(2, 0), result);
         Assert.Equal(1, factory.CreateCount);
         Assert.Equal(PlayStreamType.Video, factory.StreamType);
         Assert.Equal(1, session.DirectorySelectionCount);
@@ -113,6 +116,120 @@ public sealed class ContentDownloadCoordinatorTests
         Assert.Equal(
             [DownloadInfoKind.Video, DownloadInfoKind.Bangumi],
             infoServiceFactory.CreatedKinds);
+    }
+
+    [Fact]
+    public async Task UnavailableVideoIsSkippedWithoutStoppingFollowingItems()
+    {
+        const string unavailableSource = "BV1unavailable";
+        var session = new RecordingSession(@"D:\Downloads");
+        var infoServiceFactory = new RecordingInfoServiceFactory(item =>
+            item.Source == unavailableSource
+                ? new BilibiliApiResponseException(
+                    nameof(VideoInfo.VideoViewInfoAsync),
+                    "Video is unavailable.",
+                    code: 62002)
+                : null);
+        var coordinator = CreateCoordinator(new RecordingFactory(session), infoServiceFactory);
+
+        var result = await coordinator.AddAsync(
+            [
+                new ContentDownloadItem("BV17x411w7KC", DownloadInfoKind.Video, true),
+                new ContentDownloadItem(unavailableSource, DownloadInfoKind.Video, true),
+                new ContentDownloadItem("BV1xx411c7mD", DownloadInfoKind.Video, true)
+            ],
+            onlySelected: true,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(new ContentDownloadBatchResult(2, 1), result);
+        Assert.Equal(2, session.PrepareCount);
+        Assert.Equal(2, session.AddCount);
+        Assert.Equal(
+            ["BV17x411w7KC", unavailableSource, "BV1xx411c7mD"],
+            infoServiceFactory.CreatedSources);
+    }
+
+    [Fact]
+    public async Task CancellationWinsWhenFinalUnavailableVideoResponseArrives()
+    {
+        const string unavailableSource = "BV1unavailable";
+        using var cancellation = new CancellationTokenSource();
+        var session = new RecordingSession(@"D:\Downloads");
+        var infoServiceFactory = new RecordingInfoServiceFactory(_ =>
+        {
+            cancellation.Cancel();
+            return new BilibiliApiResponseException(
+                nameof(VideoInfo.VideoViewInfoAsync),
+                "Video is unavailable.",
+                code: 62002);
+        });
+        var coordinator = CreateCoordinator(new RecordingFactory(session), infoServiceFactory);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => coordinator.AddAsync(
+            [new ContentDownloadItem(unavailableSource, DownloadInfoKind.Video, true)],
+            onlySelected: true,
+            cancellation.Token));
+
+        Assert.Equal([unavailableSource], infoServiceFactory.CreatedSources);
+        Assert.Equal(0, session.PrepareCount);
+        Assert.Equal(0, session.AddCount);
+    }
+
+    [Theory]
+    [InlineData(nameof(VideoInfo.VideoViewInfoAsync), -101)]
+    [InlineData("OtherOperation", 62002)]
+    public async Task OtherBilibiliApiFailuresStillStopTheBatch(string operation, int code)
+    {
+        const string failingSource = "BV1failure";
+        var session = new RecordingSession(@"D:\Downloads");
+        var infoServiceFactory = new RecordingInfoServiceFactory(item =>
+            item.Source == failingSource
+                ? new BilibiliApiResponseException(
+                    operation,
+                    "Authentication failed.",
+                    code: code)
+                : null);
+        var coordinator = CreateCoordinator(new RecordingFactory(session), infoServiceFactory);
+
+        var exception = await Assert.ThrowsAsync<BilibiliApiResponseException>(() => coordinator.AddAsync(
+            [
+                new ContentDownloadItem("BV17x411w7KC", DownloadInfoKind.Video, true),
+                new ContentDownloadItem(failingSource, DownloadInfoKind.Video, true),
+                new ContentDownloadItem("BV1xx411c7mD", DownloadInfoKind.Video, true)
+            ],
+            onlySelected: true,
+            TestContext.Current.CancellationToken));
+
+        Assert.Equal(code, exception.Code);
+        Assert.Equal(1, session.PrepareCount);
+        Assert.Equal(1, session.AddCount);
+        Assert.Equal(
+            ["BV17x411w7KC", failingSource],
+            infoServiceFactory.CreatedSources);
+    }
+
+    [Fact]
+    public async Task UnpreparableItemIsSkippedWithoutReducingCompletedCount()
+    {
+        var session = new RecordingSession(
+            @"D:\Downloads",
+            skippedPreparationCalls: new HashSet<int> { 2 });
+        var coordinator = CreateCoordinator(
+            new RecordingFactory(session),
+            new RecordingInfoServiceFactory());
+
+        var result = await coordinator.AddAsync(
+            [
+                new ContentDownloadItem("BV17x411w7KC", DownloadInfoKind.Video, true),
+                new ContentDownloadItem("BV1unprepared", DownloadInfoKind.Video, true),
+                new ContentDownloadItem("BV1xx411c7mD", DownloadInfoKind.Video, true)
+            ],
+            onlySelected: true,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(new ContentDownloadBatchResult(2, 1), result);
+        Assert.Equal(3, session.PrepareCount);
+        Assert.Equal(2, session.AddCount);
     }
 
     [Fact]
@@ -181,7 +298,8 @@ public sealed class ContentDownloadCoordinatorTests
     private sealed class RecordingSession(
         string? directory,
         bool admissionAllowed = true,
-        Action<int>? afterAdd = null) : IAddToDownloadSession
+        Action<int>? afterAdd = null,
+        IReadOnlySet<int>? skippedPreparationCalls = null) : IAddToDownloadSession
     {
         public int AdmissionCheckCount { get; private set; }
 
@@ -227,6 +345,11 @@ public sealed class ContentDownloadCoordinatorTests
             cancellationToken.ThrowIfCancellationRequested();
             Assert.NotNull(videoInfoService);
             PrepareCount++;
+            if (skippedPreparationCalls?.Contains(PrepareCount) == true)
+            {
+                return Task.FromResult<PreparedDownload?>(null);
+            }
+
             return Task.FromResult<PreparedDownload?>(PreparedDownload.Create(
                 new VideoInfoView(),
                 [new VideoSection()]));
@@ -251,7 +374,8 @@ public sealed class ContentDownloadCoordinatorTests
         IContentInfoServiceFactory infoServiceFactory) => new(
             factory,
             infoServiceFactory,
-            new DownloadContentConflictResolver(new UnexpectedDialogService()));
+            new DownloadContentConflictResolver(new UnexpectedDialogService()),
+            NullLogger<ContentDownloadCoordinator>.Instance);
 
     private sealed class UnexpectedDialogService : DownKyi.Application.Desktop.IAppDialogService
     {
@@ -261,9 +385,12 @@ public sealed class ContentDownloadCoordinatorTests
                 $"Unexpected dialog: {request.Dialog}.");
     }
 
-    private sealed class RecordingInfoServiceFactory : IContentInfoServiceFactory
+    private sealed class RecordingInfoServiceFactory(
+        Func<ContentDownloadItem, Exception?>? failure = null) : IContentInfoServiceFactory
     {
         public List<DownloadInfoKind> CreatedKinds { get; } = [];
+
+        public List<string> CreatedSources { get; } = [];
 
         public Task<IInfoService> CreateAsync(
             ContentDownloadItem item,
@@ -271,6 +398,12 @@ public sealed class ContentDownloadCoordinatorTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             CreatedKinds.Add(item.Kind);
+            CreatedSources.Add(item.Source);
+            if (failure?.Invoke(item) is { } exception)
+            {
+                return Task.FromException<IInfoService>(exception);
+            }
+
             return Task.FromResult<IInfoService>(new RecordingInfoService());
         }
     }

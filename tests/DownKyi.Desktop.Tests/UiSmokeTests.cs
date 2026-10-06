@@ -1193,7 +1193,7 @@ public sealed class UiSmokeTests
                 61));
         }
 
-        public Task<int?> AddToDownloadAsync(
+        public Task<ContentDownloadBatchResult?> AddToDownloadAsync(
             IReadOnlyList<SeasonsSeriesDownloadItem> items,
             bool onlySelected,
             CancellationToken cancellationToken) => throw new NotSupportedException();
@@ -1259,7 +1259,7 @@ public sealed class UiSmokeTests
         public TaskCompletionSource FirstRequestStarted { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        public async Task<int?> AddAsync(
+        public async Task<ContentDownloadBatchResult?> AddAsync(
             IReadOnlyList<ContentDownloadItem> items,
             bool onlySelected,
             CancellationToken cancellationToken)
@@ -1276,7 +1276,7 @@ public sealed class UiSmokeTests
                 }
             }
 
-            return 0;
+            return new ContentDownloadBatchResult(0, 0);
         }
     }
 

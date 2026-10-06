@@ -2,11 +2,12 @@ namespace DownKyi.Application.Downloads;
 
 public static class DownloadAddCoordinator
 {
-    public static async Task<int?> AddToDownloadIfSelectionAcceptedAsync(
+    public static async Task<TResult?> AddToDownloadIfSelectionAcceptedAsync<TResult>(
         Func<Task<bool>> ensureAdmissionAsync,
         Func<Task<DownloadAddSelection?>> selectDownloadAsync,
-        Func<DownloadAddSelection, Task<int>> addToDownloadAsync,
+        Func<DownloadAddSelection, Task<TResult>> addToDownloadAsync,
         CancellationToken cancellationToken = default)
+        where TResult : struct
     {
         ArgumentNullException.ThrowIfNull(ensureAdmissionAsync);
         ArgumentNullException.ThrowIfNull(selectDownloadAsync);
