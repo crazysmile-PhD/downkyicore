@@ -13,6 +13,6 @@ public class PlayUrlDash : BaseModel
     //public float min_buffer_time { get; set; }
     [JsonProperty("video")] public IReadOnlyList<PlayUrlDashVideo> Video { get; set; } = Array.Empty<PlayUrlDashVideo>();
     [JsonProperty("audio")] public IReadOnlyList<PlayUrlDashVideo> Audio { get; set; } = Array.Empty<PlayUrlDashVideo>();
-    [JsonProperty("dolby")] public PlayUrlDashDolby Dolby { get; set; } = new();
-    [JsonProperty("flac")] public PlayUrlDashFlac Flac { get; set; } = new();
+    [JsonProperty("dolby")] public PlayUrlDashDolby? Dolby { get; set; }
+    [JsonProperty("flac")] public PlayUrlDashFlac? Flac { get; set; }
 }

@@ -4,6 +4,8 @@ namespace DownKyi.Core.BiliApi.BiliUtils;
 
 public static class PlaybackQualityCatalog
 {
+    public const int MaximumProbeQuality = 127;
+
     private static readonly ImmutableArray<QualityOption> Resolutions =
     [
         new("360P 流畅", 16),

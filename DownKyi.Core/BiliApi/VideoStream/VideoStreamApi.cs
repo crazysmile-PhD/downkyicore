@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using DownKyi.Application.Bilibili;
+using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.Sign;
 using DownKyi.Core.BiliApi.VideoStream.Models;
 using Newtonsoft.Json;
@@ -8,6 +9,8 @@ namespace DownKyi.Core.BiliApi.VideoStream;
 
 public static partial class VideoStreamApi
 {
+    private const int BangumiFnval = 4048;
+
     internal enum PlayUrlPayloadField
     {
         Data,
@@ -137,11 +140,11 @@ public static partial class VideoStreamApi
         string bvid,
         long cid,
         long episodeId,
-        int quality = 125,
+        int quality = PlaybackQualityCatalog.MaximumProbeQuality,
         CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(episodeId);
-        var baseUrl = $"https://api.bilibili.com/pgc/player/web/v2/playurl?cid={cid}&ep_id={episodeId}&qn={quality}&fourk=1&fnver=0&fnval=4048";
+        var baseUrl = $"https://api.bilibili.com/pgc/player/web/v2/playurl?cid={cid}&ep_id={episodeId}&qn={quality}&fourk=1&fnver=0&fnval={BangumiFnval}";
         string url;
         if (bvid != null)
         {
@@ -156,7 +159,7 @@ public static partial class VideoStreamApi
             return null;
         }
 
-        const string referer = "https://www.bilibili.com";
+        var referer = BuildBangumiPlayPageUrl(episodeId);
         var response = await BiliApiRequest.RequestJsonAsync<BangumiPlayUrlV2Origin>(
             client,
             url,
@@ -165,7 +168,93 @@ public static partial class VideoStreamApi
             "GetBangumiPlayUrl()",
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
-        return BangumiPlayUrlV2Contract.SelectPayload(response, nameof(GetBangumiPlayUrlAsync));
+        var playUrl = BangumiPlayUrlV2Contract.SelectPayload(
+            response,
+            nameof(GetBangumiPlayUrlAsync));
+        var playDetail = response.Result?.PlayCheck?.PlayDetail;
+        if (!BangumiPlaybackResolver.ShouldTryWebPageFallback(playUrl, quality))
+        {
+            return AttachBangumiDiagnostics(
+                playUrl,
+                quality,
+                playDetail,
+                usedWebPageFallback: false,
+                "not-required");
+        }
+
+        try
+        {
+            var webpage = await BiliApiRequest.RequestTextAsync(
+                client,
+                referer,
+                referer,
+                nameof(GetBangumiPlayUrlAsync),
+                "GetBangumiPlayPage()",
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (!BangumiPlaybackResolver.TryParseEmbeddedPayload(
+                    webpage,
+                    nameof(GetBangumiPlayUrlAsync),
+                    out var embeddedPlayUrl,
+                    out var embeddedPlayDetail)
+                || embeddedPlayUrl == null)
+            {
+                return AttachBangumiDiagnostics(
+                    playUrl,
+                    quality,
+                    playDetail,
+                    usedWebPageFallback: false,
+                    "embedded-playback-unavailable");
+            }
+
+            if (BangumiPlaybackResolver.GetHighestActualQuality(embeddedPlayUrl)
+                <= BangumiPlaybackResolver.GetHighestActualQuality(playUrl))
+            {
+                return AttachBangumiDiagnostics(
+                    playUrl,
+                    quality,
+                    playDetail,
+                    usedWebPageFallback: false,
+                    "embedded-playback-not-better");
+            }
+
+            return AttachBangumiDiagnostics(
+                embeddedPlayUrl,
+                quality,
+                embeddedPlayDetail,
+                usedWebPageFallback: true,
+                "embedded-playback-selected");
+        }
+        catch (HttpRequestException exception)
+        {
+            return AttachBangumiDiagnostics(
+                playUrl,
+                quality,
+                playDetail,
+                usedWebPageFallback: false,
+                $"web-request-failed:{exception.GetType().Name}");
+        }
+    }
+
+    internal static string BuildBangumiPlayPageUrl(long episodeId)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(episodeId);
+        return $"https://www.bilibili.com/bangumi/play/ep{episodeId}";
+    }
+
+    private static PlayUrl AttachBangumiDiagnostics(
+        PlayUrl playUrl,
+        int requestedQuality,
+        string? playDetail,
+        bool usedWebPageFallback,
+        string fallbackOutcome)
+    {
+        playUrl.Diagnostics = new PlayUrlDiagnostics(
+            requestedQuality,
+            BangumiFnval,
+            playDetail,
+            usedWebPageFallback,
+            fallbackOutcome);
+        return playUrl;
     }
 
     /// <summary>

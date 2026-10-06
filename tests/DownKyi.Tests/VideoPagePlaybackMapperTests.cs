@@ -98,6 +98,150 @@ public sealed class VideoPagePlaybackMapperTests : IDisposable
         Assert.Equal("H.265/HEVC", page.VideoQuality.SelectedVideoCodec);
     }
 
+    [Fact]
+    public void Preferred720PDoesNotHideHigherAvailableQualities()
+    {
+        var settings = CreateSettings(videoQuality: 64, isVip: true);
+        var playUrl = CreatePlayUrl(120, 112, 80, 64);
+        var page = new VideoPage();
+
+        VideoPagePlaybackMapper.ApplyPlayUrl(playUrl, page, settings);
+
+        Assert.Equal([120, 112, 80, 64], page.VideoQualityList.Select(quality => quality.Quality));
+        Assert.Equal(64, page.VideoQuality.Quality);
+    }
+
+    [Fact]
+    public void MissingPreferredQualitySelectsHighestAvailableQualityBelowIt()
+    {
+        var settings = CreateSettings(videoQuality: 116, isVip: true);
+        var page = new VideoPage();
+
+        VideoPagePlaybackMapper.ApplyPlayUrl(CreatePlayUrl(112, 80, 64), page, settings);
+
+        Assert.Equal(112, page.VideoQuality.Quality);
+    }
+
+    [Fact]
+    public void ServerProvidedVipQualityIsNotHiddenByCachedAccountState()
+    {
+        var settings = CreateSettings(videoQuality: 127, isVip: false);
+        var page = new VideoPage();
+
+        VideoPagePlaybackMapper.ApplyPlayUrl(CreatePlayUrl(112), page, settings);
+
+        Assert.Equal(112, Assert.Single(page.VideoQualityList).Quality);
+        Assert.Equal(112, page.VideoQuality.Quality);
+    }
+
+    [Fact]
+    public void AudioPreferenceSelectsWithoutFilteringHigherAvailableQualities()
+    {
+        var baseline = CreateSettings(videoQuality: 80, isVip: true);
+        var settings = baseline with
+        {
+            Video = baseline.Video with
+            {
+                AudioQuality = 30232
+            }
+        };
+        var playUrl = CreatePlayUrl(80);
+        playUrl.Dash.Audio =
+        [
+            new PlayUrlDashVideo { Id = 30280 },
+            new PlayUrlDashVideo { Id = 30232 },
+            new PlayUrlDashVideo { Id = 30216 }
+        ];
+        var page = new VideoPage();
+
+        VideoPagePlaybackMapper.ApplyPlayUrl(playUrl, page, settings);
+
+        Assert.Equal(["高质量", "中质量", "低质量"], page.AudioQualityFormatList);
+        Assert.Equal("中质量", page.AudioQualityFormat);
+    }
+
+    [Fact]
+    public void CapabilitySummaryContainsOnlySanitizedPlaybackMetadata()
+    {
+        var settings = CreateSettings(videoQuality: 64, isVip: true);
+        var playUrl = CreatePlayUrl(64);
+        playUrl.AcceptQuality = [112, 80, 64];
+        playUrl.SupportFormats =
+        [
+            new PlayUrlSupportFormat
+            {
+                Quality = 112,
+                NeedLogin = true,
+                NeedVip = true
+            }
+        ];
+        playUrl.Dash.Video =
+        [
+            new PlayUrlDashVideo
+            {
+                Id = 64,
+                CodecId = 7,
+                BaseAddress = "https://media.invalid/private-token"
+            }
+        ];
+        playUrl.Diagnostics = new PlayUrlDiagnostics(
+            127,
+            4048,
+            "PLAY_WHOLE\r\nforged",
+            false,
+            "embedded-playback-unavailable");
+
+        var summary = VideoPagePlaybackMapper.BuildCapabilitySummary(playUrl, settings);
+
+        Assert.Contains("configuredQuality=64", summary, StringComparison.Ordinal);
+        Assert.Contains("requestedQuality=127", summary, StringComparison.Ordinal);
+        Assert.Contains("supportQuality=[112(login=True,vip=True)]", summary, StringComparison.Ordinal);
+        Assert.Contains("dashVideoIds=[64]", summary, StringComparison.Ordinal);
+        Assert.DoesNotContain("media.invalid", summary, StringComparison.Ordinal);
+        Assert.DoesNotContain('\r', summary);
+        Assert.DoesNotContain('\n', summary);
+    }
+
+    private ApplicationSettings CreateSettings(int videoQuality, bool isVip)
+    {
+        Directory.CreateDirectory(_directory);
+        using var settingsStore = new SettingsStore(Path.Combine(_directory, $"settings-{Guid.NewGuid():N}.json"));
+        return settingsStore.Current with
+        {
+            Video = settingsStore.Current.Video with
+            {
+                Quality = videoQuality,
+                VideoCodecs = 7
+            },
+            User = settingsStore.Current.User with
+            {
+                Mid = isVip ? 1 : -1,
+                IsLogin = isVip,
+                IsVip = isVip
+            }
+        };
+    }
+
+    private static PlayUrl CreatePlayUrl(params int[] qualities)
+    {
+        return new PlayUrl
+        {
+            Dash = new PlayUrlDash
+            {
+                Video = qualities
+                    .Select(quality => new PlayUrlDashVideo { Id = quality, CodecId = 7 })
+                    .ToArray()
+            },
+            SupportFormats = qualities
+                .Select(quality => new PlayUrlSupportFormat
+                {
+                    Quality = quality,
+                    NewDescription = $"Quality {quality}"
+                })
+                .ToArray()
+        };
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_directory))
