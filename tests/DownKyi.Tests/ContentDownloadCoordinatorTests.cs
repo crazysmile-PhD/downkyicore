@@ -149,6 +149,32 @@ public sealed class ContentDownloadCoordinatorTests
             infoServiceFactory.CreatedSources);
     }
 
+    [Fact]
+    public async Task CancellationWinsWhenFinalUnavailableVideoResponseArrives()
+    {
+        const string unavailableSource = "BV1unavailable";
+        using var cancellation = new CancellationTokenSource();
+        var session = new RecordingSession(@"D:\Downloads");
+        var infoServiceFactory = new RecordingInfoServiceFactory(_ =>
+        {
+            cancellation.Cancel();
+            return new BilibiliApiResponseException(
+                nameof(VideoInfo.VideoViewInfoAsync),
+                "Video is unavailable.",
+                code: 62002);
+        });
+        var coordinator = CreateCoordinator(new RecordingFactory(session), infoServiceFactory);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => coordinator.AddAsync(
+            [new ContentDownloadItem(unavailableSource, DownloadInfoKind.Video, true)],
+            onlySelected: true,
+            cancellation.Token));
+
+        Assert.Equal([unavailableSource], infoServiceFactory.CreatedSources);
+        Assert.Equal(0, session.PrepareCount);
+        Assert.Equal(0, session.AddCount);
+    }
+
     [Theory]
     [InlineData(nameof(VideoInfo.VideoViewInfoAsync), -101)]
     [InlineData("OtherOperation", 62002)]

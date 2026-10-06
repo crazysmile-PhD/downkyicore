@@ -162,6 +162,7 @@ internal sealed class ContentDownloadCoordinator : IContentDownloadCoordinator
                 }
                 catch (BilibiliApiResponseException exception) when (IsUnavailableVideo(exception))
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     skippedCount++;
                     _logger.LogWarningMessage(
                         $"A content download item was skipped because Bilibili reported it unavailable; " +
