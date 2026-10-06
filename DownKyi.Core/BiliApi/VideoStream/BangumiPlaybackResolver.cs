@@ -34,6 +34,40 @@ internal static class BangumiPlaybackResolver
             .Max();
     }
 
+    public static PlayUrl MergePlayback(PlayUrl primary, PlayUrl supplement)
+    {
+        ArgumentNullException.ThrowIfNull(primary);
+        ArgumentNullException.ThrowIfNull(supplement);
+        primary.Dash.Video = primary.Dash.Video
+            .Concat(supplement.Dash.Video)
+            .GroupBy(video => (video.Id, video.CodecId))
+            .Select(group => group.First())
+            .OrderByDescending(video => video.Id)
+            .ThenBy(video => video.CodecId)
+            .ToArray();
+        primary.Dash.Audio = primary.Dash.Audio
+            .Concat(supplement.Dash.Audio)
+            .GroupBy(audio => audio.Id)
+            .Select(group => group.First())
+            .OrderByDescending(audio => audio.Id)
+            .ToArray();
+        primary.Dash.Dolby ??= supplement.Dash.Dolby;
+        primary.Dash.Flac ??= supplement.Dash.Flac;
+        primary.SupportFormats = (primary.SupportFormats ?? [])
+            .Concat(supplement.SupportFormats ?? [])
+            .GroupBy(format => format.Quality)
+            .Select(group => group.First())
+            .OrderByDescending(format => format.Quality)
+            .ToArray();
+        primary.AcceptQuality = (primary.AcceptQuality ?? [])
+            .Concat(supplement.AcceptQuality ?? [])
+            .Distinct()
+            .OrderByDescending(quality => quality)
+            .ToArray();
+        primary.Quality = Math.Max(primary.Quality, supplement.Quality);
+        return primary;
+    }
+
     public static bool TryParseEmbeddedPayload(
         string webpage,
         string operationName,
@@ -51,21 +85,10 @@ internal static class BangumiPlaybackResolver
 
         try
         {
-            var current = JObject.Parse(json);
-            current = UnwrapObject(current, "raw");
-            current = UnwrapObject(current, "data");
-            current = UnwrapObject(current, "result");
-
-            var result = current.ToObject<BangumiPlayUrlV2Result>();
-            if (result == null)
-            {
-                return false;
-            }
-
-            playDetail = result.PlayCheck?.PlayDetail;
-            playUrl = BangumiPlayUrlV2Contract.SelectPayload(
-                new BangumiPlayUrlV2Origin { Result = result },
-                operationName);
+            var root = JObject.Parse(json);
+            var response = ParseEmbeddedEnvelope(root, operationName);
+            playDetail = response.Result?.PlayCheck?.PlayDetail;
+            playUrl = BangumiPlayUrlV2Contract.SelectPayload(response, operationName);
             return true;
         }
         catch (JsonException)
@@ -78,9 +101,53 @@ internal static class BangumiPlaybackResolver
         }
     }
 
-    private static JObject UnwrapObject(JObject current, string propertyName)
+    private static BangumiPlayUrlV2Origin ParseEmbeddedEnvelope(
+        JObject root,
+        string operationName)
     {
-        return current[propertyName] is JObject nested ? nested : current;
+        var current = root;
+        var metadataNodes = new List<JObject> { root };
+        if (current["raw"] is JObject raw)
+        {
+            current = raw;
+            metadataNodes.Add(raw);
+        }
+
+        if (current["data"] is JObject data)
+        {
+            current = data;
+            metadataNodes.Add(data);
+        }
+
+        var result = current["result"] is JObject nestedResult
+            ? nestedResult
+            : current;
+        var metadata = metadataNodes.FirstOrDefault(node =>
+                           node["code"] is { } code && !IsSuccessfulCode(code))
+                       ?? metadataNodes.FirstOrDefault(node => node["code"] != null);
+        var normalized = new JObject
+        {
+            ["result"] = result.DeepClone()
+        };
+        if (metadata?["code"] != null)
+        {
+            normalized["code"] = metadata["code"]!.DeepClone();
+        }
+
+        if (metadata?["message"] != null)
+        {
+            normalized["message"] = metadata["message"]!.DeepClone();
+        }
+
+        return BiliApiRequest.ParseJson<BangumiPlayUrlV2Origin>(
+            normalized.ToString(Formatting.None),
+            operationName);
+    }
+
+    private static bool IsSuccessfulCode(JToken code)
+    {
+        return code.Type == JTokenType.Integer
+               && string.Equals(code.ToString(Formatting.None), "0", StringComparison.Ordinal);
     }
 
     private static string? ExtractAssignedJsonObject(string source, string marker)

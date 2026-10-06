@@ -112,6 +112,21 @@ public sealed class VideoPagePlaybackMapperTests : IDisposable
     }
 
     [Fact]
+    public void Preferred720PRemainsSelectedAfterHigherFallbackQualityIsMerged()
+    {
+        var settings = CreateSettings(videoQuality: 64, isVip: true);
+        var page = new VideoPage();
+        var playUrl = CreatePlayUrl(112, 64);
+
+        VideoPagePlaybackMapper.ApplyPlayUrl(playUrl, page, settings);
+
+        Assert.Equal(
+            [112, 64],
+            page.VideoQualityList.Select(quality => quality.Quality));
+        Assert.Equal(64, page.VideoQuality.Quality);
+    }
+
+    [Fact]
     public void MissingPreferredQualitySelectsHighestAvailableQualityBelowIt()
     {
         var settings = CreateSettings(videoQuality: 116, isVip: true);

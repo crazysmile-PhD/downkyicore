@@ -14,6 +14,9 @@ public sealed class BangumiPlayUrlV2Result : BaseModel
     [JsonProperty("play_check")]
     public BangumiPlayUrlV2PlayCheck? PlayCheck { get; set; }
 
+    [JsonProperty("play_video_type")]
+    public string? PlayVideoType { get; set; }
+
     [JsonProperty("video_info")]
     public PlayUrl? VideoInfo { get; set; }
 }

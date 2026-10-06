@@ -217,12 +217,15 @@ public static partial class VideoStreamApi
                     "embedded-playback-not-better");
             }
 
+            var mergedPlayUrl = BangumiPlaybackResolver.MergePlayback(
+                playUrl,
+                embeddedPlayUrl);
             return AttachBangumiDiagnostics(
-                embeddedPlayUrl,
+                mergedPlayUrl,
                 quality,
                 embeddedPlayDetail,
                 usedWebPageFallback: true,
-                "embedded-playback-selected");
+                "embedded-playback-merged");
         }
         catch (HttpRequestException exception)
         {

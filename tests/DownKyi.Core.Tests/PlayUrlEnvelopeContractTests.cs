@@ -191,13 +191,25 @@ public sealed class PlayUrlEnvelopeContractTests
             3489,
             cancellationToken: TestContext.Current.CancellationToken);
 
-        Assert.Equal(112, Assert.Single(payload?.Dash.Video ?? []).Id);
+        Assert.Equal(
+            [112, 64],
+            payload!.Dash.Video
+                .Select(video => video.Id)
+                .Distinct()
+                .OrderByDescending(id => id)
+                .ToArray());
+        Assert.Equal(
+            "https://api.invalid/video-64",
+            payload.Dash.Video.Single(video => video.Id == 64).BaseAddress);
+        Assert.Equal(
+            "https://api.invalid/audio-30280",
+            Assert.Single(payload.Dash.Audio).BaseAddress);
         Assert.Equal(2, requests.Count);
         Assert.Equal("https://www.bilibili.com/bangumi/play/ep3489", requests[1].RequestAddress);
         Assert.Equal(requests[1].RequestAddress, requests[1].Referer);
         Assert.True(payload?.Diagnostics?.UsedWebPageFallback);
         Assert.Equal("PLAY_WHOLE", payload?.Diagnostics?.PlayDetail);
-        Assert.Equal("embedded-playback-selected", payload?.Diagnostics?.FallbackOutcome);
+        Assert.Equal("embedded-playback-merged", payload?.Diagnostics?.FallbackOutcome);
     }
 
     [Fact]
@@ -238,6 +250,70 @@ public sealed class PlayUrlEnvelopeContractTests
         Assert.True(parsed);
         Assert.Equal(112, Assert.Single(payload?.Dash.Video ?? []).Id);
         Assert.Equal("PLAY_WHOLE", playDetail);
+    }
+
+    [Fact]
+    public void EmbeddedBangumiPlaybackRejectsNonSuccessEnvelope()
+    {
+        const string webpage =
+            """
+            <script>
+            const playurlSSRData = {
+              "code": -10403,
+              "message": "restricted",
+              "result": {
+                "video_info": {
+                  "durl": [],
+                  "dash": {
+                    "video": [{"id":112}],
+                    "audio": [{"id":30280}]
+                  }
+                }
+              }
+            };
+            </script>
+            """;
+
+        var parsed = BangumiPlaybackResolver.TryParseEmbeddedPayload(
+            webpage,
+            "embedded-test",
+            out var payload,
+            out _);
+
+        Assert.False(parsed);
+        Assert.Null(payload);
+    }
+
+    [Fact]
+    public void EmbeddedBangumiPlaybackRejectsPlayVideoTypePreview()
+    {
+        const string webpage =
+            """
+            <script>
+            const playurlSSRData = {
+              "code": 0,
+              "result": {
+                "play_video_type": "preview",
+                "video_info": {
+                  "durl": [],
+                  "dash": {
+                    "video": [{"id":112}],
+                    "audio": [{"id":30280}]
+                  }
+                }
+              }
+            };
+            </script>
+            """;
+
+        var parsed = BangumiPlaybackResolver.TryParseEmbeddedPayload(
+            webpage,
+            "embedded-test",
+            out var payload,
+            out _);
+
+        Assert.False(parsed);
+        Assert.Null(payload);
     }
 
     [Theory]
@@ -473,12 +549,12 @@ public sealed class PlayUrlEnvelopeContractTests
 
     private const string DegradedBangumiApiResponse =
         """
-        {"code":0,"result":{"play_check":{"play_detail":"PLAY_WHOLE"},"video_info":{"quality":64,"accept_quality":[112,80,64],"support_formats":[{"quality":112,"need_login":true,"need_vip":true},{"quality":80},{"quality":64}],"durl":[],"dash":{"video":[{"id":64,"codecid":7}],"audio":[{"id":30280}]}}}}
+        {"code":0,"result":{"play_check":{"play_detail":"PLAY_WHOLE"},"video_info":{"quality":64,"accept_quality":[112,80,64],"support_formats":[{"quality":112,"need_login":true,"need_vip":true},{"quality":80},{"quality":64}],"durl":[],"dash":{"video":[{"id":64,"codecid":7,"base_url":"https://api.invalid/video-64"}],"audio":[{"id":30280,"base_url":"https://api.invalid/audio-30280"}]}}}}
         """;
 
     private const string BetterEmbeddedBangumiPage =
         """
-        <html><script>const playurlSSRData = {"data":{"code":0,"result":{"play_check":{"play_detail":"PLAY_WHOLE"},"video_info":{"quality":112,"accept_quality":[112,80,64],"support_formats":[{"quality":112}],"durl":[],"dash":{"video":[{"id":112,"codecid":13,"base_url":"https://media.invalid/video"}],"audio":[{"id":30280,"base_url":"https://media.invalid/audio"}]}}}}};</script></html>
+        <html><script>const playurlSSRData = {"data":{"code":0,"result":{"play_check":{"play_detail":"PLAY_WHOLE"},"video_info":{"quality":112,"accept_quality":[112,80,64],"support_formats":[{"quality":112}],"durl":[],"dash":{"video":[{"id":112,"codecid":13,"base_url":"https://media.invalid/video-112"},{"id":64,"codecid":7,"base_url":"https://media.invalid/video-64"}],"audio":[{"id":30280,"base_url":"https://media.invalid/audio-30280"}]}}}}};</script></html>
         """;
 
     private static StubBilibiliApiClient CreateClient(
