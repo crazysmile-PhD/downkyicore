@@ -6,6 +6,7 @@ using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.Sign;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.BiliApi.VideoStream.Models;
+using DownKyi.Domain.Downloads;
 
 namespace DownKyi.Services.Download;
 
@@ -66,6 +67,17 @@ internal sealed class DownloadPlaybackResolver
                 media.Cid,
                 media.EpisodeId,
                 quality: input.Metadata.Resolution.Id,
+                videoCodecId: ResolveVideoCodecId(input.Metadata.VideoCodecName),
+                audioId: context.NeedsAudio
+                    && input.RequestedContent.MediaKind == DownloadMediaKind.Dash
+                        ? input.Metadata.AudioCodec.Id
+                        : null,
+                streamKind: input.RequestedContent.MediaKind switch
+                {
+                    DownloadMediaKind.Dash => PlayUrlStreamKind.Dash,
+                    DownloadMediaKind.Durl => PlayUrlStreamKind.Durl,
+                    _ => null
+                },
                 cancellationToken: cancellationToken),
             PlayStreamType.Cheese => _client.GetCheesePlayUrlAsync(
                 media.Avid,
@@ -76,5 +88,15 @@ internal sealed class DownloadPlaybackResolver
                 cancellationToken: cancellationToken),
             _ => Task.FromResult<PlayUrl?>(null)
         };
+    }
+
+    private static int? ResolveVideoCodecId(string codecName)
+    {
+        return PlaybackQualityCatalog.GetCodecIds()
+            .FirstOrDefault(codec => string.Equals(
+                codec.Name,
+                codecName,
+                StringComparison.Ordinal))
+            ?.Id;
     }
 }

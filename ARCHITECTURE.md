@@ -71,13 +71,13 @@ flowchart LR
 - 所有 durable command 都先載入 aggregate、執行合法 transition、以 optimistic version 寫入 SQLite，再發布 committed snapshot。若先更新 UI，crash 後 UI 與可恢復狀態會分裂。
 - Runtime 不得從 mutable UI model 或 lossy history 重建 Domain task。`DownloadTask.Restore` 只允許 SQLite materializer 與 legacy migration adapter 使用。
 - 使用者要求的 audio／video／danmaku／subtitle／cover 由 Domain `DownloadContentSelection` 表達；舊字串 map 只存在於 dialog、SQLite 與 NRBF compatibility boundary。
-- `DownloadContentConflictResolver` 在 task 建立前處理不可用的 media 選擇，並把 finalized selection 寫入 task；後續 refresh 不得改變已確定的 transport、quality、codec 或 audio／video intent。
+- `PreparedDownload` 以允許的輸出組合描述 media capability，而不是把 audio／video presence 當成可獨立選擇。DURL 只支援 video-only 與 audio+video，不支援 audio-only；`DownloadContentConflictResolver` 必須在 task 建立前把使用者要求收斂成相容子集並寫入 finalized selection。後續 refresh 不得改變已確定的 transport、quality、codec 或 audio／video intent。
 - 啟動恢復、新增與續傳只傳 `DownloadTaskId`，不得輪詢 UI collection。啟動查詢同時提供 Domain snapshots 與 projections；runtime decision 只用前者。
 
 ### Execution 與 retry
 
-- `DownloadExecutionContextFactory` 是 immutable `DownloadExecutionInput` 的唯一 owner。每次執行只建立一次 context；初始 `PlayUrl` 只擷取一次，後續 refresh 留在 context。
-- `DownloadMediaContract` 驗證 refresh 仍符合 finalized selection；缺少舊 contract 的 unfinished task 必須重建，不得猜測 fallback。已完成且有效的 selected artifact 不因 refresh 缺少該 stream 而撤銷。
+- `DownloadExecutionContextFactory` 是 immutable `DownloadExecutionInput` 的唯一 owner，只能從 committed Domain snapshot 與當次 settings 建立 context，不得擷取 page／projection 的 discovery `PlayUrl`。有 media intent 的每次執行都由 `ResolvePlaybackStage` 依 finalized transport、quality、codec 與 audio fresh resolve；resolved payload 與後續 refresh 只存在於該 execution context。
+- `DownloadMediaContract` 驗證 refresh 仍符合 finalized selection；同一 resolved payload 若同時含可用 DASH 與 DURL，必須視為無效，不得合成虛構 manifest。缺少舊 contract 的 unfinished task 必須重建，不得猜測 fallback。已完成且有效的 selected artifact 不因 refresh 缺少該 stream 而撤銷。
 - Pipeline 依序執行 typed stages；每個 stage 以 typed result 保存 failure taxonomy，失敗立即停止並由 typed state writer 更新狀態。不得用 empty／null success sentinel 隱藏錯誤。Presenter／projector 只按 `DownloadTaskId` 更新 UI；`DownloadListState` 只公開穩定 read-only collection。
 - Retry 只有一個預算 owner：coordinator 決定 typed retry／refresh／source switch，backend 每次只嘗試一個 URL。不得在 backend、RPC caller 或外層另加 retry，否則預算會相乘。
 - Built-in resume 必須先比較 resource identity；沒有 validator 時驗證已保存 bytes 的 overlap。Mismatch 回報 `ResumeRejected`，coordinator 清除該 transfer artifacts 後，同地址最多重試一次。

@@ -94,7 +94,7 @@ public sealed class VideoParseCoordinatorTests
         var result = Assert.Single(results);
         Assert.Same(page, result.Page);
         Assert.Same(playUrl, result.PlayUrl);
-        Assert.Null(page.PlayUrl);
+        Assert.Null(page.PlaybackAvailability);
     }
 
     [Fact]

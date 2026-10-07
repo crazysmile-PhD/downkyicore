@@ -262,7 +262,7 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
     }
 
     private bool HasDownloadCandidate(bool isAll) => VideoSections.SelectMany(section => section.VideoPages)
-        .Any(page => (isAll || page.IsSelected) && page.PlayUrl != null);
+        .Any(page => (isAll || page.IsSelected) && page.HasPlayback);
 
     private void ResetView()
     {

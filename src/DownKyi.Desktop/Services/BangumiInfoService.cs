@@ -303,7 +303,7 @@ internal class BangumiInfoService : IInfoService
     {
         ArgumentNullException.ThrowIfNull(page);
         cancellationToken.ThrowIfCancellationRequested();
-        return _client.GetBangumiPlayUrlAsync(
+        return _client.GetBangumiPlaybackDiscoveryAsync(
             page.Avid,
             page.Bvid,
             page.Cid,

@@ -288,7 +288,21 @@ public sealed class DownloadManagerCoordinatorTests
         {
             Cid = completed.DownloadBase.Cid,
             AudioQualityFormat = completed.AudioCodec.Name,
-            PlayUrl = new PlayUrl { Dash = new PlayUrlDash() }
+            PlaybackAvailability = PlayUrlAvailability.From(new PlayUrl
+            {
+                Dash = new PlayUrlDash
+                {
+                    Video =
+                    [
+                        new PlayUrlDashVideo
+                        {
+                            Id = completed.Resolution.Id,
+                            CodecId = 7,
+                            BaseAddress = "https://media.invalid/video"
+                        }
+                    ]
+                }
+            })
         };
         var quality = new DownKyi.Presentation.VideoQuality
         {
@@ -536,8 +550,7 @@ public sealed class DownloadManagerCoordinatorTests
                 {
                     Id = id,
                     DownloadStatus = status
-                },
-                PlayUrl = new PlayUrl()
+                }
             };
         }
 

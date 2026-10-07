@@ -158,7 +158,7 @@ internal sealed class DownloadDuplicatePolicy
         var isSameVideo = downloadBase.Cid == page.Cid
             && item.Resolution.Id == videoQuality.Quality
             && item.VideoCodecName == videoQuality.SelectedVideoCodec;
-        if (page.PlayUrl?.Dash != null)
+        if (!videoQuality.IsDurl)
         {
             isSameVideo = isSameVideo && item.AudioCodec.Name == page.AudioQualityFormat;
         }

@@ -16,12 +16,10 @@ internal sealed class DownloadExecutionContext
     public DownloadExecutionContext(
         DownloadTaskId taskId,
         DownloadExecutionInput input,
-        PlayUrl? playUrl,
         Action<DownloadTaskId, CancellationToken> ensureActive)
     {
         TaskId = taskId ?? throw new ArgumentNullException(nameof(taskId));
         Input = input ?? throw new ArgumentNullException(nameof(input));
-        PlayUrl = playUrl;
         _ensureActive = ensureActive ?? throw new ArgumentNullException(nameof(ensureActive));
     }
 

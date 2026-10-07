@@ -60,7 +60,7 @@ public sealed class DownloadTaskStagingSafetyTests : IDisposable
         using var settings = new TestSettingsStore();
         var context = new DownloadExecutionContext(task.Id,
             DownloadExecutionContextFactory.CreateInput(task, settings.Store.Current),
-            null, static (_, token) => token.ThrowIfCancellationRequested());
+            static (_, token) => token.ThrowIfCancellationRequested());
         var staging = new DownloadTaskStaging(NullLogger<DownloadTaskStaging>.Instance);
         context.StagingDirectory = staging.GetDirectory(task.Id, outputBase, task.Output.StagingToken);
 

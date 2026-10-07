@@ -19,84 +19,148 @@ internal static class BangumiPlaybackResolver
             .DefaultIfEmpty()
             .Max();
 
-        return actualQuality > 0
-               && actualQuality <= PlaybackQualityCatalog.Maximum720PQuality
-               && requestedQuality > actualQuality
-               && advertisedQuality > actualQuality;
+        return actualQuality == 0
+               || (actualQuality <= PlaybackQualityCatalog.Maximum720PQuality
+                   && requestedQuality > actualQuality
+                   && advertisedQuality > actualQuality);
     }
 
     public static int GetHighestActualQuality(PlayUrl playUrl)
     {
         ArgumentNullException.ThrowIfNull(playUrl);
-        return playUrl.Dash.Video
-            .Select(video => video.Id)
-            .Append(playUrl.Durl.Count > 0 ? playUrl.Quality : 0)
+        return PlayUrlAvailability.From(playUrl).Video
+            .Select(video => video.Quality)
             .DefaultIfEmpty()
             .Max();
     }
 
-    public static BangumiPlaybackFallbackResult CombinePlayback(
+    public static PlayUrlAvailability DiscoverAvailability(
         PlayUrl primary,
-        PlayUrl supplement)
+        PlayUrl? supplement = null)
     {
         ArgumentNullException.ThrowIfNull(primary);
-        ArgumentNullException.ThrowIfNull(supplement);
-        var primaryQuality = GetHighestActualQuality(primary);
-        var supplementDashQuality = supplement.Dash.Video
-            .Select(video => video.Id)
-            .DefaultIfEmpty()
-            .Max();
-        var supplementDurlQuality = supplement.Durl.Count > 0
-            ? supplement.Quality
-            : 0;
-        if (supplementDurlQuality > primaryQuality
-            && supplementDurlQuality > supplementDashQuality)
+        var primaryAvailability = PlayUrlAvailability.From(primary);
+        if (supplement == null)
         {
-            return new BangumiPlaybackFallbackResult(
-                supplement,
-                "embedded-playback-selected-durl");
+            return primaryAvailability;
         }
 
-        primary.Dash.Video = primary.Dash.Video
-            .Concat(supplement.Dash.Video)
-            .GroupBy(video => (video.Id, video.CodecId))
+        var supplementAvailability = PlayUrlAvailability.From(supplement);
+        var video = primaryAvailability.Video
+            .Concat(supplementAvailability.Video)
+            .GroupBy(video => (video.Quality, video.CodecId, video.StreamKind))
             .Select(group => group.First())
-            .OrderByDescending(video => video.Id)
+            .OrderByDescending(video => video.Quality)
             .ThenBy(video => video.CodecId)
             .ToArray();
-        primary.Dash.Audio = primary.Dash.Audio
-            .Concat(supplement.Dash.Audio)
-            .GroupBy(audio => audio.Id)
-            .Select(group => group.First())
-            .OrderByDescending(audio => audio.Id)
-            .ToArray();
-        if (primary.Dash.Dolby?.Audio is not { Count: > 0 }
-            && supplement.Dash.Dolby?.Audio is { Count: > 0 })
-        {
-            primary.Dash.Dolby = supplement.Dash.Dolby;
-        }
-
-        if (primary.Dash.Flac?.Audio == null
-            && supplement.Dash.Flac?.Audio != null)
-        {
-            primary.Dash.Flac = supplement.Dash.Flac;
-        }
-
-        primary.SupportFormats = (primary.SupportFormats ?? [])
-            .Concat(supplement.SupportFormats ?? [])
-            .GroupBy(format => format.Quality)
-            .Select(group => group.First())
-            .OrderByDescending(format => format.Quality)
-            .ToArray();
-        primary.AcceptQuality = (primary.AcceptQuality ?? [])
-            .Concat(supplement.AcceptQuality ?? [])
+        var audio = primaryAvailability.Audio
+            .Concat(supplementAvailability.Audio)
             .Distinct()
-            .OrderByDescending(quality => quality)
+            .OrderByDescending(id => id)
             .ToArray();
-        primary.Quality = Math.Max(primary.Quality, supplement.Quality);
-        return new BangumiPlaybackFallbackResult(
-            primary,
-            "embedded-playback-merged");
+        return new PlayUrlAvailability(video, audio);
+    }
+
+    public static bool HasActualQuality(PlayUrl playUrl, int quality)
+    {
+        ArgumentNullException.ThrowIfNull(playUrl);
+        return PlayUrlAvailability.From(playUrl).Video.Any(video => video.Quality == quality);
+    }
+
+    public static bool HasRequestedPlayback(
+        PlayUrl playUrl,
+        int requestedQuality,
+        int? requestedCodecId = null,
+        int? requestedAudioId = null,
+        PlayUrlStreamKind? requestedStreamKind = null)
+    {
+        ArgumentNullException.ThrowIfNull(playUrl);
+        var availability = PlayUrlAvailability.From(playUrl);
+        var video = availability.Video.Any(candidate =>
+            candidate.Quality == requestedQuality
+            && (requestedCodecId == null || candidate.CodecId == requestedCodecId)
+            && (requestedStreamKind == null || candidate.StreamKind == requestedStreamKind));
+        if (!video)
+        {
+            return false;
+        }
+
+        return requestedAudioId == null
+               || requestedStreamKind == PlayUrlStreamKind.Durl
+               || availability.Audio.Contains(requestedAudioId.Value);
+    }
+
+    public static PlayUrl SelectDownloadPlayback(
+        PlayUrl primary,
+        PlayUrl? supplement,
+        int requestedQuality,
+        int? requestedCodecId = null,
+        int? requestedAudioId = null,
+        PlayUrlStreamKind? requestedStreamKind = null)
+    {
+        ArgumentNullException.ThrowIfNull(primary);
+        var source = HasRequestedPlayback(
+                primary,
+                requestedQuality,
+                requestedCodecId,
+                requestedAudioId,
+                requestedStreamKind)
+            ? primary
+            : supplement != null && HasRequestedPlayback(
+                supplement,
+                requestedQuality,
+                requestedCodecId,
+                requestedAudioId,
+                requestedStreamKind)
+                ? supplement
+                : null;
+        if (source == null)
+        {
+            return primary;
+        }
+
+        var sourceAvailability = PlayUrlAvailability.From(source);
+        var selectedKind = requestedStreamKind
+                           ?? (sourceAvailability.Video.Any(candidate =>
+                               candidate.Quality == requestedQuality
+                               && (requestedCodecId == null
+                                   || candidate.CodecId == requestedCodecId)
+                               && candidate.StreamKind == PlayUrlStreamKind.Dash)
+                               ? PlayUrlStreamKind.Dash
+                               : PlayUrlStreamKind.Durl);
+        if (selectedKind == PlayUrlStreamKind.Durl)
+        {
+            source.Dash = new PlayUrlDash();
+            return source;
+        }
+
+        var requestedDash = source.Dash.Video
+            .Where(PlayUrlAvailability.HasUsableAddress)
+            .Where(video => video.Id == requestedQuality)
+            .Where(video => requestedCodecId == null || video.CodecId == requestedCodecId)
+            .ToArray();
+        if (requestedDash.Length == 0)
+        {
+            source.Dash = new PlayUrlDash();
+            return source;
+        }
+
+        source.Durl = [];
+        source.Dash.Video = requestedDash;
+        source.Dash.Audio = source.Dash.Audio
+            .Where(PlayUrlAvailability.HasUsableAddress)
+            .ToArray();
+        var dolbyAudio = (source.Dash.Dolby?.Audio ?? [])
+            .Where(PlayUrlAvailability.HasUsableAddress)
+            .ToArray();
+        source.Dash.Dolby = dolbyAudio.Length == 0
+            ? null
+            : new PlayUrlDashDolby { Audio = dolbyAudio };
+        source.Dash.Flac = PlayUrlAvailability.HasUsableAddress(source.Dash.Flac?.Audio)
+            ? source.Dash.Flac
+            : null;
+
+        return source;
     }
 
     public static bool TryParseEmbeddedPayload(
@@ -265,7 +329,3 @@ internal static class BangumiPlaybackResolver
         return null;
     }
 }
-
-internal sealed record BangumiPlaybackFallbackResult(
-    PlayUrl PlayUrl,
-    string Outcome);

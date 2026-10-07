@@ -32,8 +32,8 @@ internal static class VideoPagePlaybackMapper
             return;
         }
 
-        // 视频流信息
-        page.PlayUrl = playUrl;
+        var availability = playUrl.Availability ?? PlayUrlAvailability.From(playUrl);
+        page.PlaybackAvailability = availability;
         if (playUrl.Diagnostics != null)
         {
             logger?.LogInformationMessage(BuildCapabilitySummary(playUrl, settings));
@@ -44,52 +44,25 @@ internal static class VideoPagePlaybackMapper
         var videoCodecs = settings.Video.VideoCodecs;
         var defaultAudioQuality = settings.Video.AudioQuality;
 
-        if (playUrl.Dash?.Video is { Count: > 0 })
+        page.AudioQualityFormatList = GetAudioQualityFormatList(availability.Audio);
+        if (page.AudioQualityFormatList.Count > 0)
         {
-            // 音质
-            page.AudioQualityFormatList = GetAudioQualityFormatList(playUrl);
-            if (page.AudioQualityFormatList.Count > 0)
-            {
-                page.AudioQualityFormat = SelectPreferredAudioQuality(
-                    page.AudioQualityFormatList,
-                    defaultAudioQuality);
-            }
-
-            // 画质 & 视频编码
-            page.VideoQualityList = GetVideoQualityList(playUrl, videoCodecs);
-            if (page.VideoQualityList.Count > 0)
-            {
-                page.VideoQuality = SelectPreferredVideoQuality(
-                    page.VideoQualityList,
-                    defaultQuality);
-            }
-
-            // 时长
-            page.Duration = Format.FormatDuration(playUrl.Dash.Duration);
-
-            return;
+            page.AudioQualityFormat = SelectPreferredAudioQuality(
+                page.AudioQualityFormatList,
+                defaultAudioQuality);
         }
 
-
-        if (playUrl.Durl?.Count > 0)
+        page.VideoQualityList = GetVideoQualityList(availability.Video, videoCodecs);
+        if (page.VideoQualityList.Count > 0)
         {
-            var codeIds = PlaybackQualityCatalog.GetCodecIds();
-            var qns = PlaybackQualityCatalog.GetResolutions();
-            var quality = new VideoQuality
-            {
-                Quality = playUrl.Quality,
-                QualityFormat = qns.First(x => x.Id == playUrl.Quality).Name,
-                VideoCodecList = codeIds.Where(x => x.Id == playUrl.VideoCodecid)
-                    .Select(x => x.Name)
-                    .ToList(),
-                SelectedVideoCodec = codeIds.First(x => x.Id == playUrl.VideoCodecid).Name
-            };
-
-            page.VideoQualityList = new List<VideoQuality> { quality };
-            page.VideoQuality = page.VideoQualityList[0];
-            page.Duration = Format.FormatDuration(playUrl.Durl.Select(x => x.Length).Sum() / 1000);
-            return;
+            page.VideoQuality = SelectPreferredVideoQuality(
+                page.VideoQualityList,
+                defaultQuality);
         }
+
+        page.Duration = playUrl.Dash.Duration > 0
+            ? Format.FormatDuration(playUrl.Dash.Duration)
+            : Format.FormatDuration(playUrl.Durl.Select(item => item.Length).Sum() / 1000);
     }
 
     /// <summary>
@@ -97,37 +70,19 @@ internal static class VideoPagePlaybackMapper
     /// </summary>
     /// <param name="playUrl"></param>
     /// <returns></returns>
-    private static ObservableCollection<string> GetAudioQualityFormatList(PlayUrl playUrl)
+    private static ObservableCollection<string> GetAudioQualityFormatList(
+        IEnumerable<int> availableAudioIds)
     {
         var audioQualityFormatList = new List<string>();
         var sortList = new List<string>();
         var audioQualities = PlaybackQualityCatalog.GetAudioQualities();
 
-        if (playUrl.Dash.Audio != null && playUrl.Dash.Audio.Count > 0)
+        foreach (var audioId in availableAudioIds.Distinct())
         {
-            foreach (var audio in playUrl.Dash.Audio)
+            var audioQuality = audioQualities.FirstOrDefault(quality => quality.Id == audioId);
+            if (audioQuality != null)
             {
-                var audioQuality = audioQualities.FirstOrDefault(t => { return t.Id == audio.Id; });
-                if (audioQuality != null)
-                {
-                    ListHelper.AddUnique(audioQualityFormatList, audioQuality.Name);
-                }
-            }
-        }
-
-        if (playUrl.Dash.Dolby != null)
-        {
-            if (playUrl.Dash.Dolby.Audio != null && playUrl.Dash.Dolby.Audio.Count > 0)
-            {
-                ListHelper.AddUnique(audioQualityFormatList, audioQualities[3].Name);
-            }
-        }
-
-        if (playUrl.Dash.Flac != null)
-        {
-            if (playUrl.Dash.Flac.Audio != null)
-            {
-                ListHelper.AddUnique(audioQualityFormatList, audioQualities[4].Name);
+                ListHelper.AddUnique(audioQualityFormatList, audioQuality.Name);
             }
         }
 
@@ -169,29 +124,27 @@ internal static class VideoPagePlaybackMapper
     /// <param name="playUrl"></param>
     /// <param name="videoCodecs"></param>
     /// <returns></returns>
-    private static List<VideoQuality> GetVideoQualityList(PlayUrl playUrl, int videoCodecs)
+    private static List<VideoQuality> GetVideoQualityList(
+        IEnumerable<PlayUrlVideoAvailability> availableVideo,
+        int videoCodecs)
     {
         var videoQualityList = new List<VideoQuality>();
         var codeIds = PlaybackQualityCatalog.GetCodecIds();
+        var resolutions = PlaybackQualityCatalog.GetResolutions();
 
-        if (playUrl.Dash.Video == null)
+        foreach (var video in availableVideo)
         {
-            return videoQualityList;
-        }
-
-        foreach (var video in playUrl.Dash.Video)
-        {
-            var qualityFormat = string.Empty;
-            var selectedQuality = playUrl.SupportFormats.FirstOrDefault(t => t.Quality == video.Id);
-            if (selectedQuality != null)
-            {
-                qualityFormat = selectedQuality.NewDescription;
-            }
+            var qualityFormat = string.IsNullOrWhiteSpace(video.Description)
+                ? resolutions.FirstOrDefault(resolution => resolution.Id == video.Quality)?.Name
+                  ?? string.Empty
+                : video.Description;
 
             // 寻找是否已存在这个画质
             // 不存在则添加，存在则修改
             var codecName = codeIds.FirstOrDefault(t => t.Id == video.CodecId)?.Name ?? string.Empty;
-            var videoQualityExist = videoQualityList.FirstOrDefault(t => t.Quality == video.Id);
+            var isDurl = video.StreamKind == PlayUrlStreamKind.Durl;
+            var videoQualityExist = videoQualityList.FirstOrDefault(candidate =>
+                candidate.Quality == video.Quality && candidate.IsDurl == isDurl);
             if (videoQualityExist == null)
             {
                 var videoCodecList = new List<string>();
@@ -202,8 +155,9 @@ internal static class VideoPagePlaybackMapper
 
                 var videoQuality = new VideoQuality
                 {
-                    Quality = video.Id,
+                    Quality = video.Quality,
                     QualityFormat = qualityFormat,
+                    IsDurl = isDurl,
                     VideoCodecList = videoCodecList
                 };
                 videoQualityList.Add(videoQuality);
@@ -220,7 +174,8 @@ internal static class VideoPagePlaybackMapper
             }
 
             // 设置选中的视频编码
-            var selectedVideoQuality = videoQualityList.FirstOrDefault(t => t.Quality == video.Id);
+            var selectedVideoQuality = videoQualityList.FirstOrDefault(candidate =>
+                candidate.Quality == video.Quality && candidate.IsDurl == isDurl);
             if (selectedVideoQuality == null)
             {
                 continue;
@@ -266,7 +221,7 @@ internal static class VideoPagePlaybackMapper
             .ToList();
     }
 
-    private static VideoQuality SelectPreferredVideoQuality(
+    private static VideoQuality? SelectPreferredVideoQuality(
         IEnumerable<VideoQuality> availableQualities,
         int preferredQuality)
     {
@@ -274,8 +229,7 @@ internal static class VideoPagePlaybackMapper
         return qualities.FirstOrDefault(quality => quality.Quality == preferredQuality)
                ?? qualities
                    .Where(quality => quality.Quality <= preferredQuality)
-                   .MaxBy(quality => quality.Quality)
-               ?? qualities.MaxBy(quality => quality.Quality)!;
+                   .MaxBy(quality => quality.Quality);
     }
 
     internal static string BuildCapabilitySummary(
@@ -294,6 +248,8 @@ internal static class VideoPagePlaybackMapper
             .Select(video => video.CodecId)
             .Distinct()
             .OrderBy(id => id));
+        var availableVideo = string.Join(",", (playUrl.Availability ?? PlayUrlAvailability.From(playUrl)).Video
+            .Select(video => $"{video.Quality}:{video.CodecId}:{video.StreamKind}"));
         var diagnostics = playUrl.Diagnostics;
 
         return "Playback capabilities. "
@@ -310,7 +266,8 @@ internal static class VideoPagePlaybackMapper
                + $"acceptQuality=[{string.Join(",", playUrl.AcceptQuality ?? [])}]; "
                + $"supportQuality=[{supportQualities}]; "
                + $"dashVideoIds=[{dashVideoIds}]; "
-               + $"dashVideoCodecIds=[{dashVideoCodecIds}]";
+               + $"dashVideoCodecIds=[{dashVideoCodecIds}]; "
+               + $"availableVideo=[{availableVideo}]";
     }
 
     private static string FormatNullableBoolean(bool? value)

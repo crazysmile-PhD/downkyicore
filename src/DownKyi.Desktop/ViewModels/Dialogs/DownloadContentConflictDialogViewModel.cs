@@ -61,7 +61,7 @@ internal sealed class DownloadContentConflictDialogViewModel : BaseDialogViewMod
         }
 
         _conflict = prompt.Conflict;
-        var media = DescribeMedia(prompt.Conflict.AvailableMedia);
+        var media = DescribeMedia(prompt.Conflict.AvailableContent);
         Message = DictionaryResource.GetString("DownloadContentConflictMessage")
             .Replace("{0}", prompt.PageName, StringComparison.Ordinal);
         UseAvailableContent = DictionaryResource.GetString("UseAvailableDownloadContent")
@@ -81,9 +81,9 @@ internal sealed class DownloadContentConflictDialogViewModel : BaseDialogViewMod
                 new DownloadContentConflictDecision(action, ApplyToAll)));
     }
 
-    private static string DescribeMedia(DownloadMediaCapabilities media)
+    private static string DescribeMedia(DownKyi.Domain.Downloads.DownloadContentSelection content)
     {
-        return (media.Audio, media.Video) switch
+        return (content.Audio, content.Video) switch
         {
             (true, true) => DictionaryResource.GetString("DownloadAudioAndVideo"),
             (true, false) => DictionaryResource.GetString("DownloadAudio"),

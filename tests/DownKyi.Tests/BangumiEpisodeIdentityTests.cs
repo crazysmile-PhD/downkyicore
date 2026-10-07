@@ -61,7 +61,7 @@ public sealed class BangumiEpisodeIdentityTests
         }
         """;
     private const string PlaybackResponse =
-        "{\"code\":0,\"message\":\"success\",\"result\":{\"video_info\":{\"durl\":[{\"order\":1}]}}}";
+        "{\"code\":0,\"message\":\"success\",\"result\":{\"video_info\":{\"quality\":80,\"video_codecid\":7,\"durl\":[{\"order\":1,\"url\":\"https://media.invalid/video.flv\"}]}}}";
 
     [Fact]
     public async Task InfoServiceUsesPositiveSeasonEpisodeIdForPagesSectionsAndPlayback()
@@ -146,7 +146,18 @@ public sealed class BangumiEpisodeIdentityTests
             Bvid = "BV1fixture",
             Cid = 2,
             EpisodeId = EpisodeId,
-            FilePath = Path.Combine(Path.GetTempPath(), "downkyi-bangumi-episode-identity")
+            FilePath = Path.Combine(Path.GetTempPath(), "downkyi-bangumi-episode-identity"),
+            Resolution = new DownKyi.Core.BiliApi.BiliUtils.Quality
+            {
+                Id = 80,
+                Name = "1080P"
+            },
+            VideoCodecName = "H.264/AVC",
+            NeedDownloadContent = DownloadContentSelection.None with
+            {
+                Video = true,
+                MediaKind = DownloadMediaKind.Durl
+            }
         };
         var downloading = new DownloadingItem
         {

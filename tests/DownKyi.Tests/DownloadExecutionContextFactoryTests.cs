@@ -1,7 +1,6 @@
 using DownKyi.Application.Downloads;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.VideoStream;
-using DownKyi.Core.BiliApi.VideoStream.Models;
 using DownKyi.Core.Settings;
 using DownKyi.Domain.Downloads;
 using DownKyi.Infrastructure.Downloads;
@@ -21,7 +20,7 @@ public sealed class DownloadExecutionContextFactoryTests : IDisposable
         Guid.NewGuid().ToString("N"));
 
     [Fact]
-    public async Task CreateUsesDomainSnapshotAndCapturesSettingsAndInitialPlayback()
+    public async Task CreateUsesDomainSnapshotAndSettingsWithoutPlaybackProjection()
     {
         Directory.CreateDirectory(_directory);
         using var settings = new TestSettingsStore();
@@ -44,7 +43,6 @@ public sealed class DownloadExecutionContextFactoryTests : IDisposable
         {
             MediaKind = DownloadMediaKind.Dash
         };
-        var originalPlayUrl = new PlayUrl();
         var downloadBase = new DownloadBase
         {
             Id = "execution-input",
@@ -69,8 +67,7 @@ public sealed class DownloadExecutionContextFactoryTests : IDisposable
                 DownloadBase = downloadBase,
                 DownloadStatus = DownloadStatus.NotStarted,
                 PlayStreamType = PlayStreamType.Bangumi
-            },
-            PlayUrl = originalPlayUrl
+            }
         };
         using var store = new SqliteDownloadTaskStore(
             new SqliteDownloadTaskStoreOptions(Path.Combine(_directory, "download.db")),
@@ -121,12 +118,8 @@ public sealed class DownloadExecutionContextFactoryTests : IDisposable
         Assert.Equal("Hi-Res", activeProjection.DownloadBase.AudioCodec.Name);
         Assert.Equal("HEVC", activeProjection.DownloadBase.VideoCodecName);
         Assert.Equal(PlayStreamType.Cheese, activeProjection.Downloading.PlayStreamType);
-        Assert.Same(originalPlayUrl, activeProjection.PlayUrl);
-
         var context = new DownloadExecutionContextFactory(projections, settings.Store).Create(taskId);
 
-        var replacementPlayUrl = new PlayUrl();
-        activeProjection.PlayUrl = replacementPlayUrl;
         var replacementSettings = settings.Store.Update(current => current with
         {
             Basic = current.Basic with { DownloadFinishedSort = DownloadFinishedSort.DownloadDesc },
@@ -144,7 +137,6 @@ public sealed class DownloadExecutionContextFactoryTests : IDisposable
             }
         });
 
-        Assert.Same(replacementPlayUrl, activeProjection.PlayUrl);
         Assert.Equal(DownloadFinishedSort.DownloadDesc, replacementSettings.Basic.DownloadFinishedSort);
         Assert.Equal(0, replacementSettings.Video.VideoParseType);
         Assert.Equal(AllowStatus.No, replacementSettings.Video.IsTranscodingAacToMp3);
@@ -166,8 +158,7 @@ public sealed class DownloadExecutionContextFactoryTests : IDisposable
         Assert.Equal(new DownloadQuality(30280, "192K"), context.Input.Metadata.AudioCodec);
         Assert.Equal("AVC", context.Input.Metadata.VideoCodecName);
         Assert.Equal(PlayStreamType.Bangumi, context.Input.StreamType);
-        Assert.Same(originalPlayUrl, context.PlayUrl);
-        Assert.NotSame(replacementPlayUrl, context.PlayUrl);
+        Assert.Null(context.PlayUrl);
         Assert.Equal(DownloadFinishedSort.Number, context.Input.FinishedSort);
         Assert.Equal(originalSettings.Video, context.Input.VideoSettings);
         Assert.Equal(originalSettings.Danmaku, context.Input.DanmakuSettings);

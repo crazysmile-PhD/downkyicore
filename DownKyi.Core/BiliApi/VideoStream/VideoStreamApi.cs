@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
 using DownKyi.Application.Bilibili;
 using DownKyi.Core.BiliApi.BiliUtils;
@@ -134,14 +135,66 @@ public static partial class VideoStreamApi
     // /// <param name="cid"></param>
     // /// <param name="quality"></param>
     // /// <returns></returns>
-    public static async Task<PlayUrl?> GetBangumiPlayUrlAsync(
+    public static Task<PlayUrl?> GetBangumiPlaybackDiscoveryAsync(
+        this IBilibiliApiClient client,
+        long avid,
+        string bvid,
+        long cid,
+        long episodeId,
+        CancellationToken cancellationToken = default)
+    {
+        return GetBangumiPlaybackCoreAsync(
+            client,
+            avid,
+            bvid,
+            cid,
+            episodeId,
+            PlaybackQualityCatalog.MaximumProbeQuality,
+            discoverAvailability: true,
+            videoCodecId: null,
+            audioId: null,
+            streamKind: null,
+            cancellationToken);
+    }
+
+    public static Task<PlayUrl?> GetBangumiPlayUrlAsync(
         this IBilibiliApiClient client,
         long avid,
         string bvid,
         long cid,
         long episodeId,
         int quality = PlaybackQualityCatalog.MaximumProbeQuality,
+        int? videoCodecId = null,
+        int? audioId = null,
+        PlayUrlStreamKind? streamKind = null,
         CancellationToken cancellationToken = default)
+    {
+        return GetBangumiPlaybackCoreAsync(
+            client,
+            avid,
+            bvid,
+            cid,
+            episodeId,
+            quality,
+            discoverAvailability: false,
+            videoCodecId,
+            audioId,
+            streamKind,
+            cancellationToken);
+    }
+
+    private static async Task<PlayUrl?> GetBangumiPlaybackCoreAsync(
+        IBilibiliApiClient client,
+        long avid,
+        string bvid,
+        long cid,
+        long episodeId,
+        int quality,
+        bool discoverAvailability,
+        int? videoCodecId,
+        int? audioId,
+        PlayUrlStreamKind? streamKind,
+        CancellationToken cancellationToken)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(episodeId);
         var baseUrl = $"https://api.bilibili.com/pgc/player/web/v2/playurl?cid={cid}&ep_id={episodeId}&qn={quality}&fourk=1&fnver=0&fnval={BangumiFnval}";
@@ -171,9 +224,33 @@ public static partial class VideoStreamApi
         var playUrl = BangumiPlayUrlV2Contract.SelectPayload(
             response,
             nameof(GetBangumiPlayUrlAsync));
-        var playDetail = response.Result?.PlayCheck?.PlayDetail;
-        if (!BangumiPlaybackResolver.ShouldTryWebPageFallback(playUrl, quality))
+        if (discoverAvailability)
         {
+            playUrl.Availability = BangumiPlaybackResolver.DiscoverAvailability(playUrl);
+        }
+
+        var playDetail = response.Result?.PlayCheck?.PlayDetail;
+        var shouldTryFallback = discoverAvailability
+            ? BangumiPlaybackResolver.ShouldTryWebPageFallback(playUrl, quality)
+            : !BangumiPlaybackResolver.HasRequestedPlayback(
+                playUrl,
+                quality,
+                videoCodecId,
+                audioId,
+                streamKind);
+        if (!shouldTryFallback)
+        {
+            if (!discoverAvailability)
+            {
+                playUrl = BangumiPlaybackResolver.SelectDownloadPlayback(
+                    playUrl,
+                    supplement: null,
+                    quality,
+                    videoCodecId,
+                    audioId,
+                    streamKind);
+            }
+
             return AttachBangumiDiagnostics(
                 playUrl,
                 quality,
@@ -198,6 +275,15 @@ public static partial class VideoStreamApi
                     out var embeddedPlayDetail)
                 || embeddedPlayUrl == null)
             {
+                if (!discoverAvailability)
+                {
+                    throw CreateRequestedSelectionUnavailableException(
+                        quality,
+                        videoCodecId,
+                        audioId,
+                        streamKind);
+                }
+
                 return AttachBangumiDiagnostics(
                     playUrl,
                     quality,
@@ -206,29 +292,66 @@ public static partial class VideoStreamApi
                     "embedded-playback-unavailable");
             }
 
-            if (BangumiPlaybackResolver.GetHighestActualQuality(embeddedPlayUrl)
-                <= BangumiPlaybackResolver.GetHighestActualQuality(playUrl))
+            if (discoverAvailability)
             {
+                var apiAvailability = BangumiPlaybackResolver.DiscoverAvailability(playUrl);
+                var discoveredAvailability = BangumiPlaybackResolver.DiscoverAvailability(
+                    playUrl,
+                    embeddedPlayUrl);
+                var addedCapability = discoveredAvailability.Video.Count > apiAvailability.Video.Count
+                                      || discoveredAvailability.Audio.Count > apiAvailability.Audio.Count;
+                playUrl.Availability = discoveredAvailability;
+
                 return AttachBangumiDiagnostics(
                     playUrl,
                     quality,
-                    playDetail,
-                    usedWebPageFallback: false,
-                    "embedded-playback-not-better");
+                    addedCapability ? embeddedPlayDetail : playDetail,
+                    usedWebPageFallback: addedCapability,
+                    addedCapability
+                        ? "embedded-availability-added"
+                        : "embedded-availability-not-better");
             }
 
-            var fallbackResult = BangumiPlaybackResolver.CombinePlayback(
+            var selected = BangumiPlaybackResolver.SelectDownloadPlayback(
                 playUrl,
-                embeddedPlayUrl);
+                embeddedPlayUrl,
+                quality,
+                videoCodecId,
+                audioId,
+                streamKind);
+            if (!BangumiPlaybackResolver.HasRequestedPlayback(
+                    selected,
+                    quality,
+                    videoCodecId,
+                    audioId,
+                    streamKind))
+            {
+                throw CreateRequestedSelectionUnavailableException(
+                    quality,
+                    videoCodecId,
+                    audioId,
+                    streamKind);
+            }
+
             return AttachBangumiDiagnostics(
-                fallbackResult.PlayUrl,
+                selected,
                 quality,
                 embeddedPlayDetail,
                 usedWebPageFallback: true,
-                fallbackResult.Outcome);
+                "embedded-playback-selected");
         }
         catch (HttpRequestException exception)
         {
+            if (!discoverAvailability)
+            {
+                throw CreateRequestedSelectionUnavailableException(
+                    quality,
+                    videoCodecId,
+                    audioId,
+                    streamKind,
+                    exception);
+            }
+
             return AttachBangumiDiagnostics(
                 playUrl,
                 quality,
@@ -236,6 +359,42 @@ public static partial class VideoStreamApi
                 usedWebPageFallback: false,
                 $"web-request-failed:{exception.GetType().Name}");
         }
+        catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            if (!discoverAvailability)
+            {
+                throw CreateRequestedSelectionUnavailableException(
+                    quality,
+                    videoCodecId,
+                    audioId,
+                    streamKind,
+                    exception);
+            }
+
+            return AttachBangumiDiagnostics(
+                playUrl,
+                quality,
+                playDetail,
+                usedWebPageFallback: false,
+                "web-request-timeout");
+        }
+    }
+
+    private static BilibiliApiResponseException CreateRequestedSelectionUnavailableException(
+        int quality,
+        int? videoCodecId,
+        int? audioId,
+        PlayUrlStreamKind? streamKind,
+        Exception? innerException = null)
+    {
+        var selection = $"quality={quality.ToString(CultureInfo.InvariantCulture)}," +
+                        $"codec={videoCodecId?.ToString(CultureInfo.InvariantCulture) ?? "any"}," +
+                        $"audio={audioId?.ToString(CultureInfo.InvariantCulture) ?? "none"}," +
+                        $"kind={streamKind?.ToString() ?? "any"}";
+        return new BilibiliApiResponseException(
+            nameof(GetBangumiPlayUrlAsync),
+            $"The requested Bangumi playback selection is unavailable ({selection}).",
+            innerException);
     }
 
     internal static string BuildBangumiPlayPageUrl(long episodeId)

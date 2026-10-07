@@ -903,13 +903,13 @@
       "rationale": "The finding is confined to test or platform-fixture integration coverage; it remains individually traceable."
     },
     {
-      "identity": "CA1506|tests/DownKyi.Tests/DownloadExecutionContextFactoryTests.cs|CreateUsesDomainSnapshotAndCapturesSettingsAndInitialPlayback",
+      "identity": "CA1506|tests/DownKyi.Tests/DownloadExecutionContextFactoryTests.cs|CreateUsesDomainSnapshotAndSettingsWithoutPlaybackProjection",
       "rule": "CA1506",
       "path": "tests/DownKyi.Tests/DownloadExecutionContextFactoryTests.cs",
-      "symbol": "CreateUsesDomainSnapshotAndCapturesSettingsAndInitialPlayback",
-      "observedMetric": 48,
-      "groupId": "ca1506-test-c28e4ee8bee0543b",
-      "groupTitle": "Integration-test coupling: tests/DownKyi.Tests/DownloadExecutionContextFactoryTests.cs::CreateUsesDomainSnapshotAndCapturesSettingsAndInitialPlayback",
+      "symbol": "CreateUsesDomainSnapshotAndSettingsWithoutPlaybackProjection",
+      "observedMetric": 52,
+      "groupId": "ca1506-test-34845a503550cc35",
+      "groupTitle": "Integration-test coupling: tests/DownKyi.Tests/DownloadExecutionContextFactoryTests.cs::CreateUsesDomainSnapshotAndSettingsWithoutPlaybackProjection",
       "classification": "integration-test",
       "reviewStatus": "reviewed-reasonable",
       "rationale": "The finding is confined to test or platform-fixture integration coverage; it remains individually traceable."

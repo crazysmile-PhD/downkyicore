@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Net.Http;
 using DownKyi.Application.Desktop;
 using DownKyi.Application.Downloads;
+using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.VideoStream.Models;
 using DownKyi.Domain.Downloads;
 using DownKyi.Domain.Results;
@@ -397,62 +398,159 @@ public sealed class VideoTagLoadingTests : IDisposable
     {
         using var context = CreateContext(generateMetadata: false);
         var videoOnly = CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]));
-        videoOnly.PlayUrl = new PlayUrl
+        SetPlayback(videoOnly, new PlayUrl
         {
             Dash = new PlayUrlDash
             {
-                Video = [new PlayUrlDashVideo()]
+                Video =
+                [
+                    new PlayUrlDashVideo
+                    {
+                        Id = 80,
+                        CodecId = 7,
+                        BaseAddress = "https://media.invalid/video-only.m4s"
+                    }
+                ]
             }
-        };
+        });
         var audioAndVideo = CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]));
-        audioAndVideo.PlayUrl = new PlayUrl
+        SetPlayback(audioAndVideo, new PlayUrl
         {
             Dash = new PlayUrlDash
             {
-                Video = [new PlayUrlDashVideo()],
-                Audio = [new PlayUrlDashVideo()]
+                Video =
+                [
+                    new PlayUrlDashVideo
+                    {
+                        Id = 80,
+                        CodecId = 7,
+                        BaseAddress = "https://media.invalid/video.m4s"
+                    }
+                ],
+                Audio =
+                [
+                    new PlayUrlDashVideo
+                    {
+                        Id = 30280,
+                        BaseAddress = "https://media.invalid/audio.m4s"
+                    }
+                ]
             }
-        };
+        });
         var combined = CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]));
-        combined.PlayUrl = new PlayUrl
+        SetPlayback(combined, new PlayUrl
         {
-            Durl = [new PlayUrlDurl()]
-        };
-        var dolby = CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]));
-        dolby.PlayUrl = new PlayUrl
-        {
-            Dash = new PlayUrlDash
-            {
-                Video = [new PlayUrlDashVideo()],
-                Dolby = new PlayUrlDashDolby { Audio = [new PlayUrlDashVideo()] }
-            }
-        };
-        var flac = CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]));
-        flac.PlayUrl = new PlayUrl
-        {
-            Dash = new PlayUrlDash
-            {
-                Video = [new PlayUrlDashVideo()],
-                Flac = new PlayUrlDashFlac
+            Quality = 80,
+            VideoCodecid = 7,
+            Durl =
+            [
+                new PlayUrlDurl
                 {
-                    Audio = new PlayUrlDashVideo { BaseAddress = "https://media.invalid/audio.flac" }
+                    Order = 1,
+                    SourceAddress = "https://media.invalid/combined.mp4"
+                }
+            ]
+        }, isDurl: true);
+        var dolby = CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]));
+        SetPlayback(dolby, new PlayUrl
+        {
+            Dash = new PlayUrlDash
+            {
+                Video =
+                [
+                    new PlayUrlDashVideo
+                    {
+                        Id = 80,
+                        CodecId = 7,
+                        BaseAddress = "https://media.invalid/dolby-video.m4s"
+                    }
+                ],
+                Dolby = new PlayUrlDashDolby
+                {
+                    Audio =
+                    [
+                        new PlayUrlDashVideo
+                        {
+                            Id = 30250,
+                            BaseAddress = "https://media.invalid/dolby-audio.m4s"
+                        }
+                    ]
                 }
             }
-        };
+        });
+        var flac = CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]));
+        SetPlayback(flac, new PlayUrl
+        {
+            Dash = new PlayUrlDash
+            {
+                Video =
+                [
+                    new PlayUrlDashVideo
+                    {
+                        Id = 80,
+                        CodecId = 7,
+                        BaseAddress = "https://media.invalid/flac-video.m4s"
+                    }
+                ],
+                Flac = new PlayUrlDashFlac
+                {
+                    Audio = new PlayUrlDashVideo
+                    {
+                        Id = 30251,
+                        BaseAddress = "https://media.invalid/audio.flac"
+                    }
+                }
+            }
+        });
+        var addressless = CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]));
+        SetPlayback(addressless, new PlayUrl
+        {
+            Dash = new PlayUrlDash
+            {
+                Video = [new PlayUrlDashVideo { Id = 80, CodecId = 7 }]
+            }
+        });
 
         var preparedDownload = await context.PrepareAsync(
             videoOnly,
             audioAndVideo,
             combined,
             dolby,
-            flac);
+            flac,
+            addressless);
         var pages = Assert.Single(preparedDownload.Sections).Pages;
 
-        Assert.Equal(new DownloadMediaCapabilities(Video: true, Audio: false), pages[0].AvailableMedia);
-        Assert.Equal(new DownloadMediaCapabilities(Video: true, Audio: true), pages[1].AvailableMedia);
-        Assert.Equal(new DownloadMediaCapabilities(Video: true, Audio: true), pages[2].AvailableMedia);
-        Assert.Equal(new DownloadMediaCapabilities(Video: true, Audio: true), pages[3].AvailableMedia);
-        Assert.Equal(new DownloadMediaCapabilities(Video: true, Audio: true), pages[4].AvailableMedia);
+        Assert.Equal(
+            new DownloadMediaCapabilities(DownloadMediaOutputModes.VideoOnly),
+            pages[0].AvailableMedia);
+        Assert.Equal(
+            new DownloadMediaCapabilities(
+                DownloadMediaOutputModes.VideoOnly |
+                DownloadMediaOutputModes.AudioOnly |
+                DownloadMediaOutputModes.AudioVideo),
+            pages[1].AvailableMedia);
+        Assert.Equal(
+            new DownloadMediaCapabilities(
+                DownloadMediaOutputModes.VideoOnly |
+                DownloadMediaOutputModes.AudioVideo),
+            pages[2].AvailableMedia);
+        Assert.False(pages[2].AvailableMedia.Supports(
+            DownloadContentSelection.None with { Audio = true }));
+        Assert.Equal(
+            new DownloadMediaCapabilities(
+                DownloadMediaOutputModes.VideoOnly |
+                DownloadMediaOutputModes.AudioOnly |
+                DownloadMediaOutputModes.AudioVideo),
+            pages[3].AvailableMedia);
+        Assert.Equal(
+            new DownloadMediaCapabilities(
+                DownloadMediaOutputModes.VideoOnly |
+                DownloadMediaOutputModes.AudioOnly |
+                DownloadMediaOutputModes.AudioVideo),
+            pages[4].AvailableMedia);
+        Assert.Equal(
+            new DownloadMediaCapabilities(DownloadMediaOutputModes.None),
+            pages[5].AvailableMedia);
     }
 
     [Fact]
@@ -483,14 +581,22 @@ public sealed class VideoTagLoadingTests : IDisposable
     {
         using var context = CreateContext(generateMetadata: false);
         var page = CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]));
-        page.PlayUrl = new PlayUrl
+        SetPlayback(page, new PlayUrl
         {
             Dash = new PlayUrlDash
             {
-                Video = [new PlayUrlDashVideo()],
+                Video =
+                [
+                    new PlayUrlDashVideo
+                    {
+                        Id = 80,
+                        CodecId = 7,
+                        BaseAddress = "https://media.invalid/conflict-video.m4s"
+                    }
+                ],
                 Audio = []
             }
-        };
+        });
         var preparedDownload = await context.PrepareAsync(page);
         context.Dialogs.Result = new AppDialogResult(
             AppDialogOutcome.Accepted,
@@ -518,14 +624,22 @@ public sealed class VideoTagLoadingTests : IDisposable
     {
         using var context = CreateContext(generateMetadata: false);
         var page = CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]));
-        page.PlayUrl = new PlayUrl
+        SetPlayback(page, new PlayUrl
         {
             Dash = new PlayUrlDash
             {
-                Video = [new PlayUrlDashVideo()],
+                Video =
+                [
+                    new PlayUrlDashVideo
+                    {
+                        Id = 80,
+                        CodecId = 7,
+                        BaseAddress = "https://media.invalid/skip-video.m4s"
+                    }
+                ],
                 Audio = []
             }
-        };
+        });
         var preparedDownload = await context.PrepareAsync(page);
         context.Dialogs.Result = new AppDialogResult(
             AppDialogOutcome.Accepted,
@@ -548,7 +662,7 @@ public sealed class VideoTagLoadingTests : IDisposable
     {
         using var context = CreateContext(generateMetadata: false);
         var page = CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]));
-        page.PlayUrl = null;
+        page.PlaybackAvailability = null;
         var video = new VideoInfoView { Title = "resolved" };
         var section = new VideoSection { VideoPages = [page] };
         var infoService = new PreparationInfoService(
@@ -558,7 +672,15 @@ public sealed class VideoTagLoadingTests : IDisposable
             {
                 Dash = new PlayUrlDash
                 {
-                    Video = [new PlayUrlDashVideo()]
+                    Video =
+                    [
+                        new PlayUrlDashVideo
+                        {
+                            Id = 80,
+                            CodecId = 7,
+                            BaseAddress = "https://media.invalid/resolved-video.m4s"
+                        }
+                    ]
                 }
             });
 
@@ -570,7 +692,9 @@ public sealed class VideoTagLoadingTests : IDisposable
         Assert.Same(video, preparedDownload.Video);
         var preparedPage = Assert.Single(Assert.Single(preparedDownload.Sections).Pages);
         Assert.Same(page, preparedPage.Page);
-        Assert.Equal(new DownloadMediaCapabilities(Video: true, Audio: false), preparedPage.AvailableMedia);
+        Assert.Equal(
+            new DownloadMediaCapabilities(DownloadMediaOutputModes.VideoOnly),
+            preparedPage.AvailableMedia);
         Assert.True(page.IsSelected);
         Assert.Equal(1, infoService.StreamRequestCount);
     }
@@ -604,7 +728,7 @@ public sealed class VideoTagLoadingTests : IDisposable
     private static VideoPage CreatePage(
         Func<CancellationToken, Task<IReadOnlyList<string>>> loadTagsAsync)
     {
-        return new VideoPage
+        var page = new VideoPage
         {
             Avid = 42,
             Bvid = "BV1test",
@@ -615,19 +739,46 @@ public sealed class VideoTagLoadingTests : IDisposable
             Order = 1,
             OriginalPublishTime = new DateTime(2024, 1, 2),
             PublishTime = "2024-01-02",
-            PlayUrl = new DownKyi.Core.BiliApi.VideoStream.Models.PlayUrl
-            {
-                Quality = 80,
-                VideoCodecid = 7,
-                Durl = [new DownKyi.Core.BiliApi.VideoStream.Models.PlayUrlDurl()]
-            },
             VideoQuality = new VideoQuality
             {
                 Quality = 80,
                 QualityFormat = "1080P",
+                IsDurl = true,
                 SelectedVideoCodec = "H.264/AVC"
             },
             LoadTagsAsync = loadTagsAsync
+        };
+        SetPlayback(page, new PlayUrl
+        {
+            Quality = 80,
+            VideoCodecid = 7,
+            Durl =
+            [
+                new PlayUrlDurl
+                {
+                    Order = 1,
+                    SourceAddress = "https://media.invalid/default.mp4"
+                }
+            ]
+        }, isDurl: true);
+        return page;
+    }
+
+    private static void SetPlayback(VideoPage page, PlayUrl playUrl, bool isDurl = false)
+    {
+        page.PlaybackAvailability = PlayUrlAvailability.From(playUrl);
+        var firstAudioId = page.PlaybackAvailability.Audio.Count > 0
+            ? page.PlaybackAvailability.Audio[0]
+            : 0;
+        page.AudioQualityFormat = PlaybackQualityCatalog.GetAudioQualities()
+            .FirstOrDefault(audio => audio.Id == firstAudioId)
+            ?.Name ?? string.Empty;
+        page.VideoQuality = new VideoQuality
+        {
+            Quality = 80,
+            QualityFormat = "1080P",
+            IsDurl = isDurl,
+            SelectedVideoCodec = "H.264/AVC"
         };
     }
 

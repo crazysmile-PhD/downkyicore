@@ -84,7 +84,8 @@ public sealed class DownloadContentConflictDialogViewModelTests
         "page",
         new DownloadContentConflict(
             DownloadContentSelection.All,
-            new DownloadMediaCapabilities(Video: true, Audio: false)));
+            new DownloadMediaCapabilities(DownloadMediaOutputModes.VideoOnly),
+            DownloadContentSelection.All with { Audio = false }));
 
     private sealed class StubDialogService(AppDialogResult result) : IAppDialogService
     {

@@ -11,15 +11,23 @@ internal static class DownloadMediaContract
 {
     public static DownloadMediaKind Detect(PlayUrl? playUrl)
     {
-        if (playUrl?.Dash is { } dash &&
-            (dash.Video is { Count: > 0 } || DownloadAudioSelection.HasAnyAudio(dash)))
+        if (playUrl == null)
         {
-            return DownloadMediaKind.Dash;
+            return DownloadMediaKind.None;
         }
 
-        return playUrl?.Durl is { Count: > 0 }
-            ? DownloadMediaKind.Durl
-            : DownloadMediaKind.None;
+        var availability = PlayUrlAvailability.From(playUrl);
+        var hasDash = availability.Video.Any(video =>
+                          video.StreamKind == PlayUrlStreamKind.Dash)
+                      || availability.Audio.Count > 0;
+        var hasDurl = availability.Video.Any(video =>
+            video.StreamKind == PlayUrlStreamKind.Durl);
+        if (hasDash == hasDurl)
+        {
+            return DownloadMediaKind.None;
+        }
+
+        return hasDash ? DownloadMediaKind.Dash : DownloadMediaKind.Durl;
     }
 
     public static OperationError? Validate(
@@ -78,14 +86,16 @@ internal static class DownloadMediaContract
         DownloadExecutionContext context,
         PlayUrl? playUrl)
     {
-        if (context.NeedsAudio &&
-            context.AudioFile == null &&
-            SelectAudio(context, playUrl) == null)
+        var selectedAudio = SelectAudio(context, playUrl);
+        if (context.NeedsAudio
+            && context.AudioFile == null
+            && !PlayUrlAvailability.HasUsableAddress(selectedAudio))
         {
             return Failure("The finalized audio stream is unavailable.");
         }
 
-        return context.NeedsVideo && SelectVideo(context, playUrl) == null
+        var selectedVideo = SelectVideo(context, playUrl);
+        return context.NeedsVideo && !PlayUrlAvailability.HasUsableAddress(selectedVideo)
             ? Failure("The finalized video stream is unavailable.")
             : null;
     }
@@ -102,7 +112,9 @@ internal static class DownloadMediaContract
         }
 
         var metadata = context.Input.Metadata;
-        if (playUrl == null || playUrl.Quality != metadata.Resolution.Id)
+        if (playUrl == null
+            || playUrl.Quality != metadata.Resolution.Id
+            || !PlayUrlAvailability.HasUsableDurl(playUrl))
         {
             return Failure("The refreshed DURL quality does not match the finalized selection.");
         }

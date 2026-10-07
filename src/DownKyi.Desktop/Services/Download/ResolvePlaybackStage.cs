@@ -76,7 +76,8 @@ internal sealed class ResolvePlaybackStage : IDownloadPipelineStage
         _presenter.Reset(context);
         await _presenter.ShowParsingAsync(context, cancellationToken).ConfigureAwait(true);
 
-        if (context.PlayUrl != null)
+        context.PlayUrl = null;
+        if (!context.NeedsMedia)
         {
             return DownloadStageResult.Success(Name);
         }

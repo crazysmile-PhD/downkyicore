@@ -23,23 +23,9 @@ internal static class DownloadAudioSelection
         if (audioCodecId == 30251)
         {
             var flacAudio = dash.Flac?.Audio;
-            return HasMediaAddress(flacAudio) ? flacAudio : selected;
+            return PlayUrlAvailability.HasUsableAddress(flacAudio) ? flacAudio : selected;
         }
 
         return selected;
-    }
-
-    public static bool HasAnyAudio(PlayUrlDash? dash)
-    {
-        return dash?.Audio is { Count: > 0 } ||
-               dash?.Dolby?.Audio is { Count: > 0 } ||
-               HasMediaAddress(dash?.Flac?.Audio);
-    }
-
-    private static bool HasMediaAddress(PlayUrlDashVideo? media)
-    {
-        return media != null &&
-               (!string.IsNullOrWhiteSpace(media.BaseAddress) ||
-                media.BackupUrl.Any(url => !string.IsNullOrWhiteSpace(url)));
     }
 }

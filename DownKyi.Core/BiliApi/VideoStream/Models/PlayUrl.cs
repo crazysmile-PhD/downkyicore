@@ -43,6 +43,9 @@ public class PlayUrl : BaseModel
 
     [JsonIgnore]
     public PlayUrlDiagnostics? Diagnostics { get; internal set; }
+
+    [JsonIgnore]
+    public PlayUrlAvailability? Availability { get; internal set; }
     // high_format
 }
 

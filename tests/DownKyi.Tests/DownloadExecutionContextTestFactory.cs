@@ -1,3 +1,4 @@
+using DownKyi.Core.BiliApi.VideoStream.Models;
 using DownKyi.Core.Settings;
 using DownKyi.Models;
 using DownKyi.Services.Download;
@@ -9,7 +10,15 @@ internal static class DownloadExecutionContextTestFactory
 {
     public static DownloadExecutionContext Create(
         DownloadingItem downloading,
-        ApplicationSettings settings)
+        ApplicationSettings settings) => Create(
+            downloading,
+            settings,
+            resolvedPlayUrl: null);
+
+    public static DownloadExecutionContext Create(
+        DownloadingItem downloading,
+        ApplicationSettings settings,
+        PlayUrl? resolvedPlayUrl)
     {
         ArgumentNullException.ThrowIfNull(downloading);
         ArgumentNullException.ThrowIfNull(settings);
@@ -27,10 +36,11 @@ internal static class DownloadExecutionContextTestFactory
         var task = DownloadTaskProjectionMapper.CreateNewTask(
             queuedProjection,
             DateTimeOffset.UnixEpoch);
-        return new DownloadExecutionContext(
+        var context = new DownloadExecutionContext(
             task.Id,
             DownloadExecutionContextFactory.CreateInput(task, settings),
-            downloading.PlayUrl,
             static (_, token) => token.ThrowIfCancellationRequested());
+        context.PlayUrl = resolvedPlayUrl;
+        return context;
     }
 }

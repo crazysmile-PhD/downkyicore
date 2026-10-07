@@ -501,8 +501,15 @@ public sealed class DownloadRuntimeArchitectureTests
             Assert.DoesNotContain("context.Settings", source, StringComparison.Ordinal);
         });
         Assert.Contains("DownloadExecutionInput Input", contextSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("PlayUrl? playUrl", contextSource, StringComparison.Ordinal);
         Assert.Contains("GetRequiredSnapshot(taskId)", factorySource, StringComparison.Ordinal);
-        Assert.Contains("projection.PlayUrl", factorySource, StringComparison.Ordinal);
+        Assert.DoesNotContain("GetRequiredDownloadingProjection", factorySource, StringComparison.Ordinal);
+        Assert.DoesNotContain("projection.PlayUrl", factorySource, StringComparison.Ordinal);
+        Assert.DoesNotContain("PlayUrl", factorySource, StringComparison.Ordinal);
+        var resolveSource = File.ReadAllText(Path.Combine(directory, "ResolvePlaybackStage.cs"));
+        Assert.Contains("context.PlayUrl = null;", resolveSource, StringComparison.Ordinal);
+        Assert.Contains("_playbackResolver.ResolveAsync(", resolveSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("context.PlayUrl != null", resolveSource, StringComparison.Ordinal);
         Assert.DoesNotContain("projection.DownloadBase", factorySource, StringComparison.Ordinal);
         Assert.DoesNotContain("projection.Downloading", factorySource, StringComparison.Ordinal);
         Assert.DoesNotContain("projection.Metadata", factorySource, StringComparison.Ordinal);

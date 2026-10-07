@@ -367,6 +367,8 @@ public sealed class DownloadPipelineStageTests
     {
         var playUrl = new PlayUrl
         {
+            Quality = 80,
+            VideoCodecid = 7,
             Durl =
             [
                 new PlayUrlDurl
@@ -381,6 +383,23 @@ public sealed class DownloadPipelineStageTests
     }
 
     [Fact]
+    public void MediaContractRejectsMixedDurlAndDashInsteadOfInventingOneManifest()
+    {
+        var playUrl = CreateDurlPlayUrl();
+        playUrl.Dash.Video =
+        [
+            new PlayUrlDashVideo
+            {
+                Id = 80,
+                CodecId = 7,
+                BaseAddress = "https://media.invalid/video-80.m4s"
+            }
+        ];
+
+        Assert.Equal(DownloadMediaKind.None, DownloadMediaContract.Detect(playUrl));
+    }
+
+    [Fact]
     public void MediaStagePrefersPopulatedDashAndPreservesExpectedSize()
     {
         using var settings = new TestSettingsStore();
@@ -389,7 +408,8 @@ public sealed class DownloadPipelineStageTests
             Id = 80,
             CodecId = 7,
             Codecs = "avc1",
-            ExpectedSize = 123_456
+            ExpectedSize = 123_456,
+            BaseAddress = "https://example.invalid/video"
         };
         var playUrl = new PlayUrl
         {
@@ -533,14 +553,15 @@ public sealed class DownloadPipelineStageTests
         using var fixture = await MediaStageFixture.CreateAsync(
             playUrl,
             downloadAudio: false,
-            downloadVideo: true).ConfigureAwait(true);
+            downloadVideo: true,
+            finalizedMediaKindOverride: DownloadMediaKind.Durl).ConfigureAwait(true);
 
         var result = await fixture.Stage.ExecuteAsync(
             fixture.Context,
             TestContext.Current.CancellationToken);
 
         Assert.False(result.IsSuccess);
-        Assert.Equal("download.media.durl-manifest", result.Error?.Code);
+        Assert.Equal("download.media.contract", result.Error?.Code);
         Assert.Empty(fixture.Backend.Requests);
     }
 
@@ -567,14 +588,15 @@ public sealed class DownloadPipelineStageTests
         using var fixture = await MediaStageFixture.CreateAsync(
             playUrl,
             downloadAudio: false,
-            downloadVideo: true).ConfigureAwait(true);
+            downloadVideo: true,
+            finalizedMediaKindOverride: DownloadMediaKind.Durl).ConfigureAwait(true);
 
         var result = await fixture.Stage.ExecuteAsync(
             fixture.Context,
             TestContext.Current.CancellationToken);
 
         Assert.False(result.IsSuccess);
-        Assert.Equal("download.media.durl-manifest", result.Error?.Code);
+        Assert.Equal("download.media.contract", result.Error?.Code);
         Assert.Empty(fixture.Backend.Requests);
     }
 
@@ -805,10 +827,10 @@ public sealed class DownloadPipelineStageTests
     }
 
     [Fact]
-    public async Task MediaStageRejectsVideoAndAudioRequestWhenAudioCollectionIsNull()
+    public async Task MediaStageRejectsVideoAndAudioRequestWhenAudioCollectionIsEmpty()
     {
         var playUrl = CreateVideoOnlyPlayUrl();
-        playUrl.Dash.Audio = null!;
+        playUrl.Dash.Audio = [];
         using var fixture = await MediaStageFixture.CreateAsync(
             playUrl,
             downloadAudio: true,
@@ -1049,7 +1071,6 @@ public sealed class DownloadPipelineStageTests
         var downloading = new DownloadingItem
         {
             DownloadBase = downloadBase,
-            PlayUrl = playUrl!,
             Downloading = new Downloading
             {
                 Id = taskId.Value,
@@ -1057,7 +1078,9 @@ public sealed class DownloadPipelineStageTests
                 DownloadStatus = DownloadStatus.Downloading
             }
         };
-        return DownloadExecutionContextTestFactory.Create(downloading, settings);
+        var context = DownloadExecutionContextTestFactory.Create(downloading, settings);
+        context.PlayUrl = playUrl;
+        return context;
     }
 
     private static PlayUrl CreateVideoOnlyPlayUrl()
@@ -1229,8 +1252,7 @@ public sealed class DownloadPipelineStageTests
                     DownloadBase = downloadBase,
                     PlayStreamType = PlayStreamType.Video,
                     DownloadStatus = DownloadStatus.WaitForDownload
-                },
-                PlayUrl = playUrl
+                }
             };
             await projections.AddDownloadingAsync(
                 downloading,
@@ -1241,6 +1263,7 @@ public sealed class DownloadPipelineStageTests
             var context = DownloadExecutionContextTestFactory.Create(
                 downloading,
                 settings.Store.Current);
+            context.PlayUrl = playUrl;
             context.DownloadDirectory = directory;
             context.StagingDirectory = directory;
             var backend = new RecordingMediaBackend(backendResults);

@@ -1,4 +1,5 @@
 using DownKyi.Application.Downloads;
+using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.BiliApi.VideoStream.Models;
 using DownKyi.Domain.Downloads;
 using DownKyi.Infrastructure.Downloads;
@@ -73,6 +74,112 @@ public sealed class DurlDownloadIdentityTests
     }
 
     [Fact]
+    public async Task BangumiPlaybackStageRequestsFinalizedQualityWithoutInitialPlayback()
+    {
+        var directory = Path.Combine(
+            Path.GetTempPath(),
+            "downkyi-bangumi-playback-refresh-tests",
+            Guid.NewGuid().ToString("N"));
+        var databasePath = Path.Combine(directory, "download.db");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var downloadBase = new DownloadBase
+            {
+                Id = "bangumi-final-quality",
+                Avid = 1,
+                Bvid = "BV1fixture",
+                Cid = 2,
+                EpisodeId = 3489,
+                FilePath = Path.Combine(directory, "video"),
+                Resolution = new DownKyi.Core.BiliApi.BiliUtils.Quality
+                {
+                    Id = 112,
+                    Name = "1080P+"
+                },
+                VideoCodecName = "H.265/HEVC",
+                NeedDownloadContent = DownloadContentSelection.None with
+                {
+                    Video = true,
+                    MediaKind = DownloadMediaKind.Dash
+                }
+            };
+            var downloading = new DownloadingItem
+            {
+                DownloadBase = downloadBase,
+                Downloading = new Downloading
+                {
+                    Id = downloadBase.Id,
+                    DownloadBase = downloadBase,
+                    PlayStreamType = PlayStreamType.Bangumi,
+                    DownloadStatus = DownloadStatus.WaitForDownload
+                }
+            };
+            string? requestedAddress = null;
+            var client = new TestBilibiliApiClient
+            {
+                GetStringAsyncHandler = (request, _) =>
+                {
+                    requestedAddress = request.RequestAddress;
+                    return Task.FromResult(
+                        """
+                        {"code":0,"result":{"video_info":{"quality":112,"durl":[],"dash":{"video":[{"id":112,"codecid":12,"base_url":"https://media.invalid/video-112"}],"audio":[{"id":30280,"base_url":"https://media.invalid/audio"}]}}}}
+                        """);
+                }
+            };
+            using var store = new SqliteDownloadTaskStore(
+                new SqliteDownloadTaskStoreOptions(databasePath),
+                new SystemClock());
+            var clock = new SystemClock();
+            var historyService = DownloadHistoryService.CreateForSharedStore(store);
+            using var tasks = new DownloadTaskApplicationService(store, historyService, clock);
+            using var projectionStore = new DownloadTaskProjectionStore(
+                tasks,
+                historyService,
+                clock);
+            using var settings = new TestSettingsStore();
+            var taskId = new DownloadTaskId(downloadBase.Id);
+            var stateWriter = new DownloadTaskStateWriter(tasks);
+            await projectionStore.AddDownloadingAsync(
+                downloading,
+                TestContext.Current.CancellationToken).ConfigureAwait(true);
+            await stateWriter.StartAsync(taskId, TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+            var stage = new ResolvePlaybackStage(
+                new TestDesktopInteractionContext().Notifications,
+                new DownloadActivityPresenter(projectionStore, stateWriter),
+                new DownloadPlaybackResolver(
+                    new TestWbiKeyProvider(),
+                    TimeProvider.System,
+                    client),
+                NullLogger<ResolvePlaybackStage>.Instance);
+            var context = new DownloadExecutionContextFactory(
+                projectionStore,
+                settings.Store).Create(taskId);
+
+            var result = await stage.ExecuteAsync(
+                context,
+                TestContext.Current.CancellationToken);
+
+            Assert.True(result.IsSuccess);
+            Assert.Contains("qn=112", requestedAddress, StringComparison.Ordinal);
+            Assert.Equal(112, Assert.Single(context.PlayUrl!.Dash.Video).Id);
+        }
+        finally
+        {
+            using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+            {
+                DataSource = databasePath,
+                Mode = SqliteOpenMode.ReadWriteCreate,
+                Pooling = true,
+                DefaultTimeout = 5
+            }.ToString());
+            SqliteConnection.ClearPool(connection);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task PlaybackStageUsesLegacySeparatorsWithoutRewritingFrozenBasePath()
     {
         var directory = Path.Combine(
@@ -89,9 +196,9 @@ public sealed class DurlDownloadIdentityTests
             {
                 Id = "frozen-playback-path",
                 FilePath = frozenBasePath,
-                NeedDownloadContent = DownloadContentSelection.All with
+                NeedDownloadContent = DownloadContentSelection.None with
                 {
-                    MediaKind = DownloadMediaKind.Dash
+                    MediaKind = DownloadMediaKind.None
                 }
             };
             var downloading = new DownloadingItem
@@ -102,8 +209,7 @@ public sealed class DurlDownloadIdentityTests
                     Id = downloadBase.Id,
                     DownloadBase = downloadBase,
                     DownloadStatus = DownloadStatus.WaitForDownload
-                },
-                PlayUrl = new PlayUrl()
+                }
             };
             using var store = new SqliteDownloadTaskStore(
                 new SqliteDownloadTaskStoreOptions(databasePath),

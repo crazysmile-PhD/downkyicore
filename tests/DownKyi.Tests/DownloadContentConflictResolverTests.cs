@@ -53,7 +53,56 @@ public sealed class DownloadContentConflictResolverTests
             page.RequestedContent);
         var prompt = Assert.IsType<DownloadContentConflictPrompt>(
             Assert.Single(dialogs.Requests).Parameters![DownloadContentConflictDialogContract.PromptParameter]);
-        Assert.Equal(new DownloadMediaCapabilities(Video: true, Audio: false), prompt.Conflict.AvailableMedia);
+        Assert.Equal(
+            new DownloadMediaCapabilities(DownloadMediaOutputModes.VideoOnly),
+            prompt.Conflict.AvailableMedia);
+        Assert.Equal(requested with { Audio = false, Video = true }, prompt.Conflict.AvailableContent);
+    }
+
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task DurlSupportedOutputModesPassThroughWithoutDialog(bool audio, bool video)
+    {
+        var dialogs = new RecordingDialogService();
+        var requested = DownloadContentSelection.None with
+        {
+            Audio = audio,
+            Video = video
+        };
+        var prepared = CreatePreparedDownload(CreateDurlPage());
+
+        var finalized = await ResolveAsync(dialogs, requested, prepared);
+
+        var preparedPage = Assert.Single(Assert.Single(prepared.Sections).Pages);
+        Assert.Equal(
+            new DownloadMediaCapabilities(
+                DownloadMediaOutputModes.VideoOnly |
+                DownloadMediaOutputModes.AudioVideo),
+            preparedPage.AvailableMedia);
+        Assert.True(preparedPage.AvailableMedia.Supports(requested));
+        Assert.Same(
+            requested,
+            Assert.Single(Assert.Single(finalized.Sections).Pages).RequestedContent);
+        Assert.Empty(dialogs.Requests);
+    }
+
+    [Fact]
+    public async Task AudioOnlyDurlHasNoCompatibleSubsetAndIsSkippedWithoutDialog()
+    {
+        var dialogs = new RecordingDialogService();
+        var requested = DownloadContentSelection.None with { Audio = true };
+        var prepared = CreatePreparedDownload(CreateDurlPage());
+        var available = Assert.Single(Assert.Single(prepared.Sections).Pages).AvailableMedia;
+
+        var finalized = await ResolveAsync(dialogs, requested, prepared);
+
+        Assert.False(available.Supports(requested));
+        Assert.False(available.TryGetCompatibleContent(requested, out var compatible));
+        Assert.False(compatible.Audio);
+        Assert.False(compatible.Video);
+        Assert.Empty(Assert.Single(finalized.Sections).Pages);
+        Assert.Empty(dialogs.Requests);
     }
 
     [Fact]
@@ -146,6 +195,27 @@ public sealed class DownloadContentConflictResolverTests
         Assert.Empty(dialogs.Requests);
     }
 
+    [Fact]
+    public async Task AddresslessDurlDoesNotBecomeAnAvailableOutputMode()
+    {
+        var dialogs = new RecordingDialogService();
+        var page = CreateDurlPage(hasUsableAddress: false);
+        var prepared = CreatePreparedDownload(page);
+        var preparedPage = Assert.Single(Assert.Single(prepared.Sections).Pages);
+
+        var finalized = await ResolveAsync(
+            dialogs,
+            DownloadContentSelection.None with { Video = true },
+            prepared);
+
+        Assert.Equal(
+            new DownloadMediaCapabilities(DownloadMediaOutputModes.None),
+            preparedPage.AvailableMedia);
+        Assert.False(page.HasPlayback);
+        Assert.Empty(Assert.Single(finalized.Sections).Pages);
+        Assert.Empty(dialogs.Requests);
+    }
+
     private static Task<FinalizedDownload> ResolveAsync(
         RecordingDialogService dialogs,
         DownloadContentSelection requested,
@@ -167,19 +237,77 @@ public sealed class DownloadContentConflictResolverTests
 
     private static VideoPage CreatePage(bool video, bool audio)
     {
+        var playUrl = new PlayUrl
+        {
+            Dash = new PlayUrlDash
+            {
+                Video = video
+                    ?
+                    [
+                        new PlayUrlDashVideo
+                        {
+                            Id = 80,
+                            CodecId = 7,
+                            BaseAddress = "https://media.invalid/video.m4s"
+                        }
+                    ]
+                    : [],
+                Audio = audio
+                    ?
+                    [
+                        new PlayUrlDashVideo
+                        {
+                            Id = 30280,
+                            BaseAddress = "https://media.invalid/audio.m4s"
+                        }
+                    ]
+                    : []
+            }
+        };
         return new VideoPage
         {
             IsSelected = true,
             Name = "page",
-            PlayUrl = new PlayUrl
+            AudioQualityFormat = audio ? "高质量" : string.Empty,
+            PlaybackAvailability = PlayUrlAvailability.From(playUrl),
+            VideoQuality = new VideoQuality
             {
-                Dash = new PlayUrlDash
+                Quality = 80,
+                QualityFormat = "1080P",
+                SelectedVideoCodec = "H.264/AVC"
+            }
+        };
+    }
+
+    private static VideoPage CreateDurlPage(bool hasUsableAddress = true)
+    {
+        var playUrl = new PlayUrl
+        {
+            Quality = 80,
+            VideoCodecid = 7,
+            Durl =
+            [
+                new PlayUrlDurl
                 {
-                    Video = video ? [new PlayUrlDashVideo()] : [],
-                    Audio = audio ? [new PlayUrlDashVideo()] : []
+                    Order = 1,
+                    SourceAddress = hasUsableAddress
+                        ? "https://media.invalid/combined.mp4"
+                        : string.Empty
                 }
-            },
-            VideoQuality = new VideoQuality()
+            ]
+        };
+        return new VideoPage
+        {
+            IsSelected = true,
+            Name = "page",
+            PlaybackAvailability = PlayUrlAvailability.From(playUrl),
+            VideoQuality = new VideoQuality
+            {
+                Quality = 80,
+                QualityFormat = "1080P",
+                IsDurl = true,
+                SelectedVideoCodec = "H.264/AVC"
+            }
         };
     }
 

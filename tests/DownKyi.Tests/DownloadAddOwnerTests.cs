@@ -1,5 +1,6 @@
 using DownKyi.Application.Desktop;
 using DownKyi.Application.Downloads;
+using DownKyi.Core.BiliApi.VideoStream.Models;
 using DownKyi.Domain.Downloads;
 using DownKyi.Domain.Results;
 using DownKyi.Infrastructure.Time;
@@ -348,12 +349,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
         using var settingsStore = new DownKyi.Core.Settings.SettingsStore(
             Path.Combine(_directory, "settings.json"));
         var page = CreatePage();
-        page.PlayUrl = new DownKyi.Core.BiliApi.VideoStream.Models.PlayUrl
-        {
-            Quality = 80,
-            VideoCodecid = 7,
-            Durl = [new DownKyi.Core.BiliApi.VideoStream.Models.PlayUrlDurl()]
-        };
+        page.PlaybackAvailability = PlayUrlAvailability.From(CreateDurlPlayUrl());
         var video = new VideoInfoView
         {
             Title = "main",
@@ -371,11 +367,46 @@ public sealed class DownloadAddOwnerTests : IDisposable
             section,
             sectionCount: 1,
             page,
-            CreateVideoQuality(),
+            CreateVideoQuality(isDurl: true),
             settingsStore.Current,
             DownloadContentSelection.None with { Audio = true }));
 
         Assert.Equal("Audio-only DURL downloads are not supported.", error.Message);
+    }
+
+    [Fact]
+    public void DraftFactoryPersistsFinalizedSelectedMediaKind()
+    {
+        Directory.CreateDirectory(_directory);
+        using var settingsStore = new DownKyi.Core.Settings.SettingsStore(
+            Path.Combine(_directory, "settings.json"));
+        var page = CreatePage();
+        var video = new VideoInfoView
+        {
+            Title = "main",
+            TypeId = 13,
+            VideoZone = "Anime"
+        };
+        var section = new VideoSection
+        {
+            Title = "section",
+            VideoPages = [page]
+        };
+
+        var item = DownloadTaskDraftFactory.Create(
+            _directory,
+            video,
+            section,
+            sectionCount: 1,
+            page,
+            CreateVideoQuality(isDurl: true),
+            settingsStore.Current,
+            DownloadContentSelection.None with { Video = true });
+
+        Assert.Equal(DownloadMediaKind.Durl, item.DownloadBase.NeedDownloadContent.MediaKind);
+        Assert.Contains(
+            page.PlaybackAvailability!.Video,
+            video => video.StreamKind == PlayUrlStreamKind.Dash);
     }
 
     public void Dispose()
@@ -398,37 +429,62 @@ public sealed class DownloadAddOwnerTests : IDisposable
             Order = 1,
             OriginalPublishTime = new DateTime(2024, 1, 2),
             PublishTime = "2024-01-02",
-            PlayUrl = new DownKyi.Core.BiliApi.VideoStream.Models.PlayUrl
-            {
-                Dash = new DownKyi.Core.BiliApi.VideoStream.Models.PlayUrlDash
-                {
-                    Video =
-                    [
-                        new DownKyi.Core.BiliApi.VideoStream.Models.PlayUrlDashVideo
-                        {
-                            Id = 80,
-                            CodecId = 7
-                        }
-                    ],
-                    Audio =
-                    [
-                        new DownKyi.Core.BiliApi.VideoStream.Models.PlayUrlDashVideo
-                        {
-                            Id = 30280
-                        }
-                    ]
-                }
-            },
+            PlaybackAvailability = PlayUrlAvailability.From(CreateDashPlayUrl()),
             VideoQuality = CreateVideoQuality()
         };
     }
 
-    private static VideoQuality CreateVideoQuality()
+    private static PlayUrl CreateDashPlayUrl()
+    {
+        return new PlayUrl
+        {
+            Dash = new PlayUrlDash
+            {
+                Video =
+                [
+                    new PlayUrlDashVideo
+                    {
+                        Id = 80,
+                        CodecId = 7,
+                        BaseAddress = "https://media.invalid/video-80"
+                    }
+                ],
+                Audio =
+                [
+                    new PlayUrlDashVideo
+                    {
+                        Id = 30280,
+                        BaseAddress = "https://media.invalid/audio-30280"
+                    }
+                ]
+            }
+        };
+    }
+
+    private static PlayUrl CreateDurlPlayUrl()
+    {
+        return new PlayUrl
+        {
+            Quality = 80,
+            VideoCodecid = 7,
+            Durl =
+            [
+                new PlayUrlDurl
+                {
+                    Order = 1,
+                    SourceAddress = "https://media.invalid/segment-1"
+                }
+            ]
+        };
+    }
+
+    private static VideoQuality CreateVideoQuality(bool isDurl = false)
     {
         return new VideoQuality
         {
             Quality = 80,
             QualityFormat = "1080P",
+            IsDurl = isDurl,
             SelectedVideoCodec = "H.264/AVC"
         };
     }
@@ -456,8 +512,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
             {
                 DownloadStatus = DownKyi.Models.DownloadStatus.NotStarted,
                 PlayStreamType = DownKyi.Core.BiliApi.VideoStream.PlayStreamType.Video
-            },
-            PlayUrl = new DownKyi.Core.BiliApi.VideoStream.Models.PlayUrl()
+            }
         };
     }
 
