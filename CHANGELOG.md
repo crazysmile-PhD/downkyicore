@@ -1,5 +1,24 @@
 # 更新日志
 
+## [1.2.2] - 2026-10-07
+
+### Bug Fixes
+
+- 番剧解析会保留接口声明的可用画质，兼容多种回退回应形状；重新解析时不会让失效的选项覆盖错误，也会保留已经完成的媒体结果。
+- 批次下载遇到历史项目不可用时会继续处理其余项目，同时保留真正的取消语义。
+- 窄视窗下的导航与排序文字不再被内容边界裁切；Avalonia 资源载入改为明确的资源程序集与 URI 分类。
+
+### Maintenance
+
+- 移除未使用的桌面、核心与领域入口，并将 Avalonia runtime 套件统一升级至 `12.1.3`。
+- 更新 .NET、测试、日志、SQLite、行为扩展与 GitHub Actions 依赖，同时完成 xUnit v3 `4.0.1` 迁移。
+
+### Reliability And Release
+
+- 依赖、SDK、打包与 workflow action 版本改由集中 owner 管理，并加入定期更新、既有 required checks 后自动合并及本地 action 实际往返验证。
+- 更新固定 FFmpeg mirror，改用仓库自有的 AppImage tool mirror，并继续验证不可变来源、checksum 与跨平台套件内容。
+- process readiness 测试会在 owner 提前退出时立即失败并同步 pipe-holder readiness；release notes 会保留 Markdown 格式。
+
 ## [1.2.1] - 2026-10-03
 
 ### Reliability And Release
