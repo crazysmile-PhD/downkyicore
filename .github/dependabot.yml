@@ -13,7 +13,6 @@ updates:
           - Avalonia
           - Avalonia.Desktop
           - Avalonia.Headless
-          - Avalonia.Headless.XUnit
           - Avalonia.Themes.Fluent
 
   - package-ecosystem: dotnet-sdk

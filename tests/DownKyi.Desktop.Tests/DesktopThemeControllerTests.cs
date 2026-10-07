@@ -1,4 +1,3 @@
-using Avalonia.Headless.XUnit;
 using Avalonia.Styling;
 using DownKyi.Core.Settings;
 using DownKyi.Desktop.Appearance;

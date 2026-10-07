@@ -141,7 +141,6 @@ public sealed class AgentEnvironmentArchitectureTests
             "Avalonia",
             "Avalonia.Desktop",
             "Avalonia.Headless",
-            "Avalonia.Headless.XUnit",
             "Avalonia.Themes.Fluent"
         ];
         foreach (var package in avaloniaRuntimePackages)
@@ -283,7 +282,7 @@ public sealed class AgentEnvironmentArchitectureTests
         Assert.DoesNotContain("multi-ecosystem-group:", dependabotConfiguration, StringComparison.Ordinal);
         Assert.Contains("      avalonia-runtime:", dependabotConfiguration, StringComparison.Ordinal);
         Assert.Contains("          - Avalonia.Desktop", dependabotConfiguration, StringComparison.Ordinal);
-        Assert.Contains("          - Avalonia.Headless.XUnit", dependabotConfiguration, StringComparison.Ordinal);
+        Assert.Contains("          - Avalonia.Headless", dependabotConfiguration, StringComparison.Ordinal);
         Assert.Contains("time: '00:00'", dependabotConfiguration, StringComparison.Ordinal);
         Assert.Contains("timezone: Etc/UTC", dependabotConfiguration, StringComparison.Ordinal);
         Assert.Equal(

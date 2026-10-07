@@ -77,7 +77,7 @@ cross-platform stress proof，不得移除。
 - **Use when**：CI、timeout、TRX、zero tests、cleanup、resource contention、CodeQL。
 - **Owner**：正式執行由 `DownKyi.CentralTestRunner` 擁有；native behavior 歸對應 OS test project。
 - **Invariant**：test project 明列 `DownKyiTestPlatforms`；正式入口只走 runner。PASS 刪 recorder；FAIL 保存 bounded output、cleanup、snapshot；未見 child 不代表不存在。
-- **Do**：保存首次失敗；對準 resource／operation，再用同語義 probe。ETW 只對窄目標；CodeQL 保持 `manual` build。
+- **Do**：保存首次失敗；對準 resource／operation，再用同語義 probe。xUnit 升級須驗證 MTP invocation、TRX、UI adapter discovery 與 headless session lifecycle。ETW 只對窄目標；CodeQL 保持 `manual` build。
 - **Proof**：TRX、recorder、focused regression；無 owner／lifecycle evidence 就寫 `Root cause not proven.`。
 - **Stop**：不同 owner／evidence → Pending；不 rerun 洗綠、不加 timing workaround、不改 buildless mode。
 - **Details**：[Testing](testing/README.md)；[Targeted Resource Forensics](testing/targeted-resource-forensics.md)。
