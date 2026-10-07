@@ -1,3 +1,4 @@
+using System.Xml.Linq;
 using DownKyi.CentralTestRunner;
 
 namespace DownKyi.Architecture.Tests;
@@ -23,7 +24,7 @@ public sealed class CentralTestRunnerCommandTests
     }
 
     [Fact]
-    public void VstestInvocationExcludesClassesAfterApplyingTheSelectedClassFilter()
+    public void MicrosoftTestingPlatformInvocationExcludesClassesAfterApplyingTheSelectedClassFilter()
     {
         var options = CommandOptions.Parse(
             [
@@ -32,7 +33,7 @@ public sealed class CentralTestRunnerCommandTests
                 "--exclude-class", "Fixture.Tests.ExcludedA"
             ]);
 
-        var startInfo = TestInvocationFactory.CreateVstestStartInfo(
+        var startInfo = TestInvocationFactory.CreateMicrosoftTestingPlatformStartInfo(
             "fixture.csproj",
             options,
             resultsDirectory: null,
@@ -46,6 +47,69 @@ public sealed class CentralTestRunnerCommandTests
             "FullyQualifiedName!~Fixture.Tests.ExcludedA&" +
             "FullyQualifiedName!~Fixture.Tests.ExcludedB",
             arguments[filterIndex + 1]);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task MicrosoftTestingPlatformExecutesFilterAndRejectsEmptySelection(bool excludeSelectedClass)
+    {
+        var assemblyDirectory = new DirectoryInfo(AppContext.BaseDirectory);
+        var configuration = assemblyDirectory.Parent!.Name;
+        var repositoryDirectory = assemblyDirectory;
+        while (!File.Exists(Path.Combine(repositoryDirectory.FullName, "DownKyi.sln")))
+        {
+            repositoryDirectory = repositoryDirectory.Parent
+                ?? throw new DirectoryNotFoundException("Could not locate repository root.");
+        }
+
+        var resultsDirectory = Path.Combine(Path.GetTempPath(), $"downkyi-mtp-invocation-{Guid.NewGuid():N}");
+        const string selectedClass = "DownKyi.Architecture.Tests.CentralTestRunnerCommandTests";
+        const string selectedTest = selectedClass + ".CommandOptionsCollectsExcludedClasses";
+        const string trxName = "filtered.trx";
+        var arguments = new List<string>
+        {
+            "run-project",
+            "--repository-root", repositoryDirectory.FullName,
+            "--project", "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+            "--configuration", configuration,
+            "--no-build", "--no-restore",
+            "--filter", $"FullyQualifiedName={selectedTest}",
+            "--results-directory", resultsDirectory,
+            "--trx-name", trxName,
+            "--evidence-directory", Path.Combine(resultsDirectory, "evidence")
+        };
+        if (excludeSelectedClass)
+        {
+            arguments.AddRange(["--exclude-class", selectedClass]);
+        }
+
+        try
+        {
+            var exitCode = await CentralTestCommand.RunAsync(
+                arguments.ToArray(), TestContext.Current.CancellationToken);
+            var trxPath = Path.Combine(resultsDirectory, trxName);
+            var document = XDocument.Load(trxPath);
+            var results = document.Descendants()
+                .Where(element => element.Name.LocalName == "UnitTestResult")
+                .ToArray();
+            if (excludeSelectedClass)
+            {
+                Assert.NotEqual(0, exitCode);
+                Assert.Empty(results);
+                Assert.Throws<InvalidDataException>(() => TrxResultStore.Validate(trxPath, trxName));
+            }
+            else
+            {
+                Assert.Equal(0, exitCode);
+                Assert.Equal(selectedTest, Assert.Single(results).Attribute("testName")?.Value);
+                TrxResultStore.Validate(trxPath, trxName);
+            }
+        }
+        finally
+        {
+            Directory.Delete(resultsDirectory, recursive: true);
+        }
     }
 
     [Fact]

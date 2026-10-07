@@ -112,7 +112,7 @@ public sealed class ParsingSelectorDialogTests
             ParsingSelectorDialog.Encode(new ParsingSelectorResult(scope)));
     }
 
-    [Avalonia.Headless.XUnit.AvaloniaFact]
+    [AvaloniaFact]
     public async Task SelectorCommandsProduceTypedResultsAndPreserveDefaultSettingBehavior()
     {
         DesktopTestResources.EnsureProductThemeResources();

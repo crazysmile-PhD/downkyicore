@@ -4,7 +4,7 @@ namespace DownKyi.CentralTestRunner;
 
 internal static class TestInvocationFactory
 {
-    internal static ProcessStartInfo CreateVstestStartInfo(
+    internal static ProcessStartInfo CreateMicrosoftTestingPlatformStartInfo(
         string projectPath,
         CommandOptions options,
         string? resultsDirectory,
@@ -12,6 +12,7 @@ internal static class TestInvocationFactory
     {
         var startInfo = CreateDotnetStartInfo();
         startInfo.ArgumentList.Add("test");
+        startInfo.ArgumentList.Add("--project");
         startInfo.ArgumentList.Add(projectPath);
         startInfo.ArgumentList.Add("-c");
         startInfo.ArgumentList.Add(options.Configuration);
@@ -50,8 +51,9 @@ internal static class TestInvocationFactory
         }
         if (resultsDirectory is not null)
         {
-            startInfo.ArgumentList.Add("--logger");
-            startInfo.ArgumentList.Add($"trx;LogFileName={trxName}");
+            startInfo.ArgumentList.Add("--report-xunit-trx");
+            startInfo.ArgumentList.Add("--report-xunit-trx-filename");
+            startInfo.ArgumentList.Add(trxName);
             startInfo.ArgumentList.Add("--results-directory");
             startInfo.ArgumentList.Add(resultsDirectory);
         }
@@ -92,7 +94,7 @@ internal static class TestInvocationFactory
         startInfo.ArgumentList.Add("-noAutoReporters");
         startInfo.ArgumentList.Add("-reporter");
         startInfo.ArgumentList.Add("quiet");
-        startInfo.ArgumentList.Add("-parallel");
+        startInfo.ArgumentList.Add("-parallelMode");
         startInfo.ArgumentList.Add("none");
         foreach (var className in options.Classes.Order(StringComparer.Ordinal).Distinct(StringComparer.Ordinal))
         {
@@ -106,7 +108,7 @@ internal static class TestInvocationFactory
         }
         if (trxPath is not null)
         {
-            startInfo.ArgumentList.Add("-trx");
+            startInfo.ArgumentList.Add("-result-trx");
             startInfo.ArgumentList.Add(trxPath);
         }
 

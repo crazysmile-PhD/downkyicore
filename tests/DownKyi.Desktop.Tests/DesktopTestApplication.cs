@@ -3,9 +3,9 @@ using Avalonia.Headless;
 
 [assembly: AvaloniaTestApplication(typeof(DownKyi.Desktop.Tests.DesktopTestApplication))]
 [assembly: AvaloniaTestIsolation(AvaloniaTestIsolationLevel.PerAssembly)]
-[assembly: Xunit.CollectionBehavior(
-    Xunit.CollectionBehavior.CollectionPerAssembly,
-    DisableTestParallelization = true)]
+[assembly: Xunit.CollectionBehavior(Xunit.CollectionBehavior.CollectionPerAssembly)]
+[assembly: Xunit.v3.Parallelization(Mode = Xunit.Sdk.ParallelMode.None)]
+[assembly: Xunit.AssemblyFixture(typeof(DownKyi.Desktop.Tests.AvaloniaTestSessionFixture))]
 
 namespace DownKyi.Desktop.Tests;
 

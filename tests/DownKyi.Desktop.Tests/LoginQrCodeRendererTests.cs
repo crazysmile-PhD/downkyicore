@@ -1,4 +1,3 @@
-using Avalonia.Headless.XUnit;
 using DownKyi.Services.Account;
 
 namespace DownKyi.Desktop.Tests;

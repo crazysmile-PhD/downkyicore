@@ -25,7 +25,12 @@
 - `docs/testing/test-runner-policy.json` 中必要的 xUnit in-process routing exceptions；
 - per-project TRX validation 與 target exit result。
 
-`test-runner-policy.json` 不是 test-project registry 或 allowlist。新增 test project 會被自動發現，必須宣告 `DownKyiTestPlatforms`；只有需要偏離預設 VSTest 路由的專案才加入 policy exception。
+`test-runner-policy.json` 不是 test-project registry 或 allowlist。新增 test project 會被自動發現，必須宣告 `DownKyiTestPlatforms`；只有需要偏離預設 Microsoft Testing Platform 路由的專案才加入 policy exception。
+
+`global.json` 選用 Microsoft Testing Platform 的 `dotnet test` 模式；runner
+使用 `--project`、xUnit filter 與 TRX report 參數。既有 in-process exceptions
+仍使用 xUnit native runner，並明確關閉並行。兩條路徑都必須通過同一個非空
+TRX validation，不能以程序 exit code 取代測試結果證據。
 
 正式 PowerShell boundary 每次先 build CentralTestRunner，再執行目前
 repository state 的 runner。不要直接新增平行的 `dotnet test` / `vstest`
@@ -63,6 +68,15 @@ owner/lifecycle evidence 才能宣稱 root cause proven。不得先 blanket-enab
 tracing、重跑相同失敗或加入 timing workaround。
 
 ## Test Isolation
+
+Desktop 的 `AvaloniaFact` 由測試專案內的薄適配層提供：xUnit 負責 discovery、
+metadata、fixture 與結果，Avalonia 官方 `HeadlessUnitTestSession` 負責 UI
+dispatcher 與 per-assembly application isolation。Assembly fixture 在全部測試
+結束後 await session disposal。這個邊界適配 xUnit 4 的 extension API；
+`Avalonia.Headless.XUnit` 尚未支援該 API，詳見
+[AvaloniaUI/Avalonia#22072](https://github.com/AvaloniaUI/Avalonia/issues/22072)。
+上游提供相容版本後可移除此適配層，仍須驗證 constructor、async test 與 dispose
+都在 UI thread，以及原有 UI assertions 與 TRX 非空驗證。
 
 測試不得讀取使用者真實 settings、cookie、下載 DB 或 aria2 session。網路
 contract tests 使用 fixture 或 loopback server。OS-specific behavioral tests

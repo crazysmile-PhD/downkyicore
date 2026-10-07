@@ -129,7 +129,7 @@ internal static class CentralTestCommand
                 definition.InProcessTargetFramework!,
                 options,
                 trxPath)
-            : TestInvocationFactory.CreateVstestStartInfo(
+            : TestInvocationFactory.CreateMicrosoftTestingPlatformStartInfo(
                 projectPath,
                 options,
                 resultsDirectory,

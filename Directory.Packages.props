@@ -8,7 +8,6 @@
     <PackageVersion Include="Avalonia.Controls.DataGrid" Version="12.1.2" />
     <PackageVersion Include="Avalonia.Desktop" Version="$(AvaloniaRuntimeVersion)" />
     <PackageVersion Include="Avalonia.Headless" Version="$(AvaloniaRuntimeVersion)" />
-    <PackageVersion Include="Avalonia.Headless.XUnit" Version="$(AvaloniaRuntimeVersion)" />
     <PackageVersion Include="Avalonia.Themes.Fluent" Version="$(AvaloniaRuntimeVersion)" />
     <PackageVersion Include="AvaloniaUI.DiagnosticsSupport" Version="2.2.3" />
     <PackageVersion Include="System.Formats.Nrbf" Version="10.0.12" />
@@ -30,7 +29,7 @@
     <PackageVersion Include="SQLite3MC.PCLRaw.bundle" Version="2.4.0" />
     <PackageVersion Include="coverlet.collector" Version="10.1.0" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
-    <PackageVersion Include="xunit.v3" Version="3.2.2" />
+    <PackageVersion Include="xunit.v3" Version="4.0.1" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.0" />
   </ItemGroup>
 </Project>

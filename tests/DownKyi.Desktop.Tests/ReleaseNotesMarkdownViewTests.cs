@@ -1,7 +1,6 @@
 using System.Text;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
-using Avalonia.Headless.XUnit;
 using Avalonia.Media;
 using Avalonia.VisualTree;
 using DownKyi.CustomControl;

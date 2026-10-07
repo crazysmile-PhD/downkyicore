@@ -16,7 +16,7 @@ namespace DownKyi.Desktop.Tests;
 
 public sealed class VideoDetailCommandStateTests
 {
-    [Avalonia.Headless.XUnit.AvaloniaFact]
+    [AvaloniaFact]
     public void BusyRecoveryInvalidatesEveryBusyDependentCommand()
     {
         DesktopTestResources.EnsureProductThemeResources();
@@ -65,7 +65,7 @@ public sealed class VideoDetailCommandStateTests
         Assert.All(commands, command => Assert.Equal(6, invalidationCounts[command]));
     }
 
-    [Avalonia.Headless.XUnit.AvaloniaFact]
+    [AvaloniaFact]
     public void BusyToContentUpdatesAvaloniaActionButtons()
     {
         DesktopTestResources.EnsureProductThemeResources();
@@ -110,7 +110,7 @@ public sealed class VideoDetailCommandStateTests
         }
     }
 
-    [Avalonia.Headless.XUnit.AvaloniaFact]
+    [AvaloniaFact]
     public async Task ManualParseRecoveryEnablesAndDispatchesSelectedDownload()
     {
         DesktopTestResources.EnsureProductThemeResources();
@@ -170,7 +170,7 @@ public sealed class VideoDetailCommandStateTests
         Assert.Same(viewModel.UiState.VideoInfoView, downloadCoordinator.LastVideoInfo);
     }
 
-    [Avalonia.Headless.XUnit.AvaloniaFact]
+    [AvaloniaFact]
     public async Task ParsingSelectorAcceptedScopesDispatchExactlyTheTypedSelection()
     {
         DesktopTestResources.EnsureProductThemeResources();
@@ -219,7 +219,7 @@ public sealed class VideoDetailCommandStateTests
         }
     }
 
-    [Avalonia.Headless.XUnit.AvaloniaFact]
+    [AvaloniaFact]
     public async Task DuplicateOwnerNotificationIsNotOverwrittenWhenNothingNewIsAdded()
     {
         EnsureProductLanguageResources();
@@ -270,7 +270,7 @@ public sealed class VideoDetailCommandStateTests
         Assert.Equal(1, downloadCoordinator.AddRequestCount);
     }
 
-    [Avalonia.Headless.XUnit.AvaloniaFact]
+    [AvaloniaFact]
     public async Task MissingDownloadSelectionStillExplainsWhyNothingWasAdded()
     {
         EnsureProductLanguageResources();
@@ -303,7 +303,7 @@ public sealed class VideoDetailCommandStateTests
         Assert.Equal(1, downloadCoordinator.AddRequestCount);
     }
 
-    [Avalonia.Headless.XUnit.AvaloniaFact]
+    [AvaloniaFact]
     public async Task ParsingSelectorInvalidAcceptedResultFailsBeforeDispatch()
     {
         DesktopTestResources.EnsureProductThemeResources();
@@ -338,7 +338,7 @@ public sealed class VideoDetailCommandStateTests
         Assert.False(workflow.PageStreamsStarted.Task.IsCompleted);
     }
 
-    [Avalonia.Headless.XUnit.AvaloniaFact]
+    [AvaloniaFact]
     public async Task AutoDownloadPreparationRejectsCompetingOperationsAndRecovers()
     {
         DesktopTestResources.EnsureProductThemeResources();
@@ -428,7 +428,7 @@ public sealed class VideoDetailCommandStateTests
         Assert.True(downloadCoordinator.LastIsAll);
     }
 
-    [Avalonia.Headless.XUnit.AvaloniaFact]
+    [AvaloniaFact]
     public Task FailedInputLeavesBusyAndReEnablesCommands()
     {
         return AssertInputRecoveryAsync(
@@ -436,7 +436,7 @@ public sealed class VideoDetailCommandStateTests
             VideoDetailDisplayState.Empty);
     }
 
-    [Avalonia.Headless.XUnit.AvaloniaFact]
+    [AvaloniaFact]
     public Task CanceledInputLeavesBusyAndReEnablesCommands()
     {
         return AssertInputRecoveryAsync(
