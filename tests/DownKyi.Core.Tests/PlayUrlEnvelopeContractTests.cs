@@ -213,6 +213,111 @@ public sealed class PlayUrlEnvelopeContractTests
     }
 
     [Fact]
+    public async Task BangumiEndpointUsesWebFallbackWhenApiTopsOutAt720P60()
+    {
+        var requests = new List<BilibiliHttpRequest>();
+        var client = new StubBilibiliApiClient((request, _) =>
+        {
+            requests.Add(request);
+            return Task.FromResult(requests.Count == 1
+                ? """
+                  {"code":0,"result":{"video_info":{"quality":74,"accept_quality":[112,74],"support_formats":[{"quality":112},{"quality":74}],"durl":[],"dash":{"video":[{"id":74,"codecid":7}],"audio":[{"id":30280}]}}}}
+                  """
+                : BetterEmbeddedBangumiPage);
+        });
+
+        var payload = await client.GetBangumiPlayUrlAsync(
+            1,
+            "BV1fixture",
+            2,
+            3489,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, requests.Count);
+        Assert.Contains(payload!.Dash.Video, video => video.Id == 112);
+        Assert.Contains(payload.Dash.Video, video => video.Id == 74);
+        Assert.Equal("embedded-playback-merged", payload.Diagnostics?.FallbackOutcome);
+    }
+
+    [Fact]
+    public async Task BangumiEndpointSelectsCompleteDurlSupplementWhenItIsBetter()
+    {
+        var requests = new List<BilibiliHttpRequest>();
+        var client = new StubBilibiliApiClient((request, _) =>
+        {
+            requests.Add(request);
+            return Task.FromResult(requests.Count == 1
+                ? DegradedBangumiApiResponse
+                : BetterEmbeddedBangumiDurlPage);
+        });
+
+        var payload = await client.GetBangumiPlayUrlAsync(
+            1,
+            "BV1fixture",
+            2,
+            3489,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, requests.Count);
+        Assert.Equal(112, payload?.Quality);
+        Assert.Equal(
+            "https://media.invalid/durl-112",
+            Assert.Single(payload?.Durl ?? []).SourceAddress);
+        Assert.Empty(payload?.Dash.Video ?? []);
+        Assert.Equal("embedded-playback-selected-durl", payload?.Diagnostics?.FallbackOutcome);
+    }
+
+    [Fact]
+    public void PlaybackMergeReplacesEmptyPremiumAudioContainers()
+    {
+        var primary = new PlayUrl
+        {
+            Dash = new PlayUrlDash
+            {
+                Video = [new PlayUrlDashVideo { Id = 64, CodecId = 7 }],
+                Dolby = new PlayUrlDashDolby { Audio = [] },
+                Flac = new PlayUrlDashFlac { Audio = null }
+            }
+        };
+        var supplement = new PlayUrl
+        {
+            Dash = new PlayUrlDash
+            {
+                Video = [new PlayUrlDashVideo { Id = 112, CodecId = 13 }],
+                Dolby = new PlayUrlDashDolby
+                {
+                    Audio =
+                    [
+                        new PlayUrlDashVideo
+                        {
+                            Id = 30250,
+                            BaseAddress = "https://media.invalid/dolby"
+                        }
+                    ]
+                },
+                Flac = new PlayUrlDashFlac
+                {
+                    Audio = new PlayUrlDashVideo
+                    {
+                        Id = 30251,
+                        BaseAddress = "https://media.invalid/flac"
+                    }
+                }
+            }
+        };
+
+        var result = BangumiPlaybackResolver.CombinePlayback(primary, supplement);
+
+        Assert.Same(primary, result.PlayUrl);
+        Assert.Equal(
+            "https://media.invalid/dolby",
+            Assert.Single(result.PlayUrl.Dash.Dolby!.Audio).BaseAddress);
+        Assert.Equal(
+            "https://media.invalid/flac",
+            result.PlayUrl.Dash.Flac?.Audio?.BaseAddress);
+    }
+
+    [Fact]
     public async Task BangumiEndpointDoesNotFetchWebPageForLegitimate720PResponse()
     {
         var requests = new List<BilibiliHttpRequest>();
@@ -555,6 +660,11 @@ public sealed class PlayUrlEnvelopeContractTests
     private const string BetterEmbeddedBangumiPage =
         """
         <html><script>const playurlSSRData = {"data":{"code":0,"result":{"play_check":{"play_detail":"PLAY_WHOLE"},"video_info":{"quality":112,"accept_quality":[112,80,64],"support_formats":[{"quality":112}],"durl":[],"dash":{"video":[{"id":112,"codecid":13,"base_url":"https://media.invalid/video-112"},{"id":64,"codecid":7,"base_url":"https://media.invalid/video-64"}],"audio":[{"id":30280,"base_url":"https://media.invalid/audio-30280"}]}}}}};</script></html>
+        """;
+
+    private const string BetterEmbeddedBangumiDurlPage =
+        """
+        <html><script>const playurlSSRData = {"data":{"code":0,"result":{"play_check":{"play_detail":"PLAY_WHOLE"},"video_info":{"quality":112,"video_codecid":7,"accept_quality":[112,64],"support_formats":[{"quality":112},{"quality":64}],"durl":[{"order":1,"url":"https://media.invalid/durl-112"}],"dash":{"video":[],"audio":[]}}}}};</script></html>
         """;
 
     private static StubBilibiliApiClient CreateClient(

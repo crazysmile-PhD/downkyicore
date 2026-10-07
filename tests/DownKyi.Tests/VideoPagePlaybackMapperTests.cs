@@ -127,6 +127,26 @@ public sealed class VideoPagePlaybackMapperTests : IDisposable
     }
 
     [Fact]
+    public void DurlPlaybackIsMappedWhenDashContainerIsEmpty()
+    {
+        var settings = CreateSettings(videoQuality: 112, isVip: true);
+        var playUrl = new PlayUrl
+        {
+            Quality = 112,
+            VideoCodecid = 7,
+            Durl = [new PlayUrlDurl { Order = 1 }],
+            Dash = new PlayUrlDash()
+        };
+        var page = new VideoPage();
+
+        VideoPagePlaybackMapper.ApplyPlayUrl(playUrl, page, settings);
+
+        Assert.Equal(112, Assert.Single(page.VideoQualityList).Quality);
+        Assert.Equal(112, page.VideoQuality.Quality);
+        Assert.Equal("H.264/AVC", page.VideoQuality.SelectedVideoCodec);
+    }
+
+    [Fact]
     public void MissingPreferredQualitySelectsHighestAvailableQualityBelowIt()
     {
         var settings = CreateSettings(videoQuality: 116, isVip: true);

@@ -44,19 +44,8 @@ internal static class VideoPagePlaybackMapper
         var videoCodecs = settings.Video.VideoCodecs;
         var defaultAudioQuality = settings.Video.AudioQuality;
 
-        if (playUrl.Dash != null)
+        if (playUrl.Dash?.Video is { Count: > 0 })
         {
-            // 如果video列表或者audio列表没有内容，则返回false
-            if (playUrl.Dash.Video == null)
-            {
-                return;
-            }
-
-            if (playUrl.Dash.Video.Count == 0)
-            {
-                return;
-            }
-
             // 音质
             page.AudioQualityFormatList = GetAudioQualityFormatList(playUrl);
             if (page.AudioQualityFormatList.Count > 0)

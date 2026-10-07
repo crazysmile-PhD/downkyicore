@@ -1,3 +1,4 @@
+using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.VideoStream.Models;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -19,7 +20,7 @@ internal static class BangumiPlaybackResolver
             .Max();
 
         return actualQuality > 0
-               && actualQuality <= 64
+               && actualQuality <= PlaybackQualityCatalog.Maximum720PQuality
                && requestedQuality > actualQuality
                && advertisedQuality > actualQuality;
     }
@@ -34,10 +35,28 @@ internal static class BangumiPlaybackResolver
             .Max();
     }
 
-    public static PlayUrl MergePlayback(PlayUrl primary, PlayUrl supplement)
+    public static BangumiPlaybackFallbackResult CombinePlayback(
+        PlayUrl primary,
+        PlayUrl supplement)
     {
         ArgumentNullException.ThrowIfNull(primary);
         ArgumentNullException.ThrowIfNull(supplement);
+        var primaryQuality = GetHighestActualQuality(primary);
+        var supplementDashQuality = supplement.Dash.Video
+            .Select(video => video.Id)
+            .DefaultIfEmpty()
+            .Max();
+        var supplementDurlQuality = supplement.Durl.Count > 0
+            ? supplement.Quality
+            : 0;
+        if (supplementDurlQuality > primaryQuality
+            && supplementDurlQuality > supplementDashQuality)
+        {
+            return new BangumiPlaybackFallbackResult(
+                supplement,
+                "embedded-playback-selected-durl");
+        }
+
         primary.Dash.Video = primary.Dash.Video
             .Concat(supplement.Dash.Video)
             .GroupBy(video => (video.Id, video.CodecId))
@@ -51,8 +70,18 @@ internal static class BangumiPlaybackResolver
             .Select(group => group.First())
             .OrderByDescending(audio => audio.Id)
             .ToArray();
-        primary.Dash.Dolby ??= supplement.Dash.Dolby;
-        primary.Dash.Flac ??= supplement.Dash.Flac;
+        if (primary.Dash.Dolby?.Audio is not { Count: > 0 }
+            && supplement.Dash.Dolby?.Audio is { Count: > 0 })
+        {
+            primary.Dash.Dolby = supplement.Dash.Dolby;
+        }
+
+        if (primary.Dash.Flac?.Audio == null
+            && supplement.Dash.Flac?.Audio != null)
+        {
+            primary.Dash.Flac = supplement.Dash.Flac;
+        }
+
         primary.SupportFormats = (primary.SupportFormats ?? [])
             .Concat(supplement.SupportFormats ?? [])
             .GroupBy(format => format.Quality)
@@ -65,7 +94,9 @@ internal static class BangumiPlaybackResolver
             .OrderByDescending(quality => quality)
             .ToArray();
         primary.Quality = Math.Max(primary.Quality, supplement.Quality);
-        return primary;
+        return new BangumiPlaybackFallbackResult(
+            primary,
+            "embedded-playback-merged");
     }
 
     public static bool TryParseEmbeddedPayload(
@@ -234,3 +265,7 @@ internal static class BangumiPlaybackResolver
         return null;
     }
 }
+
+internal sealed record BangumiPlaybackFallbackResult(
+    PlayUrl PlayUrl,
+    string Outcome);
