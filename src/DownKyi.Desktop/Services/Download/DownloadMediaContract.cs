@@ -83,15 +83,14 @@ internal static class DownloadMediaContract
         PlayUrl? playUrl)
     {
         var selectedAudio = SelectAudio(context, playUrl);
-        if (context.NeedsAudio
-            && context.AudioFile == null
+        if (context.NeedsPendingAudio
             && !PlayUrlAvailability.HasUsableAddress(selectedAudio))
         {
             return SelectionUnavailable("The finalized audio stream is unavailable.");
         }
 
         var selectedVideo = SelectVideo(context, playUrl);
-        return context.NeedsVideo && !PlayUrlAvailability.HasUsableAddress(selectedVideo)
+        return context.NeedsPendingVideo && !PlayUrlAvailability.HasUsableAddress(selectedVideo)
             ? SelectionUnavailable("The finalized video stream is unavailable.")
             : null;
     }

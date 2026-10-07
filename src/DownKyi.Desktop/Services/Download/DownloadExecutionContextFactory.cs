@@ -62,6 +62,7 @@ internal sealed class DownloadExecutionContextFactory
             task.Metadata,
             task.Plan.RequestedContent,
             task.Plan.TransferFiles,
+            task.Transfer.CompletedFileKeys,
             task.Output.BasePath,
             (Core.BiliApi.VideoStream.PlayStreamType)task.Plan.StreamType,
             task.Plan.NfoRequest,

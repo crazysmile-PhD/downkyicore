@@ -153,6 +153,7 @@ public static partial class VideoStreamApi
             videoCodecId: null,
             audioId: null,
             streamKind: null,
+            requireVideo: true,
             cancellationToken);
     }
 
@@ -166,6 +167,7 @@ public static partial class VideoStreamApi
         int? videoCodecId = null,
         int? audioId = null,
         PlayUrlStreamKind? streamKind = null,
+        bool requireVideo = true,
         CancellationToken cancellationToken = default)
     {
         return GetBangumiPlaybackCoreAsync(
@@ -179,6 +181,7 @@ public static partial class VideoStreamApi
             videoCodecId,
             audioId,
             streamKind,
+            requireVideo,
             cancellationToken);
     }
 
@@ -193,9 +196,19 @@ public static partial class VideoStreamApi
         int? videoCodecId,
         int? audioId,
         PlayUrlStreamKind? streamKind,
+        bool requireVideo,
         CancellationToken cancellationToken)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(episodeId);
+        if (!discoverAvailability && !requireVideo && audioId == null)
+        {
+            throw new PlaybackSelectionUnavailableException(
+                quality,
+                videoCodecId,
+                audioId,
+                streamKind);
+        }
+
         var baseUrl = $"https://api.bilibili.com/pgc/player/web/v2/playurl?cid={cid}&ep_id={episodeId}&qn={quality}&fourk=1&fnver=0&fnval={BangumiFnval}";
         string url;
         if (bvid != null)
@@ -239,6 +252,7 @@ public static partial class VideoStreamApi
                 videoCodecId,
                 audioId,
                 streamKind,
+                requireVideo,
                 out selected);
         if (!shouldTryFallback)
         {
@@ -310,6 +324,7 @@ public static partial class VideoStreamApi
                     videoCodecId,
                     audioId,
                     streamKind,
+                    requireVideo,
                     out selected))
             {
                 throw new PlaybackSelectionUnavailableException(

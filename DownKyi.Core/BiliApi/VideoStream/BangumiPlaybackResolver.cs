@@ -72,21 +72,26 @@ internal static class BangumiPlaybackResolver
         int requestedQuality,
         int? requestedCodecId = null,
         int? requestedAudioId = null,
-        PlayUrlStreamKind? requestedStreamKind = null)
+        PlayUrlStreamKind? requestedStreamKind = null,
+        bool requireVideo = true)
     {
         ArgumentNullException.ThrowIfNull(playUrl);
+        if (!requireVideo && requestedAudioId == null)
+        {
+            return false;
+        }
+
         var availability = PlayUrlAvailability.From(playUrl);
-        var video = availability.Video.Any(candidate =>
-            candidate.Quality == requestedQuality
-            && (requestedCodecId == null || candidate.CodecId == requestedCodecId)
-            && (requestedStreamKind == null || candidate.StreamKind == requestedStreamKind));
-        if (!video)
+        if (requireVideo && !availability.Video.Any(candidate =>
+                candidate.Quality == requestedQuality
+                && (requestedCodecId == null || candidate.CodecId == requestedCodecId)
+                && (requestedStreamKind == null || candidate.StreamKind == requestedStreamKind)))
         {
             return false;
         }
 
         return requestedAudioId == null
-               || requestedStreamKind == PlayUrlStreamKind.Durl
+               || (requireVideo && requestedStreamKind == PlayUrlStreamKind.Durl)
                || availability.Audio.Contains(requestedAudioId.Value);
     }
 
@@ -99,20 +104,43 @@ internal static class BangumiPlaybackResolver
         PlayUrlStreamKind? requestedStreamKind,
         out PlayUrl? selected)
     {
+        return TrySelectDownloadPlayback(
+            primary,
+            supplement,
+            requestedQuality,
+            requestedCodecId,
+            requestedAudioId,
+            requestedStreamKind,
+            requireVideo: true,
+            out selected);
+    }
+
+    public static bool TrySelectDownloadPlayback(
+        PlayUrl primary,
+        PlayUrl? supplement,
+        int requestedQuality,
+        int? requestedCodecId,
+        int? requestedAudioId,
+        PlayUrlStreamKind? requestedStreamKind,
+        bool requireVideo,
+        out PlayUrl? selected)
+    {
         ArgumentNullException.ThrowIfNull(primary);
         var source = HasRequestedPlayback(
                 primary,
                 requestedQuality,
                 requestedCodecId,
                 requestedAudioId,
-                requestedStreamKind)
+                requestedStreamKind,
+                requireVideo)
             ? primary
             : supplement != null && HasRequestedPlayback(
                 supplement,
                 requestedQuality,
                 requestedCodecId,
                 requestedAudioId,
-                requestedStreamKind)
+                requestedStreamKind,
+                requireVideo)
                 ? supplement
                 : null;
         if (source == null)
@@ -122,7 +150,9 @@ internal static class BangumiPlaybackResolver
         }
 
         var sourceAvailability = PlayUrlAvailability.From(source);
-        var selectedKind = requestedStreamKind
+        var selectedKind = !requireVideo
+            ? PlayUrlStreamKind.Dash
+            : requestedStreamKind
                            ?? (sourceAvailability.Video.Any(candidate =>
                                candidate.Quality == requestedQuality
                                && (requestedCodecId == null
@@ -142,14 +172,14 @@ internal static class BangumiPlaybackResolver
             .Where(video => video.Id == requestedQuality)
             .Where(video => requestedCodecId == null || video.CodecId == requestedCodecId)
             .ToArray();
-        if (requestedDash.Length == 0)
+        if (requireVideo && requestedDash.Length == 0)
         {
             selected = null;
             return false;
         }
 
         source.Durl = [];
-        source.Dash.Video = requestedDash;
+        source.Dash.Video = requireVideo ? requestedDash : [];
         source.Dash.Audio = source.Dash.Audio
             .Where(PlayUrlAvailability.HasUsableAddress)
             .ToArray();

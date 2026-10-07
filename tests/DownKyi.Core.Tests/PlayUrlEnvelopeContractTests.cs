@@ -612,6 +612,90 @@ public sealed class PlayUrlEnvelopeContractTests
         Assert.Equal(PlayUrlStreamKind.Dash, exception.StreamKind);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void BangumiPendingSelectionAcceptsVideoOnlyFromEitherSingleSource(
+        bool videoIsPrimary)
+    {
+        var videoOnly = CreateDashVideoOnlyPlayback();
+        var audioOnly = CreateDashAudioOnlyPlayback();
+
+        var found = BangumiPlaybackResolver.TrySelectDownloadPlayback(
+            videoIsPrimary ? videoOnly : audioOnly,
+            videoIsPrimary ? audioOnly : videoOnly,
+            requestedQuality: 112,
+            requestedCodecId: 13,
+            requestedAudioId: null,
+            requestedStreamKind: PlayUrlStreamKind.Dash,
+            requireVideo: true,
+            out var selected);
+
+        Assert.True(found);
+        Assert.Same(videoOnly, selected);
+        Assert.Equal(112, Assert.Single(selected!.Dash.Video).Id);
+        Assert.Empty(selected.Dash.Audio);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void BangumiPendingSelectionAcceptsAudioOnlyFromEitherSingleSource(
+        bool audioIsPrimary)
+    {
+        var videoOnly = CreateDashVideoOnlyPlayback();
+        var audioOnly = CreateDashAudioOnlyPlayback();
+
+        var found = BangumiPlaybackResolver.TrySelectDownloadPlayback(
+            audioIsPrimary ? audioOnly : videoOnly,
+            audioIsPrimary ? videoOnly : audioOnly,
+            requestedQuality: 112,
+            requestedCodecId: 13,
+            requestedAudioId: 30280,
+            requestedStreamKind: PlayUrlStreamKind.Dash,
+            requireVideo: false,
+            out var selected);
+
+        Assert.True(found);
+        Assert.Same(audioOnly, selected);
+        Assert.Empty(selected!.Dash.Video);
+        Assert.Equal(30280, Assert.Single(selected.Dash.Audio).Id);
+    }
+
+    [Fact]
+    public void BangumiPendingSelectionRejectsVideoAndAudioSplitAcrossSources()
+    {
+        var found = BangumiPlaybackResolver.TrySelectDownloadPlayback(
+            CreateDashVideoOnlyPlayback(),
+            CreateDashAudioOnlyPlayback(),
+            requestedQuality: 112,
+            requestedCodecId: 13,
+            requestedAudioId: 30280,
+            requestedStreamKind: PlayUrlStreamKind.Dash,
+            requireVideo: true,
+            out var selected);
+
+        Assert.False(found);
+        Assert.Null(selected);
+    }
+
+    [Fact]
+    public void BangumiPendingSelectionRejectsRequestWithoutPendingComponents()
+    {
+        var found = BangumiPlaybackResolver.TrySelectDownloadPlayback(
+            CreateDashVideoOnlyPlayback(),
+            CreateDashAudioOnlyPlayback(),
+            requestedQuality: 112,
+            requestedCodecId: 13,
+            requestedAudioId: null,
+            requestedStreamKind: PlayUrlStreamKind.Dash,
+            requireVideo: false,
+            out var selected);
+
+        Assert.False(found);
+        Assert.Null(selected);
+    }
+
     [Fact]
     public async Task BangumiDownloadKeepsRequested720P60WithoutWebFallback()
     {
@@ -1095,6 +1179,39 @@ public sealed class PlayUrlEnvelopeContractTests
                    File.ReadAllText(Path.Combine(SampleDirectory, name)))
                ?? throw new InvalidDataException($"Sample '{name}' did not deserialize.");
     }
+
+    private static PlayUrl CreateDashVideoOnlyPlayback() =>
+        new()
+        {
+            Dash = new PlayUrlDash
+            {
+                Video =
+                [
+                    new PlayUrlDashVideo
+                    {
+                        Id = 112,
+                        CodecId = 13,
+                        BaseAddress = "https://media.invalid/video-112"
+                    }
+                ]
+            }
+        };
+
+    private static PlayUrl CreateDashAudioOnlyPlayback() =>
+        new()
+        {
+            Dash = new PlayUrlDash
+            {
+                Audio =
+                [
+                    new PlayUrlDashVideo
+                    {
+                        Id = 30280,
+                        BaseAddress = "https://media.invalid/audio-30280"
+                    }
+                ]
+            }
+        };
 
     public static TheoryData<string, string> MalformedBangumiPlaybackPayloads => new()
     {

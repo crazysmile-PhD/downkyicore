@@ -71,11 +71,14 @@ internal sealed class DownloadPlaybackResolver
                     media.Cid,
                     media.EpisodeId,
                     quality: input.Metadata.Resolution.Id,
-                    videoCodecId: ResolveVideoCodecId(input.Metadata.VideoCodecName),
-                    audioId: context.NeedsAudio
+                    videoCodecId: context.NeedsPendingVideo
+                        ? ResolveVideoCodecId(input.Metadata.VideoCodecName)
+                        : null,
+                    audioId: context.NeedsPendingAudio
                         && input.RequestedContent.MediaKind == DownloadMediaKind.Dash
                             ? input.Metadata.AudioCodec.Id
                             : null,
+                    requireVideo: context.NeedsPendingVideo,
                     streamKind: input.RequestedContent.MediaKind switch
                     {
                         DownloadMediaKind.Dash => PlayUrlStreamKind.Dash,

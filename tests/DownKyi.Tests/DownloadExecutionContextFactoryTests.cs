@@ -88,6 +88,10 @@ public sealed class DownloadExecutionContextFactoryTests : IDisposable
             DownloadArtifactWriter.DanmakuAssTransferKey,
             $"{downloadBase.FilePath}.ass",
             TestContext.Current.CancellationToken);
+        await stateWriter.CompleteTransferFileAsync(
+            taskId,
+            DownloadArtifactWriter.DanmakuAssTransferKey,
+            TestContext.Current.CancellationToken);
         var activeProjection = projections.GetRequiredDownloadingProjection(taskId);
 
         var replacementContent = DownloadContentSelection.None with { Video = true };
@@ -159,6 +163,9 @@ public sealed class DownloadExecutionContextFactoryTests : IDisposable
         Assert.Equal("AVC", context.Input.Metadata.VideoCodecName);
         Assert.Equal(PlayStreamType.Bangumi, context.Input.StreamType);
         Assert.Null(context.PlayUrl);
+        Assert.Equal(
+            DownloadArtifactWriter.DanmakuAssTransferKey,
+            Assert.Single(context.Input.CompletedTransferKeys));
         Assert.Equal(DownloadFinishedSort.Number, context.Input.FinishedSort);
         Assert.Equal(originalSettings.Video, context.Input.VideoSettings);
         Assert.Equal(originalSettings.Danmaku, context.Input.DanmakuSettings);

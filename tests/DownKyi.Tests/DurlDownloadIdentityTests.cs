@@ -254,6 +254,65 @@ public sealed class DurlDownloadIdentityTests
     }
 
     [Fact]
+    public async Task RestartedBangumiTaskRestoresCompletedAudioBeforeVideoOnlyPlaybackResolve()
+    {
+        var client = new TestBilibiliApiClient
+        {
+            GetStringAsyncHandler = (_, _) => Task.FromResult(
+                """
+                {
+                  "code": 0,
+                  "result": {
+                    "video_info": {
+                      "quality": 112,
+                      "durl": [],
+                      "dash": {
+                        "video": [
+                          {
+                            "id": 112,
+                            "codecid": 12,
+                            "codecs": "hev1",
+                            "base_url": "https://media.invalid/restarted-video-112"
+                          }
+                        ],
+                        "audio": []
+                      }
+                    }
+                  }
+                }
+                """)
+        };
+        using var fixture = await PlaybackStageFixture.CreateAsync(client).ConfigureAwait(true);
+        var completedAudio = await fixture.RecordCompletedAudioAsync().ConfigureAwait(true);
+        await fixture.ReopenForRestartAsync(client).ConfigureAwait(true);
+
+        var resolve = await fixture.Stage.ExecuteAsync(
+            fixture.Context,
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.True(resolve.IsSuccess, resolve.Error?.Message);
+        Assert.NotEqual(completedAudio.FilePath, fixture.Context.AudioFile);
+        Assert.Equal(completedAudio.Key, fixture.Context.AudioTransferKey);
+        Assert.Equal(
+            await File.ReadAllBytesAsync(
+                completedAudio.FilePath,
+                TestContext.Current.CancellationToken).ConfigureAwait(true),
+            await File.ReadAllBytesAsync(
+                fixture.Context.AudioFile!,
+                TestContext.Current.CancellationToken).ConfigureAwait(true));
+
+        var media = await fixture.MediaStage.ExecuteAsync(
+            fixture.Context,
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.True(media.IsSuccess, media.Error?.Message);
+        var request = Assert.Single(fixture.Backend.Requests);
+        Assert.Equal(
+            "https://media.invalid/restarted-video-112",
+            Assert.Single(request.Urls));
+    }
+
+    [Fact]
     public async Task PlaybackStageUsesLegacySeparatorsWithoutRewritingFrozenBasePath()
     {
         var directory = Path.Combine(
@@ -419,10 +478,12 @@ public sealed class DurlDownloadIdentityTests
     {
         private readonly string _directory;
         private readonly string _databasePath;
-        private readonly SqliteDownloadTaskStore _store;
-        private readonly DownloadTaskApplicationService _tasks;
-        private readonly DownloadTaskProjectionStore _projections;
+        private SqliteDownloadTaskStore _store;
+        private DownloadTaskApplicationService _tasks;
+        private DownloadTaskProjectionStore _projections;
         private readonly TestSettingsStore _settings;
+        private readonly DownloadTaskId _taskId;
+        private DownloadTaskStaging? _staging;
 
         private PlaybackStageFixture(
             string directory,
@@ -431,6 +492,7 @@ public sealed class DurlDownloadIdentityTests
             DownloadTaskApplicationService tasks,
             DownloadTaskProjectionStore projections,
             TestSettingsStore settings,
+            DownloadTaskId taskId,
             ResolvePlaybackStage stage,
             DownloadExecutionContext context)
         {
@@ -440,13 +502,99 @@ public sealed class DurlDownloadIdentityTests
             _tasks = tasks;
             _projections = projections;
             _settings = settings;
+            _taskId = taskId;
             Stage = stage;
             Context = context;
         }
 
-        public ResolvePlaybackStage Stage { get; }
+        public ResolvePlaybackStage Stage { get; private set; }
 
-        public DownloadExecutionContext Context { get; }
+        public DownloadExecutionContext Context { get; private set; }
+
+        public DownloadMediaStage MediaStage { get; private set; } = null!;
+
+        public RestartRecordingBackend Backend { get; private set; } = null!;
+
+        public async Task<(string Key, string FilePath)> RecordCompletedAudioAsync()
+        {
+            const string fileName = "completed-audio.m4s";
+            var filePath = Path.Combine(_directory, fileName);
+            await File.WriteAllBytesAsync(
+                filePath,
+                [1, 2, 3],
+                TestContext.Current.CancellationToken).ConfigureAwait(true);
+            var key = DownloadTransferKey.Create(30280, "mp4a.40.2");
+            var writer = new DownloadTaskStateWriter(_tasks);
+            await writer.RecordTransferFileAsync(
+                _taskId,
+                key,
+                fileName,
+                TestContext.Current.CancellationToken).ConfigureAwait(true);
+            await writer.CompleteTransferFileAsync(
+                _taskId,
+                key,
+                TestContext.Current.CancellationToken).ConfigureAwait(true);
+            await writer.PauseAsync(
+                _taskId,
+                TestContext.Current.CancellationToken).ConfigureAwait(true);
+            await writer.ConfirmPausedAsync(
+                _taskId,
+                TestContext.Current.CancellationToken).ConfigureAwait(true);
+            return (key, filePath);
+        }
+
+        public async Task ReopenForRestartAsync(TestBilibiliApiClient client)
+        {
+            _projections.Dispose();
+            _tasks.Dispose();
+            _store.Dispose();
+
+            _store = new SqliteDownloadTaskStore(
+                new SqliteDownloadTaskStoreOptions(_databasePath),
+                new SystemClock());
+            var clock = new SystemClock();
+            var historyService = DownloadHistoryService.CreateForSharedStore(_store);
+            _tasks = new DownloadTaskApplicationService(_store, historyService, clock);
+            _projections = new DownloadTaskProjectionStore(_tasks, historyService, clock);
+            var startup = await _projections.GetDownloadingStateAsync(
+                TestContext.Current.CancellationToken).ConfigureAwait(true);
+            Assert.Equal(_taskId, Assert.Single(startup.Tasks).Id);
+            var writer = new DownloadTaskStateWriter(_tasks);
+            await writer.ResumeAsync(
+                _taskId,
+                TestContext.Current.CancellationToken).ConfigureAwait(true);
+            await writer.StartAsync(
+                _taskId,
+                TestContext.Current.CancellationToken).ConfigureAwait(true);
+            _staging = new DownloadTaskStaging(
+                NullLogger<DownloadTaskStaging>.Instance);
+            Context = new DownloadExecutionContextFactory(
+                _projections,
+                _settings.Store,
+                _staging).Create(_taskId);
+            var resolver = new DownloadPlaybackResolver(
+                new TestWbiKeyProvider(),
+                TimeProvider.System,
+                client);
+            var presenter = new DownloadActivityPresenter(_projections, writer);
+            Stage = new ResolvePlaybackStage(
+                new TestDesktopInteractionContext().Notifications,
+                presenter,
+                resolver,
+                NullLogger<ResolvePlaybackStage>.Instance);
+            Backend = new RestartRecordingBackend();
+            MediaStage = new DownloadMediaStage(
+                _projections,
+                writer,
+                new DownloadTransferCoordinator(
+                    Backend,
+                    new DownloadRetryPolicy(),
+                    TimeProvider.System,
+                    NullLogger<DownloadTransferCoordinator>.Instance),
+                resolver,
+                presenter,
+                NullLogger<DownloadMediaStage>.Instance);
+        }
 
         public static async Task<PlaybackStageFixture> CreateAsync(TestBilibiliApiClient client)
         {
@@ -525,12 +673,15 @@ public sealed class DurlDownloadIdentityTests
                 tasks,
                 projections,
                 settings,
+                taskId,
                 stage,
                 context);
         }
 
         public void Dispose()
         {
+            Backend?.Dispose();
+            _staging?.CleanupCurrentSession();
             _projections.Dispose();
             _tasks.Dispose();
             _store.Dispose();
@@ -544,6 +695,47 @@ public sealed class DurlDownloadIdentityTests
             }.ToString());
             SqliteConnection.ClearPool(connection);
             Directory.Delete(_directory, recursive: true);
+        }
+    }
+
+    private sealed class RestartRecordingBackend : ITransferBackend
+    {
+        public List<DownloadTransferRequest> Requests { get; } = [];
+
+        public string Name => "restart-recording";
+
+        public Task StartAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
+
+        public Task StopAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
+
+        public Task<DownloadTransferResult> ResetAsync(
+            string? backendIdentity,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(DownloadTransferResult.Succeeded());
+        }
+
+        public async Task<DownloadTransferResult> TransferAsync(DownloadTransferRequest request)
+        {
+            Requests.Add(request);
+            await File.WriteAllBytesAsync(
+                Path.Combine(request.Directory, request.FileName),
+                [4, 5, 6],
+                request.CancellationToken).ConfigureAwait(true);
+            return DownloadTransferResult.Succeeded();
+        }
+
+        public void Dispose()
+        {
         }
     }
 }
