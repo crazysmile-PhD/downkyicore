@@ -492,6 +492,8 @@ public sealed class DownloadRuntimeArchitectureTests
             .ToArray();
         var contextSource = File.ReadAllText(Path.Combine(directory, "DownloadExecutionContext.cs"));
         var factorySource = File.ReadAllText(Path.Combine(directory, "DownloadExecutionContextFactory.cs"));
+        var resolverSource = File.ReadAllText(Path.Combine(directory, "DownloadPlaybackResolver.cs"));
+        var mediaContractSource = File.ReadAllText(Path.Combine(directory, "DownloadMediaContract.cs"));
 
         Assert.Empty(violations);
         Assert.All(executionFiles, file =>
@@ -509,6 +511,17 @@ public sealed class DownloadRuntimeArchitectureTests
         var resolveSource = File.ReadAllText(Path.Combine(directory, "ResolvePlaybackStage.cs"));
         Assert.Contains("context.PlayUrl = null;", resolveSource, StringComparison.Ordinal);
         Assert.Contains("_playbackResolver.ResolveAsync(", resolveSource, StringComparison.Ordinal);
+        Assert.Contains("OperationResult<PlayUrl>", resolverSource, StringComparison.Ordinal);
+        Assert.Contains("catch (PlaybackSelectionUnavailableException", resolverSource,
+            StringComparison.Ordinal);
+        Assert.Contains("DownloadMediaContract.SelectionUnavailable", resolverSource,
+            StringComparison.Ordinal);
+        Assert.Contains("\"download.playback.selection-unavailable\"", mediaContractSource,
+            StringComparison.Ordinal);
+        Assert.Contains("OperationResult.Failure<DownloadStageResult>(playback.Error!)", resolveSource,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("catch (BilibiliApiResponseException", resolverSource,
+            StringComparison.Ordinal);
         Assert.DoesNotContain("context.PlayUrl != null", resolveSource, StringComparison.Ordinal);
         Assert.DoesNotContain("projection.DownloadBase", factorySource, StringComparison.Ordinal);
         Assert.DoesNotContain("projection.Downloading", factorySource, StringComparison.Ordinal);

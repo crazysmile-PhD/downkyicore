@@ -117,10 +117,11 @@ public sealed class BangumiEpisodeIdentityTests
             client);
         var context = CreateBangumiContext(settings.Store.Current);
 
-        await resolver.ResolveAsync(
+        var result = await resolver.ResolveAsync(
             context,
             TestContext.Current.CancellationToken);
 
+        Assert.True(result.IsSuccess, result.Error?.Message);
         AssertEpisodeId(capturedRequest);
     }
 

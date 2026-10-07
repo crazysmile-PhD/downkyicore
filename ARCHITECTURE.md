@@ -77,7 +77,8 @@ flowchart LR
 ### Execution 與 retry
 
 - `DownloadExecutionContextFactory` 是 immutable `DownloadExecutionInput` 的唯一 owner，只能從 committed Domain snapshot 與當次 settings 建立 context，不得擷取 page／projection 的 discovery `PlayUrl`。有 media intent 的每次執行都由 `ResolvePlaybackStage` 依 finalized transport、quality、codec 與 audio fresh resolve；resolved payload 與後續 refresh 只存在於該 execution context。
-- `DownloadMediaContract` 驗證 refresh 仍符合 finalized selection；同一 resolved payload 若同時含可用 DASH 與 DURL，必須視為無效，不得合成虛構 manifest。缺少舊 contract 的 unfinished task 必須重建，不得猜測 fallback。已完成且有效的 selected artifact 不因 refresh 缺少該 stream 而撤銷。
+- `DownloadMediaContract` 直接驗證 finalized transport 與 quality／codec／audio；同一來源可以同時提供 DASH 與 DURL，但只有 finalized transport 參與本次執行。Bangumi 的 API 或網頁 fallback 只要任一單一 payload 完整滿足 selection 即可使用，禁止跨來源拼接不存在的組合。
+- 若所有可用來源都無法完整滿足 finalized selection，`DownloadPlaybackResolver` 必須回傳 `download.playback.selection-unavailable` typed failure，由 pipeline 原樣持久化，不得讓 expected availability drift 冒泡成 `download.runtime.failed`。API response error、transport failure 與 caller cancellation 保留各自語義。缺少舊 contract 的 unfinished task 必須重建，不得猜測 fallback；已完成且有效的 selected artifact 不因 refresh 缺少該 stream 而撤銷。
 - Pipeline 依序執行 typed stages；每個 stage 以 typed result 保存 failure taxonomy，失敗立即停止並由 typed state writer 更新狀態。不得用 empty／null success sentinel 隱藏錯誤。Presenter／projector 只按 `DownloadTaskId` 更新 UI；`DownloadListState` 只公開穩定 read-only collection。
 - Retry 只有一個預算 owner：coordinator 決定 typed retry／refresh／source switch，backend 每次只嘗試一個 URL。不得在 backend、RPC caller 或外層另加 retry，否則預算會相乘。
 - Built-in resume 必須先比較 resource identity；沒有 validator 時驗證已保存 bytes 的 overlap。Mismatch 回報 `ResumeRejected`，coordinator 清除該 transfer artifacts 後，同地址最多重試一次。

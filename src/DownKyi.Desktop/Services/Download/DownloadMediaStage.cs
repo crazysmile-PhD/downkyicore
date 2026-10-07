@@ -419,20 +419,12 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
         Func<PlayUrl, PlayUrlDashVideo?> selectRefreshedMedia,
         CancellationToken cancellationToken)
     {
-        var playUrl = await _playbackResolver.ResolveAsync(
+        var playback = await _playbackResolver.ResolveAsync(
             context,
             cancellationToken).ConfigureAwait(true);
-        if (playUrl == null)
+        if (!playback.TryGetValue(out var playUrl))
         {
-            return OperationResult.Failure<IReadOnlyList<string>>(OperationError.Unexpected(
-                "download.resolve.playback",
-                "Playback data could not be refreshed."));
-        }
-
-        var contractFailure = DownloadMediaContract.Validate(context, playUrl);
-        if (contractFailure != null)
-        {
-            return OperationResult.Failure<IReadOnlyList<string>>(contractFailure);
+            return OperationResult.Failure<IReadOnlyList<string>>(playback.Error!);
         }
 
         context.PlayUrl = playUrl;

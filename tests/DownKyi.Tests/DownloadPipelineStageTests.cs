@@ -68,6 +68,24 @@ public sealed class DownloadPipelineStageTests
     }
 
     [Fact]
+    public void SelectionUnavailableFailureRemainsExplicitAndNonTransient()
+    {
+        const string message =
+            "The selected playback quality, codec, or audio is no longer available.";
+        var error = new OperationError(
+            "download.playback.selection-unavailable",
+            message,
+            OperationErrorKind.NotFound);
+
+        var failure = DownloadActivityPresenter.CreateFailure(error);
+
+        Assert.Equal("download.playback.selection-unavailable", failure.Code);
+        Assert.NotEqual("download.runtime.failed", failure.Code);
+        Assert.Equal(message, failure.Message);
+        Assert.False(failure.IsTransient);
+    }
+
+    [Fact]
     public async Task ValidateStageRejectsMissingRequestedMedia()
     {
         using var settings = new TestSettingsStore();
@@ -383,7 +401,7 @@ public sealed class DownloadPipelineStageTests
     }
 
     [Fact]
-    public void MediaContractRejectsMixedDurlAndDashInsteadOfInventingOneManifest()
+    public void MediaContractValidatesFinalizedTransportWhenOneSourceContainsDashAndDurl()
     {
         var playUrl = CreateDurlPlayUrl();
         playUrl.Dash.Video =
@@ -395,8 +413,30 @@ public sealed class DownloadPipelineStageTests
                 BaseAddress = "https://media.invalid/video-80.m4s"
             }
         ];
+        using var settings = new TestSettingsStore();
+        var dashContext = CreateContext(
+            settings.Store.Current,
+            DownloadContentSelection.None with
+            {
+                Video = true,
+                MediaKind = DownloadMediaKind.Dash
+            },
+            resolutionId: 80,
+            videoCodecName: "H.264/AVC",
+            playUrl: playUrl);
+        var durlContext = CreateContext(
+            settings.Store.Current,
+            DownloadContentSelection.None with
+            {
+                Video = true,
+                MediaKind = DownloadMediaKind.Durl
+            },
+            resolutionId: 80,
+            videoCodecName: "H.264/AVC",
+            playUrl: playUrl);
 
-        Assert.Equal(DownloadMediaKind.None, DownloadMediaContract.Detect(playUrl));
+        Assert.Null(DownloadMediaContract.Validate(dashContext, playUrl));
+        Assert.Null(DownloadMediaContract.Validate(durlContext, playUrl));
     }
 
     [Fact]
@@ -454,7 +494,7 @@ public sealed class DownloadPipelineStageTests
             TestContext.Current.CancellationToken);
 
         Assert.False(result.IsSuccess);
-        Assert.Equal("download.media.contract", result.Error?.Code);
+        Assert.Equal("download.playback.selection-unavailable", result.Error?.Code);
         Assert.Null(fixture.Context.AudioFile);
         Assert.Null(fixture.Context.VideoFile);
         Assert.Empty(fixture.Backend.Requests);
@@ -561,7 +601,7 @@ public sealed class DownloadPipelineStageTests
             TestContext.Current.CancellationToken);
 
         Assert.False(result.IsSuccess);
-        Assert.Equal("download.media.contract", result.Error?.Code);
+        Assert.Equal("download.playback.selection-unavailable", result.Error?.Code);
         Assert.Empty(fixture.Backend.Requests);
     }
 
@@ -596,7 +636,7 @@ public sealed class DownloadPipelineStageTests
             TestContext.Current.CancellationToken);
 
         Assert.False(result.IsSuccess);
-        Assert.Equal("download.media.contract", result.Error?.Code);
+        Assert.Equal("download.playback.selection-unavailable", result.Error?.Code);
         Assert.Empty(fixture.Backend.Requests);
     }
 
@@ -736,7 +776,7 @@ public sealed class DownloadPipelineStageTests
             TestContext.Current.CancellationToken);
 
         Assert.False(result.IsSuccess);
-        Assert.Equal("download.media.contract", result.Error?.Code);
+        Assert.Equal("download.playback.selection-unavailable", result.Error?.Code);
         Assert.Empty(fixture.Backend.Requests);
     }
 
@@ -754,7 +794,7 @@ public sealed class DownloadPipelineStageTests
             TestContext.Current.CancellationToken);
 
         Assert.False(result.IsSuccess);
-        Assert.Equal("download.media.contract", result.Error?.Code);
+        Assert.Equal("download.playback.selection-unavailable", result.Error?.Code);
         Assert.Empty(fixture.Backend.Requests);
     }
 
@@ -800,7 +840,7 @@ public sealed class DownloadPipelineStageTests
             TestContext.Current.CancellationToken);
 
         Assert.False(result.IsSuccess);
-        Assert.Equal("download.media.contract", result.Error?.Code);
+        Assert.Equal("download.playback.selection-unavailable", result.Error?.Code);
         Assert.NotNull(refreshRequest);
         Assert.Contains("qn=80", refreshRequest.RequestAddress, StringComparison.Ordinal);
         Assert.Single(fixture.Backend.Requests);
@@ -841,7 +881,7 @@ public sealed class DownloadPipelineStageTests
             TestContext.Current.CancellationToken);
 
         Assert.False(result.IsSuccess);
-        Assert.Equal("download.media.contract", result.Error?.Code);
+        Assert.Equal("download.playback.selection-unavailable", result.Error?.Code);
         Assert.Null(fixture.Context.AudioFile);
         Assert.Null(fixture.Context.VideoFile);
         Assert.Empty(fixture.Backend.Requests);
@@ -880,7 +920,7 @@ public sealed class DownloadPipelineStageTests
             TestContext.Current.CancellationToken);
 
         Assert.False(result.IsSuccess);
-        Assert.Equal("download.media.contract", result.Error?.Code);
+        Assert.Equal("download.playback.selection-unavailable", result.Error?.Code);
         Assert.Empty(fixture.Backend.Requests);
     }
 
@@ -908,7 +948,7 @@ public sealed class DownloadPipelineStageTests
             TestContext.Current.CancellationToken);
 
         Assert.False(result.IsSuccess);
-        Assert.Equal("download.media.contract", result.Error?.Code);
+        Assert.Equal("download.playback.selection-unavailable", result.Error?.Code);
         Assert.Empty(fixture.Backend.Requests);
     }
 

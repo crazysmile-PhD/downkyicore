@@ -101,7 +101,20 @@ internal sealed class DownloadActivityPresenter
 
     public static DownloadFailure CreateFailure(OperationError? error)
     {
-        if (error == null || !TlsFailureClassifier.IsTlsErrorCode(error.Code))
+        if (error == null)
+        {
+            return CreateRetryableFailure();
+        }
+
+        if (error.Kind == OperationErrorKind.NotFound)
+        {
+            return new DownloadFailure(
+                error.Code,
+                error.Message,
+                false);
+        }
+
+        if (!TlsFailureClassifier.IsTlsErrorCode(error.Code))
         {
             return CreateRetryableFailure();
         }

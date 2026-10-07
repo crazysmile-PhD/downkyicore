@@ -82,14 +82,12 @@ internal sealed class ResolvePlaybackStage : IDownloadPipelineStage
             return DownloadStageResult.Success(Name);
         }
 
-        var playUrl = await _playbackResolver.ResolveAsync(
+        var playback = await _playbackResolver.ResolveAsync(
             context,
             cancellationToken).ConfigureAwait(true);
-        if (playUrl == null)
+        if (!playback.TryGetValue(out var playUrl))
         {
-            return DownloadStageResult.Failure(
-                "download.resolve.playback",
-                "Playback data could not be resolved.");
+            return OperationResult.Failure<DownloadStageResult>(playback.Error!);
         }
 
         context.PlayUrl = playUrl;

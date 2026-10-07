@@ -7,6 +7,7 @@ using DownKyi.Core.BiliApi.Sign;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.BiliApi.VideoStream.Models;
 using DownKyi.Domain.Downloads;
+using DownKyi.Domain.Results;
 
 namespace DownKyi.Services.Download;
 
@@ -26,68 +27,89 @@ internal sealed class DownloadPlaybackResolver
         _client = client ?? throw new ArgumentNullException(nameof(client));
     }
 
-    public Task<PlayUrl?> ResolveAsync(
+    public async Task<OperationResult<PlayUrl>> ResolveAsync(
         DownloadExecutionContext context,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
         var input = context.Input;
         var media = input.Metadata.Media;
-        return input.StreamType switch
+        PlayUrl? playUrl;
+        try
         {
-            PlayStreamType.Video => WbiRequestExecutor.ExecuteAsync(
-                _wbiKeyProvider,
-                (keys, unixTimeSeconds) => input.VideoSettings.VideoParseType switch
-                {
-                    0 => _client.GetVideoPlayUrlAsync(
-                        keys,
-                        unixTimeSeconds,
-                        media.Avid,
-                        media.Bvid,
-                        media.Cid,
-                        quality: input.Metadata.Resolution.Id,
-                        cancellationToken: cancellationToken),
-                    1 => _client.GetVideoPlayUrlWebPageAsync(
-                        keys,
-                        unixTimeSeconds,
-                        media.Avid,
-                        media.Bvid,
-                        media.Cid,
-                        media.Page,
-                        quality: input.Metadata.Resolution.Id,
-                        cancellationToken: cancellationToken),
-                    _ => throw new ArgumentException(
-                        "Invalid video parse type. Valid values are: 0 (WebAPI) or 1 (WebPage).")
-                },
-                _timeProvider,
-                cancellationToken),
-            PlayStreamType.Bangumi => _client.GetBangumiPlayUrlAsync(
-                media.Avid,
-                media.Bvid,
-                media.Cid,
-                media.EpisodeId,
-                quality: input.Metadata.Resolution.Id,
-                videoCodecId: ResolveVideoCodecId(input.Metadata.VideoCodecName),
-                audioId: context.NeedsAudio
-                    && input.RequestedContent.MediaKind == DownloadMediaKind.Dash
-                        ? input.Metadata.AudioCodec.Id
-                        : null,
-                streamKind: input.RequestedContent.MediaKind switch
-                {
-                    DownloadMediaKind.Dash => PlayUrlStreamKind.Dash,
-                    DownloadMediaKind.Durl => PlayUrlStreamKind.Durl,
-                    _ => null
-                },
-                cancellationToken: cancellationToken),
-            PlayStreamType.Cheese => _client.GetCheesePlayUrlAsync(
-                media.Avid,
-                media.Bvid,
-                media.Cid,
-                media.EpisodeId,
-                quality: input.Metadata.Resolution.Id,
-                cancellationToken: cancellationToken),
-            _ => Task.FromResult<PlayUrl?>(null)
-        };
+            playUrl = await (input.StreamType switch
+            {
+                PlayStreamType.Video => WbiRequestExecutor.ExecuteAsync(
+                    _wbiKeyProvider,
+                    (keys, unixTimeSeconds) => input.VideoSettings.VideoParseType switch
+                    {
+                        0 => _client.GetVideoPlayUrlAsync(
+                            keys,
+                            unixTimeSeconds,
+                            media.Avid,
+                            media.Bvid,
+                            media.Cid,
+                            quality: input.Metadata.Resolution.Id,
+                            cancellationToken: cancellationToken),
+                        1 => _client.GetVideoPlayUrlWebPageAsync(
+                            keys,
+                            unixTimeSeconds,
+                            media.Avid,
+                            media.Bvid,
+                            media.Cid,
+                            media.Page,
+                            quality: input.Metadata.Resolution.Id,
+                            cancellationToken: cancellationToken),
+                        _ => throw new ArgumentException(
+                            "Invalid video parse type. Valid values are: 0 (WebAPI) or 1 (WebPage).")
+                    },
+                    _timeProvider,
+                    cancellationToken),
+                PlayStreamType.Bangumi => _client.GetBangumiPlayUrlAsync(
+                    media.Avid,
+                    media.Bvid,
+                    media.Cid,
+                    media.EpisodeId,
+                    quality: input.Metadata.Resolution.Id,
+                    videoCodecId: ResolveVideoCodecId(input.Metadata.VideoCodecName),
+                    audioId: context.NeedsAudio
+                        && input.RequestedContent.MediaKind == DownloadMediaKind.Dash
+                            ? input.Metadata.AudioCodec.Id
+                            : null,
+                    streamKind: input.RequestedContent.MediaKind switch
+                    {
+                        DownloadMediaKind.Dash => PlayUrlStreamKind.Dash,
+                        DownloadMediaKind.Durl => PlayUrlStreamKind.Durl,
+                        _ => null
+                    },
+                    cancellationToken: cancellationToken),
+                PlayStreamType.Cheese => _client.GetCheesePlayUrlAsync(
+                    media.Avid,
+                    media.Bvid,
+                    media.Cid,
+                    media.EpisodeId,
+                    quality: input.Metadata.Resolution.Id,
+                    cancellationToken: cancellationToken),
+                _ => Task.FromResult<PlayUrl?>(null)
+            }).ConfigureAwait(false);
+        }
+        catch (PlaybackSelectionUnavailableException exception)
+        {
+            return OperationResult.Failure<PlayUrl>(
+                DownloadMediaContract.SelectionUnavailable(exception.Message));
+        }
+
+        if (playUrl == null)
+        {
+            return OperationResult.Failure<PlayUrl>(OperationError.Unexpected(
+                "download.resolve.playback",
+                "Playback data could not be resolved."));
+        }
+
+        var contractFailure = DownloadMediaContract.Validate(context, playUrl);
+        return contractFailure == null
+            ? OperationResult.Success(playUrl)
+            : OperationResult.Failure<PlayUrl>(contractFailure);
     }
 
     private static int? ResolveVideoCodecId(string codecName)

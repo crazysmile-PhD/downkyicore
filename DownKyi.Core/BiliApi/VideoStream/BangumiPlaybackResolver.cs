@@ -90,13 +90,14 @@ internal static class BangumiPlaybackResolver
                || availability.Audio.Contains(requestedAudioId.Value);
     }
 
-    public static PlayUrl SelectDownloadPlayback(
+    public static bool TrySelectDownloadPlayback(
         PlayUrl primary,
         PlayUrl? supplement,
         int requestedQuality,
-        int? requestedCodecId = null,
-        int? requestedAudioId = null,
-        PlayUrlStreamKind? requestedStreamKind = null)
+        int? requestedCodecId,
+        int? requestedAudioId,
+        PlayUrlStreamKind? requestedStreamKind,
+        out PlayUrl? selected)
     {
         ArgumentNullException.ThrowIfNull(primary);
         var source = HasRequestedPlayback(
@@ -116,7 +117,8 @@ internal static class BangumiPlaybackResolver
                 : null;
         if (source == null)
         {
-            return primary;
+            selected = null;
+            return false;
         }
 
         var sourceAvailability = PlayUrlAvailability.From(source);
@@ -131,7 +133,8 @@ internal static class BangumiPlaybackResolver
         if (selectedKind == PlayUrlStreamKind.Durl)
         {
             source.Dash = new PlayUrlDash();
-            return source;
+            selected = source;
+            return true;
         }
 
         var requestedDash = source.Dash.Video
@@ -141,8 +144,8 @@ internal static class BangumiPlaybackResolver
             .ToArray();
         if (requestedDash.Length == 0)
         {
-            source.Dash = new PlayUrlDash();
-            return source;
+            selected = null;
+            return false;
         }
 
         source.Durl = [];
@@ -160,7 +163,8 @@ internal static class BangumiPlaybackResolver
             ? source.Dash.Flac
             : null;
 
-        return source;
+        selected = source;
+        return true;
     }
 
     public static bool TryParseEmbeddedPayload(
