@@ -777,8 +777,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
             {
                 Id = id,
                 DownloadStatus = DownloadStatus.WaitForDownload
-            },
-            PlayUrl = new PlayUrl()
+            }
         };
     }
 

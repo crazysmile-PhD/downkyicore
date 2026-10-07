@@ -28,11 +28,9 @@ internal sealed class DownloadExecutionContextFactory
         ArgumentNullException.ThrowIfNull(taskId);
         var task = _projectionStore.GetRequiredSnapshot(taskId);
         var settings = _settingsStore.Current;
-        var projection = _projectionStore.GetRequiredDownloadingProjection(taskId);
         var context = new DownloadExecutionContext(
             taskId,
             CreateInput(task, settings),
-            projection.PlayUrl,
             EnsureActive);
         if (_staging != null)
         {
@@ -64,6 +62,7 @@ internal sealed class DownloadExecutionContextFactory
             task.Metadata,
             task.Plan.RequestedContent,
             task.Plan.TransferFiles,
+            task.Transfer.CompletedFileKeys,
             task.Output.BasePath,
             (Core.BiliApi.VideoStream.PlayStreamType)task.Plan.StreamType,
             task.Plan.NfoRequest,

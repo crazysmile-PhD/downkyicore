@@ -262,7 +262,7 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
     }
 
     private bool HasDownloadCandidate(bool isAll) => VideoSections.SelectMany(section => section.VideoPages)
-        .Any(page => (isAll || page.IsSelected) && page.PlayUrl != null);
+        .Any(page => (isAll || page.IsSelected) && page.HasPlayback);
 
     private void ResetView()
     {
@@ -289,7 +289,7 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
         SetDisplayState(VideoDetailDisplayState.Content);
     }
 
-    private static void ApplyVideoStreamResults(
+    private void ApplyVideoStreamResults(
         IReadOnlyList<VideoStreamParseResult> results,
         ApplicationSettings settings,
         CancellationToken cancellationToken)
@@ -297,7 +297,7 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
         cancellationToken.ThrowIfCancellationRequested();
         foreach (var result in results)
         {
-            VideoPagePlaybackMapper.ApplyPlayUrl(result.PlayUrl, result.Page, settings);
+            VideoPagePlaybackMapper.ApplyPlayUrl(result.PlayUrl, result.Page, settings, _logger);
         }
     }
 

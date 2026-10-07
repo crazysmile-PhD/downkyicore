@@ -13,7 +13,9 @@ namespace DownKyi.Presentation;
 
 internal class VideoPage : ObservableObject
 {
-    public PlayUrl? PlayUrl { get; set; }
+    public PlayUrlAvailability? PlaybackAvailability { get; internal set; }
+
+    public bool HasPlayback => PlaybackAvailability?.Video.Count > 0;
 
     public long Avid { get; set; }
     public string Bvid { get; set; } = string.Empty;
@@ -90,9 +92,9 @@ internal class VideoPage : ObservableObject
         internal set => SetProperty(ref videoQualityList, value);
     }
 
-    private VideoQuality videoQuality = new();
+    private VideoQuality? videoQuality;
 
-    public VideoQuality VideoQuality
+    public VideoQuality? VideoQuality
     {
         get => videoQuality;
         set => SetProperty(ref videoQuality, value);

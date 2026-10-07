@@ -492,6 +492,8 @@ public sealed class DownloadRuntimeArchitectureTests
             .ToArray();
         var contextSource = File.ReadAllText(Path.Combine(directory, "DownloadExecutionContext.cs"));
         var factorySource = File.ReadAllText(Path.Combine(directory, "DownloadExecutionContextFactory.cs"));
+        var resolverSource = File.ReadAllText(Path.Combine(directory, "DownloadPlaybackResolver.cs"));
+        var mediaContractSource = File.ReadAllText(Path.Combine(directory, "DownloadMediaContract.cs"));
 
         Assert.Empty(violations);
         Assert.All(executionFiles, file =>
@@ -501,8 +503,37 @@ public sealed class DownloadRuntimeArchitectureTests
             Assert.DoesNotContain("context.Settings", source, StringComparison.Ordinal);
         });
         Assert.Contains("DownloadExecutionInput Input", contextSource, StringComparison.Ordinal);
+        Assert.Contains("CompletedTransferKeys", contextSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("PlayUrl? playUrl", contextSource, StringComparison.Ordinal);
         Assert.Contains("GetRequiredSnapshot(taskId)", factorySource, StringComparison.Ordinal);
-        Assert.Contains("projection.PlayUrl", factorySource, StringComparison.Ordinal);
+        Assert.Contains("task.Transfer.CompletedFileKeys", factorySource, StringComparison.Ordinal);
+        Assert.DoesNotContain("GetRequiredDownloadingProjection", factorySource, StringComparison.Ordinal);
+        Assert.DoesNotContain("projection.PlayUrl", factorySource, StringComparison.Ordinal);
+        Assert.DoesNotContain("PlayUrl", factorySource, StringComparison.Ordinal);
+        var resolveSource = File.ReadAllText(Path.Combine(directory, "ResolvePlaybackStage.cs"));
+        Assert.Contains("context.PlayUrl = null;", resolveSource, StringComparison.Ordinal);
+        Assert.Contains("RestoreCompletedDashTransfers(context);", resolveSource,
+            StringComparison.Ordinal);
+        Assert.True(
+            resolveSource.IndexOf("RestoreCompletedDashTransfers(context);", StringComparison.Ordinal)
+            < resolveSource.IndexOf("_playbackResolver.ResolveAsync(", StringComparison.Ordinal),
+            "Completed DASH transfers must be restored before playback is resolved.");
+        Assert.Contains("if (!context.NeedsPendingMedia)", resolveSource, StringComparison.Ordinal);
+        Assert.Contains("_playbackResolver.ResolveAsync(", resolveSource, StringComparison.Ordinal);
+        Assert.Contains("context.NeedsPendingAudio", resolverSource, StringComparison.Ordinal);
+        Assert.Contains("context.NeedsPendingVideo", resolverSource, StringComparison.Ordinal);
+        Assert.Contains("OperationResult<PlayUrl>", resolverSource, StringComparison.Ordinal);
+        Assert.Contains("catch (PlaybackSelectionUnavailableException", resolverSource,
+            StringComparison.Ordinal);
+        Assert.Contains("DownloadMediaContract.SelectionUnavailable", resolverSource,
+            StringComparison.Ordinal);
+        Assert.Contains("\"download.playback.selection-unavailable\"", mediaContractSource,
+            StringComparison.Ordinal);
+        Assert.Contains("OperationResult.Failure<DownloadStageResult>(playback.Error!)", resolveSource,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("catch (BilibiliApiResponseException", resolverSource,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("context.PlayUrl != null", resolveSource, StringComparison.Ordinal);
         Assert.DoesNotContain("projection.DownloadBase", factorySource, StringComparison.Ordinal);
         Assert.DoesNotContain("projection.Downloading", factorySource, StringComparison.Ordinal);
         Assert.DoesNotContain("projection.Metadata", factorySource, StringComparison.Ordinal);

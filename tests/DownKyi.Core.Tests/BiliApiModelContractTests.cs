@@ -83,7 +83,7 @@ public sealed class BiliApiModelContractTests
                 "video": [{ "id": 80, "base_url": "https://example.invalid/video", "backup_url": [] }],
                 "audio": [{ "id": 30280, "base_url": "https://example.invalid/audio", "backup_url": [] }]
               },
-              "support_formats": [{ "quality": 80, "new_description": "1080P" }]
+              "support_formats": [{ "quality": 80, "new_description": "1080P", "need_login": true, "need_vip": false }]
             }
             """);
 
@@ -93,7 +93,12 @@ public sealed class BiliApiModelContractTests
         Assert.Equal(80, video.Id);
         Assert.Equal("https://example.invalid/video", video.BaseAddress);
         Assert.Equal(30280, Assert.Single(playUrl.Dash.Audio).Id);
-        Assert.Equal(80, Assert.Single(playUrl.SupportFormats).Quality);
+        Assert.Null(playUrl.Dash.Dolby);
+        Assert.Null(playUrl.Dash.Flac);
+        var supportFormat = Assert.Single(playUrl.SupportFormats);
+        Assert.Equal(80, supportFormat.Quality);
+        Assert.True(supportFormat.NeedLogin);
+        Assert.False(supportFormat.NeedVip);
     }
 
     [Fact]

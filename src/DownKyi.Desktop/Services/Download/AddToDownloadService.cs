@@ -90,7 +90,7 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
             foreach (var page in section.VideoPages)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                if ((isAll || page.IsSelected) && page.PlayUrl != null && page.VideoQuality == null)
+                if ((isAll || page.IsSelected) && page.HasPlayback && page.VideoQuality == null)
                 {
                     await RetryMissingVideoQualityAsync(
                         _playbackService,
@@ -138,8 +138,8 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
                 var playUrl = await videoInfoService
                     .GetVideoStreamAsync(item, cancellationToken)
                     .ConfigureAwait(false);
-                VideoPagePlaybackMapper.ApplyPlayUrl(playUrl, item, settings);
-                if (item.PlayUrl != null && item.VideoQuality == null)
+                VideoPagePlaybackMapper.ApplyPlayUrl(playUrl, item, settings, _logger);
+                if (item.HasPlayback && item.VideoQuality == null)
                 {
                     await RetryMissingVideoQualityAsync(
                         videoInfoService,
@@ -315,7 +315,7 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
             var playUrl = await videoInfoService
                 .GetVideoStreamAsync(page, cancellationToken)
                 .ConfigureAwait(false);
-            VideoPagePlaybackMapper.ApplyPlayUrl(playUrl, page, settings);
+            VideoPagePlaybackMapper.ApplyPlayUrl(playUrl, page, settings, _logger);
             retry++;
         }
     }

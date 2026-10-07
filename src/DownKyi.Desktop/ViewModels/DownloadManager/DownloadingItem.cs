@@ -1,5 +1,4 @@
 using System;
-using DownKyi.Core.BiliApi.VideoStream.Models;
 using DownKyi.Images;
 using DownKyi.Models;
 using DownKyi.Utils;
@@ -38,9 +37,6 @@ namespace DownKyi.ViewModels.DownloadManager
                 RefreshControlPresentation(value.DownloadStatus);
             }
         }
-
-        // 视频流链接
-        public PlayUrl PlayUrl { get; set; } = null!;
 
         // 正在下载内容（音频、视频、弹幕、字幕、封面）
         public string? DownloadContent

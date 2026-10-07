@@ -15,15 +15,10 @@ internal enum DownloadContentConflictAction
 
 internal sealed record DownloadContentConflict(
     DownloadContentSelection RequestedContent,
-    DownloadMediaCapabilities AvailableMedia)
+    DownloadMediaCapabilities AvailableMedia,
+    DownloadContentSelection AvailableContent)
 {
-    public bool HasAvailableMedia => AvailableMedia.Audio || AvailableMedia.Video;
-
-    public DownloadContentSelection AvailableContent => RequestedContent with
-    {
-        Audio = AvailableMedia.Audio,
-        Video = AvailableMedia.Video
-    };
+    public bool HasAvailableMedia => AvailableContent.Audio || AvailableContent.Video;
 
     public static DownloadContentConflict? Find(
         DownloadContentSelection requestedContent,
@@ -32,12 +27,16 @@ internal sealed record DownloadContentConflict(
         ArgumentNullException.ThrowIfNull(requestedContent);
         ArgumentNullException.ThrowIfNull(availableMedia);
 
-        var requestsUnavailableMedia =
-            (requestedContent.Audio && !availableMedia.Audio)
-            || (requestedContent.Video && !availableMedia.Video);
-        return requestsUnavailableMedia
-            ? new DownloadContentConflict(requestedContent, availableMedia)
-            : null;
+        if (availableMedia.Supports(requestedContent))
+        {
+            return null;
+        }
+
+        availableMedia.TryGetCompatibleContent(requestedContent, out var availableContent);
+        return new DownloadContentConflict(
+            requestedContent,
+            availableMedia,
+            availableContent);
     }
 }
 
@@ -86,7 +85,7 @@ internal sealed class DownloadContentConflictResolver
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var page = preparedPage.Page;
-                if ((!isAll && !page.IsSelected) || page.PlayUrl == null || page.VideoQuality == null)
+                if ((!isAll && !page.IsSelected) || !page.HasPlayback || page.VideoQuality == null)
                 {
                     continue;
                 }

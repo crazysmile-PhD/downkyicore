@@ -4,6 +4,7 @@
   "result": {
     "video_info": {
       "quality": 80,
+      "video_codecid": 7,
       "durl": [
         {
           "order": 1,

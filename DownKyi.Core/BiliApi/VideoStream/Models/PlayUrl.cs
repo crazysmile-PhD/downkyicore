@@ -40,5 +40,18 @@ public class PlayUrl : BaseModel
     [JsonProperty("video_codecid")] public int VideoCodecid { get; set; }
 
     [JsonProperty("support_formats")] public IReadOnlyList<PlayUrlSupportFormat> SupportFormats { get; set; } = Array.Empty<PlayUrlSupportFormat>();
+
+    [JsonIgnore]
+    public PlayUrlDiagnostics? Diagnostics { get; internal set; }
+
+    [JsonIgnore]
+    public PlayUrlAvailability? Availability { get; internal set; }
     // high_format
 }
+
+public sealed record PlayUrlDiagnostics(
+    int RequestedQuality,
+    int Fnval,
+    string? PlayDetail,
+    bool UsedWebPageFallback,
+    string FallbackOutcome);

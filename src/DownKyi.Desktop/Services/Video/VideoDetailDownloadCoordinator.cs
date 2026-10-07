@@ -52,7 +52,7 @@ internal sealed class VideoDetailDownloadCoordinator : IVideoDetailDownloadCoord
 
         var addService = _serviceFactory.Create(streamType.Value);
         var selectedPages = videoSections.SelectMany(section => section.VideoPages)
-            .Where(page => (isAll || page.IsSelected) && page.PlayUrl != null)
+            .Where(page => (isAll || page.IsSelected) && page.HasPlayback)
             .Take(2)
             .ToArray();
         return DownloadAddCoordinator.AddToDownloadIfSelectionAcceptedAsync(

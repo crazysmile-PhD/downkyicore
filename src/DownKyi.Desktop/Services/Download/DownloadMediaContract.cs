@@ -11,15 +11,23 @@ internal static class DownloadMediaContract
 {
     public static DownloadMediaKind Detect(PlayUrl? playUrl)
     {
-        if (playUrl?.Dash is { } dash &&
-            (dash.Video is { Count: > 0 } || DownloadAudioSelection.HasAnyAudio(dash)))
+        if (playUrl == null)
         {
-            return DownloadMediaKind.Dash;
+            return DownloadMediaKind.None;
         }
 
-        return playUrl?.Durl is { Count: > 0 }
-            ? DownloadMediaKind.Durl
-            : DownloadMediaKind.None;
+        var availability = PlayUrlAvailability.From(playUrl);
+        var hasDash = availability.Video.Any(video =>
+                          video.StreamKind == PlayUrlStreamKind.Dash)
+                      || availability.Audio.Count > 0;
+        var hasDurl = availability.Video.Any(video =>
+            video.StreamKind == PlayUrlStreamKind.Durl);
+        if (hasDash == hasDurl)
+        {
+            return DownloadMediaKind.None;
+        }
+
+        return hasDash ? DownloadMediaKind.Dash : DownloadMediaKind.Durl;
     }
 
     public static OperationError? Validate(
@@ -31,7 +39,7 @@ internal static class DownloadMediaContract
         {
             return context.Input.RequestedContent.MediaKind == DownloadMediaKind.None
                 ? null
-                : Failure("The stored media contract does not match the requested content.");
+                : InvalidContract("The stored media contract does not match the requested content.");
         }
 
         var requestedMediaKind = context.Input.RequestedContent.MediaKind;
@@ -42,16 +50,12 @@ internal static class DownloadMediaContract
                 "This unfinished download predates the finalized media contract and must be recreated.");
         }
 
-        if (Detect(playUrl) != requestedMediaKind.Value)
-        {
-            return Failure("The refreshed playback format does not match the finalized media contract.");
-        }
-
         return requestedMediaKind.Value switch
         {
             DownloadMediaKind.Dash => ValidateDash(context, playUrl),
             DownloadMediaKind.Durl => ValidateDurl(context, playUrl),
-            _ => Failure("The finalized media contract does not contain a downloadable media format.")
+            _ => InvalidContract(
+                "The finalized media contract does not contain a downloadable media format.")
         };
     }
 
@@ -78,15 +82,16 @@ internal static class DownloadMediaContract
         DownloadExecutionContext context,
         PlayUrl? playUrl)
     {
-        if (context.NeedsAudio &&
-            context.AudioFile == null &&
-            SelectAudio(context, playUrl) == null)
+        var selectedAudio = SelectAudio(context, playUrl);
+        if (context.NeedsPendingAudio
+            && !PlayUrlAvailability.HasUsableAddress(selectedAudio))
         {
-            return Failure("The finalized audio stream is unavailable.");
+            return SelectionUnavailable("The finalized audio stream is unavailable.");
         }
 
-        return context.NeedsVideo && SelectVideo(context, playUrl) == null
-            ? Failure("The finalized video stream is unavailable.")
+        var selectedVideo = SelectVideo(context, playUrl);
+        return context.NeedsPendingVideo && !PlayUrlAvailability.HasUsableAddress(selectedVideo)
+            ? SelectionUnavailable("The finalized video stream is unavailable.")
             : null;
     }
 
@@ -102,18 +107,28 @@ internal static class DownloadMediaContract
         }
 
         var metadata = context.Input.Metadata;
-        if (playUrl == null || playUrl.Quality != metadata.Resolution.Id)
+        if (playUrl == null
+            || playUrl.Quality != metadata.Resolution.Id
+            || !PlayUrlAvailability.HasUsableDurl(playUrl))
         {
-            return Failure("The refreshed DURL quality does not match the finalized selection.");
+            return SelectionUnavailable(
+                "The refreshed DURL quality does not match the finalized selection.");
         }
 
         var codec = PlaybackQualityCatalog.GetCodecIds().FirstOrDefault(candidate =>
             candidate.Id == playUrl.VideoCodecid);
         return codec?.Name != metadata.VideoCodecName
-            ? Failure("The refreshed DURL codec does not match the finalized selection.")
+            ? SelectionUnavailable(
+                "The refreshed DURL codec does not match the finalized selection.")
             : null;
     }
 
-    private static OperationError Failure(string message) =>
+    internal static OperationError SelectionUnavailable(string message) =>
+        new(
+            "download.playback.selection-unavailable",
+            message,
+            OperationErrorKind.NotFound);
+
+    private static OperationError InvalidContract(string message) =>
         OperationError.Unexpected("download.media.contract", message);
 }

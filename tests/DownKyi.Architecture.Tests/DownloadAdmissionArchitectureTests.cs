@@ -102,6 +102,11 @@ public sealed class DownloadAdmissionArchitectureTests
         Assert.Contains("FinalizedDownload finalizedDownload", contract, StringComparison.Ordinal);
         Assert.Contains("DownloadContentSelection RequestedContent", selection, StringComparison.Ordinal);
         Assert.Contains("DownloadMediaCapabilities AvailableMedia", prepared, StringComparison.Ordinal);
+        Assert.Contains("DownloadMediaOutputModes SupportedModes", prepared, StringComparison.Ordinal);
+        Assert.Contains("HasAnyMedia", prepared, StringComparison.Ordinal);
+        Assert.Contains("Supports(DownloadContentSelection", prepared, StringComparison.Ordinal);
+        Assert.Contains("TryGetCompatibleContent(", prepared, StringComparison.Ordinal);
+        Assert.DoesNotContain("DownloadMediaCapabilities(bool Video, bool Audio)", prepared, StringComparison.Ordinal);
         Assert.Contains("DownloadContentSelection RequestedContent", prepared, StringComparison.Ordinal);
         Assert.Contains("DownloadContentConflictChoices choices", resolver, StringComparison.Ordinal);
         Assert.Contains("DownloadContentConflictDialogContract.ShowAsync", resolver, StringComparison.Ordinal);

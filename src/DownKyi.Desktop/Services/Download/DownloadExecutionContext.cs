@@ -16,12 +16,10 @@ internal sealed class DownloadExecutionContext
     public DownloadExecutionContext(
         DownloadTaskId taskId,
         DownloadExecutionInput input,
-        PlayUrl? playUrl,
         Action<DownloadTaskId, CancellationToken> ensureActive)
     {
         TaskId = taskId ?? throw new ArgumentNullException(nameof(taskId));
         Input = input ?? throw new ArgumentNullException(nameof(input));
-        PlayUrl = playUrl;
         _ensureActive = ensureActive ?? throw new ArgumentNullException(nameof(ensureActive));
     }
 
@@ -109,6 +107,12 @@ internal sealed class DownloadExecutionContext
 
     public bool NeedsMedia => NeedsAudio || NeedsVideo;
 
+    public bool NeedsPendingAudio => NeedsAudio && AudioFile == null;
+
+    public bool NeedsPendingVideo => NeedsVideo && VideoFile == null;
+
+    public bool NeedsPendingMedia => NeedsPendingAudio || NeedsPendingVideo;
+
     public bool NeedsDanmaku => Input.RequestedContent.Danmaku;
 
     public bool NeedsSubtitle => Input.RequestedContent.Subtitle;
@@ -125,6 +129,7 @@ internal sealed record DownloadExecutionInput(
     DownloadTaskMetadata Metadata,
     DownloadContentSelection RequestedContent,
     IReadOnlyDictionary<string, string> TransferFiles,
+    IReadOnlyCollection<string> CompletedTransferKeys,
     string OutputBasePath,
     PlayStreamType StreamType,
     DownloadNfoRequest? NfoRequest,

@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -50,11 +49,6 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
         ArgumentNullException.ThrowIfNull(context);
         context.EnsureActive(cancellationToken);
         var playUrl = context.PlayUrl;
-        if (context.Input.RequestedContent.MediaKind == DownloadMediaKind.Dash)
-        {
-            TryReuseCompletedDashAudio(context);
-        }
-
         var contractFailure = DownloadMediaContract.Validate(context, playUrl);
         if (contractFailure != null)
         {
@@ -112,7 +106,7 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
         DownloadExecutionContext context,
         CancellationToken cancellationToken)
     {
-        if (context.NeedsAudio && context.AudioFile == null)
+        if (context.NeedsPendingAudio)
         {
             var audio = SelectAudio(context);
             _presenter.ShowDownloadingAudio(context);
@@ -133,7 +127,7 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
         }
 
         context.EnsureActive(cancellationToken);
-        if (context.NeedsVideo)
+        if (context.NeedsPendingVideo)
         {
             _presenter.ShowDownloadingVideo(context);
             var result = await DownloadMediaFileAsync(
@@ -154,40 +148,6 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
 
         context.EnsureActive(cancellationToken);
         return DownloadStageResult.Success(Name);
-    }
-
-    private void TryReuseCompletedDashAudio(DownloadExecutionContext context)
-    {
-        if (!context.NeedsAudio ||
-            context.AudioFile != null ||
-            string.IsNullOrWhiteSpace(context.DownloadDirectory))
-        {
-            return;
-        }
-
-        var snapshot = _projectionStore.GetRequiredSnapshot(context.TaskId);
-        var keyPrefix = string.Create(
-            CultureInfo.InvariantCulture,
-            $"{context.Input.Metadata.AudioCodec.Id}_");
-        foreach (var key in snapshot.Transfer.CompletedFileKeys.Where(candidate =>
-                     candidate.StartsWith(keyPrefix, StringComparison.Ordinal)))
-        {
-            if (!snapshot.Plan.TransferFiles.TryGetValue(key, out var fileName) ||
-                fileName != Path.GetFileName(fileName))
-            {
-                continue;
-            }
-
-            var filePath = Path.Combine(context.DownloadDirectory, fileName);
-            if (!DownloadFileIntegrity.Check(filePath).IsUsable)
-            {
-                continue;
-            }
-
-            context.AudioFile = filePath;
-            context.AudioTransferKey = key;
-            return;
-        }
     }
 
     private async Task<OperationResult<DownloadStageResult>> DownloadDurlsAsync(
@@ -419,29 +379,21 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
         Func<PlayUrl, PlayUrlDashVideo?> selectRefreshedMedia,
         CancellationToken cancellationToken)
     {
-        var playUrl = await _playbackResolver.ResolveAsync(
+        var playback = await _playbackResolver.ResolveAsync(
             context,
             cancellationToken).ConfigureAwait(true);
-        if (playUrl == null)
+        if (!playback.TryGetValue(out var playUrl))
         {
-            return OperationResult.Failure<IReadOnlyList<string>>(OperationError.Unexpected(
-                "download.resolve.playback",
-                "Playback data could not be refreshed."));
-        }
-
-        var contractFailure = DownloadMediaContract.Validate(context, playUrl);
-        if (contractFailure != null)
-        {
-            return OperationResult.Failure<IReadOnlyList<string>>(contractFailure);
+            return OperationResult.Failure<IReadOnlyList<string>>(playback.Error!);
         }
 
         context.PlayUrl = playUrl;
         var media = selectRefreshedMedia(playUrl);
         if (media == null)
         {
-            return OperationResult.Failure<IReadOnlyList<string>>(OperationError.Unexpected(
-                "download.media.contract",
-                "The refreshed media stream does not match the finalized selection."));
+            return OperationResult.Failure<IReadOnlyList<string>>(
+                DownloadMediaContract.SelectionUnavailable(
+                    "The refreshed media stream does not match the finalized selection."));
         }
 
         var addresses = CreateAddresses(media);

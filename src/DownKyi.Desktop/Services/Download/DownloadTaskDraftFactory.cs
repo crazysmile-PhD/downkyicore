@@ -35,11 +35,11 @@ internal static class DownloadTaskDraftFactory
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(content);
 
-        var playUrl = page.PlayUrl
-            ?? throw new InvalidOperationException("A download draft requires a parsed playback URL.");
         var needsMedia = content.Audio || content.Video;
         var mediaKind = needsMedia
-            ? DownloadMediaContract.Detect(playUrl)
+            ? videoQuality.IsDurl
+                ? DownloadMediaKind.Durl
+                : DownloadMediaKind.Dash
             : DownloadMediaKind.None;
         if (needsMedia && mediaKind == DownloadMediaKind.None)
         {
@@ -94,8 +94,7 @@ internal static class DownloadTaskDraftFactory
             {
                 PlayStreamType = ResolvePlayStreamType(video.TypeId),
                 DownloadStatus = DownloadStatus.NotStarted
-            },
-            PlayUrl = playUrl
+            }
         };
     }
 

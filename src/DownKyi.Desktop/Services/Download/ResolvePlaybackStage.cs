@@ -1,9 +1,11 @@
 using System;
+using System.Globalization;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Desktop;
 using DownKyi.Application.Diagnostics;
+using DownKyi.Domain.Downloads;
 using DownKyi.Domain.Results;
 using Microsoft.Extensions.Logging;
 
@@ -73,26 +75,89 @@ internal sealed class ResolvePlaybackStage : IDownloadPipelineStage
         }
 
         context.DownloadDirectory = path;
+        RestoreCompletedDashTransfers(context);
         _presenter.Reset(context);
         await _presenter.ShowParsingAsync(context, cancellationToken).ConfigureAwait(true);
 
-        if (context.PlayUrl != null)
+        context.PlayUrl = null;
+        if (!context.NeedsPendingMedia)
         {
             return DownloadStageResult.Success(Name);
         }
 
-        var playUrl = await _playbackResolver.ResolveAsync(
+        var playback = await _playbackResolver.ResolveAsync(
             context,
             cancellationToken).ConfigureAwait(true);
-        if (playUrl == null)
+        if (!playback.TryGetValue(out var playUrl))
         {
-            return DownloadStageResult.Failure(
-                "download.resolve.playback",
-                "Playback data could not be resolved.");
+            return OperationResult.Failure<DownloadStageResult>(playback.Error!);
         }
 
         context.PlayUrl = playUrl;
         return DownloadStageResult.Success(Name);
+    }
+
+    internal static void RestoreCompletedDashTransfers(DownloadExecutionContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        if (context.Input.RequestedContent.MediaKind != DownloadMediaKind.Dash ||
+            string.IsNullOrWhiteSpace(context.DownloadDirectory))
+        {
+            return;
+        }
+
+        if (context.NeedsPendingAudio && TryFindCompletedTransfer(
+                context,
+                context.Input.Metadata.AudioCodec.Id,
+                out var audioKey,
+                out var audioFile))
+        {
+            context.AudioTransferKey = audioKey;
+            context.AudioFile = audioFile;
+        }
+
+        if (context.NeedsPendingVideo && TryFindCompletedTransfer(
+                context,
+                context.Input.Metadata.Resolution.Id,
+                out var videoKey,
+                out var videoFile))
+        {
+            context.VideoTransferKey = videoKey;
+            context.VideoFile = videoFile;
+        }
+    }
+
+    private static bool TryFindCompletedTransfer(
+        DownloadExecutionContext context,
+        int streamId,
+        out string? transferKey,
+        out string? filePath)
+    {
+        var keyPrefix = string.Create(CultureInfo.InvariantCulture, $"{streamId}_");
+        foreach (var key in context.Input.CompletedTransferKeys)
+        {
+            if (!key.StartsWith(keyPrefix, StringComparison.Ordinal) ||
+                !context.Input.TransferFiles.TryGetValue(key, out var fileName) ||
+                string.IsNullOrWhiteSpace(fileName) ||
+                fileName != Path.GetFileName(fileName))
+            {
+                continue;
+            }
+
+            var candidate = Path.Combine(context.DownloadDirectory!, fileName);
+            if (!DownloadFileIntegrity.Check(candidate).IsUsable)
+            {
+                continue;
+            }
+
+            transferKey = key;
+            filePath = candidate;
+            return true;
+        }
+
+        transferKey = null;
+        filePath = null;
+        return false;
     }
 
     internal static string GetDownloadDirectoryPath(string filePath)

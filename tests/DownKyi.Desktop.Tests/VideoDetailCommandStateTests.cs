@@ -251,7 +251,15 @@ public sealed class VideoDetailCommandStateTests
                 new DownKyi.Presentation.VideoPage
                 {
                     IsSelected = true,
-                    PlayUrl = new DownKyi.Core.BiliApi.VideoStream.Models.PlayUrl()
+                    PlaybackAvailability = new DownKyi.Core.BiliApi.VideoStream.Models.PlayUrlAvailability(
+                    [
+                        new DownKyi.Core.BiliApi.VideoStream.Models.PlayUrlVideoAvailability(
+                            80,
+                            7,
+                            DownKyi.Core.BiliApi.VideoStream.Models.PlayUrlStreamKind.Dash,
+                            "1080P")
+                    ],
+                    [])
                 }
             ]
         });

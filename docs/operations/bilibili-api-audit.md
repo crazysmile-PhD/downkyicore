@@ -56,7 +56,7 @@ pwsh ./script/scan-secrets.ps1
 
 - `/x/web-interface/nav` 是唯一可在 anonymous response 接受 code `-101` 並讀取 public WBI keys 的 endpoint；其他 nonzero code 保持 typed failure。
 - QR generate、poll 與 HTTPS Bilibili callback 必須共用隔離 login session。Parent-domain response cookies 優先於 legacy landing query；只有 atomic persist、reload 並再次通過 `/nav isLogin=true` 才可取代原登入檔。
-- Ordinary／cheese envelopes 使用 `data`；bangumi v2 playback 使用 `result.video_info`。Missing／null／empty required payload 都不能被 invent 成 success；`play_check.play_detail=PLAY_PREVIEW` 或 `is_preview=1` 必須在進入下載流程前 fail closed。
+- Ordinary／cheese envelopes 使用 `data`；bangumi v2 playback 使用 `result.video_info`。Missing／null／empty required payload 都不能被 invent 成 success；preview-only playback 必須由共用 adapter 在進入下載流程前 fail closed，wire markers 由 DTO／adapter 與 deterministic fixtures 擁有。
 - Danmaku 先從 `/x/v2/dm/web/view` 取得 `dm_sge.total`，再精確讀取 `1..total`；empty segment 是合法 quiet bucket，不是 EOF。缺少或無效 total 是 protocol failure。
 - Favorites search 依 `has_more` 分頁，不能把未篩選的 `media_count` 當 filtered total。History 保留 `/x/web-interface/history/cursor`；watch-later 保留 `/x/v2/history/toview`，除非替代契約有獨立證據。
 - Active collection 使用 polymer seasons／series APIs。Legacy channel endpoints 與 ranking／dynamic compatibility surfaces 沒有 current product workflow；不得把 numeric identity 猜測映射到新 contract。

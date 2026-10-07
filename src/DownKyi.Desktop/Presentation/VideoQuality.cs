@@ -5,6 +5,8 @@ namespace DownKyi.Presentation;
 
 internal class VideoQuality : ObservableObject
 {
+    internal bool IsDurl { get; set; }
+
     private int _quality;
 
     public int Quality

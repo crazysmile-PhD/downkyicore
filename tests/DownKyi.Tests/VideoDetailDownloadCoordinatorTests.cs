@@ -73,7 +73,25 @@ public sealed class VideoDetailDownloadCoordinatorTests
         var session = new RecordingSession(admissionAllowed: true);
         var coordinator = CreateCoordinator(new RecordingFactory(session));
         var video = new VideoInfoView();
-        var page = new VideoPage { IsSelected = true, PlayUrl = new PlayUrl() };
+        var page = new VideoPage
+        {
+            IsSelected = true,
+            PlaybackAvailability = PlayUrlAvailability.From(new PlayUrl
+            {
+                Dash = new PlayUrlDash
+                {
+                    Video =
+                    [
+                        new PlayUrlDashVideo
+                        {
+                            Id = 80,
+                            CodecId = 7,
+                            BaseAddress = "https://media.invalid/video-80"
+                        }
+                    ]
+                }
+            })
+        };
         IList<VideoSection> sections = [new VideoSection { VideoPages = [page] }];
 
         var result = await coordinator.AddAsync(

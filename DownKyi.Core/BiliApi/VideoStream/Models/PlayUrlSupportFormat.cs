@@ -10,4 +10,6 @@ public class PlayUrlSupportFormat : BaseModel
     [JsonProperty("new_description")] public string NewDescription { get; set; } = string.Empty;
     [JsonProperty("display_desc")] public string DisplayDesc { get; set; } = string.Empty;
     [JsonProperty("superscript")] public string Superscript { get; set; } = string.Empty;
+    [JsonProperty("need_login")] public bool? NeedLogin { get; set; }
+    [JsonProperty("need_vip")] public bool? NeedVip { get; set; }
 }

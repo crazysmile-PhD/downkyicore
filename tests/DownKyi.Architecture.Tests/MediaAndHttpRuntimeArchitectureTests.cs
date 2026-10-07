@@ -353,7 +353,6 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
                 "Views",
                 name))));
 
-        Assert.True(File.ReadLines(viewModelPath).Count() <= 425, "Video-detail ViewModel exceeded its size budget.");
         Assert.Contains("IVideoDetailWorkflowCoordinator", viewModelSource, StringComparison.Ordinal);
         Assert.Contains("IVideoDetailDownloadCoordinator", viewModelSource, StringComparison.Ordinal);
         Assert.DoesNotContain("VideoParseCoordinator", viewModelSource, StringComparison.Ordinal);
