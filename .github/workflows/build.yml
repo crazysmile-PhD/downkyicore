@@ -690,7 +690,7 @@ jobs:
             -PublishDirectory "${{ steps.publish-output.outputs.directory }}" `
             -RuntimeIdentifier "osx-${{ matrix.cpu }}" `
             -ExpectedVersion "${{ steps.version.outputs.content }}" `
-            -OutputPath "script/macos/publish-manifest-osx-${{ matrix.cpu }}.json"
+            -OutputPath "artifacts/macos/pre-sign-publish-manifest-osx-${{ matrix.cpu }}.json"
       - name: Sign app
         run: |
           chmod +x codesign-common.sh prepare-app-layout.sh sign.sh verify-app-signature.sh verify-app-loader.sh sign-dmg.sh verify-dmg.sh validate-dmg-package.sh verify-runtime-architecture.sh aria2-runtime-integrity.sh verify-aria2-rpc-readiness.sh
@@ -718,6 +718,14 @@ jobs:
         working-directory: ./script/macos
         env:
           MACOS_VERIFY_GATEKEEPER: true
+      - name: Seal final signed app manifest
+        shell: pwsh
+        run: |
+          ./script/validate-publish-output.ps1 `
+            -PublishDirectory "script/macos/哔哩下载姬.app/Contents/MacOS" `
+            -RuntimeIdentifier "osx-${{ matrix.cpu }}" `
+            -ExpectedVersion "${{ steps.version.outputs.content }}" `
+            -OutputPath "script/macos/publish-manifest-osx-${{ matrix.cpu }}.json"
       - name: Create DMG
         run: |
           create-dmg \
@@ -753,7 +761,11 @@ jobs:
           MACOS_VERIFY_NOTARIZATION: true
       - name: Validate mounted and installed macOS package contracts
         run: |
-          ./validate-dmg-package.sh DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg ${{ steps.version.outputs.content }} osx-${{ matrix.cpu }}
+          ./validate-dmg-package.sh \
+            DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg \
+            ${{ steps.version.outputs.content }} \
+            osx-${{ matrix.cpu }} \
+            publish-manifest-osx-${{ matrix.cpu }}.json
         working-directory: ./script/macos
         env:
           MACOS_VERIFY_GATEKEEPER: ${{ env.HAS_MACOS_SIGNING == 'true' }}
@@ -772,12 +784,103 @@ jobs:
             script/macos/DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg
             script/macos/DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg.sha256
             script/macos/publish-manifest-osx-${{ matrix.cpu }}.json
+  pre-release-validation:
+    name: Pre-release artifacts (${{ matrix.scope }})
+    needs: [changelog, build-windows, build-linux, validate-linux-arm64, build-macos]
+    if: ${{ github.event_name != 'pull_request' && !inputs.update_ffmpeg_assets }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - scope: Inventory
+            os: ubuntu-22.04
+            pattern: '*'
+            pattern2: ''
+            pattern3: ''
+          - scope: Windows
+            os: windows-latest
+            pattern: 'DownKyi-*-1.win-*.zip'
+            pattern2: ''
+            pattern3: ''
+          - scope: LinuxX64
+            os: ubuntu-22.04
+            pattern: 'appimage-x64-transport'
+            pattern2: 'downkyi_*_linux_self-contained_amd64.deb'
+            pattern3: 'downkyi_*_linux_self-contained.x86_64.rpm'
+          - scope: LinuxArm64
+            os: ubuntu-24.04-arm
+            pattern: 'appimage-arm64-transport'
+            pattern2: 'downkyi_*_linux_self-contained_arm64.deb'
+            pattern3: ''
+          - scope: MacOSX64
+            os: macos-15-intel
+            pattern: 'DownKyi-*-osx-x64.dmg'
+            pattern2: ''
+            pattern3: ''
+          - scope: MacOSArm64
+            os: macos-15
+            pattern: 'DownKyi-*-osx-arm64.dmg'
+            pattern2: ''
+            pattern3: ''
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout release validators
+        uses: $/.github/actions/checkout
+      - name: Download all artifacts from this Build run
+        if: ${{ matrix.scope == 'Inventory' }}
+        uses: $/.github/actions/download-artifact
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Download platform release artifacts from this Build run
+        if: ${{ matrix.scope != 'Inventory' }}
+        uses: $/.github/actions/download-artifact
+        with:
+          pattern: ${{ matrix.pattern }}
+          path: artifacts
+          merge-multiple: true
+      - name: Download second platform release artifact
+        if: ${{ matrix.pattern2 != '' }}
+        uses: $/.github/actions/download-artifact
+        with:
+          pattern: ${{ matrix.pattern2 }}
+          path: artifacts
+          merge-multiple: true
+      - name: Download third platform release artifact
+        if: ${{ matrix.pattern3 != '' }}
+        uses: $/.github/actions/download-artifact
+        with:
+          pattern: ${{ matrix.pattern3 }}
+          path: artifacts
+          merge-multiple: true
+      - name: Install Linux package validation dependencies
+        if: ${{ startsWith(matrix.scope, 'Linux') }}
+        run: |
+          sudo apt-get update
+          fuse_package=libfuse2
+          if ! apt-cache show "$fuse_package" >/dev/null 2>&1; then fuse_package=libfuse2t64; fi
+          sudo apt-get install -y cpio "$fuse_package" rpm rpm2cpio xauth xvfb
+      - name: Revalidate downloaded release artifacts without rebuilding
+        shell: pwsh
+        run: |
+          ./script/validate-build-run-artifacts.ps1 `
+            -ArtifactDirectory ./artifacts `
+            -Scope '${{ matrix.scope }}' `
+            -OutputDirectory ./artifacts/pre-release-validation
+      - name: Upload downloaded package validation diagnostics
+        if: ${{ failure() && (matrix.scope == 'Windows' || startsWith(matrix.scope, 'Linux')) }}
+        uses: $/.github/actions/upload-artifact
+        with:
+          name: pre-release-${{ matrix.scope }}-validation-diagnostics
+          path: artifacts/pre-release-validation/*.failure-*
+          if-no-files-found: ignore
+
   release:
     name: Publish release
     runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
     permissions:
       contents: write
-    needs: [changelog, build-windows, build-linux, validate-linux-arm64, build-macos]
+    needs: [changelog, pre-release-validation]
     if: ${{ startsWith(github.ref, 'refs/tags/') }}
     steps:
       - name: Checkout release validators
@@ -787,40 +890,13 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
-      - name: Remove internal canonical and candidate transports
+      - name: Recheck and prepare downloaded release artifacts
         shell: pwsh
         run: |
-          Get-ChildItem artifacts -File -Filter '*.internal.transport.tar' | Remove-Item
-          $remainingInternalFiles = @(Get-ChildItem artifacts -Recurse -File -Filter '*.internal.*')
-          if ($remainingInternalFiles.Count -ne 0) {
-            throw "Internal canonical or candidate transports reached the release publication input."
-          }
-      - name: Restore and verify validated AppImages
-        shell: pwsh
-        run: |
-          $archives = @(Get-ChildItem artifacts -File -Filter 'appimage-*.transport.tar')
-          if ($archives.Count -ne 2) { throw "Expected exactly two AppImage transport archives, found $($archives.Count)." }
-          foreach ($archive in $archives) {
-            & tar -xf $archive.FullName -C artifacts
-            if ($LASTEXITCODE -ne 0) { throw "Failed to extract $($archive.Name)." }
-            Remove-Item -LiteralPath $archive.FullName
-          }
-
-          $appImages = @(Get-ChildItem artifacts -File -Filter '*.AppImage')
-          if ($appImages.Count -ne 2) { throw "Expected exactly two transported AppImages, found $($appImages.Count)." }
-          foreach ($appImage in $appImages) {
-            $mode = [IO.File]::GetUnixFileMode($appImage.FullName)
-            if (($mode -band [IO.UnixFileMode]::OtherExecute) -eq 0) {
-              throw "Transported AppImage lost non-owner execute permission: $($appImage.Name)"
-            }
-            $sidecar = "$($appImage.FullName).sha256"
-            $expectedHash = ((Get-Content -LiteralPath $sidecar -Raw).Trim() -split '\s+')[0]
-            if ($expectedHash -notmatch '^[a-fA-F0-9]{64}$') { throw "Malformed AppImage checksum: $sidecar" }
-            $actualHash = (Get-FileHash -LiteralPath $appImage.FullName -Algorithm SHA256).Hash
-            if (-not [String]::Equals($actualHash, $expectedHash, [StringComparison]::OrdinalIgnoreCase)) {
-              throw "Transported AppImage does not match its validated checksum: $($appImage.Name)"
-            }
-          }
+          ./script/validate-build-run-artifacts.ps1 `
+            -ArtifactDirectory ./artifacts `
+            -Scope Inventory `
+            -OutputDirectory ./artifacts/pre-release-validation
       - name: Release
         uses: $/.github/actions/release
         with:
