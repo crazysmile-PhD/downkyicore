@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using DownKyi.Core.BiliApi.BiliUtils;
@@ -63,7 +64,7 @@ internal static class DownloadTaskDraftFactory
             Resolution = new Quality
             {
                 Name = videoQuality?.QualityFormat ?? string.Empty,
-                Id = videoQuality?.Quality ?? settings.Video.Quality
+                Id = videoQuality?.Quality ?? 0
             },
             AudioCodec = audioCodec,
             Page = page.Page
@@ -164,7 +165,13 @@ internal static class DownloadTaskDraftFactory
                 break;
         }
 
-        var filePath = Path.Combine(directory, fileName.RelativePath());
+        var relativePath = fileName.RelativePath();
+        if (!relativePath.Any(char.IsLetterOrDigit))
+        {
+            relativePath = page.Cid.ToString(CultureInfo.InvariantCulture);
+        }
+
+        var filePath = Path.Combine(directory, relativePath);
         return filePath;
     }
 

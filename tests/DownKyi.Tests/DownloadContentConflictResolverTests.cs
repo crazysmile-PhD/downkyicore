@@ -59,6 +59,64 @@ public sealed class DownloadContentConflictResolverTests
         Assert.Equal(requested with { Audio = false, Video = true }, prompt.Conflict.AvailableContent);
     }
 
+    [Fact]
+    public async Task BatchSkipsUnselectedVideoInsteadOfOfferingAudioOnly()
+    {
+        var dialogs = new RecordingDialogService();
+        var unselected = CreatePage(video: true, audio: true);
+        unselected.PlaybackAvailability = PlayUrlAvailability.From(new PlayUrl
+        {
+            Dash = new PlayUrlDash
+            {
+                Video =
+                [
+                    new PlayUrlDashVideo
+                    {
+                        Id = 112,
+                        CodecId = 7,
+                        BaseAddress = "https://media.invalid/video-112.m4s"
+                    }
+                ],
+                Audio =
+                [
+                    new PlayUrlDashVideo
+                    {
+                        Id = 30280,
+                        BaseAddress = "https://media.invalid/audio.m4s"
+                    }
+                ]
+            }
+        });
+        unselected.VideoQuality = null;
+        unselected.VideoQualityList =
+        [
+            new VideoQuality
+            {
+                Quality = 112,
+                QualityFormat = "1080P+",
+                SelectedVideoCodec = "H.264/AVC"
+            }
+        ];
+        var selected = CreatePage(video: true, audio: true);
+        selected.Name = "selected";
+        var prepared = PreparedDownload.Create(
+            new VideoInfoView(),
+            [new VideoSection { VideoPages = [unselected, selected] }]);
+        var requested = DownloadContentSelection.None with { Video = true, Audio = true };
+
+        var finalized = await ResolveAsync(dialogs, requested, prepared);
+
+        Assert.True(Assert.Single(prepared.Sections[0].Pages, page =>
+            page.Page == unselected).AvailableMedia.VideoSelectionRequired);
+        Assert.Same(selected, Assert.Single(Assert.Single(finalized.Sections).Pages).Page);
+        var audioOnly = await ResolveAsync(
+            dialogs,
+            DownloadContentSelection.None with { Audio = true },
+            CreatePreparedDownload(unselected));
+        Assert.Same(unselected, Assert.Single(Assert.Single(audioOnly.Sections).Pages).Page);
+        Assert.Empty(dialogs.Requests);
+    }
+
     [Theory]
     [InlineData(false, true)]
     [InlineData(true, true)]

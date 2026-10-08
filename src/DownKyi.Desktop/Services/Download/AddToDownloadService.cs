@@ -313,6 +313,14 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
         var retry = 0;
         while (page.VideoQuality == null && retry < 5)
         {
+            // A higher-only rendition requires an explicit selection. Repeating
+            // the same discovery cannot make the configured lower quality valid.
+            if (page.VideoQualityList.Count > 0
+                && page.VideoQualityList.All(quality => quality.Quality > settings.Video.Quality))
+            {
+                break;
+            }
+
             var playUrl = await videoInfoService
                 .GetVideoStreamAsync(page, cancellationToken)
                 .ConfigureAwait(false);

@@ -15,6 +15,14 @@ namespace DownKyi.Services.Download;
 
 internal sealed class DownloadDuplicatePolicy
 {
+    private enum MediaOutputIdentity
+    {
+        Unknown,
+        SidecarOnly,
+        Video,
+        Audio
+    }
+
     private readonly DownloadListState _downloadLists;
     private readonly DownloadTaskProjectionStore _projectionStore;
     private readonly IUserNotificationService _notificationService;
@@ -161,7 +169,9 @@ internal sealed class DownloadDuplicatePolicy
         VideoQuality? videoQuality,
         DownloadContentSelection requestedContent)
     {
-        if (GetMediaOutput(item) != GetMediaOutput(requestedContent))
+        var existingOutput = GetMediaOutput(item);
+        if (existingOutput != MediaOutputIdentity.Unknown
+            && existingOutput != GetMediaOutput(requestedContent))
         {
             return false;
         }
@@ -184,35 +194,46 @@ internal sealed class DownloadDuplicatePolicy
         return isSameVideo;
     }
 
-    private static DownloadMediaOutputModes GetMediaOutput(DownloadBaseItem item)
+    private static MediaOutputIdentity GetMediaOutput(DownloadBaseItem item)
     {
-        // Active tasks retain their finalized content selection. Completed history
-        // does not, so the published media artifact is its output authority.
-        if (item is DownloadedItem { HistoryRecord: { } history }
-            && history.PublishedArtifacts.TryGetValue("media", out var mediaPath))
+        if (item is DownloadedItem { HistoryRecord: { } history })
         {
-            var extension = Path.GetExtension(mediaPath);
-            return extension.Equals(".mp3", StringComparison.OrdinalIgnoreCase)
-                   || extension.Equals(".aac", StringComparison.OrdinalIgnoreCase)
-                   || extension.Equals(".flac", StringComparison.OrdinalIgnoreCase)
-                ? DownloadMediaOutputModes.AudioOnly
-                : DownloadMediaOutputModes.VideoOnly;
+            if (history.PublishedArtifacts.TryGetValue("media", out var mediaPath))
+            {
+                var extension = Path.GetExtension(mediaPath);
+                if (extension.Equals(".mp3", StringComparison.OrdinalIgnoreCase)
+                    || extension.Equals(".aac", StringComparison.OrdinalIgnoreCase)
+                    || extension.Equals(".flac", StringComparison.OrdinalIgnoreCase))
+                {
+                    return MediaOutputIdentity.Audio;
+                }
+
+                return extension.Equals(".mp4", StringComparison.OrdinalIgnoreCase)
+                    ? MediaOutputIdentity.Video
+                    : MediaOutputIdentity.Unknown;
+            }
+
+            // Current completed tasks publish every output. Legacy history can
+            // have an empty artifact map, which does not identify its media.
+            return history.PublishedArtifacts.Count > 0
+                ? MediaOutputIdentity.SidecarOnly
+                : MediaOutputIdentity.Unknown;
         }
 
         return GetMediaOutput(item.DownloadBase.NeedDownloadContent);
     }
 
-    private static DownloadMediaOutputModes GetMediaOutput(DownloadContentSelection content)
+    private static MediaOutputIdentity GetMediaOutput(DownloadContentSelection content)
     {
         if (content.Video)
         {
             // Duplicate admission has always treated video-only and muxed video
             // as one video-bearing output. Preserve that contract here.
-            return DownloadMediaOutputModes.VideoOnly;
+            return MediaOutputIdentity.Video;
         }
 
         return content.Audio
-            ? DownloadMediaOutputModes.AudioOnly
-            : DownloadMediaOutputModes.None;
+            ? MediaOutputIdentity.Audio
+            : MediaOutputIdentity.SidecarOnly;
     }
 }

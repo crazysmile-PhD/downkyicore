@@ -17,7 +17,9 @@ internal enum DownloadMediaOutputModes
     AudioVideo = 4
 }
 
-internal sealed record DownloadMediaCapabilities(DownloadMediaOutputModes SupportedModes)
+internal sealed record DownloadMediaCapabilities(
+    DownloadMediaOutputModes SupportedModes,
+    bool VideoSelectionRequired = false)
 {
     public bool HasAnyMedia => SupportedModes != DownloadMediaOutputModes.None;
 
@@ -38,6 +40,12 @@ internal sealed record DownloadMediaCapabilities(DownloadMediaOutputModes Suppor
         {
             compatibleContent = requestedContent;
             return true;
+        }
+
+        if (requestedContent.Video && VideoSelectionRequired)
+        {
+            compatibleContent = requestedContent with { Audio = false, Video = false };
+            return false;
         }
 
         if (requestedContent.Audio && requestedContent.Video)
@@ -79,9 +87,9 @@ internal sealed record DownloadMediaCapabilities(DownloadMediaOutputModes Suppor
         var selectedVideoKind = ResolveSelectedVideoKind(
             availability,
             selectedVideoQuality);
-        return new DownloadMediaCapabilities(GetSupportedModes(
-            selectedVideoKind,
-            hasSelectedAudio));
+        return new DownloadMediaCapabilities(
+            GetSupportedModes(selectedVideoKind, hasSelectedAudio),
+            VideoSelectionRequired: selectedVideoQuality == null && availability.Video.Count > 0);
     }
 
     private static PlayUrlStreamKind? ResolveSelectedVideoKind(

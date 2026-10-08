@@ -803,6 +803,50 @@ public sealed class VideoTagLoadingTests : IDisposable
         Assert.Equal(1, infoService.StreamRequestCount);
     }
 
+    [Fact]
+    public async Task HigherOnlyQualityStopsRetryingAndRequiresExplicitSelection()
+    {
+        using var context = CreateContext(generateMetadata: false);
+        var page = CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]));
+        page.VideoQuality = null;
+        var infoService = new PreparationInfoService(
+            new VideoInfoView { Title = "higher-only" },
+            [new VideoSection { VideoPages = [page] }],
+            new PlayUrl
+            {
+                Dash = new PlayUrlDash
+                {
+                    Video =
+                    [
+                        new PlayUrlDashVideo
+                        {
+                            Id = 126,
+                            CodecId = 7,
+                            BaseAddress = "https://media.invalid/video-126.m4s"
+                        }
+                    ],
+                    Audio =
+                    [
+                        new PlayUrlDashVideo
+                        {
+                            Id = 30280,
+                            BaseAddress = "https://media.invalid/audio.m4s"
+                        }
+                    ]
+                }
+            });
+
+        var prepared = await context.Service.PrepareAsync(
+            infoService,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, infoService.StreamRequestCount);
+        Assert.Null(page.VideoQuality);
+        Assert.Equal(126, Assert.Single(page.VideoQualityList).Quality);
+        Assert.True(Assert.Single(Assert.Single(prepared!.Sections).Pages)
+            .AvailableMedia.VideoSelectionRequired);
+    }
+
     private DownloadTestContext CreateContext(
         bool generateMetadata,
         IPhysicalOutputPathResolver? resolver = null,

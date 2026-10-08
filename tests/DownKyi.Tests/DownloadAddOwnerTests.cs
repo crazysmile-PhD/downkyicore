@@ -121,6 +121,26 @@ public sealed class DownloadAddOwnerTests : IDisposable
     }
 
     [Fact]
+    public async Task CompletedSubtitleOnlyTaskStillBlocksTheSameSubtitleRequest()
+    {
+        var history = DuplicatePolicyContext.CreateCompletedHistory(
+            sidecarKey: "subtitle:page.srt");
+        using var context = new DuplicatePolicyContext(
+            AppDialogOutcome.Canceled,
+            history: history);
+
+        var shouldSkip = await context.Policy.ShouldSkipAsync(
+            CreatePage(),
+            CreateVideoQuality(),
+            DownloadContentSelection.None with { Subtitle = true },
+            DownKyi.Core.Settings.RepeatDownloadStrategy.JumpOver,
+            TestContext.Current.CancellationToken);
+
+        Assert.True(shouldSkip);
+        Assert.DoesNotContain("media", history.PublishedArtifacts.Keys);
+    }
+
+    [Fact]
     public async Task ActiveDuplicateIsSkippedBeforeCompletedHistoryIsRead()
     {
         using var context = DuplicatePolicyContext.WithCompleted(AppDialogOutcome.Accepted);
@@ -436,6 +456,41 @@ public sealed class DownloadAddOwnerTests : IDisposable
     }
 
     [Fact]
+    public void AudioOnlyDraftWithVideoOnlyNamingPartsUsesCidAndNoVideoResolution()
+    {
+        Directory.CreateDirectory(_directory);
+        using var settingsStore = new DownKyi.Core.Settings.SettingsStore(
+            Path.Combine(_directory, "settings.json"));
+        var settings = settingsStore.Current with
+        {
+            Video = settingsStore.Current.Video with
+            {
+                FileNameParts =
+                [
+                    DownKyi.Core.FileName.FileNamePart.VideoQuality,
+                    DownKyi.Core.FileName.FileNamePart.Hyphen,
+                    DownKyi.Core.FileName.FileNamePart.VideoCodec
+                ]
+            }
+        };
+        var page = CreatePage();
+        page.AudioQualityFormat = "高质量";
+        var item = DownloadTaskDraftFactory.Create(
+            _directory,
+            new VideoInfoView { Title = "main", VideoZone = "Technology" },
+            new VideoSection { VideoPages = [page] },
+            sectionCount: 1,
+            page,
+            videoQuality: null,
+            settings,
+            DownloadContentSelection.None with { Audio = true });
+
+        Assert.Equal(Path.Combine(_directory, "84"), item.DownloadBase.FilePath);
+        Assert.Equal(0, item.Resolution.Id);
+        Assert.Equal(string.Empty, item.Resolution.Name);
+    }
+
+    [Fact]
     public void DraftFactoryRejectsAudioOnlyDurlContract()
     {
         Directory.CreateDirectory(_directory);
@@ -663,9 +718,16 @@ public sealed class DownloadAddOwnerTests : IDisposable
             return context;
         }
 
-        public static DownloadHistoryRecord CreateCompletedHistory(string? mediaExtension = null)
+        public static DownloadHistoryRecord CreateCompletedHistory(
+            string? mediaExtension = null,
+            string? sidecarKey = null)
         {
             var downloading = CreateDownloadingItem();
+            if (sidecarKey != null)
+            {
+                downloading.DownloadBase.NeedDownloadContent =
+                    DownloadContentSelection.None with { Subtitle = true };
+            }
             if (mediaExtension != null)
             {
                 downloading.DownloadBase.AudioCodec = new DownKyi.Core.BiliApi.BiliUtils.Quality
@@ -696,6 +758,22 @@ public sealed class DownloadAddOwnerTests : IDisposable
                 var fileName = $"page{mediaExtension}";
                 var publishing = new DownloadPublishingArtifact(
                     "media",
+                    fileName,
+                    1,
+                    new string('A', 64));
+                started = started.BeginPublishingArtifact(
+                    publishing,
+                    DateTimeOffset.UnixEpoch.AddSeconds(2)).RequireValue();
+                started = started.RecordPublishedArtifact(
+                    publishing,
+                    Path.Combine(Path.GetTempPath(), fileName),
+                    DateTimeOffset.UnixEpoch.AddSeconds(3)).RequireValue();
+            }
+            if (sidecarKey != null)
+            {
+                const string fileName = "page.srt";
+                var publishing = new DownloadPublishingArtifact(
+                    sidecarKey,
                     fileName,
                     1,
                     new string('A', 64));
