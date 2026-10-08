@@ -867,6 +867,13 @@ jobs:
             -ArtifactDirectory ./artifacts `
             -Scope '${{ matrix.scope }}' `
             -OutputDirectory ./artifacts/pre-release-validation
+      - name: Upload downloaded package validation diagnostics
+        if: ${{ failure() && (matrix.scope == 'Windows' || startsWith(matrix.scope, 'Linux')) }}
+        uses: $/.github/actions/upload-artifact
+        with:
+          name: pre-release-${{ matrix.scope }}-validation-diagnostics
+          path: artifacts/pre-release-validation/*.failure-*
+          if-no-files-found: ignore
 
   release:
     name: Publish release

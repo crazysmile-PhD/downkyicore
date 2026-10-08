@@ -60,6 +60,23 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.DoesNotContain(preRelease, line => line.Contains("dotnet build", StringComparison.Ordinal));
         Assert.DoesNotContain(preRelease, line => line.Contains("dotnet publish", StringComparison.Ordinal));
 
+        var preReleaseSteps = GetWorkflowSteps(workflow, "  pre-release-validation:");
+        AssertStepCondition(
+            preReleaseSteps,
+            "Upload downloaded package validation diagnostics",
+            "${{ failure() && (matrix.scope == 'Windows' || startsWith(matrix.scope, 'Linux')) }}");
+        var diagnosticsUpload = FindWorkflowStep(
+            preReleaseSteps,
+            "Upload downloaded package validation diagnostics");
+        Assert.Contains("        uses: $/.github/actions/upload-artifact", diagnosticsUpload);
+        Assert.Contains(
+            "          name: pre-release-${{ matrix.scope }}-validation-diagnostics",
+            diagnosticsUpload);
+        Assert.Contains(
+            "          path: artifacts/pre-release-validation/*.failure-*",
+            diagnosticsUpload);
+        Assert.Contains("          if-no-files-found: ignore", diagnosticsUpload);
+
         Assert.Contains("    needs: [changelog, pre-release-validation]", release);
         Assert.Contains(
             release,
