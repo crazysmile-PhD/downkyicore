@@ -11,7 +11,7 @@ public sealed class ReleaseWorkflowArchitectureTests
     private static readonly string RepositoryRoot = FindRepositoryRoot();
 
     [Fact]
-    public void ReleaseWorkflowKeepsStrictCrossPlatformGateAndManualPackageValidation()
+    public void ReleaseWorkflowKeepsStrictCrossPlatformGateAndDownloadedPackageValidation()
     {
         var workflow = File.ReadAllText(Path.Combine(RepositoryRoot, ".github", "workflows", "build.yml"));
 
@@ -23,9 +23,47 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.Contains("-p:AnalysisMode=All", workflow, StringComparison.Ordinal);
         Assert.Contains("./script/test-solution.ps1", workflow, StringComparison.Ordinal);
         Assert.Contains("./script/validate-release-version.ps1", workflow, StringComparison.Ordinal);
-        Assert.Equal(6, CountOccurrences(workflow, "fail-fast: false"));
-        Assert.Equal(3, CountOccurrences(workflow, "validate-publish-output.ps1"));
-        Assert.Equal(5, CountOccurrences(workflow, "Get-FileHash"));
+        Assert.Equal(7, CountOccurrences(workflow, "fail-fast: false"));
+        Assert.Equal(4, CountOccurrences(workflow, "validate-publish-output.ps1"));
+        Assert.Equal(4, CountOccurrences(workflow, "Get-FileHash"));
+    }
+
+    [Fact]
+    public void PreReleaseGateDownloadsTheSameRunAndBlocksPublication()
+    {
+        var workflow = File.ReadAllText(Path.Combine(RepositoryRoot, ".github", "workflows", "build.yml"));
+        var preRelease = GetYamlBlock(
+            workflow.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n'),
+            "  pre-release-validation:",
+            2);
+        var release = GetYamlBlock(
+            workflow.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n'),
+            "  release:",
+            2);
+
+        Assert.Contains(
+            "    needs: [changelog, build-windows, build-linux, validate-linux-arm64, build-macos]",
+            preRelease);
+        Assert.Contains("      fail-fast: false", preRelease);
+        Assert.Contains("          - scope: Inventory", preRelease);
+        Assert.Contains("          - scope: Windows", preRelease);
+        Assert.Contains("          - scope: LinuxX64", preRelease);
+        Assert.Contains("          - scope: LinuxArm64", preRelease);
+        Assert.Contains("          - scope: MacOSX64", preRelease);
+        Assert.Contains("          - scope: MacOSArm64", preRelease);
+        Assert.Contains("      - name: Download all artifacts from this Build run", preRelease);
+        Assert.Contains("          merge-multiple: true", preRelease);
+        Assert.Contains(
+            preRelease,
+            line => line.Contains("./script/validate-build-run-artifacts.ps1", StringComparison.Ordinal));
+        Assert.DoesNotContain(preRelease, line => line.Contains("dotnet build", StringComparison.Ordinal));
+        Assert.DoesNotContain(preRelease, line => line.Contains("dotnet publish", StringComparison.Ordinal));
+
+        Assert.Contains("    needs: [changelog, pre-release-validation]", release);
+        Assert.Contains(
+            release,
+            line => line.Contains("./script/validate-build-run-artifacts.ps1", StringComparison.Ordinal));
+        Assert.Contains(release, line => line.Contains("-Scope Inventory", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -265,6 +303,9 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.Contains("aria2/aria2c", validator, StringComparison.Ordinal);
         Assert.Contains("Avalonia.Themes.Fluent", validator, StringComparison.Ordinal);
         Assert.Contains("Get-FileHash", validator, StringComparison.Ordinal);
+        Assert.Contains("ExpectedManifestPath", validator, StringComparison.Ordinal);
+        Assert.Contains("Published output contains user data paths", validator, StringComparison.Ordinal);
+        Assert.Contains("'Aria', 'Logs', 'Storage', 'Config', 'Bilibili', 'Cache', 'Media'", validator, StringComparison.Ordinal);
     }
 
     [Fact]

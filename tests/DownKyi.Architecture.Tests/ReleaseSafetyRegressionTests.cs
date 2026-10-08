@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Diagnostics;
 using System.IO.Compression;
+using System.Text.Json;
 
 namespace DownKyi.Architecture.Tests;
 
@@ -16,6 +17,8 @@ public sealed class ReleaseSafetyRegressionTests
         var workflow = File.ReadAllText(Path.Combine(RepositoryRoot, ".github", "workflows", "build.yml"));
         var packageValidator = File.ReadAllText(
             Path.Combine(RepositoryRoot, "script", "validate-release-package.ps1"));
+        var buildArtifactValidator = File.ReadAllText(
+            Path.Combine(RepositoryRoot, "script", "validate-build-run-artifacts.ps1"));
 
         Assert.Contains("validate-release-subject.ps1", workflow, StringComparison.Ordinal);
         Assert.Contains("resolve-previous-release-tag.ps1", workflow, StringComparison.Ordinal);
@@ -30,12 +33,15 @@ public sealed class ReleaseSafetyRegressionTests
         Assert.DoesNotContain("HAS_MACOS_SIGNING: ${{ secrets.", workflow, StringComparison.Ordinal);
         Assert.Equal(3, CountOccurrences(workflow, "validate-release-package.ps1"));
         Assert.Equal(3, CountOccurrences(workflow, "-ExpectedManifestPath"));
-        Assert.Contains("validate-dmg-package.sh DownKyi-", workflow, StringComparison.Ordinal);
+        Assert.Contains("./validate-dmg-package.sh \\", workflow, StringComparison.Ordinal);
         Assert.Contains("ubuntu-24.04-arm", workflow, StringComparison.Ordinal);
         Assert.Contains("validate-linux-arm64:", workflow, StringComparison.Ordinal);
         Assert.Contains("linux-arm64-${{ matrix.kind }}.candidate.internal.transport.tar", workflow, StringComparison.Ordinal);
         Assert.Contains("appimage-${{ matrix.cpu }}.transport.tar", workflow, StringComparison.Ordinal);
-        Assert.Contains("Transported AppImage lost non-owner execute permission", workflow, StringComparison.Ordinal);
+        Assert.Contains("pre-release-validation:", workflow, StringComparison.Ordinal);
+        Assert.Contains("validate-build-run-artifacts.ps1", workflow, StringComparison.Ordinal);
+        Assert.Contains("Transported AppImage lost non-owner execute permission", buildArtifactValidator, StringComparison.Ordinal);
+        Assert.Contains("Downloaded release package does not match its SHA-256 sidecar", buildArtifactValidator, StringComparison.Ordinal);
         Assert.Contains("'--appimage-extract'", packageValidator, StringComparison.Ordinal);
         Assert.Contains("LinkType -ceq 'SymbolicLink'", packageValidator, StringComparison.Ordinal);
         Assert.Contains("usr/bin/DownKyi", packageValidator, StringComparison.Ordinal);
@@ -125,8 +131,8 @@ public sealed class ReleaseSafetyRegressionTests
                 StringComparison.Ordinal)));
         Assert.ThrowsAny<Exception>(() => AssertArm64PromotionContract(
             workflow.Replace(
-                "Get-ChildItem artifacts -File -Filter '*.internal.transport.tar'",
-                "Get-ChildItem artifacts -File -Filter '*.candidate.transport.tar'",
+                "            -Scope Inventory",
+                "            -Scope Windows",
                 StringComparison.Ordinal)));
     }
 
@@ -149,7 +155,7 @@ public sealed class ReleaseSafetyRegressionTests
         Assert.Equal(2, CountOccurrences(workflow, "- name: Build canonical publish"));
         Assert.Equal(2, CountOccurrences(workflow, "- name: Finalize and validate canonical publish payload"));
         Assert.Equal(2, CountOccurrences(workflow, "CANONICAL_PUBLISH_DIRECTORY:"));
-        Assert.Equal(5, CountOccurrences(workflow, "os: ubuntu-22.04"));
+        Assert.Equal(7, CountOccurrences(workflow, "os: ubuntu-22.04"));
         Assert.Equal(3, CountOccurrences(workflow, "linux-${{ matrix.cpu }}.canonical-publish.internal.transport.tar"));
         Assert.Equal(1, CountOccurrences(linuxPublish, "dotnet publish ./DownKyi/DownKyi.csproj"));
         Assert.Contains("cpu: [ x64, arm64 ]", linuxPublish, StringComparison.Ordinal);
@@ -369,6 +375,49 @@ public sealed class ReleaseSafetyRegressionTests
                 root);
             Assert.Equal(0, expected.ExitCode);
 
+            var comparedManifest = RunPowerShell(
+                Path.Combine(RepositoryRoot, "script", "validate-publish-output.ps1"),
+                [
+                    "-PublishDirectory", runtime,
+                    "-RuntimeIdentifier", "win-x64",
+                    "-ExpectedVersion", RepositoryVersion,
+                    "-OutputPath", Path.Combine(root, "compared-publish-manifest.json"),
+                    "-ExpectedManifestPath", expectedManifest
+                ],
+                root);
+            Assert.Equal(0, comparedManifest.ExitCode);
+
+            File.AppendAllText(desktopDependency, "post-manifest-mutation");
+            var comparedManifestDrift = RunPowerShell(
+                Path.Combine(RepositoryRoot, "script", "validate-publish-output.ps1"),
+                [
+                    "-PublishDirectory", runtime,
+                    "-RuntimeIdentifier", "win-x64",
+                    "-ExpectedVersion", RepositoryVersion,
+                    "-OutputPath", Path.Combine(root, "drifted-publish-manifest.json"),
+                    "-ExpectedManifestPath", expectedManifest
+                ],
+                root);
+            Assert.NotEqual(0, comparedManifestDrift.ExitCode);
+            Assert.Contains("does not match the expected publish manifest", NormalizeDiagnostic(comparedManifestDrift), StringComparison.Ordinal);
+            WriteNonEmptyFile(desktopDependency);
+
+            var packagedUserData = Path.Combine(runtime, "Config", "Settings");
+            Directory.CreateDirectory(Path.GetDirectoryName(packagedUserData)!);
+            File.WriteAllText(packagedUserData, "user-specific-settings");
+            var userDataResult = RunPowerShell(
+                Path.Combine(RepositoryRoot, "script", "validate-publish-output.ps1"),
+                [
+                    "-PublishDirectory", runtime,
+                    "-RuntimeIdentifier", "win-x64",
+                    "-ExpectedVersion", RepositoryVersion,
+                    "-OutputPath", Path.Combine(root, "user-data-manifest.json")
+                ],
+                root);
+            Assert.NotEqual(0, userDataResult.ExitCode);
+            Assert.Contains("contains user data paths", NormalizeDiagnostic(userDataResult), StringComparison.Ordinal);
+            Directory.Delete(Path.Combine(runtime, "Config"), recursive: true);
+
             var validPackage = Path.Combine(root, "valid.zip");
             ZipFile.CreateFromDirectory(runtime, validPackage);
             var valid = RunPowerShell(
@@ -485,6 +534,60 @@ public sealed class ReleaseSafetyRegressionTests
                 root);
             Assert.NotEqual(0, wrongVersion.ExitCode);
             Assert.Contains("does not match expected version", NormalizeDiagnostic(wrongVersion), StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(root);
+        }
+    }
+
+    [Fact]
+    public void DownloadedBuildArtifactInventoryRecomputesChecksumsAndManifestIdentity()
+    {
+        var root = CreateTemporaryDirectory();
+        var artifacts = Path.Combine(root, "artifacts");
+        var output = Path.Combine(root, "validation");
+        var validator = Path.Combine(RepositoryRoot, "script", "validate-build-run-artifacts.ps1");
+
+        try
+        {
+            Directory.CreateDirectory(artifacts);
+            var packages = WriteBuildArtifactInventoryFixture(artifacts);
+
+            var valid = RunPowerShell(
+                validator,
+                ["-ArtifactDirectory", artifacts, "-Scope", "Inventory", "-OutputDirectory", output],
+                root);
+            Assert.Equal(0, valid.ExitCode);
+            Assert.Contains("Validated 9 downloaded release package", valid.StandardOutput, StringComparison.Ordinal);
+
+            var mutatedPackage = Path.Combine(artifacts, packages[0].Name);
+            File.AppendAllText(mutatedPackage, "mutated-after-sidecar");
+            var hashMismatch = RunPowerShell(
+                validator,
+                ["-ArtifactDirectory", artifacts, "-Scope", "Inventory", "-OutputDirectory", output],
+                root);
+            Assert.NotEqual(0, hashMismatch.ExitCode);
+            Assert.Contains("does not match its SHA-256 sidecar", NormalizeDiagnostic(hashMismatch), StringComparison.Ordinal);
+
+            var repairedHash = Convert.ToHexString(
+                System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(mutatedPackage)));
+            File.WriteAllText($"{mutatedPackage}.sha256", $"{repairedHash}  {packages[0].Name}\n");
+            File.WriteAllText(
+                Path.Combine(artifacts, packages[0].Manifest),
+                JsonSerializer.Serialize(new
+                {
+                    schemaVersion = 1,
+                    runtimeIdentifier = packages[0].RuntimeIdentifier,
+                    applicationVersion = "0.0.0",
+                    files = new[] { new { path = "fixture.bin", bytes = 1, sha256 = new string('0', 64) } }
+                }));
+            var manifestMismatch = RunPowerShell(
+                validator,
+                ["-ArtifactDirectory", artifacts, "-Scope", "Inventory", "-OutputDirectory", output],
+                root);
+            Assert.NotEqual(0, manifestMismatch.ExitCode);
+            Assert.Contains("manifest version does not match", NormalizeDiagnostic(manifestMismatch), StringComparison.Ordinal);
         }
         finally
         {
@@ -1421,6 +1524,52 @@ public sealed class ReleaseSafetyRegressionTests
         }
     }
 
+    private static (string Name, string RuntimeIdentifier, string Manifest)[] WriteBuildArtifactInventoryFixture(
+        string artifactDirectory)
+    {
+        (string Name, string RuntimeIdentifier, string Manifest)[] packages =
+        [
+            ($"DownKyi-{RepositoryVersion}-1.win-x64.zip", "win-x64", "publish-manifest-win-x64.json"),
+            ($"DownKyi-{RepositoryVersion}-1.win-x86.zip", "win-x86", "publish-manifest-win-x86.json"),
+            ($"DownKyi-{RepositoryVersion}_linux_self-contained.x86_64.AppImage", "linux-x64", "publish-manifest-linux-x64-AppImage.json"),
+            ($"downkyi_{RepositoryVersion}_linux_self-contained_amd64.deb", "linux-x64", "publish-manifest-linux-x64-deb.json"),
+            ($"downkyi_{RepositoryVersion}_linux_self-contained.x86_64.rpm", "linux-x64", "publish-manifest-linux-x64-rpm.json"),
+            ($"DownKyi-{RepositoryVersion}_linux_self-contained.aarch64.AppImage", "linux-arm64", "publish-manifest-linux-arm64-AppImage.json"),
+            ($"downkyi_{RepositoryVersion}_linux_self-contained_arm64.deb", "linux-arm64", "publish-manifest-linux-arm64-deb.json"),
+            ($"DownKyi-{RepositoryVersion}-osx-x64.dmg", "osx-x64", "publish-manifest-osx-x64.json"),
+            ($"DownKyi-{RepositoryVersion}-osx-arm64.dmg", "osx-arm64", "publish-manifest-osx-arm64.json")
+        ];
+
+        foreach (var package in packages)
+        {
+            var packagePath = Path.Combine(artifactDirectory, package.Name);
+            File.WriteAllText(packagePath, $"downloaded fixture for {package.Name}");
+            if (!OperatingSystem.IsWindows() && package.Name.EndsWith(".AppImage", StringComparison.Ordinal))
+            {
+                File.SetUnixFileMode(
+                    packagePath,
+                    UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+                    UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
+                    UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+            }
+
+            var hash = Convert.ToHexString(
+                System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(packagePath)));
+            File.WriteAllText($"{packagePath}.sha256", $"{hash}  {package.Name}\n");
+            File.WriteAllText(
+                Path.Combine(artifactDirectory, package.Manifest),
+                JsonSerializer.Serialize(new
+                {
+                    schemaVersion = 1,
+                    runtimeIdentifier = package.RuntimeIdentifier,
+                    applicationVersion = RepositoryVersion,
+                    files = new[] { new { path = "fixture.bin", bytes = 1, sha256 = new string('0', 64) } }
+                }));
+        }
+
+        return packages;
+    }
+
     private static bool IsProcessAlive(int processId)
     {
         try
@@ -1441,6 +1590,7 @@ public sealed class ReleaseSafetyRegressionTests
     {
         var buildLinux = GetWorkflowJob(workflow, "build-linux");
         var validateArm64 = GetWorkflowJob(workflow, "validate-linux-arm64");
+        var preRelease = GetWorkflowJob(workflow, "pre-release-validation");
         var release = GetWorkflowJob(workflow, "release");
 
         Assert.Contains(
@@ -1470,14 +1620,19 @@ public sealed class ReleaseSafetyRegressionTests
 
         Assert.Contains(
             "needs: [changelog, build-windows, build-linux, validate-linux-arm64, build-macos]",
+            preRelease,
+            StringComparison.Ordinal);
+        Assert.Contains("scope: LinuxArm64", preRelease, StringComparison.Ordinal);
+        Assert.Contains("os: ubuntu-24.04-arm", preRelease, StringComparison.Ordinal);
+        Assert.Contains("pattern: 'appimage-arm64-transport'", preRelease, StringComparison.Ordinal);
+        Assert.Contains("pattern2: 'downkyi_*_linux_self-contained_arm64.deb'", preRelease, StringComparison.Ordinal);
+        Assert.Contains("needs: [changelog, pre-release-validation]", release, StringComparison.Ordinal);
+        Assert.Contains(
+            "./script/validate-build-run-artifacts.ps1",
             release,
             StringComparison.Ordinal);
         Assert.Contains(
-            "Get-ChildItem artifacts -File -Filter '*.internal.transport.tar'",
-            release,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "Get-ChildItem artifacts -Recurse -File -Filter '*.internal.*'",
+            "-Scope Inventory",
             release,
             StringComparison.Ordinal);
     }

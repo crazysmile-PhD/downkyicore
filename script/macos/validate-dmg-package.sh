@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DMG_PATH="${1:?DMG path is required.}"
 EXPECTED_VERSION="${2:?Expected release version is required.}"
 EXPECTED_RUNTIME_IDENTIFIER="${3:?Expected runtime identifier is required.}"
+EXPECTED_MANIFEST_PATH="${4:-}"
 MOUNT_POINT="$(mktemp -d "${TMPDIR:-/tmp}/downkyi-dmg.XXXXXX")"
 COPY_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/downkyi-installed-app.XXXXXX")"
 ATTACHED=false
@@ -46,6 +47,15 @@ BUNDLE_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$PLIST_PA
 if [ "$SHORT_VERSION" != "$EXPECTED_VERSION" ] || [ "$BUNDLE_VERSION" != "$EXPECTED_VERSION" ]; then
   echo "::error::Mounted app bundle version does not match $EXPECTED_VERSION (short=$SHORT_VERSION, bundle=$BUNDLE_VERSION)." >&2
   exit 1
+fi
+
+if [ -n "$EXPECTED_MANIFEST_PATH" ]; then
+  pwsh -NoLogo -NoProfile -File "$SCRIPT_DIR/../validate-publish-output.ps1" \
+    -PublishDirectory "$APP_PATH/Contents/MacOS" \
+    -RuntimeIdentifier "$EXPECTED_RUNTIME_IDENTIFIER" \
+    -ExpectedVersion "$EXPECTED_VERSION" \
+    -OutputPath "$COPY_ROOT/verified-publish-manifest.json" \
+    -ExpectedManifestPath "$EXPECTED_MANIFEST_PATH"
 fi
 
 validate_app_boundary "$APP_PATH" "mounted DMG"
