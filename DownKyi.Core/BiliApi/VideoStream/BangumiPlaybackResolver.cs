@@ -1,4 +1,3 @@
-using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.VideoStream.Models;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -8,31 +7,6 @@ namespace DownKyi.Core.BiliApi.VideoStream;
 internal static class BangumiPlaybackResolver
 {
     private const string EmbeddedPlaybackMarker = "playurlSSRData";
-
-    public static bool ShouldTryWebPageFallback(PlayUrl playUrl, int requestedQuality)
-    {
-        ArgumentNullException.ThrowIfNull(playUrl);
-        var actualQuality = GetHighestActualQuality(playUrl);
-        var advertisedQuality = (playUrl.SupportFormats ?? [])
-            .Select(format => format.Quality)
-            .Concat(playUrl.AcceptQuality ?? [])
-            .DefaultIfEmpty()
-            .Max();
-
-        return actualQuality == 0
-               || (actualQuality <= PlaybackQualityCatalog.Maximum720PQuality
-                   && requestedQuality > actualQuality
-                   && advertisedQuality > actualQuality);
-    }
-
-    public static int GetHighestActualQuality(PlayUrl playUrl)
-    {
-        ArgumentNullException.ThrowIfNull(playUrl);
-        return PlayUrlAvailability.From(playUrl).Video
-            .Select(video => video.Quality)
-            .DefaultIfEmpty()
-            .Max();
-    }
 
     public static PlayUrlAvailability DiscoverAvailability(
         PlayUrl primary,

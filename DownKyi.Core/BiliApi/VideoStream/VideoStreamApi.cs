@@ -209,61 +209,8 @@ public static partial class VideoStreamApi
                 streamKind);
         }
 
-        var baseUrl = $"https://api.bilibili.com/pgc/player/web/v2/playurl?cid={cid}&ep_id={episodeId}&qn={quality}&fourk=1&fnver=0&fnval={BangumiFnval}";
-        string url;
-        if (bvid != null)
-        {
-            url = $"{baseUrl}&bvid={bvid}";
-        }
-        else if (avid > -1)
-        {
-            url = $"{baseUrl}&aid={avid}";
-        }
-        else
-        {
-            return null;
-        }
-
         var referer = BuildBangumiPlayPageUrl(episodeId);
-        var response = await BiliApiRequest.RequestJsonAsync<BangumiPlayUrlV2Origin>(
-            client,
-            url,
-            referer,
-            nameof(GetBangumiPlayUrlAsync),
-            "GetBangumiPlayUrl()",
-            cancellationToken: cancellationToken).ConfigureAwait(false);
-
-        var playUrl = BangumiPlayUrlV2Contract.SelectPayload(
-            response,
-            nameof(GetBangumiPlayUrlAsync));
-        if (discoverAvailability)
-        {
-            playUrl.Availability = BangumiPlaybackResolver.DiscoverAvailability(playUrl);
-        }
-
-        var playDetail = response.Result?.PlayCheck?.PlayDetail;
-        PlayUrl? selected = null;
-        var shouldTryFallback = discoverAvailability
-            ? BangumiPlaybackResolver.ShouldTryWebPageFallback(playUrl, quality)
-            : !BangumiPlaybackResolver.TrySelectDownloadPlayback(
-                playUrl,
-                supplement: null,
-                quality,
-                videoCodecId,
-                audioId,
-                streamKind,
-                requireVideo,
-                out selected);
-        if (!shouldTryFallback)
-        {
-            return AttachBangumiDiagnostics(
-                selected ?? playUrl,
-                quality,
-                playDetail,
-                usedWebPageFallback: false,
-                "not-required");
-        }
-
+        var apiFallbackReason = "embedded-playback-unavailable";
         try
         {
             var webpage = await BiliApiRequest.RequestTextAsync(
@@ -280,95 +227,149 @@ public static partial class VideoStreamApi
                     out var embeddedPlayDetail)
                 || embeddedPlayUrl == null)
             {
-                if (!discoverAvailability)
+                apiFallbackReason = "embedded-playback-unavailable";
+            }
+            else
+            {
+                var embeddedAvailability = BangumiPlaybackResolver.DiscoverAvailability(
+                    embeddedPlayUrl);
+                var hasUsableEmbeddedPlayback = requireVideo
+                    ? embeddedAvailability.Video.Count > 0
+                    : embeddedAvailability.Audio.Count > 0;
+                if (discoverAvailability && hasUsableEmbeddedPlayback)
                 {
-                    throw new PlaybackSelectionUnavailableException(
+                    return CompleteBangumiPlayback(
+                        embeddedPlayUrl,
+                        discoverAvailability,
                         quality,
                         videoCodecId,
                         audioId,
-                        streamKind);
+                        streamKind,
+                        requireVideo,
+                        embeddedPlayDetail,
+                        PlayUrlResolutionSource.WebPage,
+                        discoverAvailability
+                            ? "embedded-availability-selected"
+                            : "embedded-playback-selected");
                 }
 
-                return AttachBangumiDiagnostics(
-                    playUrl,
-                    quality,
-                    playDetail,
-                    usedWebPageFallback: false,
-                    "embedded-playback-unavailable");
+                if (!discoverAvailability
+                    && BangumiPlaybackResolver.TrySelectDownloadPlayback(
+                        embeddedPlayUrl,
+                        supplement: null,
+                        quality,
+                        videoCodecId,
+                        audioId,
+                        streamKind,
+                        requireVideo,
+                        out var selectedEmbeddedPlayUrl))
+                {
+                    return AttachBangumiDiagnostics(
+                        selectedEmbeddedPlayUrl!,
+                        quality,
+                        embeddedPlayDetail,
+                        PlayUrlResolutionSource.WebPage,
+                        "embedded-playback-selected");
+                }
+
+                apiFallbackReason = hasUsableEmbeddedPlayback
+                    ? "embedded-playback-selection-unavailable"
+                    : "embedded-playback-without-usable-address";
             }
-
-            if (discoverAvailability)
-            {
-                var apiAvailability = BangumiPlaybackResolver.DiscoverAvailability(playUrl);
-                var discoveredAvailability = BangumiPlaybackResolver.DiscoverAvailability(
-                    playUrl,
-                    embeddedPlayUrl);
-                var addedCapability = discoveredAvailability.Video.Count > apiAvailability.Video.Count
-                                      || discoveredAvailability.Audio.Count > apiAvailability.Audio.Count;
-                playUrl.Availability = discoveredAvailability;
-
-                return AttachBangumiDiagnostics(
-                    playUrl,
-                    quality,
-                    addedCapability ? embeddedPlayDetail : playDetail,
-                    usedWebPageFallback: addedCapability,
-                    addedCapability
-                        ? "embedded-availability-added"
-                        : "embedded-availability-not-better");
-            }
-
-            if (!BangumiPlaybackResolver.TrySelectDownloadPlayback(
-                    playUrl,
-                    embeddedPlayUrl,
-                    quality,
-                    videoCodecId,
-                    audioId,
-                    streamKind,
-                    requireVideo,
-                    out selected))
-            {
-                throw new PlaybackSelectionUnavailableException(
-                    quality,
-                    videoCodecId,
-                    audioId,
-                    streamKind);
-            }
-
-            return AttachBangumiDiagnostics(
-                selected!,
-                quality,
-                embeddedPlayDetail,
-                usedWebPageFallback: true,
-                "embedded-playback-selected");
         }
         catch (HttpRequestException exception)
         {
-            if (!discoverAvailability)
-            {
-                throw;
-            }
-
-            return AttachBangumiDiagnostics(
-                playUrl,
-                quality,
-                playDetail,
-                usedWebPageFallback: false,
-                $"web-request-failed:{exception.GetType().Name}");
+            apiFallbackReason = $"web-request-failed:{exception.GetType().Name}";
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            if (!discoverAvailability)
-            {
-                throw;
-            }
+            apiFallbackReason = "web-request-timeout";
+        }
 
+        var baseUrl = $"https://api.bilibili.com/pgc/player/web/v2/playurl?cid={cid}&ep_id={episodeId}&qn={quality}&fourk=1&fnver=0&fnval={BangumiFnval}";
+        string url;
+        if (bvid != null)
+        {
+            url = $"{baseUrl}&bvid={bvid}";
+        }
+        else if (avid > -1)
+        {
+            url = $"{baseUrl}&aid={avid}";
+        }
+        else
+        {
+            return null;
+        }
+
+        var response = await BiliApiRequest.RequestJsonAsync<BangumiPlayUrlV2Origin>(
+            client,
+            url,
+            referer,
+            nameof(GetBangumiPlayUrlAsync),
+            "GetBangumiPlayUrl()",
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        var playUrl = BangumiPlayUrlV2Contract.SelectPayload(
+            response,
+            nameof(GetBangumiPlayUrlAsync));
+        return CompleteBangumiPlayback(
+            playUrl,
+            discoverAvailability,
+            quality,
+            videoCodecId,
+            audioId,
+            streamKind,
+            requireVideo,
+            response.Result?.PlayCheck?.PlayDetail,
+            PlayUrlResolutionSource.Api,
+            $"api-fallback-selected:{apiFallbackReason}");
+    }
+
+    private static PlayUrl CompleteBangumiPlayback(
+        PlayUrl playUrl,
+        bool discoverAvailability,
+        int quality,
+        int? videoCodecId,
+        int? audioId,
+        PlayUrlStreamKind? streamKind,
+        bool requireVideo,
+        string? playDetail,
+        PlayUrlResolutionSource source,
+        string outcome)
+    {
+        if (discoverAvailability)
+        {
+            playUrl.Availability = BangumiPlaybackResolver.DiscoverAvailability(playUrl);
             return AttachBangumiDiagnostics(
                 playUrl,
                 quality,
                 playDetail,
-                usedWebPageFallback: false,
-                "web-request-timeout");
+                source,
+                outcome);
         }
+
+        if (!BangumiPlaybackResolver.TrySelectDownloadPlayback(
+                playUrl,
+                supplement: null,
+                quality,
+                videoCodecId,
+                audioId,
+                streamKind,
+                requireVideo,
+                out var selected))
+        {
+            throw new PlaybackSelectionUnavailableException(
+                quality,
+                videoCodecId,
+                audioId,
+                streamKind);
+        }
+
+        return AttachBangumiDiagnostics(
+            selected!,
+            quality,
+            playDetail,
+            source,
+            outcome);
     }
 
     internal static string BuildBangumiPlayPageUrl(long episodeId)
@@ -381,15 +382,15 @@ public static partial class VideoStreamApi
         PlayUrl playUrl,
         int requestedQuality,
         string? playDetail,
-        bool usedWebPageFallback,
-        string fallbackOutcome)
+        PlayUrlResolutionSource source,
+        string outcome)
     {
         playUrl.Diagnostics = new PlayUrlDiagnostics(
             requestedQuality,
-            BangumiFnval,
+            source == PlayUrlResolutionSource.Api ? BangumiFnval : null,
             playDetail,
-            usedWebPageFallback,
-            fallbackOutcome);
+            source,
+            outcome);
         return playUrl;
     }
 

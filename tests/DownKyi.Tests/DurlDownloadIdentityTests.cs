@@ -184,18 +184,20 @@ public sealed class DurlDownloadIdentityTests
     [Fact]
     public async Task BangumiPlaybackStageReturnsSelectionUnavailableFailure()
     {
-        var requestCount = 0;
+        var requestedAddresses = new List<string>();
         var client = new TestBilibiliApiClient
         {
-            GetStringAsyncHandler = (_, _) =>
+            GetStringAsyncHandler = (request, _) =>
             {
-                requestCount++;
-                return Task.FromResult(requestCount == 1
+                requestedAddresses.Add(request.RequestAddress);
+                return Task.FromResult(request.RequestAddress.StartsWith(
+                    "https://www.bilibili.com/bangumi/play/",
+                    StringComparison.Ordinal)
                     ? """
-                      {"code":0,"result":{"video_info":{"quality":112,"durl":[],"dash":{"video":[{"id":112,"codecid":13,"base_url":"https://api.invalid/video-112"}],"audio":[{"id":30280,"base_url":"https://api.invalid/audio"}]}}}}
+                      <script>const playurlSSRData = {"code":0,"result":{"video_info":{"quality":112,"durl":[],"dash":{"video":[{"id":112,"codecid":13,"base_url":"https://web.invalid/video-112"}],"audio":[{"id":30280,"base_url":"https://web.invalid/audio"}]}}}};</script>
                       """
                     : """
-                      <script>const playurlSSRData = {"code":0,"result":{"video_info":{"quality":112,"durl":[],"dash":{"video":[{"id":112,"codecid":13,"base_url":"https://web.invalid/video-112"}],"audio":[{"id":30280,"base_url":"https://web.invalid/audio"}]}}}};</script>
+                      {"code":0,"result":{"video_info":{"quality":112,"durl":[],"dash":{"video":[{"id":112,"codecid":13,"base_url":"https://api.invalid/video-112"}],"audio":[{"id":30280,"base_url":"https://api.invalid/audio"}]}}}}
                       """);
             }
         };
@@ -209,7 +211,14 @@ public sealed class DurlDownloadIdentityTests
         Assert.Equal("download.playback.selection-unavailable", result.Error?.Code);
         Assert.Equal(OperationErrorKind.NotFound, result.Error?.Kind);
         Assert.Null(fixture.Context.PlayUrl);
-        Assert.Equal(2, requestCount);
+        Assert.Equal(2, requestedAddresses.Count);
+        Assert.Equal(
+            "https://www.bilibili.com/bangumi/play/ep3489",
+            requestedAddresses[0]);
+        Assert.Contains(
+            "/pgc/player/web/v2/playurl",
+            requestedAddresses[1],
+            StringComparison.Ordinal);
     }
 
     [Fact]
