@@ -671,6 +671,59 @@ public sealed class VideoTagLoadingTests : IDisposable
     }
 
     [Fact]
+    public async Task DurlVideoWithIndependentAudioCreatesAudioOnlyDashTask()
+    {
+        using var context = CreateContext(generateMetadata: false);
+        var page = CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]));
+        SetPlayback(page, new PlayUrl
+        {
+            Quality = 80,
+            VideoCodecid = 7,
+            Durl =
+            [
+                new PlayUrlDurl
+                {
+                    Order = 1,
+                    SourceAddress = "https://media.invalid/combined.mp4"
+                }
+            ],
+            Dash = new PlayUrlDash
+            {
+                Audio =
+                [
+                    new PlayUrlDashVideo
+                    {
+                        Id = 30280,
+                        BaseAddress = "https://media.invalid/audio-only.m4s"
+                    }
+                ]
+            }
+        }, isDurl: true);
+        var preparedDownload = await context.PrepareAsync(page);
+        Assert.True(Assert.Single(Assert.Single(preparedDownload.Sections).Pages)
+            .AvailableMedia.Supports(DownloadContentSelection.None with { Audio = true }));
+
+        var added = await context.AddToDownloadAsync(
+            CreateSelection(
+                _directory,
+                DownloadContentSelection.None with { Audio = true }),
+            preparedDownload,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, added);
+        var task = Assert.Single(context.ListState.Downloading);
+        Assert.Equal(
+            DownloadContentSelection.None with
+            {
+                Audio = true,
+                MediaKind = DownloadMediaKind.Dash
+            },
+            task.DownloadBase.NeedDownloadContent);
+        Assert.Equal(30280, task.AudioCodec.Id);
+        Assert.Equal(string.Empty, task.VideoCodecName);
+    }
+
+    [Fact]
     public async Task ConflictSkipDoesNotCreateDownloadTask()
     {
         using var context = CreateContext(generateMetadata: false);

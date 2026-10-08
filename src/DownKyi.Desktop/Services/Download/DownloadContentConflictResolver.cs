@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Desktop;
 using DownKyi.Domain.Downloads;
+using DownKyi.Presentation;
 
 namespace DownKyi.Services.Download;
 
@@ -95,7 +96,7 @@ internal sealed class DownloadContentConflictResolver
                     preparedPage.AvailableMedia);
                 if (conflict == null)
                 {
-                    pages.Add(new FinalizedDownloadPage(page, page.VideoQuality, requestedContent));
+                    pages.Add(CreateFinalizedPage(page, requestedContent));
                     continue;
                 }
 
@@ -111,10 +112,7 @@ internal sealed class DownloadContentConflictResolver
                     cancellationToken).ConfigureAwait(true);
                 if (action == DownloadContentConflictAction.UseAvailableMedia)
                 {
-                    pages.Add(new FinalizedDownloadPage(
-                        page,
-                        page.VideoQuality,
-                        conflict.AvailableContent));
+                    pages.Add(CreateFinalizedPage(page, conflict.AvailableContent));
                 }
             }
 
@@ -122,6 +120,25 @@ internal sealed class DownloadContentConflictResolver
         }
 
         return new FinalizedDownload(preparedDownload.Video, sections);
+    }
+
+    private static FinalizedDownloadPage CreateFinalizedPage(
+        VideoPage page,
+        DownloadContentSelection requestedContent)
+    {
+        // Audio-only output must not inherit an unrelated DURL video selection.
+        // Keep the existing quality metadata for sidecar-only tasks, whose naming
+        // contract still uses the selected video quality.
+        var videoQuality = requestedContent.Audio && !requestedContent.Video
+            ? null
+            : page.VideoQuality;
+        if (requestedContent.Video && videoQuality == null)
+        {
+            throw new InvalidOperationException(
+                "A finalized video download requires a selected video quality.");
+        }
+
+        return new FinalizedDownloadPage(page, videoQuality, requestedContent);
     }
 
     private async Task<DownloadContentConflictAction> ResolveActionAsync(

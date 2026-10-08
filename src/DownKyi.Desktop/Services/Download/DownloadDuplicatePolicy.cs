@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Desktop;
 using DownKyi.Core.Settings;
+using DownKyi.Domain.Downloads;
 using DownKyi.Presentation;
 using DownKyi.Utils;
 using DownKyi.ViewModels.DownloadManager;
@@ -33,14 +35,16 @@ internal sealed class DownloadDuplicatePolicy
     public async Task<bool> ShouldSkipAsync(
         VideoPage page,
         VideoQuality? videoQuality,
+        DownloadContentSelection requestedContent,
         RepeatDownloadStrategy strategy,
         CancellationToken cancellationToken,
         Lazy<Task<List<DownloadedItem>>>? completedCandidates = null)
     {
         ArgumentNullException.ThrowIfNull(page);
+        ArgumentNullException.ThrowIfNull(requestedContent);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (ShouldSkipActiveDownload(page, videoQuality))
+        if (ShouldSkipActiveDownload(page, videoQuality, requestedContent))
         {
             return true;
         }
@@ -51,7 +55,7 @@ internal sealed class DownloadDuplicatePolicy
         MergeLiveCompletedCandidates(candidates);
         foreach (var item in candidates)
         {
-            if (!IsSameVideo(item, page, videoQuality))
+            if (!IsSameVideo(item, page, videoQuality, requestedContent))
             {
                 continue;
             }
@@ -91,11 +95,14 @@ internal sealed class DownloadDuplicatePolicy
         return new List<DownloadedItem>(downloadedItems);
     }
 
-    private bool ShouldSkipActiveDownload(VideoPage page, VideoQuality? videoQuality)
+    private bool ShouldSkipActiveDownload(
+        VideoPage page,
+        VideoQuality? videoQuality,
+        DownloadContentSelection requestedContent)
     {
         foreach (var item in _downloadLists.Downloading)
         {
-            if (!IsSameVideo(item, page, videoQuality))
+            if (!IsSameVideo(item, page, videoQuality, requestedContent))
             {
                 continue;
             }
@@ -151,8 +158,14 @@ internal sealed class DownloadDuplicatePolicy
     private static bool IsSameVideo(
         DownloadBaseItem item,
         VideoPage page,
-        VideoQuality? videoQuality)
+        VideoQuality? videoQuality,
+        DownloadContentSelection requestedContent)
     {
+        if (GetMediaOutput(item) != GetMediaOutput(requestedContent))
+        {
+            return false;
+        }
+
         var downloadBase = item.DownloadBase;
         var isSameVideo = downloadBase.Cid == page.Cid;
         if (videoQuality == null)
@@ -169,5 +182,37 @@ internal sealed class DownloadDuplicatePolicy
         }
 
         return isSameVideo;
+    }
+
+    private static DownloadMediaOutputModes GetMediaOutput(DownloadBaseItem item)
+    {
+        // Active tasks retain their finalized content selection. Completed history
+        // does not, so the published media artifact is its output authority.
+        if (item is DownloadedItem { HistoryRecord: { } history }
+            && history.PublishedArtifacts.TryGetValue("media", out var mediaPath))
+        {
+            var extension = Path.GetExtension(mediaPath);
+            return extension.Equals(".mp3", StringComparison.OrdinalIgnoreCase)
+                   || extension.Equals(".aac", StringComparison.OrdinalIgnoreCase)
+                   || extension.Equals(".flac", StringComparison.OrdinalIgnoreCase)
+                ? DownloadMediaOutputModes.AudioOnly
+                : DownloadMediaOutputModes.VideoOnly;
+        }
+
+        return GetMediaOutput(item.DownloadBase.NeedDownloadContent);
+    }
+
+    private static DownloadMediaOutputModes GetMediaOutput(DownloadContentSelection content)
+    {
+        if (content.Video)
+        {
+            // Duplicate admission has always treated video-only and muxed video
+            // as one video-bearing output. Preserve that contract here.
+            return DownloadMediaOutputModes.VideoOnly;
+        }
+
+        return content.Audio
+            ? DownloadMediaOutputModes.AudioOnly
+            : DownloadMediaOutputModes.None;
     }
 }

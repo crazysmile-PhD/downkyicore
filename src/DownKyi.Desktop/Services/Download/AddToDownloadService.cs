@@ -244,6 +244,7 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
                     .ShouldSkipAsync(
                         page,
                         finalizedPage.VideoQuality,
+                        finalizedPage.RequestedContent,
                         settings.Basic.RepeatDownloadStrategy,
                         cancellationToken,
                         completedCandidates)

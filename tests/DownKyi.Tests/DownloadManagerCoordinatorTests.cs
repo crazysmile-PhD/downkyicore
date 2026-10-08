@@ -313,6 +313,7 @@ public sealed class DownloadManagerCoordinatorTests
         Assert.True(await duplicatePolicy.ShouldSkipAsync(
             page,
             quality,
+            DownloadContentSelection.All,
             DownKyi.Core.Settings.RepeatDownloadStrategy.JumpOver,
             TestContext.Current.CancellationToken));
 
@@ -326,6 +327,7 @@ public sealed class DownloadManagerCoordinatorTests
         Assert.False(await duplicatePolicy.ShouldSkipAsync(
             page,
             quality,
+            DownloadContentSelection.All,
             DownKyi.Core.Settings.RepeatDownloadStrategy.JumpOver,
             TestContext.Current.CancellationToken));
     }
