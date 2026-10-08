@@ -12,9 +12,9 @@ internal static class LegacyDownloadStoreReader
     {
         if (!format.IsSupported)
         {
-            throw new SqliteException(
-                $"Download database schema {format.UserVersion} has an unsupported or incomplete shape.",
-                1);
+            throw new DownloadStoreSchemaMismatchException(
+                format.UserVersion,
+                format.SchemaDifferences);
         }
 
         var downloadRows = await ReadDownloadRowsAsync(
