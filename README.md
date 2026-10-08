@@ -25,6 +25,8 @@ Windows ZIP 必须完整解压到新目录后再运行。`DownKyi.exe` 旁必须
 
 版本变化见 [CHANGELOG.md](CHANGELOG.md)，安装包见 [GitHub Releases](https://github.com/crazysmile-PhD/downkyicore/releases)。
 
+后续正式版本另提供 `DownKyi-<版本>-verification.zip`，集中保存各安装包原有的 `.sha256` 与 `publish-manifest-*.json`。需要验证时，将 ZIP 内容解压到下载的安装包所在目录，再使用对应文件核对安装包哈希和逐文件内容。
+
 ## 功能
 
 - 解析视频、合集、番剧、课程、收藏、历史记录和稍后再看等入口。

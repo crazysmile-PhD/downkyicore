@@ -27,6 +27,27 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.Equal(7, CountOccurrences(workflow, "fail-fast: false"));
         Assert.Equal(4, CountOccurrences(workflow, "validate-publish-output.ps1"));
         Assert.Equal(4, CountOccurrences(workflow, "Get-FileHash"));
+        Assert.Contains("./script/assemble-release-assets.ps1", workflow, StringComparison.Ordinal);
+        Assert.Contains("script/release-package-catalog.ps1", workflow, StringComparison.Ordinal);
+        Assert.Contains("artifacts: artifacts/release-assets/*", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("artifacts: artifacts/*", workflow, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ReleasePackageIdentityHasOneScriptOwner()
+    {
+        var catalog = File.ReadAllText(
+            Path.Combine(RepositoryRoot, "script", "release-package-catalog.ps1"));
+        var validator = File.ReadAllText(
+            Path.Combine(RepositoryRoot, "script", "validate-build-run-artifacts.ps1"));
+        var assembler = File.ReadAllText(
+            Path.Combine(RepositoryRoot, "script", "assemble-release-assets.ps1"));
+
+        Assert.Equal(9, CountOccurrences(catalog, "            Name = "));
+        Assert.Contains("Get-ReleasePackageCatalog", validator, StringComparison.Ordinal);
+        Assert.Contains("Get-ReleasePackageCatalog", assembler, StringComparison.Ordinal);
+        Assert.DoesNotContain("publish-manifest-win-x64.json", validator, StringComparison.Ordinal);
+        Assert.DoesNotContain("publish-manifest-win-x64.json", assembler, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -82,6 +103,14 @@ public sealed class ReleaseWorkflowArchitectureTests
             release,
             line => line.Contains("./script/validate-build-run-artifacts.ps1", StringComparison.Ordinal));
         Assert.Contains(release, line => line.Contains("-Scope Inventory", StringComparison.Ordinal));
+        Assert.Contains(
+            release,
+            line => line.Contains("./script/assemble-release-assets.ps1", StringComparison.Ordinal));
+        AssertInOrder(
+            string.Join('\n', release),
+            "./script/validate-build-run-artifacts.ps1",
+            "./script/assemble-release-assets.ps1",
+            "artifacts: artifacts/release-assets/*");
     }
 
     [Fact]
@@ -193,6 +222,8 @@ public sealed class ReleaseWorkflowArchitectureTests
                 "script/assets/external-assets.json",
                 "script/download-external-asset.ps1",
                 "script/install-appimagetool.ps1",
+                "script/assemble-release-assets.ps1",
+                "script/release-package-catalog.ps1",
                 "script/ffmpeg-assets.py",
                 "script/ffmpeg.ps1",
                 "script/ffmpeg.sh",
@@ -744,6 +775,7 @@ public sealed class ReleaseWorkflowArchitectureTests
             "Verify signed aria2 integrity",
             "Notarize app",
             "Verify notarized app trust",
+            "Seal final signed app manifest",
             "Create DMG",
             "Sign DMG",
             "Verify signed DMG",
@@ -799,6 +831,18 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.Contains("codesign --verify --verbose=2", verifyDmgScript, StringComparison.Ordinal);
         Assert.Contains("xcrun stapler validate", verifyDmgScript, StringComparison.Ordinal);
         Assert.Contains("spctl --assess --type open --context context:primary-signature", verifyDmgScript, StringComparison.Ordinal);
+        Assert.Contains(
+            "-OutputPath \"artifacts/macos/pre-sign-publish-manifest-osx-${{ matrix.cpu }}.json\"",
+            workflow,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "-PublishDirectory \"script/macos/哔哩下载姬.app/Contents/MacOS\"",
+            workflow,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "-ExpectedManifestPath \"$EXPECTED_MANIFEST_PATH\"",
+            validateDmgPackageScript,
+            StringComparison.Ordinal);
         Assert.Contains("/usr/bin/ditto \"$APP_PATH\" \"$COPIED_APP_PATH\"", validateDmgPackageScript, StringComparison.Ordinal);
         Assert.Equal(1, CountOccurrences(validateDmgPackageScript, "verify-app-signature.sh"));
         Assert.Equal(1, CountOccurrences(validateDmgPackageScript, "aria2-runtime-integrity.sh\" verify"));
@@ -840,6 +884,7 @@ public sealed class ReleaseWorkflowArchitectureTests
                      "Sign app",
                      "Verify signed app trust",
                      "Verify signed aria2 integrity",
+                     "Seal final signed app manifest",
                      "Create DMG",
                      "Validate mounted and installed macOS package contracts"
                  })

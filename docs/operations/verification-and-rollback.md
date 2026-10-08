@@ -127,8 +127,27 @@ catalog 檔案加入 output/publish；自訂 RID 不得跨 ProjectReference。
 推 tag 前手動執行 `build.yml`；同一次 run 的 `Pre-release artifacts` matrix
 會下載完整 artifact inventory，不重新 build，重算每個 package sidecar，並在
 對應原生平台重新檢查 manifest、版本、必要 binary、Fluent theme 與使用者
-資料排除。`Publish release` 也以同一驗證腳本再次整理並核對下載內容，且只在
-整個 matrix 成功後執行。macOS artifact 另需確認 x64 與 arm64 final app 均已完成簽章並
+資料排除。`Publish release` 也會先以相同驗證腳本再次整理並核對下載內容，
+接著才以組裝腳本建立公開集合，且只在整個 matrix 成功後執行：
+
+```powershell
+$version = (Get-Content ./version.txt -Raw).Trim()
+pwsh ./script/validate-build-run-artifacts.ps1 `
+  -ArtifactDirectory ./artifacts/downloaded-release-candidate `
+  -Scope Inventory `
+  -OutputDirectory ./artifacts/pre-release-validation
+pwsh ./script/assemble-release-assets.ps1 `
+  -ArtifactsDirectory ./artifacts/downloaded-release-candidate `
+  -ExpectedVersion $version `
+  -OutputDirectory ./artifacts/release-assets
+```
+
+輸出必須只包含各平台 installer 與單一 `DownKyi-<version>-verification.zip`；
+目前共九個 installer 加一個 ZIP，合計十個公開附件。ZIP 根目錄保存原有的
+九份 `.sha256` 與九份 `publish-manifest-*.json`，檔名及內容逐位元組保留，
+不合併或重新序列化 manifest。GitHub Release 不再單獨上傳這些驗證檔。
+
+macOS artifact 另需確認 x64 與 arm64 final app 均已完成簽章並
 通過 `codesign --verify --deep --strict`；缺少 Apple credentials 時使用 ad-hoc
 簽章，Developer ID、notarization、stapling、Gatekeeper 與 signed-DMG 驗證會
 跳過，產物不得宣稱具備這些信任屬性。具備完整 Apple credentials 時才要求
@@ -141,7 +160,11 @@ $version = (Get-Content ./version.txt -Raw).Trim()
 pwsh ./script/validate-release-version.ps1 -GitRef "refs/tags/v$version"
 ```
 
-這個檢查要求 tag 與 `version.txt` 完全一致；不得移動或重用既有 tag。
+這個檢查要求 tag 與 `version.txt` 完全一致；不得移動或重用既有 tag。正式
+發布後重新下載安裝包與驗證 ZIP。將 ZIP 解壓到下載的安裝包所在目錄，按
+對應 `.sha256` 核對安裝包 SHA-256，並確認每個 package 的 sidecar 與 manifest
+均完整收錄、與組裝輸入逐位元組一致。公開附件不得包含 `.internal.*` 或散落的
+per-package 驗證檔。
 
 登入態 API audit 只能由明確授權的 operator 執行：
 

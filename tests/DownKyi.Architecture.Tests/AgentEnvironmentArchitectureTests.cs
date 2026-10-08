@@ -537,6 +537,9 @@ public sealed class AgentEnvironmentArchitectureTests
         AssertPathsExist(
             "docs/maintenance.md",
             "docs/operations/verification-and-rollback.md",
+            "script/release-package-catalog.ps1",
+            "script/validate-build-run-artifacts.ps1",
+            "script/assemble-release-assets.ps1",
             "script/validate-publish-output.ps1",
             ".github/workflows/build.yml");
 

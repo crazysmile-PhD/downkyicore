@@ -18,6 +18,8 @@ on:
       - 'script/assets/external-assets.json'
       - 'script/download-external-asset.ps1'
       - 'script/install-appimagetool.ps1'
+      - 'script/assemble-release-assets.ps1'
+      - 'script/release-package-catalog.ps1'
       - 'script/ffmpeg-assets.py'
       - 'script/ffmpeg.ps1'
       - 'script/ffmpeg.sh'
@@ -897,10 +899,18 @@ jobs:
             -ArtifactDirectory ./artifacts `
             -Scope Inventory `
             -OutputDirectory ./artifacts/pre-release-validation
+      - name: Assemble public release assets
+        shell: pwsh
+        run: |
+          $version = (Get-Content -LiteralPath ./version.txt -Raw).Trim()
+          ./script/assemble-release-assets.ps1 `
+            -ArtifactsDirectory artifacts `
+            -ExpectedVersion $version `
+            -OutputDirectory artifacts/release-assets
       - name: Release
         uses: $/.github/actions/release
         with:
           allowUpdates: true
           replacesArtifacts: true
-          artifacts: artifacts/*
+          artifacts: artifacts/release-assets/*
           body: ${{ needs.changelog.outputs.release_body }}
