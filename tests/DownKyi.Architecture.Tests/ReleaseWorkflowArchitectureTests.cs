@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Reflection;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Xml.Linq;
 
 namespace DownKyi.Architecture.Tests;
@@ -195,6 +196,117 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.Contains("          if [ \"$EXTERNAL_ASSETS\" = true ]; then", gate);
         Assert.Contains("            test \"$PREFLIGHT_RESULT\" = skipped", gate);
         Assert.DoesNotContain("src/DownKyi.Desktop/**", triggerPaths);
+    }
+
+    [Fact]
+    public void SelectiveCiTriggersMatchRepresentativeChangesAndEvents()
+    {
+        var workflows = new Dictionary<string, string>
+        {
+            ["quality"] = ReadWorkflow("quality.yml"),
+            ["codeql"] = ReadWorkflow("codeql.yml"),
+            ["dependency"] = ReadWorkflow("dependency-audit.yml"),
+            ["build"] = ReadWorkflow("build.yml"),
+            ["macos"] = ReadWorkflow("macos-adhoc-package.yml"),
+            ["aria2"] = ReadWorkflow("aria2-tls-security.yml"),
+            ["infrastructure"] = ReadWorkflow("ci-infrastructure.yml")
+        };
+
+        // Each case is evaluated against the real event and glob filters, not a copied path list.
+        var pullRequests = new (string Path, string[] ExtraWorkflows)[]
+        {
+            ("docs/maintenance.md", []),
+            ("src/DownKyi.Application/Example.cs", []),
+            ("tests/DownKyi.Architecture.Tests/ReleaseSafetyRegressionTests.cs", []),
+            ("docs/testing/test-runner-policy.json", ["infrastructure"]),
+            ("tests/DownKyi.Windows.Tests/WindowsEtwResourceFlightRecorderTests.cs", ["infrastructure"]),
+            ("script/validate-build-run-artifacts.ps1", []),
+            ("script/pupnet/stage-canonical-publish.sh", []),
+            ("script/validate-publish-output.ps1", ["macos"]),
+            ("script/macos/validate-dmg-package.sh", ["macos"]),
+            ("script/aria2.sh", ["macos", "aria2"]),
+            ("script/download-external-asset.ps1", ["build", "aria2"]),
+            ("script/ffmpeg-assets.py", ["build", "macos"]),
+            ("script/assets/external-assets.json", ["build", "macos", "aria2"]),
+            (".github/workflows/build.yml", ["build"]),
+            (".github/workflows/quality.yml", ["infrastructure"])
+        };
+        foreach (var (path, extraWorkflows) in pullRequests)
+        {
+            foreach (var (name, workflow) in workflows)
+            {
+                var expected = name is "quality" or "codeql" or "dependency" ||
+                               extraWorkflows.Contains(name, StringComparer.Ordinal);
+                Assert.Equal(expected, WorkflowRuns(workflow, "pull_request", path));
+            }
+        }
+
+        Assert.True(WorkflowRuns(workflows["quality"], "push-main", "docs/maintenance.md"));
+        Assert.True(WorkflowRuns(workflows["codeql"], "push-main", "docs/maintenance.md"));
+        Assert.False(WorkflowRuns(workflows["dependency"], "push-main", "docs/maintenance.md"));
+        Assert.False(WorkflowRuns(workflows["build"], "push-main", "script/assets/external-assets.json"));
+        Assert.True(WorkflowRuns(workflows["aria2"], "push-main", "script/assets/external-assets.json"));
+        Assert.True(WorkflowRuns(workflows["build"], "push-tag", "docs/maintenance.md"));
+        Assert.False(WorkflowRuns(workflows["quality"], "push-tag", "docs/maintenance.md"));
+        Assert.True(WorkflowRuns(workflows["build"], "workflow_dispatch", ""));
+        Assert.True(WorkflowRuns(workflows["macos"], "workflow_dispatch", ""));
+        Assert.False(WorkflowRuns(workflows["quality"], "workflow_dispatch", ""));
+
+        // A combined PR takes the union of path matches.
+        Assert.True(WorkflowRuns(workflows["build"], "pull_request",
+            "script/validate-build-run-artifacts.ps1", "script/assets/external-assets.json"));
+    }
+
+    [Fact]
+    public void BuildJobDependenciesPreserveExpectedSkipsAndFormalReleaseGate()
+    {
+        var workflow = ReadWorkflow("build.yml");
+
+        Assert.False(BuildJobRuns(workflow, "release-gate", "pull_request",
+            "script/validate-build-run-artifacts.ps1"));
+        Assert.True(BuildJobRuns(workflow, "ffmpeg-required-gate", "pull_request",
+            ".github/workflows/build.yml"));
+        Assert.False(BuildJobRuns(workflow, "external-assets-preflight", "pull_request",
+            ".github/workflows/build.yml"));
+        Assert.False(BuildJobRuns(workflow, "release-gate", "pull_request",
+            ".github/workflows/build.yml"));
+        Assert.True(BuildJobRuns(workflow, "release-gate", "pull_request",
+            "script/assets/external-assets.json"));
+        Assert.False(BuildJobRuns(workflow, "pre-release-validation", "pull_request",
+            "script/assets/external-assets.json"));
+        Assert.False(BuildJobRuns(workflow, "release", "pull_request",
+            "script/assets/external-assets.json"));
+        Assert.True(BuildJobRuns(workflow, "pre-release-validation", "workflow_dispatch", ""));
+        Assert.False(BuildJobRuns(workflow, "release", "workflow_dispatch", ""));
+        Assert.True(BuildJobRuns(workflow, "ffmpeg-asset-updater", "workflow_dispatch", "",
+            updateAssets: true));
+        Assert.False(BuildJobRuns(workflow, "release-gate", "workflow_dispatch", "",
+            updateAssets: true));
+        Assert.True(BuildJobRuns(workflow, "pre-release-validation", "push-tag", ""));
+        Assert.True(BuildJobRuns(workflow, "release", "push-tag", ""));
+        Assert.False(BuildJobRuns(workflow, "ffmpeg-required-gate", "push-tag", ""));
+    }
+
+    [Fact]
+    public void RequiredPullRequestChecksDoNotDependOnPathFilteredWorkflows()
+    {
+        var requiredJobs = new (string Workflow, string Job, string CheckName)[]
+        {
+            ("quality.yml", "format", "Format check"),
+            ("quality.yml", "build-test", "Build and test (${{ matrix.check_name }})"),
+            ("codeql.yml", "analyze", "Analyze C#"),
+            ("dependency-audit.yml", "audit", "Dependency policy")
+        };
+        foreach (var (file, jobName, checkName) in requiredJobs)
+        {
+            var workflow = ReadWorkflow(file);
+            Assert.True(WorkflowRuns(workflow, "pull_request", "docs/maintenance.md"));
+            var job = GetYamlBlock(NormalizeWorkflowLines(workflow), $"  {jobName}:", 2);
+            Assert.Contains($"    name: {checkName}", job);
+            Assert.DoesNotContain(job, line => GetIndent(line) == 4 &&
+                (line.TrimStart().StartsWith("if:", StringComparison.Ordinal) ||
+                 line.TrimStart().StartsWith("needs:", StringComparison.Ordinal)));
+        }
     }
 
     [Fact]
@@ -1119,6 +1231,132 @@ public sealed class ReleaseWorkflowArchitectureTests
             !HasYamlKey(step, 8, "continue-on-error: true"));
 
         return pullRequestDetector && steps.Count == 1;
+    }
+
+    private static string ReadWorkflow(string name) =>
+        File.ReadAllText(Path.Combine(RepositoryRoot, ".github", "workflows", name));
+
+    private static string[] NormalizeWorkflowLines(string workflow) =>
+        workflow.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+
+    private static bool WorkflowRuns(string workflow, string eventKind, params string[] changedPaths)
+    {
+        var on = GetYamlBlock(NormalizeWorkflowLines(workflow), "on:", 0);
+        var eventName = eventKind switch
+        {
+            "pull_request" => "pull_request",
+            "push-main" or "push-tag" => "push",
+            "workflow_dispatch" => "workflow_dispatch",
+            _ => throw new ArgumentOutOfRangeException(nameof(eventKind))
+        };
+        if (!on.Contains($"  {eventName}:", StringComparer.Ordinal))
+        {
+            return false;
+        }
+
+        var eventBlock = GetYamlBlock(on.ToArray(), $"  {eventName}:", 2);
+        if (eventKind is "pull_request" or "push-main" or "push-tag")
+        {
+            Assert.DoesNotContain(eventBlock, line =>
+                GetIndent(line) == 4 && line.Trim() == "paths-ignore:");
+            var refKey = eventKind == "push-tag" ? "tags" : "branches";
+            var refFilters = GetYamlSequenceValues(eventBlock, $"    {refKey}:", 4);
+            if (eventKind == "push-tag" && !refFilters.Any(filter =>
+                    GlobMatches(filter, "v1.2.2")))
+            {
+                return false;
+            }
+            if (eventKind == "push-main" && !refFilters.Any(filter =>
+                    GlobMatches(filter, "main")))
+            {
+                return false;
+            }
+            if (eventKind == "pull_request" && refFilters.Length > 0 &&
+                !refFilters.Any(filter => GlobMatches(filter, "main")))
+            {
+                return false;
+            }
+
+            var pathFilters = GetYamlSequenceValues(eventBlock, "    paths:", 4);
+            if (pathFilters.Length > 0 && !changedPaths.Any(path =>
+                    pathFilters.Any(filter => GlobMatches(filter, path))))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static string[] GetYamlSequenceValues(
+        IReadOnlyList<string> parent, string header, int indent) =>
+        GetYamlBlock(parent.ToArray(), header, indent)
+            .Where(line => GetIndent(line) == indent + 2 &&
+                           line.TrimStart().StartsWith("- ", StringComparison.Ordinal))
+            .Select(line => line.Trim()[2..].Trim('\'', '"'))
+            .ToArray();
+
+    private static bool GlobMatches(string glob, string path)
+    {
+        var pattern = Regex.Escape(glob)
+            .Replace(@"\*\*/", @"(?:.*/)?", StringComparison.Ordinal)
+            .Replace(@"\*\*", ".*", StringComparison.Ordinal)
+            .Replace(@"\*", "[^/]*", StringComparison.Ordinal)
+            .Replace(@"\?", "[^/]", StringComparison.Ordinal);
+        return Regex.IsMatch(path, $"\\A{pattern}\\z", RegexOptions.CultureInvariant);
+    }
+
+    private static bool BuildJobRuns(
+        string workflow, string jobName, string eventKind, string changedPath,
+        bool updateAssets = false)
+    {
+        if (!WorkflowRuns(workflow, eventKind, changedPath))
+        {
+            return false;
+        }
+
+        return BuildJobRunsCore(workflow, jobName, eventKind, changedPath, updateAssets);
+    }
+
+    private static bool BuildJobRunsCore(
+        string workflow, string jobName, string eventKind, string changedPath,
+        bool updateAssets)
+    {
+        var job = GetYamlBlock(NormalizeWorkflowLines(workflow), $"  {jobName}:", 2);
+        Assert.NotEmpty(job);
+        var needsLine = job.SingleOrDefault(line => GetIndent(line) == 4 &&
+            line.TrimStart().StartsWith("needs:", StringComparison.Ordinal));
+        var needs = needsLine is null ? [] : needsLine.Trim() == "needs:"
+            ? GetYamlSequenceValues(job, "    needs:", 4)
+            : needsLine.Trim()["needs:".Length..].Trim().Trim('[', ']')
+                .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        var results = needs.ToDictionary(
+            need => need,
+            need => BuildJobRunsCore(workflow, need, eventKind, changedPath, updateAssets),
+            StringComparer.Ordinal);
+        var condition = job.SingleOrDefault(line => GetIndent(line) == 4 &&
+            line.TrimStart().StartsWith("if:", StringComparison.Ordinal))?.Trim();
+        var dependenciesSucceeded = results.Values.All(result => result);
+
+        return condition switch
+        {
+            null => dependenciesSucceeded,
+            "if: ${{ inputs.update_ffmpeg_assets }}" =>
+                dependenciesSucceeded && updateAssets,
+            "if: ${{ always() && !inputs.update_ffmpeg_assets && needs.ffmpeg-tooling.result == 'success' && (github.event_name != 'pull_request' || needs.detect-production-manifest-change.outputs.external_assets == 'true') }}" =>
+                !updateAssets && results["ffmpeg-tooling"] &&
+                (eventKind != "pull_request" ||
+                 changedPath == "script/assets/external-assets.json"),
+            "if: ${{ always() && github.event_name == 'pull_request' }}" =>
+                eventKind == "pull_request",
+            "if: ${{ always() && needs.release-gate.result == 'success' }}" =>
+                results["release-gate"],
+            "if: ${{ github.event_name != 'pull_request' && !inputs.update_ffmpeg_assets }}" =>
+                dependenciesSucceeded && eventKind != "pull_request" && !updateAssets,
+            "if: ${{ startsWith(github.ref, 'refs/tags/') }}" =>
+                dependenciesSucceeded && eventKind == "push-tag",
+            _ => throw new InvalidOperationException($"Unmodeled Build job condition in {jobName}: {condition}")
+        };
     }
 
     private static List<List<string>> GetWorkflowSteps(string workflow, string jobHeader)

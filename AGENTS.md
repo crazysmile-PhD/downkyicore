@@ -109,6 +109,14 @@ must not be reported as already implemented.
 
 ## Verification
 
+Expected Skip is part of the selective CI design. Use the event/path/job
+decision matrix in `docs/operations/verification-and-rollback.md` before
+calling a skipped job a coverage defect. A proposal to widen a trigger must
+identify the violated verification requirement, a reproducible missed case,
+why existing focused checks are insufficient, the added runner time and
+resource cost, and the smallest necessary change. Preserve the formal release
+gates; do not turn selective PR validation into unconditional packaging.
+
 Use the smallest focused test while iterating. Before push, run the formal
 commands in `docs/operations/verification-and-rollback.md` sequentially in one
 worktree. At minimum, behavioral changes require strict Release build, the
