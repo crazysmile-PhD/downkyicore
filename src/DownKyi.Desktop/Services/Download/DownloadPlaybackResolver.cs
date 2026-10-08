@@ -34,6 +34,9 @@ internal sealed class DownloadPlaybackResolver
         ArgumentNullException.ThrowIfNull(context);
         var input = context.Input;
         var media = input.Metadata.Media;
+        var playbackQuality = !context.NeedsVideo && input.Metadata.Resolution.Id <= 0
+            ? PlaybackQualityCatalog.MaximumProbeQuality
+            : input.Metadata.Resolution.Id;
         PlayUrl? playUrl;
         try
         {
@@ -49,7 +52,7 @@ internal sealed class DownloadPlaybackResolver
                             media.Avid,
                             media.Bvid,
                             media.Cid,
-                            quality: input.Metadata.Resolution.Id,
+                            quality: playbackQuality,
                             cancellationToken: cancellationToken),
                         1 => _client.GetVideoPlayUrlWebPageAsync(
                             keys,
@@ -58,7 +61,7 @@ internal sealed class DownloadPlaybackResolver
                             media.Bvid,
                             media.Cid,
                             media.Page,
-                            quality: input.Metadata.Resolution.Id,
+                            quality: playbackQuality,
                             cancellationToken: cancellationToken),
                         _ => throw new ArgumentException(
                             "Invalid video parse type. Valid values are: 0 (WebAPI) or 1 (WebPage).")
@@ -70,7 +73,7 @@ internal sealed class DownloadPlaybackResolver
                     media.Bvid,
                     media.Cid,
                     media.EpisodeId,
-                    quality: input.Metadata.Resolution.Id,
+                    quality: playbackQuality,
                     videoCodecId: context.NeedsPendingVideo
                         ? ResolveVideoCodecId(input.Metadata.VideoCodecName)
                         : null,
@@ -91,7 +94,7 @@ internal sealed class DownloadPlaybackResolver
                     media.Bvid,
                     media.Cid,
                     media.EpisodeId,
-                    quality: input.Metadata.Resolution.Id,
+                    quality: playbackQuality,
                     cancellationToken: cancellationToken),
                 _ => Task.FromResult<PlayUrl?>(null)
             }).ConfigureAwait(false);

@@ -85,6 +85,74 @@ public sealed class DownloadPipelineStageTests
         Assert.False(failure.IsTransient);
     }
 
+    [Theory]
+    [InlineData(PlayStreamType.Video, 0)]
+    [InlineData(PlayStreamType.Video, 1)]
+    [InlineData(PlayStreamType.Bangumi, 0)]
+    [InlineData(PlayStreamType.Cheese, 0)]
+    public async Task AudioOnlyPlaybackUsesProbeQualityWithoutSelectingVideo(
+        PlayStreamType streamType,
+        int videoParseType)
+    {
+        using var settings = new TestSettingsStore();
+        var baseContext = CreateContext(
+            settings.Store.Current,
+            requestedContent: DownloadContentSelection.None with
+            {
+                Audio = true,
+                MediaKind = DownloadMediaKind.Dash
+            },
+            audioCodecId: 30280);
+        var input = baseContext.Input with
+        {
+            Metadata = baseContext.Input.Metadata with
+            {
+                Media = new DownloadMediaIdentity("BV1fixture", 1, 2, 3489, 1, 1)
+            },
+            StreamType = streamType,
+            VideoSettings = baseContext.Input.VideoSettings with
+            {
+                VideoParseType = videoParseType
+            }
+        };
+        var context = new DownloadExecutionContext(baseContext.TaskId, input, (_, _) => { });
+        var requests = new List<string>();
+        var client = new TestBilibiliApiClient
+        {
+            GetStringAsyncHandler = (request, _) =>
+            {
+                requests.Add(request.RequestAddress);
+                if (request.RequestAddress.Contains("www.bilibili.com", StringComparison.Ordinal))
+                {
+                    return Task.FromResult("<html></html>");
+                }
+
+                return Task.FromResult(request.RequestAddress.Contains("/pgc/player/", StringComparison.Ordinal)
+                    ? """
+                      {"code":0,"result":{"video_info":{"dash":{"video":[],"audio":[{"id":30280,"base_url":"https://media.invalid/audio"}]}}}}
+                      """
+                    : """
+                      {"code":0,"data":{"dash":{"video":[],"audio":[{"id":30280,"base_url":"https://media.invalid/audio"}]}}}
+                      """);
+            }
+        };
+        var resolver = new DownloadPlaybackResolver(
+            new TestWbiKeyProvider(),
+            TimeProvider.System,
+            client);
+
+        var result = await resolver.ResolveAsync(
+            context,
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.TryGetValue(out var playUrl), result.Error?.Message);
+        Assert.Equal(0, context.Input.Metadata.Resolution.Id);
+        Assert.Equal(30280, Assert.Single(PlayUrlAvailability.From(playUrl!).Audio));
+        var apiRequest = Assert.Single(requests, address =>
+            address.Contains("api.bilibili.com", StringComparison.Ordinal));
+        Assert.Contains("qn=127", apiRequest, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task ValidateStageRejectsMissingRequestedMedia()
     {
@@ -517,6 +585,47 @@ public sealed class DownloadPipelineStageTests
         Assert.Null(fixture.Context.VideoFile);
         var request = Assert.Single(fixture.Backend.Requests);
         Assert.Equal("https://example.invalid/audio", Assert.Single(request.Urls));
+    }
+
+    [Fact]
+    public async Task MediaStageRefreshesAudioOnlyAddressWithProbeQuality()
+    {
+        string? refreshAddress = null;
+        var client = new TestBilibiliApiClient
+        {
+            GetStringAsyncHandler = (request, _) =>
+            {
+                refreshAddress = request.RequestAddress;
+                return Task.FromResult("""
+                    {"code":0,"data":{"dash":{"video":[],"audio":[{"id":30280,"base_url":"https://media.invalid/refreshed-audio"}]}}}
+                    """);
+            }
+        };
+        using var fixture = await MediaStageFixture.CreateAsync(
+            CreateAudioOnlyPlayUrl(),
+            downloadAudio: true,
+            downloadVideo: false,
+            apiClient: client,
+            resolutionId: 0,
+            backendResults:
+            [
+                DownloadTransferResult.Failed(
+                    DownloadTransferFailureKind.ExpiredAddress,
+                    "download.transfer.http-403")
+            ]).ConfigureAwait(true);
+
+        var result = await fixture.Stage.ExecuteAsync(
+            fixture.Context,
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsSuccess, result.Error?.Message);
+        Assert.Equal(0, fixture.Context.Input.Metadata.Resolution.Id);
+        Assert.NotNull(fixture.Context.AudioFile);
+        Assert.Null(fixture.Context.VideoFile);
+        Assert.Contains("qn=127", refreshAddress, StringComparison.Ordinal);
+        Assert.Equal(
+            "https://media.invalid/refreshed-audio",
+            Assert.Single(fixture.Backend.Requests[1].Urls));
     }
 
     [Fact]
@@ -1468,6 +1577,7 @@ public sealed class DownloadPipelineStageTests
             TestBilibiliApiClient? apiClient = null,
             DownloadMediaKind? finalizedMediaKindOverride = null,
             PlayStreamType streamType = PlayStreamType.Video,
+            int resolutionId = 80,
             params DownloadTransferResult[] backendResults)
         {
             if (playUrl.Durl.Count > 0)
@@ -1523,7 +1633,7 @@ public sealed class DownloadPipelineStageTests
                 },
                 VideoCodecName = "H.264/AVC"
             };
-            downloadBase.Resolution.Id = 80;
+            downloadBase.Resolution.Id = resolutionId;
             downloadBase.AudioCodec.Id = selectedAudioId;
             var downloading = new DownloadingItem
             {
