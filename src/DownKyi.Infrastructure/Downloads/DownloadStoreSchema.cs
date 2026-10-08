@@ -50,15 +50,29 @@ internal static class DownloadStoreSchema
                 var plan = LegacyDownloadStoreNormalizer.Normalize(
                     snapshot,
                     physicalOutputPathResolver);
-                await CurrentDownloadStoreWriter
-                    .UpgradeAsync(
-                        connection,
-                        transaction,
-                        format,
-                        plan,
-                        clock.UtcNow,
-                        cancellationToken)
-                    .ConfigureAwait(false);
+                if (format.RequiresLegacyHistoryRecovery)
+                {
+                    await CurrentDownloadStoreWriter
+                        .RecoverCurrentWithLegacyHistoryAsync(
+                            connection,
+                            transaction,
+                            plan,
+                            clock.UtcNow,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                else
+                {
+                    await CurrentDownloadStoreWriter
+                        .UpgradeAsync(
+                            connection,
+                            transaction,
+                            format,
+                            plan,
+                            clock.UtcNow,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                }
             }
 
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);

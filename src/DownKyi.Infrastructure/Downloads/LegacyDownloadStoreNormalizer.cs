@@ -23,11 +23,12 @@ internal static class LegacyDownloadStoreNormalizer
         var quarantineRecordIds = snapshot.Format.HasAdmissionGate
             ? []
             : ClassifyUnsafePaths(snapshot.DownloadRows, physicalOutputPathResolver);
-        var stagingTokenUpdates = snapshot.Format.HasStagingToken
-            ? []
-            : snapshot.BaseRecordIds
-                .Select(id => new LegacyStagingTokenUpdate(id, Guid.NewGuid().ToString("N")))
-                .ToArray();
+        var stagingTokenUpdates = snapshot.BaseRecords
+            .Where(record => !Guid.TryParseExact(record.StagingToken, "N", out _))
+            .Select(record => new LegacyStagingTokenUpdate(
+                record.Id,
+                Guid.NewGuid().ToString("N")))
+            .ToArray();
         return new LegacyDownloadNormalizationPlan(
             phaseUpdates,
             reservationUpdates,

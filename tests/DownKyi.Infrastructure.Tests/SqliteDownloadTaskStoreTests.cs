@@ -97,6 +97,61 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
             "download.db.schema-v0-*.bak"));
     }
 
+    [Fact]
+    public async Task InitializeRecoversCurrentSchemaAfterLegacyVersionRecreatesDownloadedTable()
+    {
+        var currentTask = CreatePausedTask("current-active");
+        var currentHistory = DownloadHistoryRecord.FromCompletedTask(
+            CreateCompletedTask("current-history", 123));
+        using (var current = CreateStore())
+        {
+            Assert.True((await current.AddAsync(
+                currentTask,
+                TestContext.Current.CancellationToken)).IsSuccess);
+            Assert.True((await current.AddHistoryAsync(
+                currentHistory,
+                TestContext.Current.CancellationToken)).IsSuccess);
+        }
+
+        await SimulateLegacyVersionWriteAsync();
+
+        using (var recovered = CreateStore())
+        {
+            await recovered.InitializeAsync(TestContext.Current.CancellationToken);
+
+            var unfinished = await recovered.GetUnfinishedAsync(TestContext.Current.CancellationToken);
+            Assert.Equal(
+                ["current-active", "legacy-active"],
+                unfinished.Select(task => task.Id.Value).Order(StringComparer.Ordinal));
+            var legacyActive = Assert.Single(unfinished, task => task.Id.Value == "legacy-active");
+            Assert.True(Guid.TryParseExact(legacyActive.Output.StagingToken, "N", out _));
+
+            var history = await recovered.GetHistoryPageAsync(
+                null,
+                10,
+                TestContext.Current.CancellationToken);
+            Assert.Equal(
+                ["current-history", "legacy-history"],
+                history.Items.Select(item => item.Id.Value).Order(StringComparer.Ordinal));
+        }
+
+        Assert.Equal(9, await ReadSchemaVersionAsync());
+        Assert.False(await TableExistsAsync("downloaded"));
+        Assert.Equal(0, await CountDownloadBaseRecordAsync("legacy-history"));
+        Assert.Single(Directory.GetFiles(
+            Path.Combine(_directory, "Backup"),
+            "download.db.schema-v9-*.bak"));
+
+        using (var reopened = CreateStore())
+        {
+            await reopened.InitializeAsync(TestContext.Current.CancellationToken);
+        }
+
+        Assert.Single(Directory.GetFiles(
+            Path.Combine(_directory, "Backup"),
+            "download.db.schema-v9-*.bak"));
+    }
+
     [Theory]
     [InlineData(1)]
     [InlineData(2)]
@@ -2230,6 +2285,38 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
         }
 
         await DowngradeCurrentDatabaseAsync(4).ConfigureAwait(false);
+    }
+
+    private async Task SimulateLegacyVersionWriteAsync()
+    {
+        using var connection = await OpenConnectionAsync(readOnly: false).ConfigureAwait(false);
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            CREATE TABLE IF NOT EXISTS downloaded (
+                id TEXT PRIMARY KEY REFERENCES download_base(id) ON DELETE CASCADE,
+                max_speed_display TEXT,
+                finished_timestamp INTEGER NOT NULL DEFAULT 0,
+                finished_time TEXT NOT NULL DEFAULT ''
+            );
+
+            INSERT INTO download_base
+                (id, bvid, avid, cid, main_title, name, file_path)
+            VALUES
+                ('legacy-history', 'BV1LEGACYHISTORY', 10, 20, 'Legacy', 'History', 'legacy-history-output'),
+                ('legacy-active', 'BV1LEGACYACTIVE', 11, 21, 'Legacy', 'Active', 'legacy-active-output');
+
+            INSERT INTO downloaded
+                (id, max_speed_display, finished_timestamp, finished_time)
+            VALUES
+                ('legacy-history', '1 MiB/s', 456, 'legacy-finished');
+
+            INSERT INTO downloading
+                (id, gid, download_files, downloaded_files, play_stream_type,
+                 download_status, progress, max_speed)
+            VALUES
+                ('legacy-active', 'legacy-gid', '{"video":"video.m4s"}', '[]', 1, 3, 50, 1024);
+            """;
+        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
     }
 
     private async Task CreateLegacyVersionDatabaseAsync(int version)

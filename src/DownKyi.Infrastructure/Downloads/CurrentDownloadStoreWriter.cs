@@ -110,6 +110,23 @@ internal static class CurrentDownloadStoreWriter
         await CompleteAsync(connection, transaction, appliedAtUtc, cancellationToken).ConfigureAwait(false);
     }
 
+    public static async Task RecoverCurrentWithLegacyHistoryAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        LegacyDownloadNormalizationPlan plan,
+        DateTimeOffset appliedAtUtc,
+        CancellationToken cancellationToken)
+    {
+        await ProjectLegacyHistoryAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
+        await ApplyStagingTokenUpdatesAsync(
+            connection,
+            transaction,
+            plan.StagingTokenUpdates,
+            cancellationToken).ConfigureAwait(false);
+        await EnsureIndexesAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
+        await CompleteAsync(connection, transaction, appliedAtUtc, cancellationToken).ConfigureAwait(false);
+    }
+
     private static async Task CreateHistoryTableAsync(
         SqliteConnection connection,
         SqliteTransaction transaction,
@@ -154,7 +171,7 @@ internal static class CurrentDownloadStoreWriter
             DELETE FROM downloaded
             WHERE id IN (SELECT id FROM downloading);
 
-            INSERT INTO download_history
+            INSERT OR IGNORE INTO download_history
                 (id, cid, zone_id, [order], main_title, name, duration,
                  video_codec_name, resolution, audio_codec, file_size,
                  published_artifacts, finished_timestamp, finished_time,

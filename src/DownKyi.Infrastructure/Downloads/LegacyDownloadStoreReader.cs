@@ -22,10 +22,12 @@ internal static class LegacyDownloadStoreReader
             transaction,
             format.HasReservationKey,
             cancellationToken).ConfigureAwait(false);
-        var baseRecordIds = format.HasStagingToken
-            ? []
-            : await ReadBaseRecordIdsAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
-        return new LegacyDownloadStoreSnapshot(format, downloadRows, baseRecordIds);
+        var baseRecords = await ReadBaseRecordsAsync(
+            connection,
+            transaction,
+            format.HasStagingToken,
+            cancellationToken).ConfigureAwait(false);
+        return new LegacyDownloadStoreSnapshot(format, downloadRows, baseRecords);
     }
 
     private static async Task<IReadOnlyList<LegacyDownloadRow>> ReadDownloadRowsAsync(
@@ -70,21 +72,34 @@ internal static class LegacyDownloadStoreReader
         return rows;
     }
 
-    private static async Task<IReadOnlyList<string>> ReadBaseRecordIdsAsync(
+    private static async Task<IReadOnlyList<LegacyBaseRecord>> ReadBaseRecordsAsync(
         SqliteConnection connection,
         SqliteTransaction transaction,
+        bool hasStagingToken,
         CancellationToken cancellationToken)
     {
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = "SELECT id FROM download_base ORDER BY id";
+        if (hasStagingToken)
+        {
+            command.CommandText = "SELECT id, staging_token FROM download_base ORDER BY id";
+        }
+        else
+        {
+            command.CommandText = "SELECT id FROM download_base ORDER BY id";
+        }
         using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        var ids = new List<string>();
+        var rows = new List<LegacyBaseRecord>();
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            ids.Add(reader.GetString(0));
+            rows.Add(new LegacyBaseRecord(
+                reader.GetString(0),
+                !hasStagingToken
+                    || await reader.IsDBNullAsync(1, cancellationToken).ConfigureAwait(false)
+                        ? null
+                        : reader.GetString(1)));
         }
 
-        return ids;
+        return rows;
     }
 }

@@ -80,6 +80,7 @@ public sealed class DownloadStoreSchemaArchitectureTests
         Assert.Contains("CREATE TABLE download_base", source, StringComparison.Ordinal);
         Assert.Contains("CREATE TABLE download_history", source, StringComparison.Ordinal);
         Assert.Contains("ProjectLegacyHistoryAsync", source, StringComparison.Ordinal);
+        Assert.Contains("RecoverCurrentWithLegacyHistoryAsync", source, StringComparison.Ordinal);
         Assert.Contains("ApplyPhaseUpdatesAsync", source, StringComparison.Ordinal);
         Assert.Contains("ApplyReservationUpdatesAsync", source, StringComparison.Ordinal);
         Assert.Contains("ApplyQuarantineAsync", source, StringComparison.Ordinal);
