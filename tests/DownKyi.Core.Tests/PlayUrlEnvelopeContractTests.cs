@@ -335,10 +335,42 @@ public sealed class PlayUrlEnvelopeContractTests
             3489,
             cancellationToken: TestContext.Current.CancellationToken);
 
-        Assert.Equal(1, requests);
+        Assert.Equal(2, requests);
         Assert.Empty(payload!.Availability!.Video);
         Assert.Equal(30280, Assert.Single(payload.Availability.Audio));
         Assert.Equal(PlayUrlResolutionSource.WebPage, payload.Diagnostics?.Source);
+        Assert.Equal("embedded-availability-after-api-failure", payload.Diagnostics?.Outcome);
+    }
+
+    [Fact]
+    public async Task BangumiDiscoveryUsesApiVideoWhenPageHasOnlyAudio()
+    {
+        var requests = 0;
+        var client = new StubBilibiliApiClient((_, _) =>
+        {
+            requests++;
+            return Task.FromResult(requests == 1
+                ? """
+                  <script>const playurlSSRData = {"code":0,"result":{"video_info":{"durl":[],"dash":{"video":[],"audio":[{"id":30280,"base_url":"https://media.invalid/embedded-audio"}]}}}};</script>
+                  """
+                : """
+                  {"code":0,"result":{"video_info":{"durl":[],"dash":{"video":[{"id":80,"codecid":7,"base_url":"https://media.invalid/api-video"}],"audio":[{"id":30280,"base_url":"https://media.invalid/api-audio"}]}}}}
+                  """);
+        });
+
+        var payload = await client.GetBangumiPlaybackDiscoveryAsync(
+            1,
+            "BV1fixture",
+            2,
+            3489,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, requests);
+        Assert.Equal(80, Assert.Single(payload!.Availability!.Video).Quality);
+        Assert.Equal(PlayUrlResolutionSource.Api, payload.Diagnostics?.Source);
+        Assert.Equal(
+            "api-fallback-selected:embedded-playback-without-required-media",
+            payload.Diagnostics?.Outcome);
     }
 
     [Fact]
