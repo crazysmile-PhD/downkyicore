@@ -620,6 +620,57 @@ public sealed class VideoTagLoadingTests : IDisposable
     }
 
     [Fact]
+    public async Task AudioOnlyConflictChoiceCreatesAResolvableDashTask()
+    {
+        using var context = CreateContext(generateMetadata: false);
+        var page = CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]));
+        var playUrl = new PlayUrl
+        {
+            Dash = new PlayUrlDash
+            {
+                Audio =
+                [
+                    new PlayUrlDashVideo
+                    {
+                        Id = 30280,
+                        BaseAddress = "https://media.invalid/audio-only.m4s"
+                    }
+                ]
+            }
+        };
+        page.PlaybackAvailability = PlayUrlAvailability.From(playUrl);
+        page.AudioQualityFormat = "高质量";
+        page.VideoQuality = null;
+        var preparedDownload = await context.PrepareAsync(page);
+        Assert.Equal(
+            new DownloadMediaCapabilities(DownloadMediaOutputModes.AudioOnly),
+            Assert.Single(Assert.Single(preparedDownload.Sections).Pages).AvailableMedia);
+        context.Dialogs.Result = new AppDialogResult(
+            AppDialogOutcome.Accepted,
+            DownloadContentConflictDialogContract.Encode(new DownloadContentConflictDecision(
+                DownloadContentConflictAction.UseAvailableMedia,
+                ApplyToAll: false)));
+
+        var added = await context.AddToDownloadAsync(
+            CreateSelection(_directory, DownloadContentSelection.All),
+            preparedDownload,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, added);
+        var task = Assert.Single(context.ListState.Downloading);
+        Assert.Equal(
+            DownloadContentSelection.All with
+            {
+                Audio = true,
+                Video = false,
+                MediaKind = DownloadMediaKind.Dash
+            },
+            task.DownloadBase.NeedDownloadContent);
+        Assert.Equal(30280, task.AudioCodec.Id);
+        Assert.Equal(string.Empty, task.VideoCodecName);
+    }
+
+    [Fact]
     public async Task ConflictSkipDoesNotCreateDownloadTask()
     {
         using var context = CreateContext(generateMetadata: false);

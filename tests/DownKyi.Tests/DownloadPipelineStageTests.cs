@@ -501,6 +501,25 @@ public sealed class DownloadPipelineStageTests
     }
 
     [Fact]
+    public async Task MediaStageDownloadsAudioOnlySourceWithoutRequestingVideo()
+    {
+        using var fixture = await MediaStageFixture.CreateAsync(
+            CreateAudioOnlyPlayUrl(),
+            downloadAudio: true,
+            downloadVideo: false).ConfigureAwait(true);
+
+        var result = await fixture.Stage.ExecuteAsync(
+            fixture.Context,
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.True(result.IsSuccess, result.Error?.Message);
+        Assert.NotNull(fixture.Context.AudioFile);
+        Assert.Null(fixture.Context.VideoFile);
+        var request = Assert.Single(fixture.Backend.Requests);
+        Assert.Equal("https://example.invalid/audio", Assert.Single(request.Urls));
+    }
+
+    [Fact]
     public async Task MediaStageDoesNotInferMediaWhenFinalizedSelectionRequestsNone()
     {
         using var fixture = await MediaStageFixture.CreateAsync(

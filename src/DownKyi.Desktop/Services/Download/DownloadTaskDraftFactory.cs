@@ -23,7 +23,7 @@ internal static class DownloadTaskDraftFactory
         VideoSection section,
         int sectionCount,
         VideoPage page,
-        VideoQuality videoQuality,
+        VideoQuality? videoQuality,
         ApplicationSettings settings,
         DownloadContentSelection content)
     {
@@ -31,27 +31,10 @@ internal static class DownloadTaskDraftFactory
         ArgumentNullException.ThrowIfNull(video);
         ArgumentNullException.ThrowIfNull(section);
         ArgumentNullException.ThrowIfNull(page);
-        ArgumentNullException.ThrowIfNull(videoQuality);
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(content);
 
-        var needsMedia = content.Audio || content.Video;
-        var mediaKind = needsMedia
-            ? videoQuality.IsDurl
-                ? DownloadMediaKind.Durl
-                : DownloadMediaKind.Dash
-            : DownloadMediaKind.None;
-        if (needsMedia && mediaKind == DownloadMediaKind.None)
-        {
-            throw new InvalidOperationException(
-                "A media download draft requires a supported finalized playback format.");
-        }
-
-        if (mediaKind == DownloadMediaKind.Durl && content.Audio && !content.Video)
-        {
-            throw new InvalidOperationException(
-                "Audio-only DURL downloads are not supported.");
-        }
+        var mediaKind = ResolveMediaKind(content, videoQuality);
 
         var audioCodec = PlaybackQualityCatalog.GetAudioQualities()
             .FirstOrDefault(quality => quality.Name == page.AudioQualityFormat) ?? new Quality();
@@ -76,11 +59,11 @@ internal static class DownloadTaskDraftFactory
             MainTitle = video.Title,
             Name = page.Name,
             Duration = page.Duration,
-            VideoCodecName = videoQuality.SelectedVideoCodec,
+            VideoCodecName = videoQuality?.SelectedVideoCodec ?? string.Empty,
             Resolution = new Quality
             {
-                Name = videoQuality.QualityFormat,
-                Id = videoQuality.Quality
+                Name = videoQuality?.QualityFormat ?? string.Empty,
+                Id = videoQuality?.Quality ?? settings.Video.Quality
             },
             AudioCodec = audioCodec,
             Page = page.Page
@@ -96,6 +79,37 @@ internal static class DownloadTaskDraftFactory
                 DownloadStatus = DownloadStatus.NotStarted
             }
         };
+    }
+
+    private static DownloadMediaKind ResolveMediaKind(
+        DownloadContentSelection content,
+        VideoQuality? videoQuality)
+    {
+        if (!content.Audio && !content.Video)
+        {
+            return DownloadMediaKind.None;
+        }
+
+        if (!content.Video)
+        {
+            if (videoQuality?.IsDurl == true)
+            {
+                throw new InvalidOperationException(
+                    "Audio-only DURL downloads are not supported.");
+            }
+
+            return DownloadMediaKind.Dash;
+        }
+
+        if (videoQuality == null)
+        {
+            throw new InvalidOperationException(
+                "A video download draft requires a finalized video quality.");
+        }
+
+        return videoQuality.IsDurl
+            ? DownloadMediaKind.Durl
+            : DownloadMediaKind.Dash;
     }
 
     private static int ResolveZoneId(int typeId)
@@ -121,7 +135,7 @@ internal static class DownloadTaskDraftFactory
         VideoSection section,
         int sectionCount,
         VideoPage page,
-        VideoQuality videoQuality,
+        VideoQuality? videoQuality,
         ApplicationSettings settings)
     {
         var sectionName = sectionCount > 1 ? section.Title : string.Empty;
@@ -131,8 +145,8 @@ internal static class DownloadTaskDraftFactory
             .SetPageTitle(Format.FormatFileName(page.Name))
             .SetVideoZone(video.VideoZone.Split('>')[0])
             .SetAudioQuality(page.AudioQualityFormat)
-            .SetVideoQuality(videoQuality.QualityFormat)
-            .SetVideoCodec(GetCodecLabel(videoQuality.SelectedVideoCodec))
+            .SetVideoQuality(videoQuality?.QualityFormat ?? string.Empty)
+            .SetVideoCodec(GetCodecLabel(videoQuality?.SelectedVideoCodec ?? string.Empty))
             .SetVideoPublishTime(page.PublishTime)
             .SetAvid(page.Avid)
             .SetBvid(page.Bvid)

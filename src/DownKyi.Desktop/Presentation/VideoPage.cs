@@ -15,7 +15,11 @@ internal class VideoPage : ObservableObject
 {
     public PlayUrlAvailability? PlaybackAvailability { get; internal set; }
 
-    public bool HasPlayback => PlaybackAvailability?.Video.Count > 0;
+    public bool HasVideoPlayback => PlaybackAvailability?.Video.Count > 0;
+
+    public bool HasAudioPlayback => PlaybackAvailability?.Audio.Count > 0;
+
+    public bool HasPlayback => HasVideoPlayback || HasAudioPlayback;
 
     public long Avid { get; set; }
     public string Bvid { get; set; } = string.Empty;

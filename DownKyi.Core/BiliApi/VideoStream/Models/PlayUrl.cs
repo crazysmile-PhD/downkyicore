@@ -17,6 +17,12 @@ public sealed class PlayUrlOrigin : BaseModel
 
 public class PlayUrl : BaseModel
 {
+    private IReadOnlyList<string> _acceptDescription = Array.Empty<string>();
+    private IReadOnlyList<int> _acceptQuality = Array.Empty<int>();
+    private IReadOnlyList<PlayUrlDurl> _durl = Array.Empty<PlayUrlDurl>();
+    private PlayUrlDash _dash = new();
+    private IReadOnlyList<PlayUrlSupportFormat> _supportFormats = Array.Empty<PlayUrlSupportFormat>();
+
     // from
     // result
     // message
@@ -25,21 +31,47 @@ public class PlayUrl : BaseModel
     // timelength
     [JsonProperty("is_preview")] public bool? IsPreview { get; set; }
     // accept_format
-    [JsonProperty("accept_description")] public IReadOnlyList<string> AcceptDescription { get; set; } = Array.Empty<string>();
+    [JsonProperty("accept_description")]
+    public IReadOnlyList<string> AcceptDescription
+    {
+        get => _acceptDescription;
+        set => _acceptDescription = value ?? Array.Empty<string>();
+    }
 
-    [JsonProperty("accept_quality")] public IReadOnlyList<int> AcceptQuality { get; set; } = Array.Empty<int>();
+    [JsonProperty("accept_quality")]
+    public IReadOnlyList<int> AcceptQuality
+    {
+        get => _acceptQuality;
+        set => _acceptQuality = value ?? Array.Empty<int>();
+    }
 
     // video_codecid
     // seek_param
     // seek_type
-    [JsonProperty("durl")] public IReadOnlyList<PlayUrlDurl> Durl { get; set; } = Array.Empty<PlayUrlDurl>();
-    [JsonProperty("dash")] public PlayUrlDash Dash { get; set; } = new();
+    [JsonProperty("durl")]
+    public IReadOnlyList<PlayUrlDurl> Durl
+    {
+        get => _durl;
+        set => _durl = value ?? Array.Empty<PlayUrlDurl>();
+    }
+
+    [JsonProperty("dash")]
+    public PlayUrlDash Dash
+    {
+        get => _dash;
+        set => _dash = value ?? new PlayUrlDash();
+    }
 
     [JsonProperty("quality")] public int Quality { get; set; }
 
     [JsonProperty("video_codecid")] public int VideoCodecid { get; set; }
 
-    [JsonProperty("support_formats")] public IReadOnlyList<PlayUrlSupportFormat> SupportFormats { get; set; } = Array.Empty<PlayUrlSupportFormat>();
+    [JsonProperty("support_formats")]
+    public IReadOnlyList<PlayUrlSupportFormat> SupportFormats
+    {
+        get => _supportFormats;
+        set => _supportFormats = value ?? Array.Empty<PlayUrlSupportFormat>();
+    }
 
     [JsonIgnore]
     public PlayUrlDiagnostics? Diagnostics { get; internal set; }

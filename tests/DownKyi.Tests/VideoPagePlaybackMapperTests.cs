@@ -311,6 +311,35 @@ public sealed class VideoPagePlaybackMapperTests : IDisposable
     }
 
     [Fact]
+    public void AudioOnlyPlaybackRemainsAvailableWithoutInventingVideoQuality()
+    {
+        var settings = CreateSettings(videoQuality: 80, isVip: true);
+        var playUrl = new PlayUrl
+        {
+            Dash = new PlayUrlDash
+            {
+                Audio =
+                [
+                    new PlayUrlDashVideo
+                    {
+                        Id = 30280,
+                        BaseAddress = "https://media.invalid/audio-30280"
+                    }
+                ]
+            }
+        };
+        var page = new VideoPage();
+
+        VideoPagePlaybackMapper.ApplyPlayUrl(playUrl, page, settings);
+
+        Assert.True(page.HasPlayback);
+        Assert.Empty(page.VideoQualityList);
+        Assert.Null(page.VideoQuality);
+        Assert.Equal("高质量", Assert.Single(page.AudioQualityFormatList));
+        Assert.Equal("高质量", page.AudioQualityFormat);
+    }
+
+    [Fact]
     public void CapabilitySummaryContainsOnlySanitizedPlaybackMetadata()
     {
         var settings = CreateSettings(videoQuality: 64, isVip: true);

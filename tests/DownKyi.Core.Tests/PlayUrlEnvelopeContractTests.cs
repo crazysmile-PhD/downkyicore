@@ -103,6 +103,101 @@ public sealed class PlayUrlEnvelopeContractTests
         Assert.Equal(80, Assert.Single(payload?.Dash.Video ?? []).Id);
     }
 
+    [Theory]
+    [MemberData(nameof(OrdinaryDashMediaShapes))]
+    public async Task OrdinaryVideoEndpointNormalizesAbsentDashMediaCollections(
+        string responseBody,
+        int expectedVideoCount,
+        int expectedAudioCount)
+    {
+        var client = CreateClientFromBody(responseBody);
+
+        var payload = await client.GetVideoPlayUrlAsync(
+            Keys,
+            1702204169,
+            1,
+            "BV1fixture",
+            2,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.NotNull(payload);
+        Assert.Equal(expectedVideoCount, payload.Dash.Video.Count);
+        Assert.Equal(expectedAudioCount, payload.Dash.Audio.Count);
+        var availability = PlayUrlAvailability.From(payload);
+        Assert.Equal(expectedVideoCount, availability.Video.Count);
+        Assert.Equal(expectedAudioCount, availability.Audio.Count);
+    }
+
+    [Fact]
+    public async Task WebPageVideoEndpointAcceptsVideoOnlyDashWithNullAudio()
+    {
+        var requests = 0;
+        var client = new StubBilibiliApiClient((_, _) =>
+        {
+            requests++;
+            return Task.FromResult(
+                """
+                <script>window.__playinfo__={"code":0,"message":"success","data":{"durl":[],"dash":{"video":[{"id":80,"codecid":7,"base_url":"https://media.invalid/video-80"}],"audio":null}}}</script>
+                """);
+        });
+
+        var payload = await client.GetVideoPlayUrlWebPageAsync(
+            Keys,
+            1702204169,
+            1,
+            "BV1fixture",
+            2,
+            1,
+            quality: 80,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, requests);
+        Assert.Empty(payload?.Dash.Audio ?? []);
+        Assert.Equal(80, Assert.Single(payload?.Dash.Video ?? []).Id);
+    }
+
+    [Fact]
+    public async Task OrdinaryVideoEndpointRejectsPayloadWithoutAnyMediaAfterNormalization()
+    {
+        var client = CreateClientFromBody(
+            """
+            {"code":0,"message":"success","data":{"durl":null,"dash":{"video":null}}}
+            """);
+
+        var exception = await Assert.ThrowsAsync<BilibiliApiResponseException>(() =>
+            client.GetVideoPlayUrlAsync(
+                Keys,
+                1702204169,
+                1,
+                "BV1fixture",
+                2,
+                cancellationToken: TestContext.Current.CancellationToken));
+
+        Assert.Equal(nameof(VideoStreamApi.GetVideoPlayUrlAsync), exception.Operation);
+        Assert.Contains("empty 'data'", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task OrdinaryVideoApiErrorRemainsApiResponseFailure()
+    {
+        var client = CreateClientFromBody(
+            """
+            {"code":-10403,"message":"restricted","data":{"dash":{"video":null,"audio":null}}}
+            """);
+
+        var exception = await Assert.ThrowsAsync<BilibiliApiResponseException>(() =>
+            client.GetVideoPlayUrlAsync(
+                Keys,
+                1702204169,
+                1,
+                "BV1fixture",
+                2,
+                cancellationToken: TestContext.Current.CancellationToken));
+
+        Assert.Equal(nameof(VideoStreamApi.GetVideoPlayUrlAsync), exception.Operation);
+        Assert.Equal(-10403, exception.Code);
+    }
+
     [Fact]
     public async Task WebPageVideoEndpointFallsBackWhenDurlQualityDiffersFromRequestedQuality()
     {
@@ -1067,24 +1162,19 @@ public sealed class PlayUrlEnvelopeContractTests
     }
 
     [Theory]
-    [MemberData(nameof(MalformedBangumiPlaybackPayloads))]
-    public async Task BangumiV2NullPlaybackFieldThrowsTypedMalformedFailure(
-        string fieldName,
-        string responseBody)
+    [MemberData(nameof(BangumiSingleMediaShapes))]
+    public void BangumiV2NormalizesAbsentOptionalMediaCollections(
+        string responseBody,
+        int expectedVideoCount,
+        int expectedAudioCount)
     {
-        var client = CreateClientFromBody(responseBody);
+        var response = BiliApiRequest.ParseJson<BangumiPlayUrlV2Origin>(
+            responseBody,
+            "bangumi-v2");
+        var payload = BangumiPlayUrlV2Contract.SelectPayload(response, "bangumi-v2");
 
-        var exception = await Assert.ThrowsAsync<BilibiliApiResponseException>(() =>
-            client.GetBangumiPlayUrlAsync(
-                1,
-                "BV1fixture",
-                2,
-                3489,
-                cancellationToken: TestContext.Current.CancellationToken));
-
-        Assert.Equal(nameof(VideoStreamApi.GetBangumiPlayUrlAsync), exception.Operation);
-        Assert.Contains("malformed playback payload", exception.Message, StringComparison.Ordinal);
-        Assert.Contains(fieldName, exception.Message, StringComparison.Ordinal);
+        Assert.Equal(expectedVideoCount, payload.Dash.Video.Count);
+        Assert.Equal(expectedAudioCount, payload.Dash.Audio.Count);
     }
 
     [Fact]
@@ -1281,31 +1371,81 @@ public sealed class PlayUrlEnvelopeContractTests
             }
         };
 
-    public static TheoryData<string, string> MalformedBangumiPlaybackPayloads => new()
+    public static TheoryData<string, int, int> BangumiSingleMediaShapes => new()
     {
         {
-            "result.video_info.durl",
             """
-            {"code":0,"message":"success","result":{"video_info":{"durl":null,"dash":{"video":[{}],"audio":[{}]}}}}
-            """
+            {"code":0,"message":"success","result":{"video_info":{"durl":null,"dash":{"video":[{"id":80,"codecid":7,"base_url":"https://media.invalid/video-80"}],"audio":null}}}}
+            """,
+            1,
+            0
         },
         {
-            "result.video_info.dash",
             """
-            {"code":0,"message":"success","result":{"video_info":{"durl":[{}],"dash":null}}}
-            """
+            {"code":0,"message":"success","result":{"video_info":{"durl":[],"dash":{"video":null,"audio":[{"id":30280,"base_url":"https://media.invalid/audio-30280"}]}}}}
+            """,
+            0,
+            1
         },
         {
-            "result.video_info.dash.video",
             """
-            {"code":0,"message":"success","result":{"video_info":{"durl":[],"dash":{"video":null,"audio":[{}]}}}}
-            """
+            {"code":0,"message":"success","result":{"video_info":{"durl":null,"dash":{"video":[{"id":80,"codecid":7,"base_url":"https://media.invalid/video-80"}]}}}}
+            """,
+            1,
+            0
         },
         {
-            "result.video_info.dash.audio",
             """
-            {"code":0,"message":"success","result":{"video_info":{"durl":[],"dash":{"video":[{}],"audio":null}}}}
+            {"code":0,"message":"success","result":{"video_info":{"quality":80,"video_codecid":7,"durl":[{"order":1,"url":"https://media.invalid/combined.mp4"}],"dash":null}}}
+            """,
+            0,
+            0
+        }
+    };
+
+    public static TheoryData<string, int, int> OrdinaryDashMediaShapes => new()
+    {
+        {
             """
+            {"code":0,"message":"success","data":{"durl":[],"dash":{"video":[{"id":80,"codecid":7,"base_url":"https://media.invalid/video-80"}],"audio":null}}}
+            """,
+            1,
+            0
+        },
+        {
+            """
+            {"code":0,"message":"success","data":{"durl":[],"dash":{"video":[{"id":80,"codecid":7,"base_url":"https://media.invalid/video-80"}],"audio":[]}}}
+            """,
+            1,
+            0
+        },
+        {
+            """
+            {"code":0,"message":"success","data":{"durl":[],"dash":{"video":[{"id":80,"codecid":7,"base_url":"https://media.invalid/video-80"}]}}}
+            """,
+            1,
+            0
+        },
+        {
+            """
+            {"code":0,"message":"success","data":{"durl":[],"dash":{"video":null,"audio":[{"id":30280,"base_url":"https://media.invalid/audio-30280"}]}}}
+            """,
+            0,
+            1
+        },
+        {
+            """
+            {"code":0,"message":"success","data":{"durl":[],"dash":{"audio":[{"id":30280,"base_url":"https://media.invalid/audio-30280"}]}}}
+            """,
+            0,
+            1
+        },
+        {
+            """
+            {"code":0,"message":"success","data":{"durl":[],"dash":{"video":[{"id":80,"codecid":7,"base_url":"https://media.invalid/video-80"}],"audio":[{"id":30280,"base_url":"https://media.invalid/audio-30280"}]}}}
+            """,
+            1,
+            1
         }
     };
 
