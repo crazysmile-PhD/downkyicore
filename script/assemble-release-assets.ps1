@@ -48,6 +48,29 @@ function Copy-CheckedFile {
     }
 }
 
+function New-VerificationArchive {
+    param(
+        [System.IO.FileInfo[]]$Files,
+        [string]$DestinationPath
+    )
+
+    $archive = [IO.Compression.ZipFile]::Open(
+        $DestinationPath,
+        [IO.Compression.ZipArchiveMode]::Create)
+    try {
+        foreach ($file in $Files) {
+            [IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+                $archive,
+                $file.FullName,
+                $file.Name,
+                [IO.Compression.CompressionLevel]::Optimal) | Out-Null
+        }
+    }
+    finally {
+        $archive.Dispose()
+    }
+}
+
 $artifactsRoot = (Resolve-Path -LiteralPath $ArtifactsDirectory).Path
 $outputPath = [IO.Path]::GetFullPath($OutputDirectory)
 if (Test-Path -LiteralPath $outputPath) {
@@ -73,7 +96,7 @@ try {
     )
 
     $archiveName = "DownKyi-$ExpectedVersion-verification.zip"
-    Compress-Archive -LiteralPath $verificationFiles.FullName -DestinationPath (Join-Path $stagingPath $archiveName)
+    New-VerificationArchive -Files $verificationFiles -DestinationPath (Join-Path $stagingPath $archiveName)
     Move-Item -LiteralPath $stagingPath -Destination $outputPath
 }
 finally {

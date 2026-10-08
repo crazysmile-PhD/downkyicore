@@ -30,13 +30,26 @@ public sealed class ReleasePublicationAssetTests
     [Fact]
     public async Task AssemblerPublishesNineUnchangedPackagesAndOneVerificationArchive()
     {
+        await AssertAssemblerPublishesAsync("artifacts").ConfigureAwait(true);
+    }
+
+    [Fact]
+    public async Task AssemblerTreatsBracketedOutputParentAsLiteralPath()
+    {
+        await AssertAssemblerPublishesAsync("out[1]").ConfigureAwait(true);
+    }
+
+    private static async Task AssertAssemblerPublishesAsync(string outputParentName)
+    {
         var root = CreateTemporaryDirectory();
         var artifacts = Path.Combine(root, "artifacts");
-        var output = Path.Combine(artifacts, "release-assets");
+        var outputParent = Path.Combine(root, outputParentName);
+        var output = Path.Combine(outputParent, "release-assets");
 
         try
         {
             var originalFiles = WriteFixture(artifacts);
+            Directory.CreateDirectory(outputParent);
 
             var exitCode = await RunAssemblerAsync(artifacts, output).ConfigureAwait(true);
 
