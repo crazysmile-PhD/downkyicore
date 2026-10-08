@@ -550,6 +550,49 @@ public sealed class DownloadPipelineStageTests
     }
 
     [Fact]
+    public void MediaStageKeepsSeparateOriginsOnSelectedVideoAndAudio()
+    {
+        using var settings = new TestSettingsStore();
+        var playUrl = new PlayUrl
+        {
+            Dash = new PlayUrlDash
+            {
+                Video = [new PlayUrlDashVideo
+                {
+                    Id = 80,
+                    CodecId = 7,
+                    BaseAddress = "https://media.invalid/video",
+                    Source = PlayUrlResolutionSource.WebPage
+                }],
+                Audio = [new PlayUrlDashVideo
+                {
+                    Id = 30280,
+                    BaseAddress = "https://api.invalid/audio",
+                    Source = PlayUrlResolutionSource.Api
+                }]
+            }
+        };
+        var context = CreateContext(
+            settings.Store.Current,
+            DownloadContentSelection.None with
+            {
+                Video = true,
+                Audio = true,
+                MediaKind = DownloadMediaKind.Dash
+            },
+            resolutionId: 80,
+            videoCodecName: "H.264/AVC",
+            audioCodecId: 30280,
+            playUrl: playUrl);
+
+        Assert.Null(DownloadMediaContract.Validate(context, playUrl));
+        Assert.Equal(PlayUrlResolutionSource.WebPage,
+            DownloadMediaStage.SelectVideo(context)?.Source);
+        Assert.Equal(PlayUrlResolutionSource.Api,
+            DownloadMediaStage.SelectAudio(context)?.Source);
+    }
+
+    [Fact]
     public async Task MediaStageRejectsVideoAndAudioRequestWhenAudioIsUnavailable()
     {
         using var fixture = await MediaStageFixture.CreateAsync(
@@ -826,12 +869,12 @@ public sealed class DownloadPipelineStageTests
                 }
             ]
         };
-        var refreshRequestCount = 0;
+        var refreshAddresses = new List<string>();
         var apiClient = new TestBilibiliApiClient
         {
-            GetStringAsyncHandler = (_, _) =>
+            GetStringAsyncHandler = (request, _) =>
             {
-                refreshRequestCount++;
+                refreshAddresses.Add(request.RequestAddress);
                 return Task.FromResult(
                     """
                     {
@@ -866,7 +909,11 @@ public sealed class DownloadPipelineStageTests
             TestContext.Current.CancellationToken);
 
         Assert.False(result.IsSuccess);
-        Assert.Equal(1, refreshRequestCount);
+        Assert.Equal("download.playback.api-failure", result.Error?.Code);
+        Assert.Equal(3, refreshAddresses.Count);
+        Assert.StartsWith("https://www.bilibili.com/video/", refreshAddresses[0], StringComparison.Ordinal);
+        Assert.All(refreshAddresses.Skip(1), address =>
+            Assert.Contains("/x/player/wbi/playurl", address, StringComparison.Ordinal));
         Assert.Single(fixture.Backend.Requests);
     }
 

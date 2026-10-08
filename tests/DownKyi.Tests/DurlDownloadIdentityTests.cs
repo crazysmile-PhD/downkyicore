@@ -26,6 +26,7 @@ public sealed class DurlDownloadIdentityTests
             new()
             {
                 Order = 7,
+                Source = PlayUrlResolutionSource.WebPage,
                 SourceAddress = "https://example.invalid/segment-7",
                 BackupUrl = BackupAddresses,
                 Size = 4096
@@ -38,6 +39,7 @@ public sealed class DurlDownloadIdentityTests
         Assert.Equal("7_durl", DownloadTransferKey.Create(descriptor.Id, descriptor.Codecs));
         Assert.Equal("https://example.invalid/segment-7", descriptor.BaseAddress);
         Assert.Equal(4096, descriptor.ExpectedSize);
+        Assert.Equal(PlayUrlResolutionSource.WebPage, descriptor.Source);
     }
 
     [Fact]
@@ -227,18 +229,25 @@ public sealed class DurlDownloadIdentityTests
         var expected = new BilibiliApiResponseException(
             "test-playback",
             "Synthetic malformed playback response.");
+        var attempts = 0;
         var client = new TestBilibiliApiClient
         {
-            GetStringAsyncHandler = (_, _) => Task.FromException<string>(expected)
+            GetStringAsyncHandler = (_, _) =>
+            {
+                attempts++;
+                return Task.FromException<string>(expected);
+            }
         };
         using var fixture = await PlaybackStageFixture.CreateAsync(client).ConfigureAwait(true);
 
-        var actual = await Assert.ThrowsAsync<BilibiliApiResponseException>(() =>
-            fixture.Stage.ExecuteAsync(
-                fixture.Context,
-                TestContext.Current.CancellationToken));
+        var result = await fixture.Stage.ExecuteAsync(
+            fixture.Context,
+            TestContext.Current.CancellationToken);
 
-        Assert.Same(expected, actual);
+        Assert.False(result.IsSuccess);
+        Assert.Equal("download.playback.api-failure", result.Error?.Code);
+        Assert.Equal(OperationErrorKind.Network, result.Error?.Kind);
+        Assert.Equal(3, attempts);
         Assert.Null(fixture.Context.PlayUrl);
     }
 

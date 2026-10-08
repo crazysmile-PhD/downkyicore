@@ -19,9 +19,12 @@ internal enum DownloadMediaOutputModes
 
 internal sealed record DownloadMediaCapabilities(
     DownloadMediaOutputModes SupportedModes,
-    bool VideoSelectionRequired = false)
+    string? LowerVideoQuality = null,
+    string? LowerAudioQuality = null)
 {
     public bool HasAnyMedia => SupportedModes != DownloadMediaOutputModes.None;
+
+    public bool UsesLowerQuality => LowerVideoQuality != null || LowerAudioQuality != null;
 
     public bool Supports(DownloadContentSelection requestedContent)
     {
@@ -40,12 +43,6 @@ internal sealed record DownloadMediaCapabilities(
         {
             compatibleContent = requestedContent;
             return true;
-        }
-
-        if (requestedContent.Video && VideoSelectionRequired)
-        {
-            compatibleContent = requestedContent with { Audio = false, Video = false };
-            return false;
         }
 
         if (requestedContent.Audio && requestedContent.Video)
@@ -70,26 +67,49 @@ internal sealed record DownloadMediaCapabilities(
     public static DownloadMediaCapabilities From(
         PlayUrlAvailability? availability,
         VideoQuality? selectedVideoQuality,
-        string selectedAudioQuality)
+        string selectedAudioQuality,
+        int? preferredVideoQuality = null,
+        int? preferredAudioQuality = null)
     {
         if (availability == null)
         {
             return new DownloadMediaCapabilities(DownloadMediaOutputModes.None);
         }
 
-        var hasSelectedAudio = PlaybackQualityCatalog.GetAudioQualities()
+        var audioQualities = PlaybackQualityCatalog.GetAudioQualities();
+        var selectedAudio = audioQualities
             .FirstOrDefault(audio => string.Equals(
                 audio.Name,
                 selectedAudioQuality,
-                StringComparison.Ordinal))
-            ?.Id is { } selectedAudioId
+                StringComparison.Ordinal));
+        var hasSelectedAudio = selectedAudio?.Id is { } selectedAudioId
             && availability.Audio.Contains(selectedAudioId);
         var selectedVideoKind = ResolveSelectedVideoKind(
             availability,
             selectedVideoQuality);
         return new DownloadMediaCapabilities(
             GetSupportedModes(selectedVideoKind, hasSelectedAudio),
-            VideoSelectionRequired: selectedVideoQuality == null && availability.Video.Count > 0);
+            LowerVideoQuality: selectedVideoKind != null
+                               && preferredVideoQuality is { } videoPreference
+                               && selectedVideoQuality!.Quality < videoPreference
+                ? selectedVideoQuality.QualityFormat
+                : null,
+            LowerAudioQuality: hasSelectedAudio
+                               && preferredAudioQuality is { } audioPreference
+                               && IsLowerAudioQuality(audioQualities, selectedAudio!.Id, audioPreference)
+                ? selectedAudio.Name
+                : null);
+    }
+
+    private static bool IsLowerAudioQuality(
+        IReadOnlyList<Quality> catalog,
+        int selectedId,
+        int preferredId)
+    {
+        var normalizedPreference = preferredId >= 31000 ? preferredId - 1000 : preferredId;
+        var selectedRank = Array.FindIndex(catalog.ToArray(), quality => quality.Id == selectedId);
+        var preferredRank = Array.FindIndex(catalog.ToArray(), quality => quality.Id == normalizedPreference);
+        return selectedRank >= 0 && preferredRank >= 0 && selectedRank < preferredRank;
     }
 
     private static PlayUrlStreamKind? ResolveSelectedVideoKind(
@@ -172,7 +192,9 @@ internal sealed record PreparedDownload(
 {
     public static PreparedDownload Create(
         VideoInfoView video,
-        IEnumerable<VideoSection> sections)
+        IEnumerable<VideoSection> sections,
+        int? preferredVideoQuality = null,
+        int? preferredAudioQuality = null)
     {
         ArgumentNullException.ThrowIfNull(video);
         ArgumentNullException.ThrowIfNull(sections);
@@ -192,7 +214,9 @@ internal sealed record PreparedDownload(
                             DownloadMediaCapabilities.From(
                                 page.PlaybackAvailability,
                                 page.VideoQuality,
-                                page.AudioQualityFormat));
+                                page.AudioQualityFormat,
+                                preferredVideoQuality,
+                                preferredAudioQuality));
                     }).ToArray());
             }).ToArray());
     }

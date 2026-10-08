@@ -26,6 +26,9 @@
                 <CheckBox Content="{DynamicResource ApplyToAllSameContentConflict}"
                           Foreground="{DynamicResource BrushTextDark}"
                           IsChecked="{Binding ApplyToAll, Mode=TwoWay}" />
+                <TextBlock Foreground="{DynamicResource BrushCaptionForeground}"
+                           Text="{DynamicResource ApplyToAllContentConflictExplanation}"
+                           TextWrapping="Wrap" />
                 <Grid ColumnDefinitions="*,*" ColumnSpacing="16">
                     <Button Grid.Column="0"
                             Command="{Binding UseAvailableContentCommand}"

@@ -53,6 +53,46 @@ public sealed class DownloadContentConflictDialogViewModelTests
     }
 
     [Fact]
+    public void DialogShowsEpisodeQualityAndApiFailure()
+    {
+        var viewModel = new DownloadContentConflictDialogViewModel();
+        var conflict = new DownloadContentConflict(
+            DownloadContentSelection.All,
+            new DownloadMediaCapabilities(
+                DownloadMediaOutputModes.AudioVideo,
+                LowerVideoQuality: "720P"),
+            DownloadContentSelection.All);
+
+        viewModel.OnDialogOpened(DownloadContentConflictDialogContract.CreateRequest(
+            new DownloadContentConflictPrompt(
+                "Episode 1", conflict, "BilibiliApiResponseException:-10403")));
+
+        Assert.Contains("720P", viewModel.Message, StringComparison.Ordinal);
+        Assert.Contains("-10403", viewModel.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DialogCanOfferOriginallySelectedSidecarsWithoutMedia()
+    {
+        var viewModel = new DownloadContentConflictDialogViewModel();
+        var conflict = new DownloadContentConflict(
+            DownloadContentSelection.All,
+            new DownloadMediaCapabilities(DownloadMediaOutputModes.None),
+            DownloadContentSelection.All with { Audio = false, Video = false });
+        AppDialogResult? result = null;
+        viewModel.CloseRequested += (_, value) => result = value;
+
+        viewModel.OnDialogOpened(DownloadContentConflictDialogContract.CreateRequest(
+            new DownloadContentConflictPrompt("Episode 1", conflict)));
+        viewModel.UseAvailableContentCommand.Execute(null);
+
+        var decision = Assert.IsType<DownloadContentConflictDecision>(
+            Assert.IsType<AppDialogResult>(result)
+                .Parameters[DownloadContentConflictDialogContract.DecisionParameter]);
+        Assert.Equal(DownloadContentConflictAction.UseAvailableMedia, decision.Action);
+    }
+
+    [Fact]
     public async Task NonAcceptedResultFailsClosed()
     {
         var dialogs = new StubDialogService(new AppDialogResult(

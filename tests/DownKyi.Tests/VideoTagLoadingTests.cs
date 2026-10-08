@@ -804,7 +804,7 @@ public sealed class VideoTagLoadingTests : IDisposable
     }
 
     [Fact]
-    public async Task HigherOnlyQualityStopsRetryingAndRequiresExplicitSelection()
+    public async Task HigherOnlyQualityUsesNearestHigherWithoutRetry()
     {
         using var context = CreateContext(generateMetadata: false);
         var page = CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]));
@@ -841,10 +841,11 @@ public sealed class VideoTagLoadingTests : IDisposable
             TestContext.Current.CancellationToken);
 
         Assert.Equal(1, infoService.StreamRequestCount);
-        Assert.Null(page.VideoQuality);
+        Assert.Equal(126, page.VideoQuality!.Quality);
         Assert.Equal(126, Assert.Single(page.VideoQualityList).Quality);
         Assert.True(Assert.Single(Assert.Single(prepared!.Sections).Pages)
-            .AvailableMedia.VideoSelectionRequired);
+            .AvailableMedia.Supports(
+                DownloadContentSelection.None with { Video = true }));
     }
 
     private DownloadTestContext CreateContext(
@@ -958,6 +959,8 @@ public sealed class VideoTagLoadingTests : IDisposable
             {
                 Video = settings.Video with
                 {
+                    Quality = 80,
+                    AudioQuality = 30280,
                     Content = settings.Video.Content with
                     {
                         GenerateMovieMetadata = generateMetadata

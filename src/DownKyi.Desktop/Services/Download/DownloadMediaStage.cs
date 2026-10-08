@@ -96,6 +96,7 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
             {
                 BackupUrl = durl.BackupUrl,
                 BaseAddress = durl.SourceAddress,
+                Source = durl.Source,
                 Codecs = "durl",
                 Id = durl.Order,
                 ExpectedSize = durl.Size

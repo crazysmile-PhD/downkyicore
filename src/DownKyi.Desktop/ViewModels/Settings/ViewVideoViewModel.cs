@@ -51,13 +51,6 @@ internal partial class ViewVideoViewModel : ViewModelBase
         AudioQualityList[3].Id += 1000;
         AudioQualityList[4].Id += 1000;
 
-        // 首选视频解析方式
-        VideoParseTypeList = new List<VideoParseType>
-        {
-            new() { Name = "API(解析快、易风控)", Id = 0 },
-            new() { Name = "WebPage(解析慢、不易风控)", Id = 1 },
-        };
-
         // 文件命名格式
         SelectedFileName.CollectionChanged += (sender, e) =>
         {
@@ -132,10 +125,6 @@ internal partial class ViewVideoViewModel : ViewModelBase
         // 优先下载音质
         var audioQuality = videoSettings.AudioQuality;
         SelectedAudioQuality = AudioQualityList.FirstOrDefault(t => t.Id == audioQuality) ?? AudioQualityList[0];
-
-        // 首选视频解析方式
-        var videoParseType = videoSettings.VideoParseType;
-        SelectedVideoParseType = VideoParseTypeList.FirstOrDefault(t => t.Id == videoParseType) ?? VideoParseTypeList[0];
 
         // 是否下载flv视频后转码为mp4
         var isTranscodingFlvToMp4 = videoSettings.IsTranscodingFlvToMp4;
@@ -261,27 +250,6 @@ internal partial class ViewVideoViewModel : ViewModelBase
         PublishTip(isSucceed);
     }
 
-
-    // 首选视频解析线路事件
-    private RelayCommand<object>? _videoParseTypeCommand;
-
-    public RelayCommand<object> VideoParseTypeCommand => _videoParseTypeCommand ??= RequiredParameterCommand.Create<object>(ExecuteVideoParseTypeCommand);
-
-    /// <summary>
-    /// 首选视频解析线路事件
-    /// </summary>
-    /// <param name="parameter"></param>
-    private void ExecuteVideoParseTypeCommand(object parameter)
-    {
-        if (parameter is not VideoParseType type)
-        {
-            return;
-        }
-
-        var parseType = type.Id ?? 1;
-        var isSucceed = UpdateVideo(settings => settings with { VideoParseType = parseType }).VideoParseType == parseType;
-        PublishTip(isSucceed);
-    }
 
     // 是否下载flv视频后转码为mp4事件
     private RelayCommand? _isTranscodingFlvToMp4Command;

@@ -8,7 +8,8 @@ namespace DownKyi.Services.Download;
 
 internal sealed record DownloadContentConflictPrompt(
     string PageName,
-    DownloadContentConflict Conflict);
+    DownloadContentConflict Conflict,
+    string? ApiFailure = null);
 
 internal static class DownloadContentConflictDialogContract
 {

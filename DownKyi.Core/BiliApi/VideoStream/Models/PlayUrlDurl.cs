@@ -12,6 +12,8 @@ public class PlayUrlDurl : BaseModel
 
     [JsonProperty("size")] public long Size { get; set; }
 
+    [JsonIgnore] public PlayUrlResolutionSource? Source { get; set; }
+
     // ahead
     // vhead
     [JsonProperty("url")] public string SourceAddress { get; set; } = string.Empty;

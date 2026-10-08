@@ -60,9 +60,12 @@ public sealed class DownloadContentConflictResolverTests
     }
 
     [Fact]
-    public async Task BatchSkipsUnselectedVideoInsteadOfOfferingAudioOnly()
+    public async Task BatchOffersAudioOnlyWhenVideoCannotBeSelected()
     {
-        var dialogs = new RecordingDialogService();
+        var dialogs = new RecordingDialogService(
+            new DownloadContentConflictDecision(
+                DownloadContentConflictAction.UseAvailableMedia,
+                ApplyToAll: false));
         var unselected = CreatePage(video: true, audio: true);
         unselected.PlaybackAvailability = PlayUrlAvailability.From(new PlayUrl
         {
@@ -106,15 +109,19 @@ public sealed class DownloadContentConflictResolverTests
 
         var finalized = await ResolveAsync(dialogs, requested, prepared);
 
-        Assert.True(Assert.Single(prepared.Sections[0].Pages, page =>
-            page.Page == unselected).AvailableMedia.VideoSelectionRequired);
-        Assert.Same(selected, Assert.Single(Assert.Single(finalized.Sections).Pages).Page);
+        var pages = Assert.Single(finalized.Sections).Pages;
+        Assert.Equal(2, pages.Count);
+        var audioAlternative = Assert.Single(pages, item => item.Page == unselected);
+        Assert.True(audioAlternative.RequestedContent.Audio);
+        Assert.False(audioAlternative.RequestedContent.Video);
+        Assert.Null(audioAlternative.VideoQuality);
+        Assert.Same(selected, Assert.Single(pages, item => item.Page == selected).Page);
         var audioOnly = await ResolveAsync(
             dialogs,
             DownloadContentSelection.None with { Audio = true },
             CreatePreparedDownload(unselected));
         Assert.Same(unselected, Assert.Single(Assert.Single(audioOnly.Sections).Pages).Page);
-        Assert.Empty(dialogs.Requests);
+        Assert.Single(dialogs.Requests);
     }
 
     [Theory]
@@ -240,17 +247,155 @@ public sealed class DownloadContentConflictResolverTests
     }
 
     [Fact]
-    public async Task PageWithoutAnyMediaIsSkippedWithoutOfferingInvalidChoice()
+    public async Task PageWithoutMediaOffersOnlyOriginallySelectedSidecars()
     {
-        var dialogs = new RecordingDialogService();
+        var dialogs = new RecordingDialogService(
+            new DownloadContentConflictDecision(
+                DownloadContentConflictAction.UseAvailableMedia,
+                ApplyToAll: false));
 
         var finalized = await ResolveAsync(
             dialogs,
             DownloadContentSelection.All,
             CreatePreparedDownload(CreatePage(video: false, audio: false)));
 
+        var content = Assert.Single(Assert.Single(finalized.Sections).Pages).RequestedContent;
+        Assert.False(content.Video);
+        Assert.False(content.Audio);
+        Assert.True(content.Danmaku && content.Subtitle && content.Cover);
+        Assert.Single(dialogs.Requests);
+    }
+
+    [Fact]
+    public async Task OnlySelectedSidecarsPassWithoutPlaybackOrPrompt()
+    {
+        var dialogs = new RecordingDialogService();
+        var requested = DownloadContentSelection.None with
+        {
+            Danmaku = true,
+            Cover = true
+        };
+
+        var finalized = await ResolveAsync(
+            dialogs,
+            requested,
+            CreatePreparedDownload(CreatePage(video: false, audio: false)));
+
+        Assert.Equal(requested, Assert.Single(Assert.Single(finalized.Sections).Pages).RequestedContent);
+        Assert.Empty(dialogs.Requests);
+    }
+
+    [Fact]
+    public async Task VideoOnlyRequestDoesNotBecomeAudioOnly()
+    {
+        var dialogs = new RecordingDialogService();
+        var finalized = await ResolveAsync(
+            dialogs,
+            DownloadContentSelection.None with { Video = true },
+            CreatePreparedDownload(CreatePage(video: false, audio: true)));
+
         Assert.Empty(Assert.Single(finalized.Sections).Pages);
         Assert.Empty(dialogs.Requests);
+    }
+
+    [Fact]
+    public async Task ApplyToAllUsesEachPagesNearestLowerQuality()
+    {
+        var dialogs = new RecordingDialogService(
+            new DownloadContentConflictDecision(
+                DownloadContentConflictAction.UseAvailableMedia,
+                ApplyToAll: true));
+        var pages = new[]
+        {
+            CreatePageAtQuality(64),
+            CreatePageAtQuality(32),
+            CreatePageAtQuality(80),
+            CreatePageAtQuality(64)
+        };
+        var prepared = PreparedDownload.Create(
+            new VideoInfoView(),
+            [new VideoSection { VideoPages = pages }],
+            preferredVideoQuality: 80,
+            preferredAudioQuality: 30280);
+
+        var finalized = await ResolveAsync(dialogs, DownloadContentSelection.All, prepared);
+
+        Assert.Equal([64, 32, 80, 64],
+            Assert.Single(finalized.Sections).Pages.Select(page => page.VideoQuality!.Quality));
+        Assert.Single(dialogs.Requests);
+    }
+
+    [Fact]
+    public async Task ApplyToAllUsesEachPagesAvailableMediaWithoutAddingUnselectedContent()
+    {
+        var dialogs = new RecordingDialogService(
+            new DownloadContentConflictDecision(
+                DownloadContentConflictAction.UseAvailableMedia,
+                ApplyToAll: true));
+        var requested = DownloadContentSelection.None with
+        {
+            Video = true,
+            Audio = true,
+            Cover = true
+        };
+        var prepared = PreparedDownload.Create(
+            new VideoInfoView(),
+            [new VideoSection
+            {
+                VideoPages =
+                [
+                    CreatePage(video: true, audio: false),
+                    CreatePage(video: false, audio: true)
+                ]
+            }]);
+
+        var finalized = await ResolveAsync(dialogs, requested, prepared);
+
+        var pages = Assert.Single(finalized.Sections).Pages;
+        Assert.Equal(2, pages.Count);
+        Assert.True(pages[0].RequestedContent.Video);
+        Assert.False(pages[0].RequestedContent.Audio);
+        Assert.False(pages[1].RequestedContent.Video);
+        Assert.True(pages[1].RequestedContent.Audio);
+        Assert.All(pages, page => Assert.True(page.RequestedContent.Cover));
+        Assert.Single(dialogs.Requests);
+    }
+
+    [Fact]
+    public async Task LowerAudioQualityUsesExistingChoiceFlow()
+    {
+        var dialogs = new RecordingDialogService(
+            new DownloadContentConflictDecision(
+                DownloadContentConflictAction.SkipPage,
+                ApplyToAll: false));
+        var page = CreatePage(video: true, audio: true);
+        page.PlaybackAvailability = PlayUrlAvailability.From(new PlayUrl
+        {
+            Dash = new PlayUrlDash
+            {
+                Video = [new PlayUrlDashVideo
+                {
+                    Id = 80, CodecId = 7, BaseAddress = "https://media.invalid/video"
+                }],
+                Audio = [new PlayUrlDashVideo
+                {
+                    Id = 30232, BaseAddress = "https://media.invalid/audio"
+                }]
+            }
+        });
+        page.AudioQualityFormat = "中质量";
+        var prepared = PreparedDownload.Create(
+            new VideoInfoView(),
+            [new VideoSection { VideoPages = [page] }],
+            preferredVideoQuality: 80,
+            preferredAudioQuality: 30280);
+
+        var finalized = await ResolveAsync(dialogs, DownloadContentSelection.All, prepared);
+
+        Assert.Empty(Assert.Single(finalized.Sections).Pages);
+        var prompt = Assert.IsType<DownloadContentConflictPrompt>(
+            Assert.Single(dialogs.Requests).Parameters![DownloadContentConflictDialogContract.PromptParameter]);
+        Assert.Equal("中质量", prompt.Conflict.AvailableMedia.LowerAudioQuality);
     }
 
     [Fact]
@@ -335,6 +480,35 @@ public sealed class DownloadContentConflictResolverTests
                 SelectedVideoCodec = "H.264/AVC"
             }
         };
+    }
+
+    private static VideoPage CreatePageAtQuality(int quality)
+    {
+        var page = CreatePage(video: true, audio: true);
+        page.PlaybackAvailability = PlayUrlAvailability.From(new PlayUrl
+        {
+            Dash = new PlayUrlDash
+            {
+                Video = [new PlayUrlDashVideo
+                {
+                    Id = quality,
+                    CodecId = 7,
+                    BaseAddress = $"https://media.invalid/video-{quality}"
+                }],
+                Audio = [new PlayUrlDashVideo
+                {
+                    Id = 30280,
+                    BaseAddress = "https://media.invalid/audio"
+                }]
+            }
+        });
+        page.VideoQuality = new VideoQuality
+        {
+            Quality = quality,
+            QualityFormat = $"Quality {quality}",
+            SelectedVideoCodec = "H.264/AVC"
+        };
+        return page;
     }
 
     private static VideoPage CreateDurlPage(bool hasUsableAddress = true)

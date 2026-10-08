@@ -59,22 +59,6 @@ internal partial class ViewVideoViewModel
         set => SetProperty(ref _selectedAudioQuality, value);
     }
 
-    private IReadOnlyList<VideoParseType> _videoParseTypeList = Array.Empty<VideoParseType>();
-
-    public IReadOnlyList<VideoParseType> VideoParseTypeList
-    {
-        get => _videoParseTypeList;
-        set => SetProperty(ref _videoParseTypeList, value);
-    }
-
-    private VideoParseType _selectedVideoParseType = null!;
-
-    public VideoParseType SelectedVideoParseType
-    {
-        get => _selectedVideoParseType;
-        set => SetProperty(ref _selectedVideoParseType, value);
-    }
-
     private bool _isTranscodingFlvToMp4;
 
     public bool IsTranscodingFlvToMp4

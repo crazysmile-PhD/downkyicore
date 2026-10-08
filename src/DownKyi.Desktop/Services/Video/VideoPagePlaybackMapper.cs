@@ -34,6 +34,7 @@ internal static class VideoPagePlaybackMapper
 
         var availability = playUrl.Availability ?? PlayUrlAvailability.From(playUrl);
         page.PlaybackAvailability = availability;
+        page.PlaybackFailure = playUrl.Diagnostics?.ApiFailure;
         if (playUrl.Diagnostics != null)
         {
             logger?.LogInformationMessage(BuildCapabilitySummary(playUrl, settings));
@@ -110,11 +111,11 @@ internal static class VideoPagePlaybackMapper
                 PreferredId = index >= 3 ? quality.Id + 1000 : quality.Id
             })
             .Where(quality => availableQualities.Contains(quality.Name))
-            .OrderByDescending(quality => quality.PreferredId)
+            .OrderBy(quality => quality.PreferredId)
             .ToArray();
         var selected = catalog.FirstOrDefault(quality => quality.PreferredId == preferredQuality)
-                       ?? catalog.FirstOrDefault(quality => quality.PreferredId <= preferredQuality)
-                       ?? catalog.First();
+                       ?? catalog.FirstOrDefault(quality => quality.PreferredId > preferredQuality)
+                       ?? catalog[^1];
         return selected.Name;
     }
 
@@ -228,7 +229,10 @@ internal static class VideoPagePlaybackMapper
         var qualities = availableQualities.ToArray();
         return qualities.FirstOrDefault(quality => quality.Quality == preferredQuality)
                ?? qualities
-                   .Where(quality => quality.Quality <= preferredQuality)
+                   .Where(quality => quality.Quality > preferredQuality)
+                   .MinBy(quality => quality.Quality)
+               ?? qualities
+                   .Where(quality => quality.Quality < preferredQuality)
                    .MaxBy(quality => quality.Quality);
     }
 

@@ -108,22 +108,14 @@
                     FontSize="{DynamicResource DownKyiFontSizeBody}"
                     Foreground="{DynamicResource BrushTextDark}"
                     Text="{DynamicResource VideoParseType}" />
-                <ComboBox
-                    Name="NameVideoParseTypeList"
+                <TextBlock
+                    Name="NameVideoParseStrategy"
                     Grid.Row="3"
                     Grid.Column="1"
-                    HorizontalAlignment="Stretch"
-                    VerticalContentAlignment="Center"
-                    DisplayMemberBinding="{Binding Name}"
-                    ItemsSource="{Binding VideoParseTypeList}"
-                    SelectedItem="{Binding SelectedVideoParseType}">
-                    <Interaction.Behaviors>
-                        <EventTriggerBehavior EventName="SelectionChanged">
-                            <InvokeCommandAction Command="{Binding VideoParseTypeCommand}"
-                                                 CommandParameter="{Binding ElementName=NameVideoParseTypeList,Path=SelectedValue}" />
-                        </EventTriggerBehavior>
-                    </Interaction.Behaviors>
-                </ComboBox>
+                    VerticalAlignment="Center"
+                    Foreground="{DynamicResource BrushTextDark}"
+                    Text="{DynamicResource VideoParseStrategy}"
+                    TextWrapping="Wrap" />
             </Grid>
 
             <TextBlock

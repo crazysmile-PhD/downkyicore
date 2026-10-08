@@ -308,6 +308,8 @@ internal class BangumiInfoService : IInfoService
             page.Bvid,
             page.Cid,
             page.EpisodeId,
+            preferredVideoQuality: _settingsStore.Current.Video.Quality,
+            preferredAudioQuality: _settingsStore.Current.Video.AudioQuality,
             cancellationToken: cancellationToken);
     }
 

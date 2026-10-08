@@ -89,13 +89,29 @@ public class PlayUrl : BaseModel
         || Dash.Dolby?.Audio.Count > 0
         || Dash.Flac?.Audio != null;
 
+    public static PlayUrl FailedDiscovery(
+        int requestedQuality,
+        string apiFailure,
+        int? fnval = null) => new()
+        {
+            Availability = new PlayUrlAvailability([], []),
+            Diagnostics = new PlayUrlDiagnostics(
+                requestedQuality,
+                fnval,
+                null,
+                PlayUrlResolutionSource.Api,
+                "api-failed-no-media",
+                apiFailure)
+        };
+
     // high_format
 }
 
 public enum PlayUrlResolutionSource
 {
     WebPage,
-    Api
+    Api,
+    Mixed
 }
 
 public sealed record PlayUrlDiagnostics(
@@ -103,4 +119,5 @@ public sealed record PlayUrlDiagnostics(
     int? Fnval,
     string? PlayDetail,
     PlayUrlResolutionSource Source,
-    string Outcome);
+    string Outcome,
+    string? ApiFailure = null);

@@ -147,7 +147,7 @@ public sealed class VideoPagePlaybackMapperTests : IDisposable
     }
 
     [Fact]
-    public void HigherOnlyFallbackQualityRequiresAnExplicitUserSelection()
+    public void HigherOnlyFallbackSelectsNearestHigherQuality()
     {
         var settings = CreateSettings(videoQuality: 80, isVip: true);
         var page = new VideoPage();
@@ -155,7 +155,7 @@ public sealed class VideoPagePlaybackMapperTests : IDisposable
         VideoPagePlaybackMapper.ApplyPlayUrl(CreatePlayUrl(112), page, settings);
 
         Assert.Equal(112, Assert.Single(page.VideoQualityList).Quality);
-        Assert.Null(page.VideoQuality);
+        Assert.Equal(112, page.VideoQuality!.Quality);
     }
 
     [Fact]
@@ -308,6 +308,32 @@ public sealed class VideoPagePlaybackMapperTests : IDisposable
 
         Assert.Equal(["高质量", "中质量", "低质量"], page.AudioQualityFormatList);
         Assert.Equal("中质量", page.AudioQualityFormat);
+    }
+
+    [Theory]
+    [InlineData(30232, new[] { 30280 }, "高质量")]
+    [InlineData(30280, new[] { 30216, 30232 }, "中质量")]
+    public void AudioPreferenceSelectsNearestAvailableAlternative(
+        int preferredQuality,
+        int[] availableAudioIds,
+        string expectedQuality)
+    {
+        var baseline = CreateSettings(videoQuality: 80, isVip: true);
+        var settings = baseline with
+        {
+            Video = baseline.Video with { AudioQuality = preferredQuality }
+        };
+        var playUrl = CreatePlayUrl(80);
+        playUrl.Dash.Audio = availableAudioIds.Select(id => new PlayUrlDashVideo
+        {
+            Id = id,
+            BaseAddress = $"https://media.invalid/audio-{id}"
+        }).ToArray();
+        var page = new VideoPage();
+
+        VideoPagePlaybackMapper.ApplyPlayUrl(playUrl, page, settings);
+
+        Assert.Equal(expectedQuality, page.AudioQualityFormat);
     }
 
     [Fact]

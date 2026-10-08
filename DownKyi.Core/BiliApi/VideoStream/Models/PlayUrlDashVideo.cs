@@ -29,6 +29,10 @@ public class PlayUrlDashVideo : BaseModel
 
     public long ExpectedSize { get; set; }
 
+    // A playback assembled from the page and API keeps the origin of each
+    // transfer descriptor. This is runtime metadata, not part of Bilibili JSON.
+    [JsonIgnore] public PlayUrlResolutionSource? Source { get; set; }
+
     // frame_rate
     // sar
     // startWithSap

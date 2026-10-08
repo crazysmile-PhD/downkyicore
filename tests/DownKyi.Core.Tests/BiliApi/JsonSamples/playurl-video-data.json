@@ -7,6 +7,7 @@
       "video": [
         {
           "id": 80,
+          "codecid": 7,
           "base_url": "https://media.invalid/video",
           "backup_url": []
         }

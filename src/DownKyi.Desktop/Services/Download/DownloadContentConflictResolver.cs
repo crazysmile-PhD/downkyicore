@@ -21,6 +21,17 @@ internal sealed record DownloadContentConflict(
 {
     public bool HasAvailableMedia => AvailableContent.Audio || AvailableContent.Video;
 
+    public bool HasAvailableContent => HasAvailableMedia
+                                       || AvailableContent.Danmaku
+                                       || AvailableContent.Subtitle
+                                       || AvailableContent.Cover;
+
+    public bool UsesLowerVideoQuality =>
+        AvailableContent.Video && AvailableMedia.LowerVideoQuality != null;
+
+    public bool UsesLowerAudioQuality =>
+        AvailableContent.Audio && AvailableMedia.LowerAudioQuality != null;
+
     public static DownloadContentConflict? Find(
         DownloadContentSelection requestedContent,
         DownloadMediaCapabilities availableMedia)
@@ -28,7 +39,9 @@ internal sealed record DownloadContentConflict(
         ArgumentNullException.ThrowIfNull(requestedContent);
         ArgumentNullException.ThrowIfNull(availableMedia);
 
-        if (availableMedia.Supports(requestedContent))
+        if (availableMedia.Supports(requestedContent)
+            && (!requestedContent.Video || availableMedia.LowerVideoQuality == null)
+            && (!requestedContent.Audio || availableMedia.LowerAudioQuality == null))
         {
             return null;
         }
@@ -47,15 +60,17 @@ internal sealed record DownloadContentConflictDecision(
 
 internal sealed class DownloadContentConflictChoices
 {
-    private readonly Dictionary<DownloadContentConflict, DownloadContentConflictAction> _choices = [];
+    private readonly Dictionary<DownloadContentSelection, DownloadContentConflictAction> _choices = [];
 
     public bool TryGet(
         DownloadContentConflict conflict,
-        out DownloadContentConflictAction action) => _choices.TryGetValue(conflict, out action);
+        out DownloadContentConflictAction action) =>
+        _choices.TryGetValue(conflict.RequestedContent, out action);
 
     public void Remember(
         DownloadContentConflict conflict,
-        DownloadContentConflictAction action) => _choices[conflict] = action;
+        DownloadContentConflictAction action) =>
+        _choices[conflict.RequestedContent] = action;
 }
 
 internal sealed class DownloadContentConflictResolver
@@ -86,7 +101,14 @@ internal sealed class DownloadContentConflictResolver
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var page = preparedPage.Page;
-                if ((!isAll && !page.IsSelected) || !page.HasPlayback)
+                if (!isAll && !page.IsSelected)
+                {
+                    continue;
+                }
+
+                if (!requestedContent.Audio && !requestedContent.Video
+                    && !requestedContent.Danmaku && !requestedContent.Subtitle
+                    && !requestedContent.Cover)
                 {
                     continue;
                 }
@@ -100,13 +122,14 @@ internal sealed class DownloadContentConflictResolver
                     continue;
                 }
 
-                if (!conflict.HasAvailableMedia)
+                if (!conflict.HasAvailableContent)
                 {
                     continue;
                 }
 
                 var action = await ResolveActionAsync(
                     page.Name,
+                    page.PlaybackFailure,
                     conflict,
                     choices,
                     cancellationToken).ConfigureAwait(true);
@@ -143,6 +166,7 @@ internal sealed class DownloadContentConflictResolver
 
     private async Task<DownloadContentConflictAction> ResolveActionAsync(
         string pageName,
+        string? apiFailure,
         DownloadContentConflict conflict,
         DownloadContentConflictChoices choices,
         CancellationToken cancellationToken)
@@ -154,7 +178,7 @@ internal sealed class DownloadContentConflictResolver
 
         var decision = await DownloadContentConflictDialogContract.ShowAsync(
             _dialogService,
-            new DownloadContentConflictPrompt(pageName, conflict),
+            new DownloadContentConflictPrompt(pageName, conflict, apiFailure),
             cancellationToken).ConfigureAwait(true);
         if (decision.ApplyToAll)
         {

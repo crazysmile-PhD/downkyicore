@@ -2,9 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Bilibili;
+using DownKyi.Core.BiliApi;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.Models;
 using DownKyi.Core.BiliApi.Sign;
@@ -17,6 +19,7 @@ using DownKyi.Core.Settings;
 using DownKyi.Core.Utils;
 using DownKyi.Presentation;
 using DownKyi.Services.Video;
+using Newtonsoft.Json;
 using VideoPage = DownKyi.Presentation.VideoPage;
 
 namespace DownKyi.Services;
@@ -338,30 +341,35 @@ internal class VideoInfoService : IInfoService
     {
         ArgumentNullException.ThrowIfNull(page);
         cancellationToken.ThrowIfCancellationRequested();
-        var videoParseType = _settingsStore.Current.Video.VideoParseType;
-        return await WbiRequestExecutor.ExecuteAsync(
-            _wbiKeyProvider,
-            (keys, unixTimeSeconds) => videoParseType switch
-            {
-                0 => _client.GetVideoPlayUrlAsync(
-                    keys,
-                    unixTimeSeconds,
-                    page.Avid,
-                    page.Bvid,
-                    page.Cid,
-                    cancellationToken: cancellationToken),
-                1 => _client.GetVideoPlayUrlWebPageAsync(
+        var videoSettings = _settingsStore.Current.Video;
+        try
+        {
+            return await WbiRequestExecutor.ExecuteAsync(
+                _wbiKeyProvider,
+                (keys, unixTimeSeconds) => _client.GetVideoPlayUrlWebPageAsync(
                     keys,
                     unixTimeSeconds,
                     page.Avid,
                     page.Bvid,
                     page.Cid,
                     page.Page,
+                    quality: videoSettings.Quality,
+                    preferredAudioQuality: videoSettings.AudioQuality,
                     cancellationToken: cancellationToken),
-                _ => Task.FromResult<PlayUrl?>(null)
-            },
-            TimeProvider.System,
-            cancellationToken).ConfigureAwait(false);
+                TimeProvider.System,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is HttpRequestException
+            or BilibiliApiResponseException or JsonException
+            || exception is OperationCanceledException && !cancellationToken.IsCancellationRequested)
+        {
+            var failure = exception is BilibiliApiResponseException response
+                ? $"{nameof(BilibiliApiResponseException)}:{response.Code}"
+                : exception.GetType().Name;
+            return PlayUrl.FailedDiscovery(
+                _settingsStore.Current.Video.Quality,
+                failure);
+        }
     }
 
     /// <summary>
