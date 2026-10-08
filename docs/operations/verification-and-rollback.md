@@ -76,9 +76,26 @@ Core 只保存外部 binary catalog，不得選擇平台內容或設定 SDK
 `RuntimeIdentifier`。exe 專案必須從明確的 publish RID 建立 asset RID，
 沒有 publish RID 時才可依本機 host 提供開發 fallback，並直接把對應
 catalog 檔案加入 output/publish；自訂 RID 不得跨 ProjectReference。
-推 tag 前手動執行 `build.yml`，下載每個 artifact，重算 package
-sidecar，並檢查 manifest、版本、必要 binary、Fluent theme 與使用者
-資料排除。macOS artifact 另需確認 x64 與 arm64 final app 均已完成簽章並
+推 tag 前手動執行 `build.yml`，下載每個 artifact，重算各 package
+sidecar，並檢查細項 manifest、版本、必要 binary、Fluent theme 與使用者
+資料排除。下載結果中的兩個 `appimage-*.transport.tar` 必須先按 `build.yml`
+的 `Restore and verify validated AppImages` 步驟解開並驗證執行權限；接著使用
+與正式 workflow 相同的 owner 組裝公開資產：
+
+```powershell
+$version = (Get-Content ./version.txt -Raw).Trim()
+pwsh ./script/assemble-release-assets.ps1 `
+  -ArtifactsDirectory ./artifacts/downloaded-release-candidate `
+  -ExpectedVersion $version `
+  -OutputDirectory ./artifacts/release-assets
+```
+
+輸出必須嚴格包含九個 installer、單一 `SHA256SUMS.txt` 與單一
+`release-manifest.json`。checksum 檔逐行綁定 package 名稱與整包 SHA-256；
+合併 manifest 的 `packages` 綁定 package、RID、格式、大小與 SHA-256，
+`runtimePayloads` 則保存六個 RID 的逐檔路徑、大小與 SHA-256。不得把九份
+per-package sidecar 或九份細項 manifest 公開到 GitHub Release；它們只作為
+組裝腳本的 fail-closed 輸入。macOS artifact 另需確認 x64 與 arm64 final app 均已完成簽章並
 通過 `codesign --verify --deep --strict`；缺少 Apple credentials 時使用 ad-hoc
 簽章，Developer ID、notarization、stapling、Gatekeeper 與 signed-DMG 驗證會
 跳過，產物不得宣稱具備這些信任屬性。具備完整 Apple credentials 時才要求
@@ -91,7 +108,9 @@ $version = (Get-Content ./version.txt -Raw).Trim()
 pwsh ./script/validate-release-version.ps1 -GitRef "refs/tags/v$version"
 ```
 
-這個檢查要求 tag 與 `version.txt` 完全一致；不得移動或重用既有 tag。
+這個檢查要求 tag 與 `version.txt` 完全一致；不得移動或重用既有 tag。正式
+發布後重新下載 `SHA256SUMS.txt` 與 `release-manifest.json`，確認九個 package
+均有且只有一筆紀錄、沒有 `.internal.*` 或 per-package 驗證檔外洩。
 
 登入態 API audit 只能由明確授權的 operator 執行：
 

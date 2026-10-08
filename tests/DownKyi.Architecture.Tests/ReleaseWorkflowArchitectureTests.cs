@@ -26,6 +26,9 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.Equal(6, CountOccurrences(workflow, "fail-fast: false"));
         Assert.Equal(3, CountOccurrences(workflow, "validate-publish-output.ps1"));
         Assert.Equal(5, CountOccurrences(workflow, "Get-FileHash"));
+        Assert.Contains("./script/assemble-release-assets.ps1", workflow, StringComparison.Ordinal);
+        Assert.Contains("artifacts: artifacts/release-assets/*", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("artifacts: artifacts/*", workflow, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -137,6 +140,7 @@ public sealed class ReleaseWorkflowArchitectureTests
                 "script/assets/external-assets.json",
                 "script/download-external-asset.ps1",
                 "script/install-appimagetool.ps1",
+                "script/assemble-release-assets.ps1",
                 "script/ffmpeg-assets.py",
                 "script/ffmpeg.ps1",
                 "script/ffmpeg.sh",
