@@ -7,6 +7,7 @@ internal enum LegacyDownloadStoreKind
     Stateful,
     Reserved,
     AdmissionSafe,
+    CurrentWithLegacyHistory,
     Current,
     Unsupported
 }
@@ -30,6 +31,9 @@ internal sealed record LegacyDownloadStoreFormat(
 
     public bool IsCurrent => Kind == LegacyDownloadStoreKind.Current;
 
+    public bool RequiresLegacyHistoryRecovery =>
+        Kind == LegacyDownloadStoreKind.CurrentWithLegacyHistory;
+
     public bool IsSupported => Kind != LegacyDownloadStoreKind.Unsupported;
 }
 
@@ -42,7 +46,9 @@ internal sealed record LegacyDownloadRow(
 internal sealed record LegacyDownloadStoreSnapshot(
     LegacyDownloadStoreFormat Format,
     IReadOnlyList<LegacyDownloadRow> DownloadRows,
-    IReadOnlyList<string> BaseRecordIds);
+    IReadOnlyList<LegacyBaseRecord> BaseRecords);
+
+internal sealed record LegacyBaseRecord(string Id, string? StagingToken);
 
 internal sealed record LegacyPhaseUpdate(string Id, int Phase);
 

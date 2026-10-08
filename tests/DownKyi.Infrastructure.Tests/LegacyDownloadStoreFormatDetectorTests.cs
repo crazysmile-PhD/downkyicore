@@ -60,6 +60,7 @@ public sealed class LegacyDownloadStoreFormatDetectorTests
         { "legacy-v6", 6, "AdmissionSafe" },
         { "legacy-v7", 7, "AdmissionSafe" },
         { "legacy-v8", 8, "AdmissionSafe" },
+        { "current-v9-with-legacy-history", 9, "CurrentWithLegacyHistory" },
         { "current-v9", 9, "Current" }
     };
 
@@ -71,6 +72,7 @@ public sealed class LegacyDownloadStoreFormatDetectorTests
         "future-column-on-v4",
         "non-monotonic-v6",
         "partial-publishing-columns",
+        "current-with-malformed-legacy-history",
         "current-missing-staging"
     };
 
@@ -146,6 +148,13 @@ public sealed class LegacyDownloadStoreFormatDetectorTests
             return;
         }
 
+        if (shape == "current-v9-with-legacy-history")
+        {
+            CreateCurrentShape(connection, includeStagingToken: true);
+            CreateTable(connection, "downloaded", CoreDownloadedColumns);
+            return;
+        }
+
         CreateLegacyShape(connection, userVersion);
     }
 
@@ -180,6 +189,11 @@ public sealed class LegacyDownloadStoreFormatDetectorTests
                 CreateLegacyShape(connection, 7);
                 AddColumn(connection, "download_base", "publishing_key");
                 SetUserVersion(connection, 8);
+                break;
+            case "current-with-malformed-legacy-history":
+                SetUserVersion(connection, DownloadStoreSchema.CurrentVersion);
+                CreateCurrentShape(connection, includeStagingToken: true);
+                CreateTable(connection, "downloaded", ["id"]);
                 break;
             case "current-missing-staging":
                 SetUserVersion(connection, DownloadStoreSchema.CurrentVersion);

@@ -141,13 +141,14 @@ internal static class LegacyDownloadStoreFormatDetector
         var historyColumns = tables.Contains("download_history")
             ? await ReadHistoryColumnsAsync(connection, cancellationToken).ConfigureAwait(false)
             : [];
+        var hasLegacyDownloadedShape = tables.Contains("downloaded")
+                                       && CoreDownloadedColumns.All(downloadedColumns.Contains);
         var hasLegacyCoreTables = CoreBaseColumns.All(baseColumns.Contains)
                                   && CoreDownloadingColumns.All(downloadingColumns.Contains)
-                                  && CoreDownloadedColumns.All(downloadedColumns.Contains);
+                                  && hasLegacyDownloadedShape;
         var hasCurrentHistoryShape = CoreBaseColumns.All(baseColumns.Contains)
                                      && CoreDownloadingColumns.All(downloadingColumns.Contains)
-                                     && CurrentHistoryColumns.All(historyColumns.Contains)
-                                     && !tables.Contains("downloaded");
+                                     && CurrentHistoryColumns.All(historyColumns.Contains);
         var hasStateColumns = BaseStateColumns.All(baseColumns.Contains)
                               && DownloadingStateColumns.All(downloadingColumns.Contains);
         var hasAnyStateColumns = BaseStateColumns.Any(baseColumns.Contains)
@@ -165,6 +166,8 @@ internal static class LegacyDownloadStoreFormatDetector
             HasLegacyCoreTables: hasLegacyCoreTables,
             HasHistoryTable: tables.Contains("download_history"),
             HasCurrentHistoryShape: hasCurrentHistoryShape,
+            HasLegacyDownloadedTable: tables.Contains("downloaded"),
+            HasLegacyDownloadedShape: hasLegacyDownloadedShape,
             HasSchemaLedger: tables.Contains("download_schema_migrations"),
             HasQuarantine: tables.Contains("download_quarantine"),
             HasStateColumns: hasStateColumns,
@@ -203,6 +206,11 @@ internal static class LegacyDownloadStoreFormatDetector
         if (fingerprint.IsCurrent)
         {
             return LegacyDownloadStoreKind.Current;
+        }
+
+        if (fingerprint.IsCurrentWithLegacyHistory)
+        {
+            return LegacyDownloadStoreKind.CurrentWithLegacyHistory;
         }
 
         if (fingerprint.IsStructurallyIncomplete)
@@ -247,6 +255,8 @@ internal static class LegacyDownloadStoreFormatDetector
         bool HasLegacyCoreTables,
         bool HasHistoryTable,
         bool HasCurrentHistoryShape,
+        bool HasLegacyDownloadedTable,
+        bool HasLegacyDownloadedShape,
         bool HasSchemaLedger,
         bool HasQuarantine,
         bool HasStateColumns,
@@ -262,6 +272,7 @@ internal static class LegacyDownloadStoreFormatDetector
         public bool IsNew => UserVersion == 0 && HasNoTables;
 
         public bool IsCurrent => HasCurrentHistoryShape
+                                 && !HasLegacyDownloadedTable
                                  && UserVersion == DownloadStoreSchema.CurrentVersion
                                  && HasRequiredSchemaMetadata
                                  && HasStateColumns
@@ -272,8 +283,21 @@ internal static class LegacyDownloadStoreFormatDetector
                                  && HasStagingToken
                                  && HasPublishingArtifact;
 
+        public bool IsCurrentWithLegacyHistory => HasCurrentHistoryShape
+                                                  && HasLegacyDownloadedShape
+                                                  && UserVersion == DownloadStoreSchema.CurrentVersion
+                                                  && HasRequiredSchemaMetadata
+                                                  && HasStateColumns
+                                                  && HasReservationKey
+                                                  && HasAdmissionGate
+                                                  && HasNfoRequest
+                                                  && HasPublishedArtifacts
+                                                  && HasStagingToken
+                                                  && HasPublishingArtifact;
+
         public bool IsStructurallyIncomplete => HasHistoryTable
                                                 || !HasLegacyCoreTables
+                                                || (HasLegacyDownloadedTable && !HasLegacyDownloadedShape)
                                                 || HasAnyStateColumns != HasStateColumns
                                                 || HasAnyPublishingArtifact != HasPublishingArtifact;
 
