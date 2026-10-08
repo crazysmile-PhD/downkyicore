@@ -9,7 +9,9 @@ param(
     [string]$ExpectedVersion,
 
     [Parameter(Mandatory = $true)]
-    [string]$OutputPath
+    [string]$OutputPath,
+
+    [string]$ExpectedManifestPath
 )
 
 $ErrorActionPreference = "Stop"
@@ -30,7 +32,48 @@ function Resolve-RequiredFile {
     throw "$Label is missing or empty in publish output: $PublishDirectory"
 }
 
+function ConvertTo-ComparableManifestJson {
+    param([string]$Path)
+
+    $manifest = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+    $files = @(
+        $manifest.files |
+            Sort-Object -Property path |
+            ForEach-Object {
+                [ordered]@{
+                    path = [string]$_.path
+                    bytes = [long]$_.bytes
+                    sha256 = ([string]$_.sha256).ToLowerInvariant()
+                }
+            }
+    )
+    return ([ordered]@{
+        schemaVersion = [int]$manifest.schemaVersion
+        runtimeIdentifier = [string]$manifest.runtimeIdentifier
+        applicationVersion = [string]$manifest.applicationVersion
+        files = $files
+    } | ConvertTo-Json -Depth 5 -Compress)
+}
+
 $PublishDirectory = (Resolve-Path -LiteralPath $PublishDirectory).Path
+$userDataDirectoryNames = [Collections.Generic.HashSet[string]]::new(
+    [StringComparer]::OrdinalIgnoreCase)
+foreach ($directoryName in @('Aria', 'Logs', 'Storage', 'Config', 'Bilibili', 'Cache', 'Media')) {
+    [void]$userDataDirectoryNames.Add($directoryName)
+}
+$packagedUserData = @(
+    Get-ChildItem -LiteralPath $PublishDirectory -Recurse -Force |
+        Where-Object {
+            $relativePath = [IO.Path]::GetRelativePath($PublishDirectory, $_.FullName)
+            $segments = $relativePath -split '[\\/]'
+            @($segments | Where-Object { $userDataDirectoryNames.Contains($_) }).Count -ne 0
+        } |
+        ForEach-Object { [IO.Path]::GetRelativePath($PublishDirectory, $_.FullName).Replace('\', '/') }
+)
+if ($packagedUserData.Count -ne 0) {
+    throw "Published output contains user data paths: $($packagedUserData -join ', ')"
+}
+
 $downKyiAssembly = Resolve-RequiredFile "DownKyi assembly" @("DownKyi.dll")
 $downKyiExecutable = Resolve-RequiredFile "DownKyi executable" @("DownKyi.exe", "DownKyi")
 $ariaExecutable = Resolve-RequiredFile "aria2 executable" @("aria2/aria2c.exe", "aria2/aria2c")
@@ -96,4 +139,13 @@ if ($outputDirectory) {
     New-Item -ItemType Directory -Path $outputDirectory -Force | Out-Null
 }
 $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $OutputPath -Encoding utf8NoBOM
+
+if (-not [string]::IsNullOrWhiteSpace($ExpectedManifestPath)) {
+    $expectedManifest = ConvertTo-ComparableManifestJson -Path $ExpectedManifestPath
+    $actualManifest = ConvertTo-ComparableManifestJson -Path $OutputPath
+    if ($expectedManifest -cne $actualManifest) {
+        throw 'Published output does not match the expected publish manifest.'
+    }
+}
+
 Write-Output "Validated publish output for $RuntimeIdentifier and wrote $OutputPath"

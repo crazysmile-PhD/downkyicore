@@ -10,6 +10,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot 'release-package-catalog.ps1')
 
 function Get-ArtifactFile {
     param(
@@ -53,17 +54,7 @@ if (Test-Path -LiteralPath $outputPath) {
     throw "Release asset output already exists: $outputPath"
 }
 
-$packageManifests = [ordered]@{
-    "DownKyi-$ExpectedVersion-1.win-x64.zip" = 'publish-manifest-win-x64.json'
-    "DownKyi-$ExpectedVersion-1.win-x86.zip" = 'publish-manifest-win-x86.json'
-    "DownKyi-${ExpectedVersion}_linux_self-contained.x86_64.AppImage" = 'publish-manifest-linux-x64-AppImage.json'
-    "downkyi_${ExpectedVersion}_linux_self-contained_amd64.deb" = 'publish-manifest-linux-x64-deb.json'
-    "downkyi_${ExpectedVersion}_linux_self-contained.x86_64.rpm" = 'publish-manifest-linux-x64-rpm.json'
-    "DownKyi-${ExpectedVersion}_linux_self-contained.aarch64.AppImage" = 'publish-manifest-linux-arm64-AppImage.json'
-    "downkyi_${ExpectedVersion}_linux_self-contained_arm64.deb" = 'publish-manifest-linux-arm64-deb.json'
-    "DownKyi-$ExpectedVersion-osx-x64.dmg" = 'publish-manifest-osx-x64.json'
-    "DownKyi-$ExpectedVersion-osx-arm64.dmg" = 'publish-manifest-osx-arm64.json'
-}
+$packageSpecs = @(Get-ReleasePackageCatalog -ExpectedVersion $ExpectedVersion)
 
 $allFiles = @(Get-ChildItem -LiteralPath $artifactsRoot -Recurse -Force -File)
 $outputParent = Split-Path -Parent $outputPath
@@ -71,10 +62,10 @@ $stagingPath = Join-Path $outputParent ".release-assets-$([Guid]::NewGuid().ToSt
 New-Item -ItemType Directory -Path $stagingPath -Force | Out-Null
 try {
     $verificationFiles = @(
-        foreach ($entry in $packageManifests.GetEnumerator()) {
-            $package = Get-ArtifactFile -Files $allFiles -Name $entry.Key
-            $sidecar = Get-ArtifactFile -Files $allFiles -Name "$($entry.Key).sha256"
-            $manifest = Get-ArtifactFile -Files $allFiles -Name $entry.Value
+        foreach ($spec in $packageSpecs) {
+            $package = Get-ArtifactFile -Files $allFiles -Name $spec.Name
+            $sidecar = Get-ArtifactFile -Files $allFiles -Name "$($spec.Name).sha256"
+            $manifest = Get-ArtifactFile -Files $allFiles -Name $spec.Manifest
             Copy-CheckedFile -File $package -Checksum $sidecar -Destination $stagingPath
             $sidecar
             $manifest
@@ -91,4 +82,4 @@ finally {
     }
 }
 
-Write-Output "Assembled $($packageManifests.Count) packages and $archiveName at $outputPath"
+Write-Output "Assembled $($packageSpecs.Count) packages and $archiveName at $outputPath"
