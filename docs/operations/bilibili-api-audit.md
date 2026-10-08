@@ -26,7 +26,7 @@ pwsh ./script/audit-bilibili-api.ps1 `
 
 輸出依 endpoint 排序，包含所有非 `Models` source location；不保存日期或 SHA。`BilibiliApiInventoryArchitectureTests` 會獨立抽取 source endpoints，並要求 generator 的完整結果一致，因此新增 endpoint 不需要再同步 Markdown。
 
-Dynamic subtitle、media、callback 與 web fallback URL 來自 response 或既有 typed input，不屬於 fixed endpoint inventory。這些值保持 opaque，不能寫入診斷日誌。
+Dynamic subtitle、media、callback 與 playback page URL 來自 response 或既有 typed input，不屬於 fixed endpoint inventory。這些值保持 opaque，不能寫入診斷日誌。
 
 ## Live audit safety
 

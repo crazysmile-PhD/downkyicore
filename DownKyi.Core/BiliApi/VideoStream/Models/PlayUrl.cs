@@ -49,9 +49,15 @@ public class PlayUrl : BaseModel
     // high_format
 }
 
+public enum PlayUrlResolutionSource
+{
+    WebPage,
+    Api
+}
+
 public sealed record PlayUrlDiagnostics(
     int RequestedQuality,
-    int Fnval,
+    int? Fnval,
     string? PlayDetail,
-    bool UsedWebPageFallback,
-    string FallbackOutcome);
+    PlayUrlResolutionSource Source,
+    string Outcome);
