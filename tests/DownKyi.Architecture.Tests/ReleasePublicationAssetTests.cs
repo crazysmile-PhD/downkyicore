@@ -1,96 +1,72 @@
 using System.Diagnostics;
+using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
+using DownKyi.CentralTestRunner;
 
 namespace DownKyi.Architecture.Tests;
 
 public sealed class ReleasePublicationAssetTests
 {
     private const string Version = "9.8.7";
+    private const string VerificationArchiveName = $"DownKyi-{Version}-verification.zip";
+    private const UnixFileMode AppImageMode =
+        UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+        UnixFileMode.GroupRead | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute;
     private static readonly string RepositoryRoot = FindRepositoryRoot();
-    private static readonly PackageDefinition[] PackageDefinitions =
+    private static readonly (string PackageName, string ManifestName)[] PackageDefinitions =
     [
-        new($"DownKyi-{Version}-1.win-x64.zip", "publish-manifest-win-x64.json", "win-x64"),
-        new($"DownKyi-{Version}-1.win-x86.zip", "publish-manifest-win-x86.json", "win-x86"),
-        new($"DownKyi-{Version}_linux_self-contained.x86_64.AppImage", "publish-manifest-linux-x64-AppImage.json", "linux-x64"),
-        new($"downkyi_{Version}_linux_self-contained_amd64.deb", "publish-manifest-linux-x64-deb.json", "linux-x64"),
-        new($"downkyi_{Version}_linux_self-contained.x86_64.rpm", "publish-manifest-linux-x64-rpm.json", "linux-x64"),
-        new($"DownKyi-{Version}_linux_self-contained.aarch64.AppImage", "publish-manifest-linux-arm64-AppImage.json", "linux-arm64"),
-        new($"downkyi_{Version}_linux_self-contained_arm64.deb", "publish-manifest-linux-arm64-deb.json", "linux-arm64"),
-        new($"DownKyi-{Version}-osx-x64.dmg", "publish-manifest-osx-x64.json", "osx-x64"),
-        new($"DownKyi-{Version}-osx-arm64.dmg", "publish-manifest-osx-arm64.json", "osx-arm64")
+        ($"DownKyi-{Version}-1.win-x64.zip", "publish-manifest-win-x64.json"),
+        ($"DownKyi-{Version}-1.win-x86.zip", "publish-manifest-win-x86.json"),
+        ($"DownKyi-{Version}_linux_self-contained.x86_64.AppImage", "publish-manifest-linux-x64-AppImage.json"),
+        ($"downkyi_{Version}_linux_self-contained_amd64.deb", "publish-manifest-linux-x64-deb.json"),
+        ($"downkyi_{Version}_linux_self-contained.x86_64.rpm", "publish-manifest-linux-x64-rpm.json"),
+        ($"DownKyi-{Version}_linux_self-contained.aarch64.AppImage", "publish-manifest-linux-arm64-AppImage.json"),
+        ($"downkyi_{Version}_linux_self-contained_arm64.deb", "publish-manifest-linux-arm64-deb.json"),
+        ($"DownKyi-{Version}-osx-x64.dmg", "publish-manifest-osx-x64.json"),
+        ($"DownKyi-{Version}-osx-arm64.dmg", "publish-manifest-osx-arm64.json")
     ];
 
     [Fact]
-    public void AssemblerPublishesNinePackagesAndTwoConsolidatedEvidenceFiles()
+    public async Task AssemblerPublishesNineUnchangedPackagesAndOneVerificationArchive()
     {
         var root = CreateTemporaryDirectory();
-        var artifacts = Path.Combine(root, "downloaded-artifacts");
-        var output = Path.Combine(root, "release-assets");
+        var artifacts = Path.Combine(root, "artifacts");
+        var output = Path.Combine(artifacts, "release-assets");
+
+        try
+        {
+            var originalFiles = WriteFixture(artifacts);
+
+            var exitCode = await RunAssemblerAsync(artifacts, output).ConfigureAwait(true);
+
+            Assert.Equal(0, exitCode);
+            AssertPublishedAssets(output, originalFiles);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData($"DownKyi-{Version}-1.win-x64.zip.sha256")]
+    [InlineData("publish-manifest-win-x64.json")]
+    public async Task AssemblerRejectsMissingVerificationFileWithoutPublishing(string missingFile)
+    {
+        var root = CreateTemporaryDirectory();
+        var artifacts = Path.Combine(root, "artifacts");
+        var output = Path.Combine(artifacts, "release-assets");
 
         try
         {
             WriteFixture(artifacts);
+            File.Delete(Path.Combine(artifacts, missingFile));
 
-            var result = RunAssembler(artifacts, output);
+            var exitCode = await RunAssemblerAsync(artifacts, output).ConfigureAwait(true);
 
-            Assert.Equal(0, result.ExitCode);
-            var outputFiles = Directory
-                .EnumerateFiles(output)
-                .Select(Path.GetFileName)
-                .Order(StringComparer.Ordinal)
-                .ToArray();
-            var expectedFiles = PackageDefinitions
-                .Select(definition => definition.PackageName)
-                .Append("SHA256SUMS.txt")
-                .Append("release-manifest.json")
-                .Order(StringComparer.Ordinal)
-                .ToArray();
-            Assert.Equal(expectedFiles, outputFiles);
-
-            var checksumLines = File
-                .ReadAllLines(Path.Combine(output, "SHA256SUMS.txt"))
-                .Where(line => !string.IsNullOrWhiteSpace(line))
-                .ToArray();
-            Assert.Equal(9, checksumLines.Length);
-            var checksumPackageNames = checksumLines
-                .Select(line => line[(line.IndexOf("  ", StringComparison.Ordinal) + 2)..])
-                .ToArray();
-            Assert.Equal(
-                PackageDefinitions
-                    .Select(definition => definition.PackageName)
-                    .Order(StringComparer.Ordinal)
-                    .ToArray(),
-                checksumPackageNames);
-
-            using var manifest = JsonDocument.Parse(
-                File.ReadAllText(Path.Combine(output, "release-manifest.json")));
-            var rootElement = manifest.RootElement;
-            Assert.Equal(1, rootElement.GetProperty("schemaVersion").GetInt32());
-            Assert.Equal(Version, rootElement.GetProperty("applicationVersion").GetString());
-            Assert.Equal(9, rootElement.GetProperty("packages").GetArrayLength());
-            Assert.Equal(6, rootElement.GetProperty("runtimePayloads").GetArrayLength());
-
-            var packageNames = rootElement
-                .GetProperty("packages")
-                .EnumerateArray()
-                .Select(package => package.GetProperty("name").GetString() ?? string.Empty)
-                .ToArray();
-            Assert.Equal(
-                PackageDefinitions
-                    .Select(definition => definition.PackageName)
-                    .Order(StringComparer.Ordinal)
-                    .ToArray(),
-                packageNames);
-
-            Assert.Equal(9, Directory.EnumerateFiles(artifacts, "*.sha256", SearchOption.AllDirectories).Count());
-            Assert.Equal(
-                9,
-                Directory.EnumerateFiles(
-                    artifacts,
-                    "publish-manifest-*.json",
-                    SearchOption.AllDirectories).Count());
+            Assert.NotEqual(0, exitCode);
+            Assert.Empty(Directory.EnumerateDirectories(artifacts));
         }
         finally
         {
@@ -99,28 +75,24 @@ public sealed class ReleasePublicationAssetTests
     }
 
     [Fact]
-    public void AssemblerRejectsPackageThatDoesNotMatchItsSidecar()
+    public async Task AssemblerRejectsChangedPackageWithoutPublishing()
     {
         var root = CreateTemporaryDirectory();
-        var artifacts = Path.Combine(root, "downloaded-artifacts");
-        var output = Path.Combine(root, "release-assets");
+        var artifacts = Path.Combine(root, "artifacts");
+        var output = Path.Combine(artifacts, "release-assets");
 
         try
         {
             WriteFixture(artifacts);
-            var package = Directory
-                .EnumerateFiles(
-                    artifacts,
-                    PackageDefinitions[0].PackageName,
-                    SearchOption.AllDirectories)
-                .Single();
-            File.AppendAllText(package, "tampered", Encoding.UTF8);
+            await File.AppendAllTextAsync(
+                Path.Combine(artifacts, PackageDefinitions[0].PackageName),
+                "changed after checksum",
+                TestContext.Current.CancellationToken).ConfigureAwait(true);
 
-            var result = RunAssembler(artifacts, output);
+            var exitCode = await RunAssemblerAsync(artifacts, output).ConfigureAwait(true);
 
-            Assert.NotEqual(0, result.ExitCode);
-            Assert.Contains("does not match its checksum sidecar", result.StandardError, StringComparison.Ordinal);
-            Assert.False(Directory.Exists(output));
+            Assert.NotEqual(0, exitCode);
+            Assert.Empty(Directory.EnumerateDirectories(artifacts));
         }
         finally
         {
@@ -128,120 +100,96 @@ public sealed class ReleasePublicationAssetTests
         }
     }
 
-    [Fact]
-    public void AssemblerRejectsDivergentPayloadsForTheSameRuntime()
+    private static void AssertPublishedAssets(string output, Dictionary<string, byte[]> originalFiles)
     {
-        var root = CreateTemporaryDirectory();
-        var artifacts = Path.Combine(root, "downloaded-artifacts");
-        var output = Path.Combine(root, "release-assets");
+        var expectedFiles = PackageDefinitions
+            .Select(definition => definition.PackageName)
+            .Append(VerificationArchiveName)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        var actualFiles = Directory.EnumerateFiles(output)
+            .Select(Path.GetFileName)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        Assert.Equal(expectedFiles, actualFiles);
 
-        try
-        {
-            WriteFixture(artifacts);
-            var manifestPath = Directory
-                .EnumerateFiles(
-                    artifacts,
-                    "publish-manifest-linux-x64-deb.json",
-                    SearchOption.AllDirectories)
-                .Single();
-            var divergentManifest = CreateManifest("linux-x64", "different-runtime-file");
-            File.WriteAllText(
-                manifestPath,
-                JsonSerializer.Serialize(divergentManifest),
-                new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
-
-            var result = RunAssembler(artifacts, output);
-
-            Assert.NotEqual(0, result.ExitCode);
-            Assert.Contains("do not describe the same payload", result.StandardError, StringComparison.Ordinal);
-            Assert.False(Directory.Exists(output));
-        }
-        finally
-        {
-            Directory.Delete(root, recursive: true);
-        }
-    }
-
-    private static void WriteFixture(string artifacts)
-    {
         foreach (var definition in PackageDefinitions)
         {
-            var directory = Path.Combine(
-                artifacts,
-                Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(definition.PackageName)))[..12]);
-            Directory.CreateDirectory(directory);
+            var path = Path.Combine(output, definition.PackageName);
+            Assert.Equal(originalFiles[definition.PackageName], File.ReadAllBytes(path));
+            if (!OperatingSystem.IsWindows() && path.EndsWith(".AppImage", StringComparison.Ordinal))
+            {
+                Assert.Equal(AppImageMode, File.GetUnixFileMode(path));
+            }
+        }
 
-            var packagePath = Path.Combine(directory, definition.PackageName);
-            File.WriteAllText(packagePath, $"package:{definition.PackageName}", Encoding.UTF8);
-            var packageHash = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(packagePath)));
-            File.WriteAllText(
-                $"{packagePath}.sha256",
-                $"{packageHash}  {definition.PackageName}\n",
-                Encoding.ASCII);
-
-            var manifest = CreateManifest(definition.RuntimeIdentifier, definition.RuntimeIdentifier);
-            File.WriteAllText(
-                Path.Combine(directory, definition.ManifestName),
-                JsonSerializer.Serialize(manifest),
-                new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        using var archive = ZipFile.OpenRead(Path.Combine(output, VerificationArchiveName));
+        var expectedEntries = PackageDefinitions
+            .SelectMany(definition => new[] { $"{definition.PackageName}.sha256", definition.ManifestName })
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        Assert.Equal(
+            expectedEntries,
+            archive.Entries.Select(entry => entry.FullName).Order(StringComparer.Ordinal).ToArray());
+        foreach (var entry in archive.Entries)
+        {
+            using var stream = entry.Open();
+            using var content = new MemoryStream();
+            stream.CopyTo(content);
+            Assert.Equal(originalFiles[entry.FullName], content.ToArray());
         }
     }
 
-    private static object CreateManifest(string runtimeIdentifier, string payloadIdentity)
+    private static Dictionary<string, byte[]> WriteFixture(string artifacts)
     {
-        var payloadHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payloadIdentity)));
-        return new
+        Directory.CreateDirectory(artifacts);
+        foreach (var definition in PackageDefinitions)
         {
-            schemaVersion = 1,
-            runtimeIdentifier,
-            applicationVersion = Version,
-            generatedAtUtc = "2026-10-08T00:00:00Z",
-            files = new[]
+            var packagePath = Path.Combine(artifacts, definition.PackageName);
+            File.WriteAllText(packagePath, $"package:{definition.PackageName}", Encoding.UTF8);
+            if (!OperatingSystem.IsWindows() && packagePath.EndsWith(".AppImage", StringComparison.Ordinal))
             {
-                new
-                {
-                    path = "DownKyi.fixture",
-                    bytes = 1,
-                    sha256 = payloadHash
-                }
+                File.SetUnixFileMode(packagePath, AppImageMode);
             }
-        };
+
+            var packageHash = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(packagePath)));
+            File.WriteAllText($"{packagePath}.sha256", $"{packageHash}  {definition.PackageName}\r\n", Encoding.ASCII);
+            var manifest = "{\r\n" +
+                $"  \"sourcePackage\": \"{definition.PackageName}\",\r\n" +
+                $"  \"files\": [{{\"path\": \"DownKyi.fixture\", \"bytes\": 1, \"sha256\": \"{packageHash}\"}}],\r\n" +
+                "  \"extra\": \"保留原始內容、欄位與換行\"\r\n}\r\n";
+            File.WriteAllText(
+                Path.Combine(artifacts, definition.ManifestName),
+                manifest,
+                new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+        }
+
+        return Directory.EnumerateFiles(artifacts)
+            .ToDictionary(path => Path.GetFileName(path), File.ReadAllBytes, StringComparer.Ordinal);
     }
 
-    private static ProcessResult RunAssembler(string artifacts, string output)
+    private static async Task<int> RunAssemblerAsync(string artifacts, string output)
     {
-        var startInfo = new ProcessStartInfo
+        var startInfo = new ProcessStartInfo("pwsh") { UseShellExecute = false };
+        string[] arguments =
+        [
+            "-NoLogo", "-NoProfile", "-NonInteractive", "-File",
+            Path.Combine(RepositoryRoot, "script", "assemble-release-assets.ps1"),
+            "-ArtifactsDirectory", artifacts, "-ExpectedVersion", Version, "-OutputDirectory", output
+        ];
+        foreach (var argument in arguments)
         {
-            FileName = "pwsh",
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
-        startInfo.ArgumentList.Add("-NoLogo");
-        startInfo.ArgumentList.Add("-NoProfile");
-        startInfo.ArgumentList.Add("-File");
-        startInfo.ArgumentList.Add(Path.Combine(RepositoryRoot, "script", "assemble-release-assets.ps1"));
-        startInfo.ArgumentList.Add("-ArtifactsDirectory");
-        startInfo.ArgumentList.Add(artifacts);
-        startInfo.ArgumentList.Add("-ExpectedVersion");
-        startInfo.ArgumentList.Add(Version);
-        startInfo.ArgumentList.Add("-OutputDirectory");
-        startInfo.ArgumentList.Add(output);
+            startInfo.ArgumentList.Add(argument);
+        }
 
-        using var process = Process.Start(startInfo);
-        Assert.NotNull(process);
-        var standardOutput = process.StandardOutput.ReadToEnd();
-        var standardError = process.StandardError.ReadToEnd();
-        process.WaitForExit();
-        return new ProcessResult(process.ExitCode, standardOutput, standardError);
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        cancellation.CancelAfter(TimeSpan.FromMinutes(1));
+        return await BuildProcessRunner.RunAsync(startInfo, cancellation.Token).ConfigureAwait(true);
     }
 
     private static string CreateTemporaryDirectory()
     {
-        var path = Path.Combine(
-            Path.GetTempPath(),
-            $"downkyi-release-publication-{Guid.NewGuid():N}");
+        var path = Path.Combine(Path.GetTempPath(), $"downkyi-release-publication-{Guid.NewGuid():N}");
         Directory.CreateDirectory(path);
         return path;
     }
@@ -256,11 +204,4 @@ public sealed class ReleasePublicationAssetTests
 
         return directory?.FullName ?? throw new InvalidOperationException("Repository root not found.");
     }
-
-    private sealed record PackageDefinition(
-        string PackageName,
-        string ManifestName,
-        string RuntimeIdentifier);
-
-    private sealed record ProcessResult(int ExitCode, string StandardOutput, string StandardError);
 }

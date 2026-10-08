@@ -190,8 +190,8 @@ cross-platform stress proof，不得移除。
 - **Use when**：version、tag、exact head、manifest、signing、rollback。
 - **Owner**：version／publication=`version.txt` + release workflow；正式命令／rollback=verification doc。
 - **Invariant**：version／tag／manifest 一致且 tag immutable；證據只對 exact final commit 有效。Manifest 覆蓋 DownKyi、aria2、FFmpeg、ffprobe、version、SHA-256。macOS sign 後不改 bundle；ad-hoc 不宣稱 Developer ID／notarization／Gatekeeper。
-- **Do**：review README／CHANGELOG；跑 canonical procedure；先 push `main` 再 tag；以 `assemble-release-assets.ps1` 產生十一個公開檔，發布後 read back packages／`SHA256SUMS.txt`／`release-manifest.json`。
-- **Proof**：exact-head gates、九個 cross-platform packages、單一 checksum／合併 manifest、`validate-publish-output.ps1`、remote read-back。
+- **Do**：review README／CHANGELOG；跑 canonical procedure；先 push `main` 再 tag；以 `assemble-release-assets.ps1` 組裝各平台安裝包與單一 `DownKyi-<version>-verification.zip`，發布後重新下載核對。
+- **Proof**：exact-head gates、cross-platform packages、驗證 ZIP 內的原始 checksum／publish manifest、`validate-publish-output.ps1`、remote read-back。
 - **Stop**：blocker／required gate 未解決：不改 version、不 tag、不 publish；不以單平台 file-exists 取代 content gate。
 - **Details**：[Release Policy](refactoring-live-plan.md)；[Verification And Rollback](operations/verification-and-rollback.md)。
 

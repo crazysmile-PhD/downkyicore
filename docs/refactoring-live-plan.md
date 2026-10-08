@@ -27,11 +27,11 @@ Product PRs do not update this file merely because their work state changed.
   rollback evidence explicitly changes them.
 - Source and packages must not contain Cookie values, account data, local
   Config/Logs/Cache/Storage or developer artifacts.
-- A public GitHub Release contains exactly the nine supported installers plus
-  `SHA256SUMS.txt` and `release-manifest.json`. Per-package checksum sidecars and
-  per-package publish manifests remain internal validation inputs; the release
-  workflow must assemble, verify and publish the eleven-file public set through
-  `script/assemble-release-assets.ps1`.
+- A public GitHub Release contains the supported installers plus one
+  `DownKyi-<version>-verification.zip`. The ZIP contains each package's original
+  checksum sidecar and publish manifest, preserving filenames and bytes. Assemble
+  this public set with `script/assemble-release-assets.ps1`; publish verification
+  files only inside the ZIP.
 - Existing tags are immutable. Do not change `version.txt`, create a tag or
   publish a release while any release blocker or required gate is unresolved.
 

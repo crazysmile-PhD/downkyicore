@@ -23,7 +23,9 @@ DownKyi Core 是基于哔哩下载姬 Windows 版与 Avalonia 的跨平台 B 站
 
 Windows ZIP 必须完整解压到新目录后再运行。`DownKyi.exe` 旁必须保留 `aria2` 与 `ffmpeg` 子目录；若程序报告缺少 `aria2/aria2c.exe`，请重新下载官方 Release 并完整解压，不要单独补放执行文件。
 
-版本变化见 [CHANGELOG.md](CHANGELOG.md)，安装包见 [GitHub Releases](https://github.com/crazysmile-PhD/downkyicore/releases)。每个正式版本同时提供单一 `SHA256SUMS.txt` 与 `release-manifest.json`，分别用于核对安装包整体哈希与六个平台运行时的逐文件内容。
+版本变化见 [CHANGELOG.md](CHANGELOG.md)，安装包见 [GitHub Releases](https://github.com/crazysmile-PhD/downkyicore/releases)。
+
+后续正式版本另提供 `DownKyi-<版本>-verification.zip`，集中保存各安装包原有的 `.sha256` 与 `publish-manifest-*.json`。需要验证时，将 ZIP 内容解压到下载的安装包所在目录，再使用对应文件核对安装包哈希和逐文件内容。
 
 ## 功能
 
