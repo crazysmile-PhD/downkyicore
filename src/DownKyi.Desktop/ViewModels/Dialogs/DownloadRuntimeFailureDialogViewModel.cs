@@ -1,9 +1,11 @@
 using System;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading.Tasks;
 using DownKyi.Application.Desktop;
 using DownKyi.Application.Diagnostics;
 using DownKyi.Commands;
+using DownKyi.Infrastructure.Logging;
 using DownKyi.Models;
 using DownKyi.Services;
 using DownKyi.Utils;
@@ -14,9 +16,9 @@ namespace DownKyi.ViewModels.Dialogs;
 internal sealed class DownloadRuntimeFailureDialogViewModel : BaseDialogViewModel
 {
     private const string IssueTitle = "Download system failed to initialize";
+    private const string IssueTemplate = "app_diagnostic_report.yml";
     private const string TruncatedDiagnosticSuffix =
-        "\n\n[Diagnostic text truncated to keep the pre-filled issue URL within a safe length. " +
-        "Use Copy Error Details for the complete text.]";
+        "\n\n[The summary was truncated; attach the generated diagnostic ZIP.]";
 
     private readonly IApplicationLogService _logService;
     private readonly IClipboardService _clipboardService;
@@ -26,6 +28,7 @@ internal sealed class DownloadRuntimeFailureDialogViewModel : BaseDialogViewMode
     private DownKyiAsyncDelegateCommand? _copyErrorDetailsCommand;
     private DownKyiAsyncDelegateCommand? _createGitHubIssueCommand;
     private string _diagnosticText = string.Empty;
+    private string _issueDiagnosticText = string.Empty;
 
     public DownloadRuntimeFailureDialogViewModel(
         IApplicationLogService logService,
@@ -65,6 +68,7 @@ internal sealed class DownloadRuntimeFailureDialogViewModel : BaseDialogViewMode
         ArgumentNullException.ThrowIfNull(request);
         var failure = GetRequiredParameter<Exception>(request, "failure");
         DiagnosticText = CreateDiagnosticText(failure);
+        _issueDiagnosticText = CreateIssueDiagnosticText(failure);
     }
 
     internal async Task CopyErrorDetailsAsync()
@@ -75,13 +79,33 @@ internal sealed class DownloadRuntimeFailureDialogViewModel : BaseDialogViewMode
 
     internal async Task CreateGitHubIssueAsync()
     {
-        var issueUri = GitHubIssueUriBuilder.Create(
-            IssueTitle,
-            DiagnosticText,
-            TruncatedDiagnosticSuffix);
-        if (!await _platformLauncher.OpenUriAsync(issueUri).ConfigureAwait(true))
+        try
         {
-            _notifications.Show(DictionaryResource.GetString("OpenGitHubIssueFailed"));
+            var packagePath = await _logService.ExportFeedbackPackageAsync().ConfigureAwait(true);
+            var issueUri = GitHubIssueUriBuilder.CreateForm(
+                IssueTitle,
+                IssueTemplate,
+                "error_details",
+                _issueDiagnosticText,
+                TruncatedDiagnosticSuffix);
+            if (!await _platformLauncher.OpenUriAsync(issueUri).ConfigureAwait(true))
+            {
+                _notifications.Show(DictionaryResource.GetString("OpenGitHubIssueFailed"));
+            }
+
+            var directory = System.IO.Path.GetDirectoryName(packagePath)
+                ?? throw new InvalidOperationException("Feedback package directory is unavailable.");
+            if (!await _platformLauncher.OpenFolderAsync(directory).ConfigureAwait(true))
+            {
+                _notifications.Show("无法打开诊断包所在文件夹");
+            }
+        }
+        catch (Exception exception) when (exception is System.IO.IOException
+            or UnauthorizedAccessException or InvalidOperationException
+            or System.ComponentModel.Win32Exception)
+        {
+            _logger.LogErrorMessage("Feedback package export failed.", exception);
+            _notifications.Show(DictionaryResource.GetString("DiagnosticLogExportFailed"));
         }
     }
 
@@ -98,6 +122,23 @@ internal sealed class DownloadRuntimeFailureDialogViewModel : BaseDialogViewMode
 
             {exceptionText}
             """;
+    }
+
+    private static string CreateIssueDiagnosticText(Exception failure)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("Safe diagnostic summary");
+        builder.Append("DownKyi version: ").AppendLine(new AppInfo().VersionName);
+        builder.Append("Operating system: ").AppendLine(RuntimeInformation.OSDescription);
+        builder.Append("OS architecture: ").AppendLine(RuntimeInformation.OSArchitecture.ToString());
+        builder.Append("Process architecture: ").AppendLine(RuntimeInformation.ProcessArchitecture.ToString());
+        builder.Append(".NET runtime: ").AppendLine(Environment.Version.ToString());
+        builder.AppendLine("Failure boundary: Download bootstrap");
+
+        builder.AppendLine(SafeExceptionDiagnosticFormatter.Format(failure));
+
+        builder.AppendLine("Attach the generated downkyi-feedback.zip file below.");
+        return builder.ToString().TrimEnd();
     }
 
     private string RedactDiagnosticText(string? text)

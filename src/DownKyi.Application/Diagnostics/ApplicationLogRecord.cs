@@ -13,4 +13,5 @@ public sealed record ApplicationLogRecord(
     int ProcessId,
     int ThreadId,
     string Scope,
-    string ExceptionText = "");
+    string ExceptionText = "",
+    string SafeExceptionDiagnostic = "");

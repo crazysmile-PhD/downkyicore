@@ -10,7 +10,7 @@ namespace DownKyi.Tests;
 public sealed class ViewAboutFeedbackTests
 {
     [Fact]
-    public async Task FeedbackPrefillsTwoUserSectionsAndRedactedDiagnostics()
+    public async Task FeedbackExportsPackageAndOpensRequiredUploadForm()
     {
         var logs = new RecordingLogService(
         [
@@ -42,26 +42,18 @@ public sealed class ViewAboutFeedbackTests
         Assert.Equal("github.com", launcher.Uri?.Host);
         Assert.Equal("/crazysmile-PhD/downkyicore/issues/new", launcher.Uri?.AbsolutePath);
         Assert.Equal("[Bug] 用户反馈", GetQueryValue(launcher.Uri!, "title"));
-        var body = GetQueryValue(launcher.Uri!, "body");
-        Assert.Equal(2, CountOccurrences(body, "## "));
-        Assert.Contains("## 发生什么", body, StringComparison.Ordinal);
-        Assert.Contains("## 如何复现", body, StringComparison.Ordinal);
-        Assert.Contains("自动诊断信息（已脱敏）", body, StringComparison.Ordinal);
-        Assert.Contains("DownKyi version:", body, StringComparison.Ordinal);
-        Assert.Contains("Operating system:", body, StringComparison.Ordinal);
-        Assert.Contains("Architecture:", body, StringComparison.Ordinal);
-        Assert.Contains("request failed with [redacted]", body, StringComparison.Ordinal);
-        Assert.Equal(2, CountOccurrences(body, "[resource redacted]"));
-        Assert.DoesNotContain("secret-token", body, StringComparison.Ordinal);
-        Assert.DoesNotContain("media.example.test", body, StringComparison.Ordinal);
-        Assert.DoesNotContain("private-signature", body, StringComparison.Ordinal);
-        Assert.DoesNotContain("callback.example.test", body, StringComparison.Ordinal);
-        Assert.DoesNotContain("informational context", body, StringComparison.Ordinal);
-        Assert.False(logs.ExportCalled);
+        Assert.Equal("app_diagnostic_report.yml", GetQueryValue(launcher.Uri!, "template"));
+        Assert.Equal(viewModel.AppVersion, GetQueryValue(launcher.Uri!, "app_version"));
+        Assert.DoesNotContain("body=", launcher.Uri!.Query, StringComparison.Ordinal);
+        Assert.DoesNotContain("private-signature", launcher.Uri.AbsoluteUri, StringComparison.Ordinal);
+        Assert.DoesNotContain("secret-token", launcher.Uri.AbsoluteUri, StringComparison.Ordinal);
+        Assert.Equal(Path.GetTempPath().TrimEnd(Path.DirectorySeparatorChar),
+            launcher.FolderPath?.TrimEnd(Path.DirectorySeparatorChar));
+        Assert.True(logs.ExportCalled);
     }
 
     [Fact]
-    public async Task FeedbackKeepsUserSectionsWhenDiagnosticsExceedSafeUriLength()
+    public async Task FeedbackTruncatesOnlyPrefilledVersionWhenItExceedsSafeUriLength()
     {
         var logs = new RecordingLogService(
         [
@@ -80,16 +72,17 @@ public sealed class ViewAboutFeedbackTests
             launcher,
             new VersionCheckerService(httpClient, "owner", "repo"),
             NullLogger<ViewAboutViewModel>.Instance);
+        viewModel.AppVersion = new string('错', 10_000);
 
         await viewModel.ExecuteFeedbackCommand();
 
         Assert.True(launcher.Uri!.AbsoluteUri.Length <= 8_000);
-        var body = GetQueryValue(launcher.Uri, "body");
-        Assert.StartsWith("## 发生什么", body, StringComparison.Ordinal);
-        Assert.Contains("## 如何复现", body, StringComparison.Ordinal);
+        Assert.Equal("app_diagnostic_report.yml", GetQueryValue(launcher.Uri, "template"));
+        var version = GetQueryValue(launcher.Uri, "app_version");
+        Assert.StartsWith("错", version, StringComparison.Ordinal);
         Assert.EndsWith(
-            "[自动诊断信息过长，已截断。可使用应用内的“导出诊断日志”取得完整的近期日志。]",
-            body,
+            "[预填信息已截断；请上传生成的诊断 ZIP。]",
+            version,
             StringComparison.Ordinal);
     }
 
@@ -109,11 +102,6 @@ public sealed class ViewAboutFeedbackTests
             7,
             string.Empty,
             exceptionText);
-    }
-
-    private static int CountOccurrences(string value, string token)
-    {
-        return value.Split(token, StringSplitOptions.None).Length - 1;
     }
 
     private static string GetQueryValue(Uri uri, string name)
@@ -154,14 +142,22 @@ public sealed class ViewAboutFeedbackTests
         public Task<string> ExportDiagnosticLogAsync(
             CancellationToken cancellationToken = default)
         {
-            ExportCalled = true;
             throw new NotSupportedException();
+        }
+
+        public Task<string> ExportFeedbackPackageAsync(
+            CancellationToken cancellationToken = default)
+        {
+            ExportCalled = true;
+            return Task.FromResult(Path.Combine(Path.GetTempPath(), "downkyi-feedback.zip"));
         }
     }
 
     private sealed class RecordingPlatformLauncher : IPlatformLauncher
     {
         public Uri? Uri { get; private set; }
+
+        public string? FolderPath { get; private set; }
 
         public Task<bool> OpenFileAsync(
             string path,
@@ -170,8 +166,11 @@ public sealed class ViewAboutFeedbackTests
 
         public Task<bool> OpenFolderAsync(
             string path,
-            CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
+            CancellationToken cancellationToken = default)
+        {
+            FolderPath = path;
+            return Task.FromResult(true);
+        }
 
         public Task<bool> OpenUriAsync(
             Uri uri,

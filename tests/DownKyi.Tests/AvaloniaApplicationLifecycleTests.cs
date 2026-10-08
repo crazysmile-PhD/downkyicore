@@ -274,6 +274,11 @@ public sealed class AvaloniaApplicationLifecycleTests
         {
             throw new NotSupportedException();
         }
+
+        public Task<string> ExportFeedbackPackageAsync(CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
     }
 
     private sealed class FailingStopHostedService : IHostedService

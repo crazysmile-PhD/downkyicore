@@ -114,6 +114,12 @@ public sealed class ApplicationLogProvider :
         return await _exporter.ExportAsync(GetMetrics, cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<string> ExportFeedbackPackageAsync(CancellationToken cancellationToken = default)
+    {
+        await FlushAsync(cancellationToken).ConfigureAwait(false);
+        return await _exporter.ExportFeedbackPackageAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public void Dispose()
     {
         _ = GetOrStartShutdown();

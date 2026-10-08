@@ -1,7 +1,9 @@
+using System.IO.Compression;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using DownKyi.Application.Diagnostics;
+using Microsoft.Extensions.Logging;
 
 namespace DownKyi.Infrastructure.Logging;
 
@@ -59,8 +61,105 @@ internal sealed class DiagnosticLogExporter(
         }
     }
 
-    private async Task<IReadOnlyList<ApplicationLogRecord>> ReadNewestRecordsAsync(
+    public async Task<string> ExportFeedbackPackageAsync(CancellationToken cancellationToken)
+    {
+        var timestamp = timeProvider.GetUtcNow().ToUniversalTime();
+        var diagnosticDirectory = retention.ReserveDiagnosticDirectory(timestamp);
+        var completed = false;
+        try
+        {
+            var records = await ReadNewestRecordsAsync(cancellationToken, errorsOnly: true)
+                .ConfigureAwait(false);
+            var events = records.Select(static record => new FeedbackDiagnosticEvent(
+                record.Timestamp,
+                record.Level.ToString(),
+                record.Category.StartsWith("DownKyi.", StringComparison.Ordinal)
+                    ? record.Category
+                    : "external",
+                record.EventId.Id,
+                record.SafeExceptionDiagnostic)).ToArray();
+            var manifest = new FeedbackDiagnosticManifest(
+                SchemaVersion: 1,
+                GeneratedAtUtc: timestamp,
+                ApplicationVersion: typeof(DiagnosticLogExporter).Assembly.GetName().Version?.ToString()
+                                    ?? "unknown",
+                Runtime: Environment.Version.ToString(),
+                OperatingSystem: RuntimeInformation.OSDescription,
+                Architecture: RuntimeInformation.ProcessArchitecture.ToString(),
+                EventCount: events.Length,
+                Files: ["errors.jsonl"]);
+            var archivePath = Path.Combine(diagnosticDirectory, "downkyi-feedback.zip");
+            var stream = new FileStream(
+                archivePath,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.None,
+                64 * 1024,
+                FileOptions.Asynchronous);
+            await using (stream.ConfigureAwait(false))
+            using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: false))
+            {
+                await WriteFeedbackManifestAsync(archive, manifest, cancellationToken)
+                    .ConfigureAwait(false);
+                await WriteFeedbackEventsAsync(archive, events, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            completed = true;
+            return archivePath;
+        }
+        finally
+        {
+            retention.ReleaseDiagnosticDirectory(diagnosticDirectory, delete: !completed);
+        }
+    }
+
+    private static async Task WriteFeedbackManifestAsync(
+        ZipArchive archive,
+        FeedbackDiagnosticManifest manifest,
         CancellationToken cancellationToken)
+    {
+        var stream = await archive.CreateEntry("manifest.json", CompressionLevel.Optimal)
+            .OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using (stream.ConfigureAwait(false))
+        {
+            var writer = new StreamWriter(stream, new UTF8Encoding(false));
+            await using (writer.ConfigureAwait(false))
+            {
+                await writer.WriteAsync(
+                    JsonSerializer.Serialize(manifest, ApplicationLogJsonContext.Default.FeedbackDiagnosticManifest)
+                        .AsMemory(),
+                    cancellationToken).ConfigureAwait(false);
+            }
+        }
+    }
+
+    private static async Task WriteFeedbackEventsAsync(
+        ZipArchive archive,
+        IReadOnlyList<FeedbackDiagnosticEvent> events,
+        CancellationToken cancellationToken)
+    {
+        var stream = await archive.CreateEntry("errors.jsonl", CompressionLevel.Optimal)
+            .OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using (stream.ConfigureAwait(false))
+        {
+            var writer = new StreamWriter(stream, new UTF8Encoding(false));
+            await using (writer.ConfigureAwait(false))
+            {
+                foreach (var record in events)
+                {
+                    await writer.WriteLineAsync(
+                        JsonSerializer.Serialize(record, ApplicationLogJsonContext.Default.FeedbackDiagnosticEvent)
+                            .AsMemory(),
+                        cancellationToken).ConfigureAwait(false);
+                }
+            }
+        }
+    }
+
+    private async Task<IReadOnlyList<ApplicationLogRecord>> ReadNewestRecordsAsync(
+        CancellationToken cancellationToken,
+        bool errorsOnly = false)
     {
         var records = new List<ApplicationLogRecord>(options.RecentEventCapacity);
         var files = GetEventFiles()
@@ -80,6 +179,7 @@ internal sealed class DiagnosticLogExporter(
             var fromFile = await ReadLastRecordsFromFileAsync(
                     file.FullName,
                     remaining,
+                    errorsOnly,
                     cancellationToken)
                 .ConfigureAwait(false);
             records.InsertRange(0, fromFile);
@@ -91,6 +191,7 @@ internal sealed class DiagnosticLogExporter(
     private async Task<List<ApplicationLogRecord>> ReadLastRecordsFromFileAsync(
         string path,
         int capacity,
+        bool errorsOnly,
         CancellationToken cancellationToken)
     {
         var queue = new Queue<ApplicationLogRecord>(capacity);
@@ -128,7 +229,12 @@ internal sealed class DiagnosticLogExporter(
                     continue;
                 }
 
-                queue.Enqueue(RedactForExport(record));
+                if (errorsOnly && (record.Level < LogLevel.Warning || record.Level >= LogLevel.None))
+                {
+                    continue;
+                }
+
+                queue.Enqueue(errorsOnly ? record : RedactForExport(record));
                 while (queue.Count > capacity)
                 {
                     queue.Dequeue();
