@@ -78,6 +78,17 @@ public class PlayUrl : BaseModel
 
     [JsonIgnore]
     public PlayUrlAvailability? Availability { get; internal set; }
+
+    [JsonIgnore]
+    // A response can contain stream entries whose addresses are unusable.
+    // Discovery checks PlayUrlAvailability separately before selecting them.
+    public bool HasMediaEntries =>
+        Durl.Count > 0
+        || Dash.Video.Count > 0
+        || Dash.Audio.Count > 0
+        || Dash.Dolby?.Audio.Count > 0
+        || Dash.Flac?.Audio != null;
+
     // high_format
 }
 

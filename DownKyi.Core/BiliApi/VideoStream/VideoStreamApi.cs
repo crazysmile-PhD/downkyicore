@@ -233,10 +233,11 @@ public static partial class VideoStreamApi
             {
                 var embeddedAvailability = BangumiPlaybackResolver.DiscoverAvailability(
                     embeddedPlayUrl);
+                var hasDiscoverableEmbeddedPlayback = embeddedAvailability.HasPlayableMedia;
                 var hasUsableEmbeddedPlayback = requireVideo
                     ? embeddedAvailability.Video.Count > 0
                     : embeddedAvailability.Audio.Count > 0;
-                if (discoverAvailability && hasUsableEmbeddedPlayback)
+                if (discoverAvailability && hasDiscoverableEmbeddedPlayback)
                 {
                     return CompleteBangumiPlayback(
                         embeddedPlayUrl,
@@ -485,7 +486,7 @@ public static partial class VideoStreamApi
                 $"{operationName} returned no '{fieldName}' playback payload.");
         }
 
-        if (!HasPlayableMedia(payload))
+        if (!payload.HasMediaEntries)
         {
             throw new BilibiliApiResponseException(
                 operationName,
@@ -493,13 +494,6 @@ public static partial class VideoStreamApi
         }
 
         return payload;
-    }
-
-    private static bool HasPlayableMedia(PlayUrl payload)
-    {
-        return payload.Durl.Count > 0
-               || payload.Dash.Video.Count > 0
-               || payload.Dash.Audio.Count > 0;
     }
 
     /// <summary>

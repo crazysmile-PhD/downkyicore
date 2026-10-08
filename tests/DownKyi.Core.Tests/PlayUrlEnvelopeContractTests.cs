@@ -4,6 +4,7 @@ using DownKyi.Core.BiliApi.Sign;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.BiliApi.VideoStream.Models;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace DownKyi.Core.Tests;
 
@@ -307,6 +308,37 @@ public sealed class PlayUrlEnvelopeContractTests
         Assert.Null(payload.Diagnostics?.Fnval);
         Assert.Equal("PLAY_WHOLE", payload?.Diagnostics?.PlayDetail);
         Assert.Equal("embedded-availability-selected", payload!.Diagnostics?.Outcome);
+    }
+
+    [Fact]
+    public async Task BangumiDiscoveryKeepsEmbeddedAudioWhenApiIsUnavailable()
+    {
+        var requests = 0;
+        var client = new StubBilibiliApiClient((_, _) =>
+        {
+            requests++;
+            if (requests > 1)
+            {
+                throw new HttpRequestException("API unavailable");
+            }
+
+            return Task.FromResult(
+                """
+                <script>const playurlSSRData = {"code":0,"result":{"video_info":{"durl":[],"dash":{"video":[],"audio":[{"id":30280,"base_url":"https://media.invalid/audio-30280"}]}}}};</script>
+                """);
+        });
+
+        var payload = await client.GetBangumiPlaybackDiscoveryAsync(
+            1,
+            "BV1fixture",
+            2,
+            3489,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, requests);
+        Assert.Empty(payload!.Availability!.Video);
+        Assert.Equal(30280, Assert.Single(payload.Availability.Audio));
+        Assert.Equal(PlayUrlResolutionSource.WebPage, payload.Diagnostics?.Source);
     }
 
     [Fact]
@@ -1175,6 +1207,55 @@ public sealed class PlayUrlEnvelopeContractTests
 
         Assert.Equal(expectedVideoCount, payload.Dash.Video.Count);
         Assert.Equal(expectedAudioCount, payload.Dash.Audio.Count);
+    }
+
+    [Theory]
+    [InlineData("flac", 30251)]
+    [InlineData("dolby", 30250)]
+    public void NestedAudioOnlyPayloadsAreAcceptedByBothContracts(string kind, int audioId)
+    {
+        var nestedAudio = kind == "flac"
+            ? JObject.Parse(
+                """
+                {"audio":{"id":30251,"base_url":"https://media.invalid/audio.flac"}}
+                """)
+            : JObject.Parse(
+                """
+                {"audio":[{"id":30250,"base_url":"https://media.invalid/audio.dolby"}]}
+                """);
+        var dash = new JObject
+        {
+            ["video"] = new JArray(),
+            ["audio"] = new JArray(),
+            [kind] = nestedAudio
+        };
+        var ordinaryResponse = BiliApiRequest.ParseJson<PlayUrlOrigin>(
+            new JObject
+            {
+                ["code"] = 0,
+                ["data"] = new JObject { ["dash"] = dash.DeepClone() }
+            }.ToString(Formatting.None),
+            "video");
+        var ordinaryPayload = VideoStreamApi.SelectPlayUrlPayload(
+            ordinaryResponse,
+            VideoStreamApi.PlayUrlPayloadField.Data,
+            "video");
+        var bangumiResponse = BiliApiRequest.ParseJson<BangumiPlayUrlV2Origin>(
+            new JObject
+            {
+                ["code"] = 0,
+                ["result"] = new JObject
+                {
+                    ["video_info"] = new JObject { ["dash"] = dash.DeepClone() }
+                }
+            }.ToString(Formatting.None),
+            "bangumi-v2");
+        var bangumiPayload = BangumiPlayUrlV2Contract.SelectPayload(
+            bangumiResponse,
+            "bangumi-v2");
+
+        Assert.Equal(audioId, Assert.Single(PlayUrlAvailability.From(ordinaryPayload).Audio));
+        Assert.Equal(audioId, Assert.Single(PlayUrlAvailability.From(bangumiPayload).Audio));
     }
 
     [Fact]

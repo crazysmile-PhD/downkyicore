@@ -16,6 +16,8 @@ public sealed record PlayUrlAvailability(
     IReadOnlyList<PlayUrlVideoAvailability> Video,
     IReadOnlyList<int> Audio)
 {
+    public bool HasPlayableMedia => Video.Count > 0 || Audio.Count > 0;
+
     public static PlayUrlAvailability From(PlayUrl playUrl)
     {
         ArgumentNullException.ThrowIfNull(playUrl);

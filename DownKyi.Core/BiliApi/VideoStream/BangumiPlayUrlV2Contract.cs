@@ -36,9 +36,7 @@ internal static class BangumiPlayUrlV2Contract
         // A single absent media kind is valid and has already been normalized to
         // an empty collection by the DTO. Only an aggregate with no media is an
         // invalid playback payload.
-        if (payload.Durl.Count == 0
-            && payload.Dash.Video.Count == 0
-            && payload.Dash.Audio.Count == 0)
+        if (!payload.HasMediaEntries)
         {
             throw new BilibiliApiResponseException(
                 operationName,
