@@ -25,6 +25,9 @@ internal sealed class ApplicationLogRecordFactory(
             Environment.ProcessId,
             Environment.CurrentManagedThreadId,
             redactor.Redact(scope),
-            exception == null ? string.Empty : redactor.Redact(exception.ToString()));
+            exception == null ? string.Empty : redactor.Redact(exception.ToString()),
+            exception != null && level >= LogLevel.Warning && level < LogLevel.None
+                ? SafeExceptionDiagnosticFormatter.Format(exception)
+                : string.Empty);
     }
 }

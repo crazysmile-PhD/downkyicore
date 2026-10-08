@@ -116,7 +116,8 @@ internal static class LegacyDownloadStoreFormatDetector
                 HasNfoRequest: false,
                 HasPublishedArtifacts: false,
                 HasStagingToken: false,
-                HasPublishingArtifact: false);
+                HasPublishingArtifact: false,
+                SchemaDifferences: []);
         }
 
         var userVersion = await DownloadStoreSchemaLifecycle
@@ -124,8 +125,9 @@ internal static class LegacyDownloadStoreFormatDetector
             .ConfigureAwait(false);
         if (userVersion > DownloadStoreSchema.CurrentVersion)
         {
-            throw new InvalidOperationException(
-                $"Download database schema {userVersion} is newer than supported schema {DownloadStoreSchema.CurrentVersion}.");
+            throw new DownloadStoreSchemaMismatchException(
+                userVersion,
+                [$"schema is newer than supported schema {DownloadStoreSchema.CurrentVersion}"]);
         }
 
         var tables = await ReadTableNamesAsync(connection, cancellationToken).ConfigureAwait(false);
@@ -180,6 +182,15 @@ internal static class LegacyDownloadStoreFormatDetector
             HasPublishingArtifact: hasPublishingArtifact,
             HasAnyPublishingArtifact: hasAnyPublishingArtifact);
         var kind = DetectKind(fingerprint);
+        var schemaDifferences = kind == LegacyDownloadStoreKind.Unsupported
+            ? DescribeUnsupportedShape(
+                userVersion,
+                tables,
+                baseColumns,
+                downloadingColumns,
+                downloadedColumns,
+                historyColumns)
+            : [];
         return new LegacyDownloadStoreFormat(
             Kind: kind,
             DatabaseExisted: true,
@@ -193,7 +204,145 @@ internal static class LegacyDownloadStoreFormatDetector
             HasNfoRequest: hasNfoRequest,
             HasPublishedArtifacts: hasPublishedArtifacts,
             HasStagingToken: hasStagingToken,
-            HasPublishingArtifact: hasPublishingArtifact);
+            HasPublishingArtifact: hasPublishingArtifact,
+            SchemaDifferences: schemaDifferences);
+    }
+
+    private static List<string> DescribeUnsupportedShape(
+        int userVersion,
+        HashSet<string> tables,
+        HashSet<string> baseColumns,
+        HashSet<string> downloadingColumns,
+        HashSet<string> downloadedColumns,
+        HashSet<string> historyColumns)
+    {
+        var differences = new List<string>();
+        AddMissingTable(differences, tables, "download_base");
+        AddMissingTable(differences, tables, "downloading");
+        AddMissingColumns(differences, "download_base", CoreBaseColumns, baseColumns);
+        AddMissingColumns(differences, "downloading", CoreDownloadingColumns, downloadingColumns);
+
+        if (userVersion == DownloadStoreSchema.CurrentVersion)
+        {
+            AddMissingTable(differences, tables, "download_history");
+            AddMissingTable(differences, tables, "download_schema_migrations");
+            AddMissingTable(differences, tables, "download_quarantine");
+            AddMissingTable(differences, tables, "download_upgrade_admission_gate");
+            AddMissingColumns(differences, "download_base", BaseStateColumns, baseColumns);
+            AddMissingColumns(differences, "download_base",
+                ["output_reservation_key", "nfo_request", "published_artifacts", "staging_token"],
+                baseColumns);
+            AddMissingColumns(differences, "download_base", PublishingColumns, baseColumns);
+            AddMissingColumns(differences, "downloading", DownloadingStateColumns, downloadingColumns);
+            AddMissingColumns(differences, "download_history", CurrentHistoryColumns, historyColumns);
+            if (tables.Contains("downloaded"))
+            {
+                differences.Add("unexpected legacy table: downloaded");
+            }
+        }
+        else
+        {
+            AddMissingTable(differences, tables, "downloaded");
+            AddMissingColumns(differences, "downloaded", CoreDownloadedColumns, downloadedColumns);
+            if (tables.Contains("download_history"))
+            {
+                differences.Add("unexpected current table: download_history");
+            }
+
+            AddVersionedTable(differences, tables, "download_schema_migrations", userVersion >= 1);
+            AddVersionedTable(differences, tables, "download_quarantine", userVersion >= 1);
+            AddVersionedTable(differences, tables, "download_upgrade_admission_gate", userVersion >= 4);
+            AddVersionedColumns(differences, "download_base", BaseStateColumns, baseColumns,
+                userVersion >= 2);
+            AddVersionedColumns(differences, "downloading", DownloadingStateColumns,
+                downloadingColumns, userVersion >= 2);
+            AddVersionedColumns(differences, "download_base", ["output_reservation_key"],
+                baseColumns, userVersion >= 3);
+            AddVersionedColumns(differences, "download_base", ["nfo_request"],
+                baseColumns, userVersion >= 5);
+            AddVersionedColumns(differences, "download_base", ["published_artifacts"],
+                baseColumns, userVersion >= 6);
+            AddVersionedColumns(differences, "download_base", ["staging_token"],
+                baseColumns, userVersion >= 7);
+            AddVersionedColumns(differences, "download_base", PublishingColumns,
+                baseColumns, userVersion >= 8);
+        }
+
+        if (differences.Count == 0)
+        {
+            differences.Add("declared version and known schema features do not match a supported format");
+        }
+
+        return differences;
+    }
+
+    private static void AddMissingTable(
+        List<string> differences,
+        HashSet<string> tables,
+        string knownTable)
+    {
+        if (!tables.Contains(knownTable))
+        {
+            differences.Add($"missing table: {knownTable}");
+        }
+    }
+
+    private static void AddMissingColumns(
+        List<string> differences,
+        string knownTable,
+        IEnumerable<string> expectedColumns,
+        HashSet<string> observedColumns)
+    {
+        if (observedColumns.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var knownColumn in expectedColumns)
+        {
+            if (!observedColumns.Contains(knownColumn))
+            {
+                differences.Add($"missing column: {knownTable}.{knownColumn}");
+            }
+        }
+    }
+
+    private static void AddVersionedTable(
+        List<string> differences,
+        HashSet<string> tables,
+        string knownTable,
+        bool expected)
+    {
+        if (expected)
+        {
+            AddMissingTable(differences, tables, knownTable);
+        }
+        else if (tables.Contains(knownTable))
+        {
+            differences.Add($"unexpected table for declared version: {knownTable}");
+        }
+    }
+
+    private static void AddVersionedColumns(
+        List<string> differences,
+        string knownTable,
+        IEnumerable<string> knownColumns,
+        HashSet<string> observedColumns,
+        bool expected)
+    {
+        if (expected)
+        {
+            AddMissingColumns(differences, knownTable, knownColumns, observedColumns);
+            return;
+        }
+
+        foreach (var knownColumn in knownColumns)
+        {
+            if (observedColumns.Contains(knownColumn))
+            {
+                differences.Add($"unexpected column for declared version: {knownTable}.{knownColumn}");
+            }
+        }
     }
 
     private static LegacyDownloadStoreKind DetectKind(DownloadStoreSchemaFingerprint fingerprint)

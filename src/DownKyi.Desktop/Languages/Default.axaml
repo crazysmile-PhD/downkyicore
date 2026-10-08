@@ -318,13 +318,13 @@
     <system:String x:Key="Feedback">意见反馈</system:String>
     <system:String x:Key="FeedbackAndDiagnostics">反馈与诊断</system:String>
     <system:String x:Key="FeedbackProblem">反馈问题</system:String>
-    <system:String x:Key="FeedbackSupportTip">遇到问题时，可先提交反馈；日志与诊断资料可帮助定位异常。</system:String>
+    <system:String x:Key="FeedbackSupportTip">反馈时会生成错误诊断包并打开所在文件夹；请在 GitHub 表单中上传该 ZIP 后提交。</system:String>
     <system:String x:Key="Diagnostics">诊断日志</system:String>
     <system:String x:Key="OpenLogs">打开日志</system:String>
     <system:String x:Key="ExportDiagnosticLog">导出诊断日志</system:String>
-    <system:String x:Key="DiagnosticLogTip">诊断日志会自动脱敏，只保留近期错误、崩溃和超时信息，方便反馈问题。</system:String>
-    <system:String x:Key="DiagnosticLogExported">已导出脱敏诊断日志~</system:String>
-    <system:String x:Key="DiagnosticLogExportFailed">导出诊断日志失败，请稍后重试~</system:String>
+    <system:String x:Key="DiagnosticLogTip">公开反馈包只含预定义的近期警告、错误和异常诊断字段，不含原始日志、数据库或设置文件。</system:String>
+    <system:String x:Key="DiagnosticLogExported">已导出错误诊断包~</system:String>
+    <system:String x:Key="DiagnosticLogExportFailed">导出错误诊断包失败，请稍后重试~</system:String>
     <system:String x:Key="ReceiveBetaVersion">接收测试版更新</system:String>
     <system:String x:Key="AutoUpdateWhenLaunch">启动时检查更新</system:String>
     <system:String x:Key="TipSettingUpdated">设置已更新~</system:String>
@@ -371,7 +371,7 @@
     <system:String x:Key="Warning">警告</system:String>
     <system:String x:Key="Error">错误</system:String>
     <system:String x:Key="DownloadRuntimeFailureTitle">下载系统无法启动</system:String>
-    <system:String x:Key="DownloadRuntimeFailureMessage">应用仍可继续使用，但本次运行无法下载。请复制下面的错误信息，并在 GitHub 建立议题。</system:String>
+    <system:String x:Key="DownloadRuntimeFailureMessage">应用仍可继续使用，但本次运行无法下载。下方是本机错误详情；GitHub 按钮会生成白名单错误诊断包并打开上传表单，请选择 ZIP 附件后提交。</system:String>
     <system:String x:Key="CopyErrorDetails">复制错误信息</system:String>
     <system:String x:Key="ErrorDetailsCopied">错误信息已复制</system:String>
     <system:String x:Key="CreateGitHubIssue">在 GitHub 建立议题</system:String>

@@ -1,0 +1,53 @@
+name: "📦 应用内诊断反馈"
+description: "从 DownKyi 的反馈按钮提交错误诊断包"
+title: "[Bug] "
+labels: ["bug", "user-bug", "needs-triage"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请从 DownKyi 自动打开的文件夹选择 `downkyi-feedback.zip`，上传到下方。
+        压缩包只含程序预定义的错误诊断字段，不含原始日志、数据库或设置文件。
+        本仓库为公开仓库；上传后任何人都可以下载附件。提交前请检查内容。
+
+  - type: textarea
+    id: problem_summary
+    attributes:
+      label: "应用内反馈：发生了什么"
+      description: "请简要描述实际看到的问题。"
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce_steps
+    attributes:
+      label: "如何复现"
+      description: "如果知道，请写出操作步骤；不确定可以留空。"
+    validations:
+      required: false
+
+  - type: input
+    id: app_version
+    attributes:
+      label: "DownKyi 版本"
+      description: "由应用自动填入，也记录在诊断包内。"
+    validations:
+      required: false
+
+  - type: textarea
+    id: error_details
+    attributes:
+      label: "程序生成的错误摘要"
+      description: "启动错误时会自动填入白名单摘要；完整诊断请看附件。"
+    validations:
+      required: false
+
+  - type: upload
+    id: diagnostic_package
+    attributes:
+      label: "诊断包（必填）"
+      description: "上传 DownKyi 生成的 downkyi-feedback.zip。"
+    validations:
+      required: true
+      accept: ".zip"

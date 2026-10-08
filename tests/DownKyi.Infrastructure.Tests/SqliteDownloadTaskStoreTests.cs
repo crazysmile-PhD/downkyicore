@@ -1742,13 +1742,14 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
     }
 
     [Fact]
-    public async Task FailedMigrationRollsBackSchemaChangesAndKeepsBackup()
+    public async Task UnsupportedLegacySchemaLeavesDatabaseUnchangedAndKeepsBackup()
     {
         await CreateIncompatibleLegacyDatabaseAsync();
         using var store = CreateStore();
 
-        await Assert.ThrowsAsync<SqliteException>(() =>
+        var failure = await Assert.ThrowsAsync<DownloadStoreSchemaMismatchException>(() =>
             store.InitializeAsync(TestContext.Current.CancellationToken));
+        Assert.Contains("missing table: downloaded", failure.SchemaDifferences);
 
         using var connection = await OpenReadOnlyConnectionAsync().ConfigureAwait(true);
         using var columns = connection.CreateCommand();

@@ -13,4 +13,6 @@ public interface IApplicationLogService
     Task FlushAsync(CancellationToken cancellationToken = default);
 
     Task<string> ExportDiagnosticLogAsync(CancellationToken cancellationToken = default);
+
+    Task<string> ExportFeedbackPackageAsync(CancellationToken cancellationToken = default);
 }

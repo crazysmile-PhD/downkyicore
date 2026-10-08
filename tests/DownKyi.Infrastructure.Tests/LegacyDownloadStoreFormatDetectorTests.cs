@@ -110,17 +110,69 @@ public sealed class LegacyDownloadStoreFormatDetectorTests
     }
 
     [Fact]
+    public async Task CurrentSchemaMismatchNamesOnlyKnownMissingFields()
+    {
+        using var connection = OpenConnection();
+        SetUserVersion(connection, DownloadStoreSchema.CurrentVersion);
+        CreateCurrentShape(connection, includeStagingToken: false);
+        CreateTable(connection, "private_custom_table_73918", ["private_column_73918"]);
+
+        var format = await LegacyDownloadStoreFormatDetector.DetectAsync(
+            connection,
+            databaseExisted: true,
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+        using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+        var failure = await Assert.ThrowsAsync<DownloadStoreSchemaMismatchException>(() =>
+            LegacyDownloadStoreReader.ReadAsync(
+                connection,
+                transaction,
+                format,
+                TestContext.Current.CancellationToken)).ConfigureAwait(true);
+
+        Assert.Equal(9, failure.UserVersion);
+        Assert.Contains("missing column: download_base.staging_token", failure.SchemaDifferences);
+        Assert.Contains("download_base.staging_token", failure.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("private_custom_table_73918", failure.Message,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("private_column_73918", failure.Message,
+            StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("future-column-on-v4",
+        "unexpected column for declared version: download_base.nfo_request")]
+    [InlineData("partial-state-columns", "missing column: download_base.created_at_utc")]
+    [InlineData("partial-publishing-columns", "missing column: download_base.publishing_file_name")]
+    public async Task LegacySchemaMismatchIdentifiesVersionedFeatureDifference(
+        string shape,
+        string expectedDifference)
+    {
+        using var connection = OpenConnection();
+        CreateMalformedShape(connection, shape);
+
+        var format = await LegacyDownloadStoreFormatDetector.DetectAsync(
+            connection,
+            databaseExisted: true,
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.Equal(LegacyDownloadStoreKind.Unsupported, format.Kind);
+        Assert.Contains(expectedDifference, format.SchemaDifferences);
+    }
+
+    [Fact]
     public async Task DetectAsyncRejectsANewerSchemaVersionBeforeClassifyingItsShape()
     {
         using var connection = OpenConnection();
         SetUserVersion(connection, DownloadStoreSchema.CurrentVersion + 1);
 
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var exception = await Assert.ThrowsAsync<DownloadStoreSchemaMismatchException>(() =>
             LegacyDownloadStoreFormatDetector.DetectAsync(
                 connection,
                 databaseExisted: true,
                 TestContext.Current.CancellationToken)).ConfigureAwait(true);
 
+        Assert.Equal(DownloadStoreSchema.CurrentVersion + 1, exception.UserVersion);
         Assert.Contains("newer than supported schema", exception.Message, StringComparison.Ordinal);
     }
 

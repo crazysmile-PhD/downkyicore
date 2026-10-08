@@ -1,10 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
-using System.Linq;
 using System.Net.Http;
-using System.Runtime.InteropServices;
-using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -25,10 +21,10 @@ namespace DownKyi.ViewModels.Settings;
 internal class ViewAboutViewModel : ViewModelBase
 {
     public const string Tag = "PageSettingsAbout";
-    private const int MaximumFeedbackEventCount = 20;
     private const string FeedbackIssueTitle = "[Bug] 用户反馈";
+    private const string FeedbackIssueTemplate = "app_diagnostic_report.yml";
     private const string TruncatedFeedbackSuffix =
-        "\n\n[自动诊断信息过长，已截断。可使用应用内的“导出诊断日志”取得完整的近期日志。]";
+        "\n\n[预填信息已截断；请上传生成的诊断 ZIP。]";
 
     private readonly ISettingsStore _settingsStore;
     private readonly IApplicationLogService _logService;
@@ -191,12 +187,24 @@ internal class ViewAboutViewModel : ViewModelBase
     /// </summary>
     internal async Task ExecuteFeedbackCommand()
     {
-        var issueBody = CreateFeedbackIssueBody();
-        var issueUri = GitHubIssueUriBuilder.Create(
-            FeedbackIssueTitle,
-            issueBody,
-            TruncatedFeedbackSuffix);
-        await OpenUriAsync(issueUri).ConfigureAwait(true);
+        try
+        {
+            var packagePath = await _logService.ExportFeedbackPackageAsync().ConfigureAwait(true);
+            var issueUri = GitHubIssueUriBuilder.CreateForm(
+                FeedbackIssueTitle,
+                FeedbackIssueTemplate,
+                "app_version",
+                AppVersion,
+                TruncatedFeedbackSuffix);
+            await OpenUriAsync(issueUri).ConfigureAwait(true);
+            await OpenFeedbackPackageFolderAsync(packagePath).ConfigureAwait(true);
+        }
+        catch (Exception e) when (e is System.IO.IOException or UnauthorizedAccessException
+            or InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            _logger.LogErrorMessage("Feedback package export failed.", e);
+            Notifications.Show(DictionaryResource.GetString("DiagnosticLogExportFailed"));
+        }
     }
 
     // 打开日志目录事件
@@ -224,12 +232,9 @@ internal class ViewAboutViewModel : ViewModelBase
     {
         try
         {
-            var diagnosticLog = await _logService.ExportDiagnosticLogAsync().ConfigureAwait(true);
+            var packagePath = await _logService.ExportFeedbackPackageAsync().ConfigureAwait(true);
             Notifications.Show(DictionaryResource.GetString("DiagnosticLogExported"));
-            if (!await _platformLauncher.OpenFileAsync(diagnosticLog).ConfigureAwait(true))
-            {
-                Notifications.Show("无法打开诊断日志");
-            }
+            await OpenFeedbackPackageFolderAsync(packagePath).ConfigureAwait(true);
         }
         catch (Exception e) when (e is System.IO.IOException or UnauthorizedAccessException
             or InvalidOperationException or System.ComponentModel.Win32Exception)
@@ -279,68 +284,14 @@ internal class ViewAboutViewModel : ViewModelBase
         PublishTip(isSucceed);
     }
 
-    private string CreateFeedbackIssueBody()
+    private async Task OpenFeedbackPackageFolderAsync(string packagePath)
     {
-        var diagnosticText = CreateFeedbackDiagnosticText();
-        return $"""
-            ## 发生什么
-
-            <!-- 请描述实际发生了什么。 -->
-
-            ## 如何复现
-
-            <!-- 请按顺序列出可以复现问题的步骤。 -->
-
-            <details>
-            <summary>自动诊断信息（已脱敏）</summary>
-
-            ```text
-            {diagnosticText}
-            ```
-            </details>
-            """;
-    }
-
-    private string CreateFeedbackDiagnosticText()
-    {
-        var builder = new StringBuilder();
-        builder.Append("DownKyi version: ").AppendLine(AppVersion);
-        builder.Append("Operating system: ").AppendLine(RuntimeInformation.OSDescription);
-        builder.Append("Architecture: ").AppendLine(RuntimeInformation.OSArchitecture.ToString());
-        builder.AppendLine("Recent warnings and errors (newest first):");
-
-        var events = _logService
-            .GetRecentEvents()
-            .Where(static record =>
-                record.Level >= LogLevel.Warning && record.Level < LogLevel.None)
-            .TakeLast(MaximumFeedbackEventCount)
-            .Reverse()
-            .ToArray();
-        if (events.Length == 0)
+        var directory = Path.GetDirectoryName(packagePath)
+            ?? throw new InvalidOperationException("Feedback package directory is unavailable.");
+        if (!await _platformLauncher.OpenFolderAsync(directory).ConfigureAwait(true))
         {
-            builder.AppendLine("None captured.");
+            Notifications.Show("无法打开诊断包所在文件夹");
         }
-        else
-        {
-            foreach (var record in events)
-            {
-                builder
-                    .Append(record.Timestamp.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture))
-                    .Append(" [")
-                    .Append(record.Level)
-                    .Append("] ")
-                    .Append(record.Category)
-                    .Append(": ")
-                    .AppendLine(record.Message);
-                if (!string.IsNullOrWhiteSpace(record.ExceptionText))
-                {
-                    builder.AppendLine(record.ExceptionText);
-                }
-            }
-        }
-
-        var resourceRedacted = ExternalResourceRedactor.Redact(builder.ToString().TrimEnd());
-        return _logService.RedactDiagnosticText(resourceRedacted);
     }
 
     private Task OpenUriAsync(string value)

@@ -15,6 +15,31 @@ internal static class GitHubIssueUriBuilder
         var prefix =
             $"https://github.com/{AppConstant.RepoOwner}/{AppConstant.RepoName}/issues/new" +
             $"?title={Uri.EscapeDataString(title)}&body=";
+        return CreateWithPrefix(prefix, body, truncatedBodySuffix);
+    }
+
+    public static Uri CreateForm(
+        string title,
+        string template,
+        string fieldId,
+        string fieldValue,
+        string truncatedFieldSuffix)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(title);
+        ArgumentException.ThrowIfNullOrWhiteSpace(template);
+        ArgumentException.ThrowIfNullOrWhiteSpace(fieldId);
+        ArgumentNullException.ThrowIfNull(fieldValue);
+        ArgumentException.ThrowIfNullOrWhiteSpace(truncatedFieldSuffix);
+
+        var prefix =
+            $"https://github.com/{AppConstant.RepoOwner}/{AppConstant.RepoName}/issues/new" +
+            $"?template={Uri.EscapeDataString(template)}" +
+            $"&title={Uri.EscapeDataString(title)}&{Uri.EscapeDataString(fieldId)}=";
+        return CreateWithPrefix(prefix, fieldValue, truncatedFieldSuffix);
+    }
+
+    private static Uri CreateWithPrefix(string prefix, string body, string truncatedBodySuffix)
+    {
         var encodedBody = Uri.EscapeDataString(body);
         if (prefix.Length + encodedBody.Length <= MaximumIssueUriLength)
         {

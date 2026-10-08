@@ -47,9 +47,13 @@ jobs:
               body.includes("### 🧱 受影響元件") ||
               body.includes("### 🧪 驗證 / 證據");
 
+            const isAppDiagnostic =
+              body.includes("### 应用内反馈：发生了什么");
+
             const isUserBug =
               !isEngineeringBug &&
               (
+                isAppDiagnostic ||
                 lowerLabels.includes("user-bug") ||
                 body.includes("### 🚨 問題類型")
               );
@@ -146,6 +150,10 @@ jobs:
               "🔄 是否為舊版本正常、新版本異常？"
             ];
 
+            const appDiagnosticSections = [
+              "应用内反馈：发生了什么"
+            ];
+
             const engineeringBugSections = [
               "🧭 問題來源",
               "📦 受影響版本 / Commit",
@@ -167,12 +175,16 @@ jobs:
             const issueKind =
               isEngineeringBug
                 ? "Engineering Bug"
-                : "User Bug";
+                : isAppDiagnostic
+                  ? "App Diagnostic"
+                  : "User Bug";
 
             const requiredSections =
               isEngineeringBug
                 ? engineeringBugSections
-                : userBugSections;
+                : isAppDiagnostic
+                  ? appDiagnosticSections
+                  : userBugSections;
 
             /*
              * Ensure classification labels exist.

@@ -1,6 +1,8 @@
+using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 using DownKyi.Application.Diagnostics;
+using DownKyi.Infrastructure.Downloads;
 using DownKyi.Infrastructure.Logging;
 using Microsoft.Extensions.Logging;
 using MicrosoftLogLevel = Microsoft.Extensions.Logging.LogLevel;
@@ -48,6 +50,17 @@ public sealed class ApplicationLogProviderTests : IDisposable
 
         Assert.Equal($"[path]{Path.DirectorySeparatorChar}private.mp4", redacted);
         Assert.DoesNotContain("alice", redacted, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void SafeDiagnosticNeverCopiesArbitrarySchemaExceptionMessages()
+    {
+        var diagnostic = SafeExceptionDiagnosticFormatter.Format(
+            new DownloadStoreSchemaMismatchException("opaque-private-value-73918"));
+
+        Assert.Contains("Exception type:", diagnostic, StringComparison.Ordinal);
+        Assert.DoesNotContain("opaque-private-value-73918", diagnostic,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -174,6 +187,82 @@ public sealed class ApplicationLogProviderTests : IDisposable
         finally
         {
             await provider.DisposeAsync().ConfigureAwait(true);
+        }
+    }
+
+    [Fact]
+    public async Task FeedbackPackageWhitelistsPersistedErrorFieldsAfterRestart()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var firstProvider = CreateProvider();
+        var logger = firstProvider.CreateLogger("DownKyi.Tests.Feedback");
+        RecentEntry(logger, 1, null);
+        using (logger.BeginScope("cookie=scope-private"))
+        {
+            RequestFailed(logger, new InvalidOperationException(
+                "opaque-private-value-73918 C:\\Users\\alice\\Videos\\private.mp4"));
+            RequestFailed(logger, new DownloadStoreSchemaMismatchException(
+                9,
+                ["missing column: download_base.staging_token"]));
+        }
+
+        await firstProvider.FlushAsync(cancellationToken).ConfigureAwait(true);
+        await firstProvider.DisposeAsync().ConfigureAwait(true);
+
+        var secondProvider = CreateProvider();
+        try
+        {
+            var packagePath = await secondProvider.ExportFeedbackPackageAsync(cancellationToken)
+                .ConfigureAwait(true);
+            Assert.EndsWith(".zip", packagePath, StringComparison.Ordinal);
+            var stream = new FileStream(packagePath, FileMode.Open, FileAccess.Read,
+                FileShare.Read, 4096, FileOptions.Asynchronous);
+            await using var configuredStream = stream.ConfigureAwait(true);
+            using var archive = new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: true);
+            Assert.Equal(2, archive.Entries.Count);
+
+            var manifest = await ReadArchiveEntryAsync(archive, "manifest.json", cancellationToken)
+                .ConfigureAwait(true);
+            using var manifestJson = JsonDocument.Parse(manifest);
+            Assert.Equal(2, manifestJson.RootElement.GetProperty("eventCount").GetInt32());
+
+            var errors = await ReadArchiveEntryAsync(archive, "errors.jsonl", cancellationToken)
+                .ConfigureAwait(true);
+            Assert.Contains("DownKyi.Tests.Feedback", errors, StringComparison.Ordinal);
+            Assert.Contains("Exception type: System.InvalidOperationException", errors,
+                StringComparison.Ordinal);
+            Assert.Contains("Schema difference: missing column: download_base.staging_token",
+                errors, StringComparison.Ordinal);
+            Assert.Contains("Error message: Download database schema 9", errors,
+                StringComparison.Ordinal);
+            Assert.DoesNotContain("entry=1", errors, StringComparison.Ordinal);
+            Assert.DoesNotContain("Request failed for", errors, StringComparison.Ordinal);
+            Assert.DoesNotContain("opaque-private-value-73918", errors, StringComparison.Ordinal);
+            Assert.DoesNotContain("private.mp4", errors, StringComparison.Ordinal);
+            Assert.DoesNotContain("query-secret", errors, StringComparison.Ordinal);
+            Assert.DoesNotContain("scope-private", errors, StringComparison.Ordinal);
+            Assert.DoesNotContain("\"message\"", errors, StringComparison.Ordinal);
+            Assert.DoesNotContain("\"exceptionText\"", errors, StringComparison.Ordinal);
+            Assert.DoesNotContain("\"scope\"", errors, StringComparison.Ordinal);
+            Assert.DoesNotContain("\"processId\"", errors, StringComparison.Ordinal);
+        }
+        finally
+        {
+            await secondProvider.DisposeAsync().ConfigureAwait(true);
+        }
+    }
+
+    private static async Task<string> ReadArchiveEntryAsync(
+        ZipArchive archive,
+        string name,
+        CancellationToken cancellationToken)
+    {
+        var entry = Assert.Single(archive.Entries, item => item.FullName == name);
+        var stream = await entry.OpenAsync(cancellationToken).ConfigureAwait(true);
+        await using (stream.ConfigureAwait(true))
+        {
+            using var reader = new StreamReader(stream);
+            return await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(true);
         }
     }
 

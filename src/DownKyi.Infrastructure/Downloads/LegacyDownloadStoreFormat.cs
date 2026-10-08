@@ -25,7 +25,8 @@ internal sealed record LegacyDownloadStoreFormat(
     bool HasNfoRequest,
     bool HasPublishedArtifacts,
     bool HasStagingToken,
-    bool HasPublishingArtifact)
+    bool HasPublishingArtifact,
+    IReadOnlyList<string> SchemaDifferences)
 {
     public bool IsNew => Kind == LegacyDownloadStoreKind.New;
 
