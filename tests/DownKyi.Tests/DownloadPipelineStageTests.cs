@@ -970,35 +970,21 @@ public sealed class DownloadPipelineStageTests
                 BaseAddress = "https://example.invalid/original-audio"
             }
         ];
-        var refreshCount = 0;
+        var playbackRequests = new List<string>();
         var apiClient = new TestBilibiliApiClient
         {
-            GetStringAsyncHandler = (_, _) =>
+            GetStringAsyncHandler = (request, _) =>
             {
-                refreshCount++;
-                return Task.FromResult(
-                    """
-                    {
-                      "code": 0,
-                      "result": {
-                        "video_info": {
-                          "quality": 80,
-                          "durl": [],
-                          "dash": {
-                            "video": [
-                              {
-                                "id": 80,
-                                "codecid": 7,
-                                "codecs": "avc1",
-                                "base_url": "https://example.invalid/refreshed-video"
-                              }
-                            ],
-                            "audio": []
-                          }
-                        }
-                      }
-                    }
-                    """);
+                playbackRequests.Add(request.RequestAddress);
+                return Task.FromResult(request.RequestAddress.StartsWith(
+                    "https://www.bilibili.com/bangumi/play/",
+                    StringComparison.Ordinal)
+                    ? """
+                      <script>const playurlSSRData = {"code":0,"result":{"video_info":{"quality":80,"durl":[],"dash":{"video":[{"id":80,"codecid":7,"codecs":"avc1","base_url":"https://example.invalid/refreshed-video"}],"audio":[]}}}};</script>
+                      """
+                    : """
+                      {"code":0,"result":{"video_info":{"quality":80,"durl":[],"dash":{"video":[{"id":80,"codecid":7,"codecs":"avc1","base_url":"https://example.invalid/refreshed-video"}],"audio":[]}}}}
+                      """);
             }
         };
         using var fixture = await MediaStageFixture.CreateAsync(
@@ -1021,7 +1007,10 @@ public sealed class DownloadPipelineStageTests
             TestContext.Current.CancellationToken).ConfigureAwait(true);
 
         Assert.True(result.IsSuccess, result.Error?.Message);
-        Assert.Equal(1, refreshCount);
+        Assert.Single(playbackRequests);
+        Assert.Equal(
+            "https://www.bilibili.com/bangumi/play/ep3489",
+            playbackRequests[0]);
         Assert.Equal(completedAudio.FilePath, fixture.Context.AudioFile);
         Assert.Equal(completedAudio.Key, fixture.Context.AudioTransferKey);
         Assert.Equal(2, fixture.Backend.Requests.Count);

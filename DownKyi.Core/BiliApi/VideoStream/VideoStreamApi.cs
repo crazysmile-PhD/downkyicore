@@ -236,7 +236,7 @@ public static partial class VideoStreamApi
                 var hasUsableEmbeddedPlayback = requireVideo
                     ? embeddedAvailability.Video.Count > 0
                     : embeddedAvailability.Audio.Count > 0;
-                if (hasUsableEmbeddedPlayback)
+                if (discoverAvailability && hasUsableEmbeddedPlayback)
                 {
                     return CompleteBangumiPlayback(
                         embeddedPlayUrl,
@@ -253,7 +253,28 @@ public static partial class VideoStreamApi
                             : "embedded-playback-selected");
                 }
 
-                apiFallbackReason = "embedded-playback-without-usable-address";
+                if (!discoverAvailability
+                    && BangumiPlaybackResolver.TrySelectDownloadPlayback(
+                        embeddedPlayUrl,
+                        supplement: null,
+                        quality,
+                        videoCodecId,
+                        audioId,
+                        streamKind,
+                        requireVideo,
+                        out var selectedEmbeddedPlayUrl))
+                {
+                    return AttachBangumiDiagnostics(
+                        selectedEmbeddedPlayUrl!,
+                        quality,
+                        embeddedPlayDetail,
+                        PlayUrlResolutionSource.WebPage,
+                        "embedded-playback-selected");
+                }
+
+                apiFallbackReason = hasUsableEmbeddedPlayback
+                    ? "embedded-playback-selection-unavailable"
+                    : "embedded-playback-without-usable-address";
             }
         }
         catch (HttpRequestException exception)

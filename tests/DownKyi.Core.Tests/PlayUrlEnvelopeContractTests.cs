@@ -545,6 +545,46 @@ public sealed class PlayUrlEnvelopeContractTests
         Assert.Equal("embedded-playback-selected", payload.Diagnostics?.Outcome);
     }
 
+    [Fact]
+    public async Task BangumiDownloadFallsBackToApiWhenEmbeddedPlaybackCannotSatisfySelection()
+    {
+        var requests = new List<BilibiliHttpRequest>();
+        var client = new StubBilibiliApiClient((request, _) =>
+        {
+            requests.Add(request);
+            return Task.FromResult(requests.Count == 1
+                ? Ordinary1080EmbeddedBangumiPage
+                : """
+                  {"code":0,"result":{"video_info":{"quality":74,"accept_quality":[112,80,74],"support_formats":[{"quality":112},{"quality":80},{"quality":74}],"durl":[],"dash":{"video":[{"id":74,"codecid":7,"base_url":"https://api.invalid/video-74"}],"audio":[{"id":30280,"base_url":"https://api.invalid/audio-30280"}]}}}}
+                  """);
+        });
+
+        var payload = await client.GetBangumiPlayUrlAsync(
+            1,
+            "BV1fixture",
+            2,
+            3489,
+            quality: 74,
+            videoCodecId: 7,
+            audioId: 30280,
+            streamKind: PlayUrlStreamKind.Dash,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, requests.Count);
+        Assert.Equal(
+            "https://www.bilibili.com/bangumi/play/ep3489",
+            requests[0].RequestAddress);
+        Assert.Contains("qn=74", requests[1].RequestAddress, StringComparison.Ordinal);
+        Assert.Equal("https://api.invalid/video-74", Assert.Single(payload!.Dash.Video).BaseAddress);
+        Assert.Equal(
+            "https://api.invalid/audio-30280",
+            Assert.Single(payload.Dash.Audio).BaseAddress);
+        Assert.Equal(PlayUrlResolutionSource.Api, payload.Diagnostics?.Source);
+        Assert.Equal(
+            "api-fallback-selected:embedded-playback-selection-unavailable",
+            payload.Diagnostics?.Outcome);
+    }
+
     [Theory]
     [InlineData(80, null, null, null)]
     [InlineData(112, 12, 30280, PlayUrlStreamKind.Dash)]
@@ -577,7 +617,7 @@ public sealed class PlayUrlEnvelopeContractTests
                 streamKind,
                 cancellationToken: TestContext.Current.CancellationToken));
 
-        Assert.Single(requests);
+        Assert.Equal(2, requests.Count);
         Assert.Equal(quality, exception.Quality);
         Assert.Equal(videoCodecId, exception.VideoCodecId);
         Assert.Equal(audioId, exception.AudioId);
@@ -612,7 +652,7 @@ public sealed class PlayUrlEnvelopeContractTests
                 streamKind: PlayUrlStreamKind.Dash,
                 cancellationToken: TestContext.Current.CancellationToken));
 
-        Assert.Equal(1, requests);
+        Assert.Equal(2, requests);
         Assert.Equal(112, exception.Quality);
         Assert.Equal(13, exception.VideoCodecId);
         Assert.Equal(30280, exception.AudioId);
