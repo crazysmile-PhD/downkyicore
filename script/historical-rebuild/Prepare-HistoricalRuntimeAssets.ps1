@@ -153,7 +153,9 @@ if ($Rid -eq 'linux-x64') {
 }
 
 if ($Rid -ne 'win-x64') {
-    & chmod +x -- $ariaDestination $ffmpegDestination $ffprobeDestination
+    # BSD chmod (used by macOS runners) does not accept GNU's `--` marker.
+    # These are absolute paths produced by the converter, so no option marker is needed.
+    & chmod +x $ariaDestination $ffmpegDestination $ffprobeDestination
     if ($LASTEXITCODE -ne 0) { throw 'Failed to mark runtime binaries executable.' }
 }
 
