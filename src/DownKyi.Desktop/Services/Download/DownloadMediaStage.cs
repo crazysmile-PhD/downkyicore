@@ -80,6 +80,16 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
                 cancellationToken).ConfigureAwait(true);
         }
 
+        if (context.MediaKind == DownloadMediaKind.DurlWithDashAudio)
+        {
+            var audioResult = await DownloadAudioAsync(context, cancellationToken)
+                .ConfigureAwait(true);
+            return audioResult.IsSuccess
+                ? await DownloadDurlsAsync(context, playUrl!.Durl, cancellationToken)
+                    .ConfigureAwait(true)
+                : audioResult;
+        }
+
         return DownloadStageResult.Failure(
             "download.media.missing",
             "Playback data does not contain a supported media stream.");
@@ -98,7 +108,8 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
                 BaseAddress = durl.SourceAddress,
                 Codecs = "durl",
                 Id = durl.Order,
-                ExpectedSize = durl.Size
+                ExpectedSize = durl.Size,
+                Source = durl.Source
             };
     }
 
@@ -106,24 +117,11 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
         DownloadExecutionContext context,
         CancellationToken cancellationToken)
     {
-        if (context.NeedsPendingAudio)
+        var audioResult = await DownloadAudioAsync(context, cancellationToken)
+            .ConfigureAwait(true);
+        if (!audioResult.IsSuccess)
         {
-            var audio = SelectAudio(context);
-            _presenter.ShowDownloadingAudio(context);
-            var result = await DownloadMediaFileAsync(
-                context,
-                audio,
-                playUrl => SelectAudio(context, playUrl),
-                cancellationToken).ConfigureAwait(true);
-            if (!result.TryGetValue(out var audioTransfer))
-            {
-                return DownloadStageResult.Failure(
-                    result.Error?.Code ?? "download.media.audio",
-                    result.Error?.Message ?? "Audio transfer failed.");
-            }
-
-            context.AudioFile = audioTransfer.FilePath;
-            context.AudioTransferKey = audioTransfer.Key;
+            return audioResult;
         }
 
         context.EnsureActive(cancellationToken);
@@ -147,6 +145,32 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
         }
 
         context.EnsureActive(cancellationToken);
+        return DownloadStageResult.Success(Name);
+    }
+
+    private async Task<OperationResult<DownloadStageResult>> DownloadAudioAsync(
+        DownloadExecutionContext context,
+        CancellationToken cancellationToken)
+    {
+        if (context.NeedsPendingAudio)
+        {
+            var audio = SelectAudio(context);
+            _presenter.ShowDownloadingAudio(context);
+            var result = await DownloadMediaFileAsync(
+                context,
+                audio,
+                playUrl => SelectAudio(context, playUrl),
+                cancellationToken).ConfigureAwait(true);
+            if (!result.TryGetValue(out var audioTransfer))
+            {
+                return DownloadStageResult.Failure(
+                    result.Error?.Code ?? "download.media.audio",
+                    result.Error?.Message ?? "Audio transfer failed.");
+            }
+
+            context.AudioFile = audioTransfer.FilePath;
+            context.AudioTransferKey = audioTransfer.Key;
+        }
         return DownloadStageResult.Success(Name);
     }
 

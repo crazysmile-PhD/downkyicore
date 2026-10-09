@@ -51,9 +51,8 @@ internal static class DownloadTaskDraftFactory
                 "A video download draft requires a finalized video quality.");
         }
 
-        var mediaKind = content.Video
-            ? videoQuality!.IsDurl ? DownloadMediaKind.Durl : DownloadMediaKind.Dash
-            : content.Audio ? DownloadMediaKind.Dash : DownloadMediaKind.None;
+        var mediaKind = DownloadMediaCapabilities.ResolveMediaKind(
+            page.PlaybackAvailability, videoQuality, page.AudioQualityFormat, content);
         var selectedVideo = content.Video ? videoQuality : null;
         var audioCodec = PlaybackQualityCatalog.GetAudioQualities()
             .FirstOrDefault(quality => quality.Name == page.AudioQualityFormat) ?? new Quality();

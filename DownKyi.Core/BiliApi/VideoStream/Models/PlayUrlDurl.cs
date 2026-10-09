@@ -14,6 +14,7 @@ public class PlayUrlDurl : BaseModel
     // ahead
     // vhead
     [JsonProperty("url")] public string SourceAddress { get; set; } = string.Empty;
+    [JsonIgnore] public PlayUrlResolutionSource? Source { get; set; }
     [JsonProperty("backup_url")]
     public IReadOnlyList<string> BackupUrl
     {

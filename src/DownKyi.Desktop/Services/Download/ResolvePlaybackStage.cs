@@ -100,7 +100,8 @@ internal sealed class ResolvePlaybackStage : IDownloadPipelineStage
     internal static void RestoreCompletedDashTransfers(DownloadExecutionContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
-        if (context.Input.RequestedContent.MediaKind != DownloadMediaKind.Dash ||
+        if (context.Input.RequestedContent.MediaKind is not
+                (DownloadMediaKind.Dash or DownloadMediaKind.DurlWithDashAudio) ||
             string.IsNullOrWhiteSpace(context.DownloadDirectory))
         {
             return;
@@ -116,7 +117,8 @@ internal sealed class ResolvePlaybackStage : IDownloadPipelineStage
             context.AudioFile = audioFile;
         }
 
-        if (context.NeedsPendingVideo && TryFindCompletedTransfer(
+        if (context.Input.RequestedContent.MediaKind == DownloadMediaKind.Dash
+            && context.NeedsPendingVideo && TryFindCompletedTransfer(
                 context,
                 context.Input.Metadata.Resolution.Id,
                 out var videoKey,

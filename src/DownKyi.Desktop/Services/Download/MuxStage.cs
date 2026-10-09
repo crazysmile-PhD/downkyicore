@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using DownKyi.Application.Diagnostics;
 using DownKyi.Core.FFmpeg;
 using DownKyi.Core.Settings;
 using DownKyi.Domain.Downloads;
@@ -55,6 +57,9 @@ internal sealed class MuxStage : IDownloadPipelineStage
                 context,
                 cancellationToken).ConfigureAwait(true),
             DownloadMediaKind.Durl => await MuxDurlAsync(
+                context,
+                cancellationToken).ConfigureAwait(true),
+            DownloadMediaKind.DurlWithDashAudio => await MuxDurlWithDashAudioAsync(
                 context,
                 cancellationToken).ConfigureAwait(true),
             _ => DownloadStageResult.Failure(
@@ -181,6 +186,106 @@ internal sealed class MuxStage : IDownloadPipelineStage
         context.NeedsAudio
             ? FfmpegEmbeddedAudioMode.Required
             : FfmpegEmbeddedAudioMode.Excluded;
+
+    private async Task<OperationResult<DownloadStageResult>> MuxDurlWithDashAudioAsync(
+        DownloadExecutionContext context,
+        CancellationToken cancellationToken)
+    {
+        if (context.DurlDownloads.Count == 0 || context.AudioFile == null)
+        {
+            return DownloadStageResult.Failure(
+                "download.mux.durl-audio-input",
+                "The selected video segments or separate audio stream are unavailable.");
+        }
+
+        string? intermediate = null;
+        try
+        {
+            var videoPath = context.DurlDownloads[0].FilePath;
+            if (context.DurlDownloads.Count > 1)
+            {
+                await _presenter.ShowConcatenatingAsync(context, cancellationToken)
+                    .ConfigureAwait(true);
+                intermediate = $"{context.WorkingBasePath}.durl-video.mp4";
+                if (!DownloadTransferFileCleanup.DeleteInvalidArtifacts(
+                        intermediate,
+                        context.StagingDirectory ?? Path.GetDirectoryName(intermediate),
+                        _logger).Succeeded)
+                {
+                    return DownloadStageResult.Failure(
+                        "download.mux.intermediate-cleanup",
+                        "The previous segmented video could not be removed safely.");
+                }
+                var segments = context.DurlDownloads
+                    .OrderBy(download => download.Durl.Order)
+                    .Select(download => new FfmpegConcatSegment(
+                        download.Durl.Order,
+                        download.FilePath,
+                        TimeSpan.FromMilliseconds(download.Durl.Length)))
+                    .ToArray();
+                var concat = await _ffmpegProcessor.ConcatDurlVideosAsync(
+                    context.Input.VideoSettings,
+                    segments,
+                    intermediate,
+                    overwriteDestination: false,
+                    embeddedAudioMode: FfmpegEmbeddedAudioMode.Excluded,
+                    cancellationToken: cancellationToken).ConfigureAwait(true);
+                if (!concat.Succeeded)
+                {
+                    var invalidation = await InvalidateSourcesAsync(
+                        context, concat, cancellationToken).ConfigureAwait(true);
+                    return DownloadStageResult.Failure(
+                        GetFailureCode("download.mux.concat", invalidation),
+                        "Segmented video could not be concatenated.");
+                }
+
+                videoPath = intermediate;
+            }
+
+            await _presenter.ShowMuxingAsync(context, cancellationToken)
+                .ConfigureAwait(true);
+            var finalFile = $"{context.WorkingBasePath}.mp4";
+            var merge = await _ffmpegProcessor.MergeMediaAsync(
+                context.Input.VideoSettings,
+                context.AudioFile,
+                videoPath,
+                finalFile,
+                overwriteDestination: false,
+                embeddedAudioMode: FfmpegEmbeddedAudioMode.Excluded,
+                cancellationToken).ConfigureAwait(true);
+            var mergeInvalidation = merge.Succeeded
+                ? SourceInvalidationOutcome.None
+                : await InvalidateSourcesAsync(
+                    context, merge, cancellationToken).ConfigureAwait(true);
+            await DownloadOutputRecorder.RecordFileSizeAsync(
+                context.TaskId,
+                merge.Succeeded ? finalFile : null,
+                _stateWriter,
+                cancellationToken).ConfigureAwait(true);
+            context.OutputMedia = merge.Succeeded ? finalFile : null;
+            context.MediaSucceeded = merge.Succeeded;
+            return merge.Succeeded
+                ? DownloadStageResult.Success(Name)
+                : DownloadStageResult.Failure(
+                    GetFailureCode("download.mux.durl-audio", mergeInvalidation),
+                    "Separate audio and segmented video could not be finalized.");
+        }
+        finally
+        {
+            if (intermediate != null)
+            {
+                var cleanup = DownloadTransferFileCleanup.DeleteInvalidArtifacts(
+                    intermediate,
+                    context.StagingDirectory ?? Path.GetDirectoryName(intermediate),
+                    _logger);
+                if (!cleanup.Succeeded)
+                {
+                    _logger.LogWarningMessage(
+                        "Temporary segmented video cleanup could not complete.");
+                }
+            }
+        }
+    }
 
     private async Task<SourceInvalidationOutcome> InvalidateSourcesAsync(
         DownloadExecutionContext context,

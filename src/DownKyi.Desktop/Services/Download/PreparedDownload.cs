@@ -107,6 +107,32 @@ internal sealed record DownloadMediaCapabilities(
             VideoSelectionRequired: selectedVideoQuality == null && availability.Video.Count > 0);
     }
 
+    public static DownloadMediaKind ResolveMediaKind(
+        PlayUrlAvailability? availability,
+        VideoQuality? selectedVideoQuality,
+        string selectedAudioQuality,
+        DownloadContentSelection content)
+    {
+        ArgumentNullException.ThrowIfNull(content);
+        if (!content.Video)
+        {
+            return content.Audio ? DownloadMediaKind.Dash : DownloadMediaKind.None;
+        }
+
+        if (selectedVideoQuality?.IsDurl != true)
+        {
+            return DownloadMediaKind.Dash;
+        }
+
+        var audioId = PlaybackQualityCatalog.GetAudioQualities()
+            .FirstOrDefault(audio => string.Equals(
+                audio.Name, selectedAudioQuality, StringComparison.Ordinal))?.Id;
+        return content.Audio && audioId is > 0
+               && availability?.Audio.Contains(audioId.Value) == true
+            ? DownloadMediaKind.DurlWithDashAudio
+            : DownloadMediaKind.Durl;
+    }
+
     private static PlayUrlStreamKind? ResolveSelectedVideoKind(
         PlayUrlAvailability availability,
         VideoQuality? selectedVideoQuality)

@@ -763,6 +763,70 @@ public sealed class DownloadPipelineStageTests
             fixture.Backend.Requests.Select(request => Assert.Single(request.Urls)));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DurlWithIndependentAudioTransfersOnlyPendingComponents(
+        bool audioAlreadyCompleted)
+    {
+        var playback = new PlayUrl
+        {
+            Quality = 80,
+            VideoCodecid = 7,
+            Durl =
+            [
+                new PlayUrlDurl
+                {
+                    Order = 1,
+                    SourceAddress = "https://web.invalid/segment-1",
+                    Source = PlayUrlResolutionSource.WebPage
+                },
+                new PlayUrlDurl
+                {
+                    Order = 2,
+                    SourceAddress = "https://web.invalid/segment-2",
+                    Source = PlayUrlResolutionSource.WebPage
+                }
+            ],
+            Dash = new PlayUrlDash
+            {
+                Audio =
+                [
+                    new PlayUrlDashVideo
+                    {
+                        Id = 30280,
+                        BaseAddress = "https://api.invalid/audio",
+                        Source = PlayUrlResolutionSource.Api
+                    }
+                ]
+            }
+        };
+        using var fixture = await MediaStageFixture.CreateAsync(
+            playback, downloadAudio: true, downloadVideo: true)
+            .ConfigureAwait(true);
+        if (audioAlreadyCompleted)
+        {
+            await fixture.AddCompletedAudioTransferAsync().ConfigureAwait(true);
+        }
+
+        var result = await fixture.Stage.ExecuteAsync(
+            fixture.Context, TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(DownloadMediaKind.DurlWithDashAudio, fixture.Context.MediaKind);
+        Assert.NotNull(fixture.Context.AudioFile);
+        Assert.Equal(2, fixture.Context.DurlDownloads.Count);
+        Assert.Equal(PlayUrlResolutionSource.WebPage,
+            DownloadMediaStage.CreateDurlDownloadDescriptor(playback.Durl)!.Source);
+        Assert.Equal(audioAlreadyCompleted ? 2 : 3, fixture.Backend.Requests.Count);
+        Assert.Equal(
+            audioAlreadyCompleted
+                ? ["https://web.invalid/segment-1", "https://web.invalid/segment-2"]
+                : ["https://api.invalid/audio", "https://web.invalid/segment-1",
+                    "https://web.invalid/segment-2"],
+            fixture.Backend.Requests.Select(request => Assert.Single(request.Urls)));
+    }
+
     [Fact]
     public async Task MediaStageRejectsMalformedRefreshedDurlManifestBeforeRetryTransfer()
     {

@@ -174,6 +174,10 @@ internal sealed class DownloadDuplicatePolicy
             return false;
         }
 
+        var requestedKind = DownloadMediaCapabilities.ResolveMediaKind(
+            page.PlaybackAvailability, videoQuality, page.AudioQualityFormat,
+            requestedContent);
+
         if (requestedContent.Video)
         {
             if (videoQuality == null
@@ -183,17 +187,16 @@ internal sealed class DownloadDuplicatePolicy
                 return false;
             }
 
-            var requestedKind = videoQuality.IsDurl
-                ? DownloadMediaKind.Durl
-                : DownloadMediaKind.Dash;
-            if (existingContent.MediaKind is { } kind && kind != requestedKind)
+            if (existingContent.MediaKind != requestedKind
+                && (existingContent.MediaKind != null
+                    || requestedKind == DownloadMediaKind.DurlWithDashAudio))
             {
                 return false;
             }
         }
 
         if (requestedContent.Audio
-            && (!requestedContent.Video || videoQuality?.IsDurl != true)
+            && requestedKind != DownloadMediaKind.Durl
             && item.AudioCodec.Name != page.AudioQualityFormat)
         {
             return false;

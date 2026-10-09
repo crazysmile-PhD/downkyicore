@@ -1,5 +1,6 @@
 using DownKyi.Application.Desktop;
 using DownKyi.Application.Downloads;
+using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.VideoStream.Models;
 using DownKyi.Domain.Downloads;
 using DownKyi.Domain.Results;
@@ -533,6 +534,73 @@ public sealed class DownloadAddOwnerTests : IDisposable
         Assert.Contains(
             page.PlaybackAvailability!.Video,
             video => video.StreamKind == PlayUrlStreamKind.Durl);
+    }
+
+    [Fact]
+    public void DraftFactoryPersistsDurlWithIndependentAudioKind()
+    {
+        Directory.CreateDirectory(_directory);
+        using var settingsStore = new DownKyi.Core.Settings.SettingsStore(
+            Path.Combine(_directory, "settings.json"));
+        var page = CreatePage();
+        var playback = CreateDurlPlayUrl();
+        playback.Dash.Audio =
+        [
+            new PlayUrlDashVideo
+            {
+                Id = 30280,
+                BaseAddress = "https://api.invalid/audio-30280"
+            }
+        ];
+        page.PlaybackAvailability = PlayUrlAvailability.From(playback);
+        page.AudioQualityFormat = PlaybackQualityCatalog.GetAudioQualities()
+            .Single(quality => quality.Id == 30280).Name;
+        var video = new VideoInfoView { Title = "main", VideoZone = "Anime" };
+        var section = new VideoSection { VideoPages = [page] };
+
+        var item = DownloadTaskDraftFactory.Create(
+            _directory, video, section, 1, page,
+            CreateVideoQuality(isDurl: true), settingsStore.Current,
+            DownloadContentSelection.None with { Audio = true, Video = true });
+
+        Assert.Equal(DownloadMediaKind.DurlWithDashAudio,
+            item.DownloadBase.NeedDownloadContent.MediaKind);
+        Assert.Equal(30280, item.AudioCodec.Id);
+    }
+
+    [Fact]
+    public async Task EmbeddedDurlOutputDoesNotBlockIndependentAudioRequest()
+    {
+        using var context = new DuplicatePolicyContext(AppDialogOutcome.Canceled);
+        var existing = CreateDownloadingItem();
+        existing.DownloadBase.NeedDownloadContent = DownloadContentSelection.None with
+        {
+            Audio = true,
+            Video = true,
+            MediaKind = DownloadMediaKind.Durl
+        };
+        context.ListState.AddDownloading(existing);
+        var page = CreatePage();
+        var playback = CreateDurlPlayUrl();
+        playback.Dash.Audio =
+        [
+            new PlayUrlDashVideo
+            {
+                Id = 30280,
+                BaseAddress = "https://api.invalid/audio-30280"
+            }
+        ];
+        page.PlaybackAvailability = PlayUrlAvailability.From(playback);
+        page.AudioQualityFormat = PlaybackQualityCatalog.GetAudioQualities()
+            .Single(quality => quality.Id == 30280).Name;
+
+        var shouldSkip = await context.Policy.ShouldSkipAsync(
+            page, CreateVideoQuality(isDurl: true),
+            DownloadContentSelection.None with { Audio = true, Video = true },
+            DownKyi.Core.Settings.RepeatDownloadStrategy.JumpOver,
+            TestContext.Current.CancellationToken);
+
+        Assert.False(shouldSkip);
     }
 
     public void Dispose()

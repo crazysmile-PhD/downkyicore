@@ -6,7 +6,8 @@ public enum DownloadMediaKind
 {
     None,
     Dash,
-    Durl
+    Durl,
+    DurlWithDashAudio
 }
 
 public sealed record DownloadContentSelection(

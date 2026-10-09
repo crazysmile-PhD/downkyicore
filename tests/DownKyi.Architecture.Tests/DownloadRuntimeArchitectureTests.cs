@@ -677,12 +677,15 @@ public sealed class DownloadRuntimeArchitectureTests
         Assert.Contains("DownloadTransferKey.Create", mediaSource, StringComparison.Ordinal);
         Assert.DoesNotContain("GetHashCode", mediaSource, StringComparison.Ordinal);
         Assert.DoesNotContain("GetHashCode", transferKeySource, StringComparison.Ordinal);
-        Assert.Equal(
-            3,
-            System.Text.RegularExpressions.Regex.Count(
-                muxSource,
-                "overwriteDestination: false",
-                System.Text.RegularExpressions.RegexOptions.CultureInvariant));
+        var muxCalls = System.Text.RegularExpressions.Regex.Count(
+            muxSource,
+            @"_ffmpegProcessor\.(MergeMediaAsync|ConcatDurlVideosAsync)\(",
+            System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+        var nonOverwritingCalls = System.Text.RegularExpressions.Regex.Count(
+            muxSource,
+            "overwriteDestination: false",
+            System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+        Assert.Equal(muxCalls, nonOverwritingCalls);
         Assert.Contains("InvalidInputPaths", muxSource, StringComparison.Ordinal);
         Assert.Contains(
             "DownloadTransferFileCleanup.DeleteInvalidArtifacts",

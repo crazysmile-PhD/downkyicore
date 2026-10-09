@@ -175,6 +175,7 @@ internal static class DownloadStoreJson
             DownloadMediaKind.None => "none",
             DownloadMediaKind.Dash => "dash",
             DownloadMediaKind.Durl => "durl",
+            DownloadMediaKind.DurlWithDashAudio => "durl-dash-audio",
             _ => throw new ArgumentOutOfRangeException(nameof(mediaKind), mediaKind, "Unsupported media kind.")
         };
     }
@@ -191,6 +192,7 @@ internal static class DownloadStoreJson
             "none" => DownloadMediaKind.None,
             "dash" => DownloadMediaKind.Dash,
             "durl" => DownloadMediaKind.Durl,
+            "durl-dash-audio" => DownloadMediaKind.DurlWithDashAudio,
             var unsupported => throw Corrupt(
                 fieldName,
                 $"Unsupported media kind '{unsupported ?? "null"}'.")

@@ -98,5 +98,6 @@ internal sealed class ValidateStage : IDownloadPipelineStage
     }
 
     private static bool HasDurlConcatVideoEvidence(DownloadExecutionContext context) =>
-        context.MediaKind == DownloadMediaKind.Durl && context.DurlDownloads.Count > 1;
+        (context.MediaKind is DownloadMediaKind.Durl or DownloadMediaKind.DurlWithDashAudio)
+        && context.DurlDownloads.Count > 1;
 }

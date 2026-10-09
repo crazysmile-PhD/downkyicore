@@ -8,6 +8,61 @@ internal static class BangumiPlaybackResolver
 {
     private const string EmbeddedPlaybackMarker = "playurlSSRData";
 
+    public static PlayUrl CombineDiscovery(
+        PlayUrl primary,
+        PlayUrl supplement,
+        int? preferredDurlQuality = null)
+    {
+        ArgumentNullException.ThrowIfNull(primary);
+        ArgumentNullException.ThrowIfNull(supplement);
+        var durlSource = new[] { primary, supplement }
+            .FirstOrDefault(source => source.Quality == preferredDurlQuality
+                && PlayUrlAvailability.HasUsableDurl(source))
+            ?? new[] { primary, supplement }
+                .FirstOrDefault(PlayUrlAvailability.HasUsableDurl);
+        var firstVideoSource = PlayUrlAvailability.From(primary).Video.Count > 0
+            ? primary : supplement;
+        var combined = new PlayUrl
+        {
+            Quality = durlSource?.Quality ?? firstVideoSource.Quality,
+            VideoCodecid = durlSource?.VideoCodecid ?? firstVideoSource.VideoCodecid,
+            Durl = durlSource?.Durl ?? [],
+            Dash = new PlayUrlDash
+            {
+                Duration = primary.Dash.Duration > 0
+                    ? primary.Dash.Duration : supplement.Dash.Duration,
+                Video = primary.Dash.Video.Concat(supplement.Dash.Video)
+                    .Where(PlayUrlAvailability.HasUsableAddress)
+                    .DistinctBy(stream => (stream.Id, stream.CodecId))
+                    .ToArray(),
+                Audio = primary.Dash.Audio.Concat(supplement.Dash.Audio)
+                    .Where(PlayUrlAvailability.HasUsableAddress)
+                    .DistinctBy(stream => stream.Id)
+                    .ToArray(),
+                Dolby = CombineDolby(primary, supplement),
+                Flac = PlayUrlAvailability.HasUsableAddress(primary.Dash.Flac?.Audio)
+                    ? primary.Dash.Flac : PlayUrlAvailability.HasUsableAddress(supplement.Dash.Flac?.Audio)
+                        ? supplement.Dash.Flac : null
+            },
+            SupportFormats = primary.SupportFormats.Concat(supplement.SupportFormats)
+                .DistinctBy(format => format.Quality).ToArray(),
+            AcceptQuality = primary.AcceptQuality.Concat(supplement.AcceptQuality)
+                .Distinct().ToArray()
+        };
+        combined.Availability = PlayUrlAvailability.From(combined);
+        return combined;
+    }
+
+    private static PlayUrlDashDolby? CombineDolby(PlayUrl primary, PlayUrl supplement)
+    {
+        var audio = (primary.Dash.Dolby?.Audio ?? [])
+            .Concat(supplement.Dash.Dolby?.Audio ?? [])
+            .Where(PlayUrlAvailability.HasUsableAddress)
+            .DistinctBy(stream => stream.Id)
+            .ToArray();
+        return audio.Length == 0 ? null : new PlayUrlDashDolby { Audio = audio };
+    }
+
     public static PlayUrlAvailability DiscoverAvailability(
         PlayUrl primary,
         PlayUrl? supplement = null)
@@ -65,7 +120,6 @@ internal static class BangumiPlaybackResolver
         }
 
         return requestedAudioId == null
-               || (requireVideo && requestedStreamKind == PlayUrlStreamKind.Durl)
                || availability.Audio.Contains(requestedAudioId.Value);
     }
 
@@ -137,8 +191,15 @@ internal static class BangumiPlaybackResolver
                 : null;
         if (source == null)
         {
-            selected = null;
-            return false;
+            return TrySelectSplitSources(
+                primary,
+                supplement,
+                requestedQuality,
+                requestedCodecId,
+                requestedAudioId,
+                requestedStreamKind,
+                requireVideo,
+                out selected);
         }
 
         var sourceAvailability = PlayUrlAvailability.From(source);
@@ -154,7 +215,15 @@ internal static class BangumiPlaybackResolver
                                : PlayUrlStreamKind.Durl);
         if (selectedKind == PlayUrlStreamKind.Durl)
         {
-            source.Dash = new PlayUrlDash();
+            if (requestedAudioId == null)
+            {
+                source.Dash = new PlayUrlDash();
+            }
+            else
+            {
+                source.Dash.Video = [];
+                KeepRequestedAudio(source.Dash, requestedAudioId);
+            }
             selected = source;
             return true;
         }
@@ -172,21 +241,114 @@ internal static class BangumiPlaybackResolver
 
         source.Durl = [];
         source.Dash.Video = requireVideo ? requestedDash : [];
-        source.Dash.Audio = source.Dash.Audio
-            .Where(PlayUrlAvailability.HasUsableAddress)
-            .ToArray();
-        var dolbyAudio = (source.Dash.Dolby?.Audio ?? [])
-            .Where(PlayUrlAvailability.HasUsableAddress)
-            .ToArray();
-        source.Dash.Dolby = dolbyAudio.Length == 0
-            ? null
-            : new PlayUrlDashDolby { Audio = dolbyAudio };
-        source.Dash.Flac = PlayUrlAvailability.HasUsableAddress(source.Dash.Flac?.Audio)
-            ? source.Dash.Flac
-            : null;
+        KeepRequestedAudio(source.Dash, requestedAudioId);
 
         selected = source;
         return true;
+    }
+
+    private static void KeepRequestedAudio(PlayUrlDash dash, int? requestedAudioId)
+    {
+        dash.Audio = dash.Audio
+            .Where(PlayUrlAvailability.HasUsableAddress)
+            .Where(audio => requestedAudioId == null || audio.Id == requestedAudioId)
+            .ToArray();
+        var dolbyAudio = (dash.Dolby?.Audio ?? [])
+            .Where(PlayUrlAvailability.HasUsableAddress)
+            .Where(audio => requestedAudioId == null || audio.Id == requestedAudioId)
+            .ToArray();
+        dash.Dolby = dolbyAudio.Length == 0
+            ? null
+            : new PlayUrlDashDolby { Audio = dolbyAudio };
+        dash.Flac = PlayUrlAvailability.HasUsableAddress(dash.Flac?.Audio)
+                    && (requestedAudioId == null
+                        || dash.Flac?.Audio?.Id == requestedAudioId)
+            ? dash.Flac
+            : null;
+    }
+
+    private static bool TrySelectSplitSources(
+        PlayUrl primary,
+        PlayUrl? supplement,
+        int requestedQuality,
+        int? requestedCodecId,
+        int? requestedAudioId,
+        PlayUrlStreamKind? requestedStreamKind,
+        bool requireVideo,
+        out PlayUrl? selected)
+    {
+        selected = null;
+        if (supplement == null || !requireVideo || requestedAudioId == null)
+        {
+            return false;
+        }
+
+        var videoKind = ResolveSplitVideoKind(
+            primary, supplement, requestedQuality, requestedCodecId,
+            requestedStreamKind);
+        var videoSource = new[] { primary, supplement }.FirstOrDefault(source =>
+            HasRequestedPlayback(source, requestedQuality, requestedCodecId,
+                requestedAudioId: null, requestedStreamKind: videoKind));
+        var audioSource = new[] { primary, supplement }.FirstOrDefault(source =>
+            HasRequestedPlayback(source, requestedQuality, requestedCodecId,
+                requestedAudioId, PlayUrlStreamKind.Dash, requireVideo: false));
+        if (videoSource == null || audioSource == null)
+        {
+            return false;
+        }
+
+        var audio = audioSource.Dash.Audio
+            .Where(PlayUrlAvailability.HasUsableAddress)
+            .FirstOrDefault(stream => stream.Id == requestedAudioId);
+        var dolby = (audioSource.Dash.Dolby?.Audio ?? [])
+            .Where(PlayUrlAvailability.HasUsableAddress)
+            .FirstOrDefault(stream => stream.Id == requestedAudioId);
+        var flac = PlayUrlAvailability.HasUsableAddress(audioSource.Dash.Flac?.Audio)
+                   && audioSource.Dash.Flac?.Audio?.Id == requestedAudioId
+            ? audioSource.Dash.Flac.Audio
+            : null;
+        selected = new PlayUrl
+        {
+            Quality = requestedQuality,
+            VideoCodecid = videoKind == PlayUrlStreamKind.Durl
+                ? videoSource.VideoCodecid : requestedCodecId ?? videoSource.VideoCodecid,
+            Durl = videoKind == PlayUrlStreamKind.Durl ? videoSource.Durl : [],
+            Dash = new PlayUrlDash
+            {
+                Duration = videoSource.Dash.Duration > 0
+                    ? videoSource.Dash.Duration : audioSource.Dash.Duration,
+                Video = videoKind == PlayUrlStreamKind.Durl ? [] : videoSource.Dash.Video
+                    .Where(PlayUrlAvailability.HasUsableAddress)
+                    .Where(stream => stream.Id == requestedQuality
+                        && (requestedCodecId == null || stream.CodecId == requestedCodecId))
+                    .ToArray(),
+                Audio = audio == null ? [] : [audio],
+                Dolby = dolby == null ? null : new PlayUrlDashDolby { Audio = [dolby] },
+                Flac = flac == null ? null : new PlayUrlDashFlac { Audio = flac }
+            }
+        };
+        selected.Availability = PlayUrlAvailability.From(selected);
+        return true;
+    }
+
+    private static PlayUrlStreamKind ResolveSplitVideoKind(
+        PlayUrl primary,
+        PlayUrl supplement,
+        int requestedQuality,
+        int? requestedCodecId,
+        PlayUrlStreamKind? requestedStreamKind)
+    {
+        if (requestedStreamKind is { } kind)
+        {
+            return kind;
+        }
+
+        return new[] { primary, supplement }.Any(source =>
+            PlayUrlAvailability.From(source).Video.Any(video =>
+                video.Quality == requestedQuality
+                && (requestedCodecId == null || video.CodecId == requestedCodecId)
+                && video.StreamKind == PlayUrlStreamKind.Dash))
+            ? PlayUrlStreamKind.Dash : PlayUrlStreamKind.Durl;
     }
 
     public static bool TryParseEmbeddedPayload(

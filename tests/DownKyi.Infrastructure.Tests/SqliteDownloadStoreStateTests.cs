@@ -153,6 +153,36 @@ public sealed class SqliteDownloadStoreStateTests : IDisposable
     }
 
     [Fact]
+    public async Task DurlWithIndependentAudioContractSurvivesReopen()
+    {
+        var content = DownloadContentSelection.None with
+        {
+            Audio = true,
+            Video = true,
+            MediaKind = DownloadMediaKind.DurlWithDashAudio
+        };
+        using (var store = _fixture.CreateStore())
+        {
+            Assert.True((await store.AddAsync(
+                _fixture.CreatePausedTask("durl-dash-audio", requestedContent: content),
+                TestContext.Current.CancellationToken)).IsSuccess);
+        }
+
+        using var reopened = _fixture.CreateStore();
+        var restored = Assert.Single(
+            await reopened.GetUnfinishedAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(content, restored.Plan.RequestedContent);
+        using var connection = await _fixture.OpenReadOnlyConnectionAsync().ConfigureAwait(true);
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT need_download_content FROM download_base WHERE id = 'durl-dash-audio'";
+        var json = Assert.IsType<string>(
+            await command.ExecuteScalarAsync(TestContext.Current.CancellationToken));
+        using var payload = System.Text.Json.JsonDocument.Parse(json);
+        Assert.Equal("durl-dash-audio",
+            payload.RootElement.GetProperty("mediaKind").GetString());
+    }
+
+    [Fact]
     public async Task UpdateRejectsAStaleVersion()
     {
         var original = DownloadTask.Create(

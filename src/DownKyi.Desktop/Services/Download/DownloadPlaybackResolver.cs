@@ -40,13 +40,15 @@ internal sealed class DownloadPlaybackResolver
                 ? ResolveVideoCodecId(input.Metadata.VideoCodecName)
                 : null,
             context.NeedsPendingAudio
-            && input.RequestedContent.MediaKind == DownloadMediaKind.Dash
+            && input.RequestedContent.MediaKind is DownloadMediaKind.Dash
+                or DownloadMediaKind.DurlWithDashAudio
                 ? input.Metadata.AudioCodec.Id
                 : null,
             input.RequestedContent.MediaKind switch
             {
                 DownloadMediaKind.Dash => PlayUrlStreamKind.Dash,
                 DownloadMediaKind.Durl => PlayUrlStreamKind.Durl,
+                DownloadMediaKind.DurlWithDashAudio => PlayUrlStreamKind.Durl,
                 _ => null
             },
             context.NeedsPendingVideo);

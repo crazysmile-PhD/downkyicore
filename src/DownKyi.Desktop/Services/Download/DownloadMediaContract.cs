@@ -17,17 +17,23 @@ internal static class DownloadMediaContract
         }
 
         var availability = PlayUrlAvailability.From(playUrl);
-        var hasDash = availability.Video.Any(video =>
-                          video.StreamKind == PlayUrlStreamKind.Dash)
-                      || availability.Audio.Count > 0;
+        var hasDashVideo = availability.Video.Any(video =>
+            video.StreamKind == PlayUrlStreamKind.Dash);
+        var hasAudio = availability.Audio.Count > 0;
         var hasDurl = availability.Video.Any(video =>
             video.StreamKind == PlayUrlStreamKind.Durl);
-        if (hasDash == hasDurl)
+        if (hasDashVideo && hasDurl)
         {
             return DownloadMediaKind.None;
         }
 
-        return hasDash ? DownloadMediaKind.Dash : DownloadMediaKind.Durl;
+        if (hasDurl)
+        {
+            return hasAudio
+                ? DownloadMediaKind.DurlWithDashAudio : DownloadMediaKind.Durl;
+        }
+
+        return hasDashVideo || hasAudio ? DownloadMediaKind.Dash : DownloadMediaKind.None;
     }
 
     public static OperationError? Validate(
@@ -54,6 +60,7 @@ internal static class DownloadMediaContract
         {
             DownloadMediaKind.Dash => ValidateDash(context, playUrl),
             DownloadMediaKind.Durl => ValidateDurl(context, playUrl),
+            DownloadMediaKind.DurlWithDashAudio => ValidateDurlWithDashAudio(context, playUrl),
             _ => InvalidContract(
                 "The finalized media contract does not contain a downloadable media format.")
         };
@@ -121,6 +128,25 @@ internal static class DownloadMediaContract
             ? SelectionUnavailable(
                 "The refreshed DURL codec does not match the finalized selection.")
             : null;
+    }
+
+    private static OperationError? ValidateDurlWithDashAudio(
+        DownloadExecutionContext context,
+        PlayUrl? playUrl)
+    {
+        if (!context.NeedsAudio || !context.NeedsVideo)
+        {
+            return InvalidContract(
+                "The finalized DURL and DASH audio contract requires both media components.");
+        }
+
+        if (context.NeedsPendingAudio
+            && !PlayUrlAvailability.HasUsableAddress(SelectAudio(context, playUrl)))
+        {
+            return SelectionUnavailable("The finalized audio stream is unavailable.");
+        }
+
+        return ValidateDurl(context, playUrl);
     }
 
     internal static OperationError SelectionUnavailable(string message) =>
