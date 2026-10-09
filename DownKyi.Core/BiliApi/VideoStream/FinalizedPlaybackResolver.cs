@@ -39,15 +39,10 @@ internal static class FinalizedPlaybackResolver
         out PlayUrl? selected)
     {
         ArgumentNullException.ThrowIfNull(selection);
-        return TrySelect(
-            primary,
-            supplement,
-            selection.VideoQuality,
-            selection.VideoCodecId,
-            selection.AudioId,
-            selection.StreamKind,
-            selection.RequireVideo,
-            out selected);
+        ArgumentNullException.ThrowIfNull(primary);
+        var sources = new[] { primary, supplement }.OfType<PlayUrl>().ToArray();
+        selected = SelectSingleSource(sources, selection);
+        return selected != null;
     }
 
     public static bool TrySelect(
@@ -80,60 +75,84 @@ internal static class FinalizedPlaybackResolver
         bool requireVideo,
         out PlayUrl? selected)
     {
-        ArgumentNullException.ThrowIfNull(primary);
-        var source = HasRequestedPlayback(
-                primary,
+        return TrySelect(
+            primary,
+            supplement,
+            new FinalizedPlaybackSelection(
                 requestedQuality,
                 requestedCodecId,
                 requestedAudioId,
                 requestedStreamKind,
-                requireVideo)
-            ? primary
-            : supplement != null && HasRequestedPlayback(
-                supplement,
-                requestedQuality,
-                requestedCodecId,
-                requestedAudioId,
-                requestedStreamKind,
-                requireVideo)
-                ? supplement
-                : null;
-        if (source == null)
-        {
-            selected = null;
-            return false;
-        }
+                requireVideo),
+            out selected);
+    }
 
+    private static PlayUrl? SelectSingleSource(
+        PlayUrl[] sources,
+        FinalizedPlaybackSelection selection)
+    {
+        var source = sources.FirstOrDefault(candidate => HasRequestedPlayback(
+            candidate,
+            selection.VideoQuality,
+            selection.VideoCodecId,
+            selection.AudioId,
+            selection.StreamKind,
+            selection.RequireVideo));
+        return source == null
+            ? null
+            : SelectFromSource(source, selection);
+    }
+
+    private static PlayUrl? SelectFromSource(
+        PlayUrl source,
+        FinalizedPlaybackSelection selection)
+    {
         var sourceAvailability = PlayUrlAvailability.From(source);
-        var selectedKind = !requireVideo
+        var selectedKind = !selection.RequireVideo
             ? PlayUrlStreamKind.Dash
-            : requestedStreamKind
+            : selection.StreamKind
               ?? (sourceAvailability.Video.Any(candidate =>
-                  candidate.Quality == requestedQuality
-                  && (requestedCodecId == null || candidate.CodecId == requestedCodecId)
+                  candidate.Quality == selection.VideoQuality
+                  && (selection.VideoCodecId == null
+                      || candidate.CodecId == selection.VideoCodecId)
                   && candidate.StreamKind == PlayUrlStreamKind.Dash)
                   ? PlayUrlStreamKind.Dash
                   : PlayUrlStreamKind.Durl);
-        if (selectedKind == PlayUrlStreamKind.Durl)
-        {
-            source.Dash = new PlayUrlDash();
-            selected = source;
-            return true;
-        }
+        return selectedKind == PlayUrlStreamKind.Durl
+            ? SelectDurl(source)
+            : SelectDash(source, selection);
+    }
 
+    private static PlayUrl SelectDurl(PlayUrl source)
+    {
+        source.Dash = new PlayUrlDash();
+        return source;
+    }
+
+    private static PlayUrl? SelectDash(
+        PlayUrl source,
+        FinalizedPlaybackSelection selection)
+    {
         var requestedDash = source.Dash.Video
             .Where(PlayUrlAvailability.HasUsableAddress)
-            .Where(video => video.Id == requestedQuality)
-            .Where(video => requestedCodecId == null || video.CodecId == requestedCodecId)
+            .Where(video => video.Id == selection.VideoQuality)
+            .Where(video => selection.VideoCodecId == null
+                || video.CodecId == selection.VideoCodecId)
             .ToArray();
-        if (requireVideo && requestedDash.Length == 0)
+        return (selection.RequireVideo, requestedDash.Length) switch
         {
-            selected = null;
-            return false;
-        }
+            (true, 0) => null,
+            _ => RetainDash(source, requestedDash, selection.RequireVideo)
+        };
+    }
 
+    private static PlayUrl RetainDash(
+        PlayUrl source,
+        IReadOnlyList<PlayUrlDashVideo> requestedVideo,
+        bool requireVideo)
+    {
         source.Durl = [];
-        source.Dash.Video = requireVideo ? requestedDash : [];
+        source.Dash.Video = requireVideo ? requestedVideo : [];
         source.Dash.Audio = source.Dash.Audio
             .Where(PlayUrlAvailability.HasUsableAddress)
             .ToArray();
@@ -146,8 +165,6 @@ internal static class FinalizedPlaybackResolver
         source.Dash.Flac = PlayUrlAvailability.HasUsableAddress(source.Dash.Flac?.Audio)
             ? source.Dash.Flac
             : null;
-
-        selected = source;
-        return true;
+        return source;
     }
 }
