@@ -6,6 +6,7 @@
 - `v1.1.2-release-notes.md`：immutable v1.1.2 recovery workflow 的固定發布說明輸入。
 - `bilibili-api-audit.md`：Bilibili generated endpoint inventory、非推導 contract 例外與 live-audit 安全邊界。
 - `historical-source-archive.md`：1.0.24 以前的原始 Git 提交、封存 tags、快照辨識與查閱指令。
+- `../../script/historical-rebuild/README.md`：25 個封存 tags 的獨立三平台重建、Draft Release 與失敗重跑操作。
 - `../maintenance.md`：依賴、analyzers、external binaries、package 與 release 維護。
 - `../performance-baseline.md`：系統效能基準欄位與比較規則。
 

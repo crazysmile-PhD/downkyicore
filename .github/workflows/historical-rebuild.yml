@@ -1,0 +1,209 @@
+name: Historical Rebuild
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to rebuild (all or 1.0.0 through 1.0.24)"
+        required: true
+        default: all
+        type: string
+      platform:
+        description: "Platform to rebuild"
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - windows-x64
+          - macos-x64
+          - linux-x64
+      rebuild_existing:
+        description: "Rebuild and replace already complete asset sets"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: historical-rebuild-${{ inputs.version }}-${{ inputs.platform }}
+  cancel-in-progress: false
+
+jobs:
+  ensure-drafts:
+    name: Ensure draft releases
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout converter and all historical tags
+        uses: $/.github/actions/checkout
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Create only missing draft releases
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          ./script/historical-rebuild/Ensure-HistoricalDraftReleases.ps1
+          -Version '${{ inputs.version }}'
+          -Repository '${{ github.repository }}'
+
+  plan:
+    name: Plan missing builds
+    needs: ensure-drafts
+    runs-on: ubuntu-22.04
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      runtime_matrix: ${{ steps.plan.outputs.runtime_matrix }}
+      has_work: ${{ steps.plan.outputs.has_work }}
+    steps:
+      - name: Checkout converter and all historical tags
+        uses: $/.github/actions/checkout
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Build idempotent matrix
+        id: plan
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          ./script/historical-rebuild/New-HistoricalBuildPlan.ps1
+          -Version '${{ inputs.version }}'
+          -Platform '${{ inputs.platform }}'
+          -Repository '${{ github.repository }}'
+          -RebuildExisting $${{ inputs.rebuild_existing }}
+          -GitHubOutputPath $env:GITHUB_OUTPUT
+          -OutputPath ./historical-build-plan.json
+      - name: Preserve build plan
+        uses: $/.github/actions/upload-artifact
+        with:
+          name: historical-build-plan-${{ github.run_id }}
+          path: historical-build-plan.json
+          retention-days: 30
+
+  prepare-runtime:
+    name: Prepare ${{ matrix.platform }} runtime
+    needs: plan
+    if: needs.plan.outputs.has_work == 'true'
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.runtime_matrix) }}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout converter
+        uses: $/.github/actions/checkout
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Download and verify pinned runtime assets
+        shell: pwsh
+        run: >-
+          ./script/historical-rebuild/Prepare-HistoricalRuntimeAssets.ps1
+          -Rid '${{ matrix.rid }}'
+          -OutputRoot '${{ runner.temp }}/historical-runtime-${{ matrix.platform }}'
+      - name: Upload verified runtime assets
+        uses: $/.github/actions/upload-artifact
+        with:
+          name: historical-runtime-${{ matrix.platform }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/historical-runtime-${{ matrix.platform }}
+          retention-days: 2
+          if-no-files-found: error
+
+  build:
+    name: Build ${{ matrix.version }} / ${{ matrix.platform }}
+    needs: [plan, prepare-runtime]
+    if: needs.plan.outputs.has_work == 'true'
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout converter and all historical tags
+        uses: $/.github/actions/checkout
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Stage historical SDK version owner
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path ./tooling -Force | Out-Null
+          Copy-Item ./script/historical-rebuild/dotnet6.global.json ./tooling/global.json
+      - name: Install historical SDK
+        uses: $/.github/actions/setup-dotnet
+        with:
+          global-json-file: tooling/global.json
+      - name: Install Linux launch-check prerequisites
+        if: matrix.platform == 'linux-x64'
+        run: sudo apt-get update && sudo apt-get install -y libfuse2 xvfb
+      - name: Download verified runtime assets
+        uses: $/.github/actions/download-artifact
+        continue-on-error: true
+        with:
+          name: historical-runtime-${{ matrix.platform }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/historical-runtime-${{ matrix.platform }}
+      - name: Build in a temporary detached worktree
+        id: build
+        shell: pwsh
+        continue-on-error: true
+        run: >-
+          ./script/historical-rebuild/Invoke-HistoricalBuild.ps1
+          -Version '${{ matrix.version }}'
+          -Platform '${{ matrix.platform }}'
+          -RuntimeAssetsRoot '${{ runner.temp }}/historical-runtime-${{ matrix.platform }}'
+          -OutputRoot '${{ runner.temp }}/historical-result-${{ matrix.version }}-${{ matrix.platform }}'
+      - name: Upload package or failure record
+        if: always()
+        uses: $/.github/actions/upload-artifact
+        with:
+          name: historical-result-${{ matrix.version }}-${{ matrix.platform }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/historical-result-${{ matrix.version }}-${{ matrix.platform }}
+          retention-days: 30
+          if-no-files-found: error
+      - name: Preserve failure status after recording evidence
+        if: steps.build.outcome == 'failure'
+        shell: pwsh
+        run: throw 'Historical build failed; the result artifact contains the recorded error.'
+
+  publish-drafts:
+    name: Upload to draft releases
+    needs: [ensure-drafts, plan, build]
+    if: always() && needs.ensure-drafts.result == 'success' && needs.plan.result == 'success'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout converter and all historical tags
+        uses: $/.github/actions/checkout
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Download build results without executing them
+        if: needs.plan.outputs.has_work == 'true'
+        uses: $/.github/actions/download-artifact
+        continue-on-error: true
+        with:
+          pattern: historical-result-*-${{ github.run_id }}
+          path: ${{ runner.temp }}/historical-results
+      - name: Create empty result directory when everything was skipped
+        if: always()
+        run: mkdir -p '${{ runner.temp }}/historical-results'
+      - name: Verify and synchronize draft assets and status
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          ./script/historical-rebuild/Sync-HistoricalDraftReleases.ps1
+          -Version '${{ inputs.version }}'
+          -Platform '${{ inputs.platform }}'
+          -Repository '${{ github.repository }}'
+          -ResultsRoot '${{ runner.temp }}/historical-results'

@@ -107,3 +107,11 @@ git diff 'archive/v1.0.20^{commit}' 'archive/v1.0.24^{commit}' -- DownKyi.Core
 # 比較真正上游 1.0.24 與接手後快照
 git diff --stat 'archive/v1.0.24^{commit}' 9e8b9af1ce9e583884b208e4b5214ae6c32cdee5
 ```
+
+## 歷史版本重建
+
+獨立的手動轉換器位於 `script/historical-rebuild/`，操作與安全邊界見該目錄的
+`README.md`。它只從本表既有的 25 個 `archive/v*` 標籤建立臨時 worktree，
+不移動標籤、不修改舊 commit，也不使用正式 `v*` 發布 pipeline。成功產物會
+上傳到各封存標籤對應的 Draft Release，並附 checksum、來源 commit、相容性
+調整、簽章限制與啟動驗證紀錄。

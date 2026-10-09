@@ -18,6 +18,10 @@ inputs:
     description: Whether to fetch tags when fetch-depth is greater than zero.
     required: false
     default: 'false'
+  persist-credentials:
+    description: Whether to leave the authentication token in the local Git configuration.
+    required: false
+    default: 'true'
 
 runs:
   using: composite
@@ -29,3 +33,4 @@ runs:
         path: ${{ inputs.path }}
         fetch-depth: ${{ inputs.fetch-depth }}
         fetch-tags: ${{ inputs.fetch-tags }}
+        persist-credentials: ${{ inputs.persist-credentials }}
