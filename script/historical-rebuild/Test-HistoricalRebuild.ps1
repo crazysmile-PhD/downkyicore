@@ -47,6 +47,12 @@ Assert-True ($workflow -match 'persist-credentials: false') 'Historical build ch
 Assert-True ($workflow -notmatch 'MACOS_CERTIFICATE|APPLE_ID|APP_SPECIFIC_PASSWORD|TEAM_ID') 'Historical workflow must not request Apple publishing secrets.'
 Assert-True ($workflow -match 'continue-on-error: true') 'Build matrix must continue after individual failures.'
 
+$syncScript = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Sync-HistoricalDraftReleases.ps1') -Raw
+Assert-True ($syncScript -match '(?m)^\s*tag_name\s*=\s*\$tag\s*$') 'Draft updates must preserve the historical tag name.'
+Assert-True ($syncScript -match '(?m)^\s*target_commitish\s*=\s*\$expectedCommit\s*$') 'Draft updates must preserve the historical source commit.'
+$ensureScript = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Ensure-HistoricalDraftReleases.ps1') -Raw
+Assert-True ($ensureScript -match "-like 'untagged-\*'") 'Draft setup must recover GitHub-detached historical drafts without creating duplicates.'
+
 $scripts = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.ps1' -File)
 foreach ($script in $scripts) {
     $tokens = $null
