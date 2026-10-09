@@ -29,6 +29,9 @@ public class PlayUrlDashVideo : BaseModel
 
     public long ExpectedSize { get; set; }
 
+    [JsonIgnore]
+    public PlayUrlResolutionSource? ResolutionSource { get; internal set; }
+
     // frame_rate
     // sar
     // startWithSap

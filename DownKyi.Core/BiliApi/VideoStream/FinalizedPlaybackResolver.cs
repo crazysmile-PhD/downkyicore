@@ -41,7 +41,8 @@ internal static class FinalizedPlaybackResolver
         ArgumentNullException.ThrowIfNull(selection);
         ArgumentNullException.ThrowIfNull(primary);
         var sources = new[] { primary, supplement }.OfType<PlayUrl>().ToArray();
-        selected = SelectSingleSource(sources, selection);
+        selected = SelectSingleSource(sources, selection)
+            ?? SelectExactDashAcrossSources(sources, selection);
         return selected != null;
     }
 
@@ -167,4 +168,93 @@ internal static class FinalizedPlaybackResolver
             : null;
         return source;
     }
+
+    private static PlayUrl? SelectExactDashAcrossSources(
+        PlayUrl[] sources,
+        FinalizedPlaybackSelection selection)
+    {
+        var videoSource = sources.FirstOrDefault(source => HasRequestedPlayback(
+            source,
+            selection.VideoQuality,
+            selection.VideoCodecId,
+            requestedAudioId: null,
+            requestedStreamKind: PlayUrlStreamKind.Dash));
+        var audioSource = sources.FirstOrDefault(source => HasRequestedPlayback(
+            source,
+            selection.VideoQuality,
+            selection.VideoCodecId,
+            selection.AudioId,
+            requestedStreamKind: PlayUrlStreamKind.Dash,
+            requireVideo: false));
+        return (
+            sources.Length,
+            selection.RequireVideo,
+            selection.AudioId,
+            selection.StreamKind,
+            videoSource,
+            audioSource) switch
+        {
+            ( > 1, true, { } audioId, null or PlayUrlStreamKind.Dash,
+                not null, not null) => ComposeExactDash(
+                    videoSource,
+                    audioSource,
+                    selection,
+                    audioId),
+            _ => null
+        };
+    }
+
+    private static PlayUrl ComposeExactDash(
+        PlayUrl videoSource,
+        PlayUrl audioSource,
+        FinalizedPlaybackSelection selection,
+        int requestedAudioId)
+    {
+        var selected = new PlayUrl
+        {
+            Quality = selection.VideoQuality,
+            VideoCodecid = selection.VideoCodecId ?? videoSource.VideoCodecid,
+            Dash = new PlayUrlDash
+            {
+                Duration = videoSource.Dash.Duration > 0
+                    ? videoSource.Dash.Duration
+                    : audioSource.Dash.Duration,
+                Video = videoSource.Dash.Video
+                    .Where(PlayUrlAvailability.HasUsableAddress)
+                    .Where(stream => stream.Id == selection.VideoQuality)
+                    .Where(stream => selection.VideoCodecId == null
+                        || stream.CodecId == selection.VideoCodecId)
+                    .ToArray(),
+                Audio = audioSource.Dash.Audio
+                    .Where(PlayUrlAvailability.HasUsableAddress)
+                    .Where(stream => stream.Id == requestedAudioId)
+                    .ToArray(),
+                Dolby = SelectDolby(audioSource, requestedAudioId),
+                Flac = SelectFlac(audioSource, requestedAudioId)
+            }
+        };
+        selected.Availability = PlayUrlAvailability.From(selected);
+        return selected;
+    }
+
+    private static PlayUrlDashDolby? SelectDolby(
+        PlayUrl source,
+        int requestedAudioId)
+    {
+        var audio = (source.Dash.Dolby?.Audio ?? [])
+            .Where(PlayUrlAvailability.HasUsableAddress)
+            .Where(stream => stream.Id == requestedAudioId)
+            .ToArray();
+        return audio.Length == 0
+            ? null
+            : new PlayUrlDashDolby { Audio = audio };
+    }
+
+    private static PlayUrlDashFlac? SelectFlac(
+        PlayUrl source,
+        int requestedAudioId) =>
+        PlayUrlAvailability.HasUsableAddress(source.Dash.Flac?.Audio)
+        && source.Dash.Flac?.Audio?.Id == requestedAudioId
+            ? source.Dash.Flac
+            : null;
 }

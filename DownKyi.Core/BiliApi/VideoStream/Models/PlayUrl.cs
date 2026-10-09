@@ -84,7 +84,8 @@ public class PlayUrl : BaseModel
 public enum PlayUrlResolutionSource
 {
     WebPage,
-    Api
+    Api,
+    Mixed
 }
 
 public sealed record PlayUrlDiagnostics(
