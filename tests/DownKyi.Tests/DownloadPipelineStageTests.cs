@@ -54,6 +54,50 @@ public sealed class DownloadPipelineStageTests
     }
 
     [Fact]
+    public async Task OrdinaryResumeUsesFinalizedCodecWhenWebPageHasAnotherCodec()
+    {
+        using var settings = new TestSettingsStore();
+        settings.Store.Update(current => current with
+        {
+            Video = current.Video with { VideoParseType = 1 }
+        });
+        var requests = new List<string>();
+        var client = new TestBilibiliApiClient
+        {
+            GetStringAsyncHandler = (request, _) =>
+            {
+                requests.Add(request.RequestAddress);
+                return Task.FromResult(request.RequestAddress.StartsWith(
+                    "https://www.bilibili.com/video/",
+                    StringComparison.Ordinal)
+                    ? """
+                      <script>window.__playinfo__={"code":0,"data":{"dash":{"video":[{"id":80,"codecid":12,"base_url":"https://web.invalid/hevc"}],"audio":[]}}}</script>
+                      """
+                    : """
+                      {"code":0,"data":{"dash":{"video":[{"id":80,"codecid":7,"base_url":"https://api.invalid/avc"}],"audio":[]}}}
+                      """);
+            }
+        };
+        var context = CreateContext(
+            settings.Store.Current,
+            requestedContent: DownloadContentSelection.None with { Video = true },
+            resolutionId: 80,
+            videoCodecName: "H.264/AVC",
+            streamType: PlayStreamType.Video);
+        var resolver = new DownloadPlaybackResolver(
+            new TestWbiKeyProvider(),
+            TimeProvider.System,
+            client);
+
+        var result = await resolver.ResolveAsync(context, TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsSuccess, result.Error?.Message);
+        Assert.True(result.TryGetValue(out var playback));
+        Assert.Equal("https://api.invalid/avc", Assert.Single(playback.Dash.Video).BaseAddress);
+        Assert.Equal(2, requests.Count);
+    }
+
+    [Fact]
     public async Task StageSequenceStopsAtFirstFailureAndPreservesOrder()
     {
         using var settings = new TestSettingsStore();

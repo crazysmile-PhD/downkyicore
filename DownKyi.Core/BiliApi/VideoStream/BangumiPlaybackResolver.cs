@@ -72,6 +72,24 @@ internal static class BangumiPlaybackResolver
     public static bool TrySelectDownloadPlayback(
         PlayUrl primary,
         PlayUrl? supplement,
+        FinalizedPlaybackSelection selection,
+        out PlayUrl? selected)
+    {
+        ArgumentNullException.ThrowIfNull(selection);
+        return TrySelectDownloadPlayback(
+            primary,
+            supplement,
+            selection.VideoQuality,
+            selection.VideoCodecId,
+            selection.AudioId,
+            selection.StreamKind,
+            selection.RequireVideo,
+            out selected);
+    }
+
+    public static bool TrySelectDownloadPlayback(
+        PlayUrl primary,
+        PlayUrl? supplement,
         int requestedQuality,
         int? requestedCodecId,
         int? requestedAudioId,
