@@ -134,7 +134,7 @@ public static partial class VideoStreamApi
                 client,
                 BuildVideoPlayPageUrl(avid, bvid, page),
                 cancellationToken).ConfigureAwait(false);
-            if (webpage != null && BangumiPlaybackResolver.TrySelectDownloadPlayback(
+            if (webpage != null && FinalizedPlaybackResolver.TrySelect(
                     webpage,
                     supplement: null,
                     selection,
@@ -329,7 +329,7 @@ public static partial class VideoStreamApi
                 }
 
                 if (!discoverAvailability
-                    && BangumiPlaybackResolver.TrySelectDownloadPlayback(
+                    && FinalizedPlaybackResolver.TrySelect(
                         embeddedPlayUrl,
                         supplement: null,
                         quality,
@@ -424,7 +424,7 @@ public static partial class VideoStreamApi
                 outcome);
         }
 
-        if (!BangumiPlaybackResolver.TrySelectDownloadPlayback(
+        if (!FinalizedPlaybackResolver.TrySelect(
                 playUrl,
                 supplement: null,
                 quality,
@@ -551,7 +551,7 @@ public static partial class VideoStreamApi
             return null;
         }
 
-        return BangumiPlaybackResolver.TrySelectDownloadPlayback(
+        return FinalizedPlaybackResolver.TrySelect(
             playback,
             supplement: null,
             selection,
