@@ -144,7 +144,13 @@ using System;
 using System.Threading;
 Thread.Sleep(TimeSpan.FromMinutes(2));
 '@ | Set-Content -LiteralPath (Join-Path $stubProject 'Program.cs') -Encoding utf8
-    Invoke-DotnetQuiet 'publish' (Join-Path $stubProject 'aria2c.csproj') '-c' 'Release' '-r' $platformInfo.Rid '--self-contained' 'true' '-p:PublishTrimmed=false' '-o' $stubOutput
+    [ordered]@{ sdk = [ordered]@{ version = $sdkVersion; rollForward = 'latestPatch'; allowPrerelease = $false } } |
+        ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $stubProject 'global.json') -Encoding utf8
+    Push-Location $stubProject
+    try {
+        Invoke-DotnetQuiet 'publish' 'aria2c.csproj' '-c' 'Release' '-r' $platformInfo.Rid '--self-contained' 'true' '-p:PublishTrimmed=false' '-o' $stubOutput
+    }
+    finally { Pop-Location }
     if (Test-Path -LiteralPath $AriaDirectory) {
         Remove-Item -LiteralPath $AriaDirectory -Recurse -Force
     }

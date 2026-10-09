@@ -49,11 +49,13 @@ Assert-True ($workflow -match 'continue-on-error: true') 'Build matrix must cont
 
 $syncScript = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Sync-HistoricalDraftReleases.ps1') -Raw
 Assert-True ($syncScript -match '(?m)^\s*tag_name\s*=\s*\$tag\s*$') 'Draft updates must preserve the historical tag name.'
-Assert-True ($syncScript -match '(?m)^\s*target_commitish\s*=\s*\$expectedCommit\s*$') 'Draft updates must preserve the historical source commit.'
+Assert-True ($syncScript -match '\$release\.target_commitish\s+-ne\s+\$expectedCommit') 'Draft updates must verify the historical source commit.'
+Assert-True ($syncScript -notmatch '(?m)^\s*target_commitish\s*=') 'Draft note updates must not request historical ref rewrites.'
 $ensureScript = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Ensure-HistoricalDraftReleases.ps1') -Raw
 Assert-True ($ensureScript -match "-like 'untagged-\*'") 'Draft setup must recover GitHub-detached historical drafts without creating duplicates.'
 $buildScript = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Invoke-HistoricalBuild.ps1') -Raw
 Assert-True ($buildScript -notmatch "Invoke-Native\s+chmod[^\r\n]*'--'") 'Historical builds must use chmod arguments supported by BSD and GNU hosts.'
+Assert-True ($buildScript -match 'Join-Path\s+\$stubProject\s+''global\.json''') 'The isolated smoke helper must pin its own historical SDK owner.'
 
 $scripts = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.ps1' -File)
 foreach ($script in $scripts) {
