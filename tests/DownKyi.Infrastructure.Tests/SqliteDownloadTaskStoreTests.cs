@@ -25,23 +25,98 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
         using var connection = await OpenReadOnlyConnectionAsync().ConfigureAwait(true);
         using var version = connection.CreateCommand();
         version.CommandText = "PRAGMA user_version";
-        Assert.Equal(9L, await version.ExecuteScalarAsync(TestContext.Current.CancellationToken));
+        Assert.Equal((long)DownloadStoreSchema.CurrentVersion, await version.ExecuteScalarAsync(TestContext.Current.CancellationToken));
         Assert.True(await TableExistsAsync("download_history"));
         Assert.False(await TableExistsAsync("downloaded"));
         Assert.Equal(
             [
                 "id", "cid", "zone_id", "order", "main_title", "name", "duration",
                 "video_codec_name", "resolution", "audio_codec", "file_size",
-                "published_artifacts", "finished_timestamp", "finished_time", "max_speed_display"
+                "published_artifacts", "finished_timestamp", "finished_time", "max_speed_display", "requested_content"
             ],
             await ReadTableColumnsAsync("download_history"));
         Assert.True(await TableExistsAsync("download_upgrade_admission_gate"));
         Assert.Equal(0, await CountSchemaMigrationAsync(4));
         Assert.Equal(0, await CountSchemaMigrationAsync(5));
         Assert.Equal(0, await CountSchemaMigrationAsync(8));
-        Assert.Equal(1, await CountSchemaMigrationAsync(9));
+        Assert.Equal(1, await CountSchemaMigrationAsync(DownloadStoreSchema.CurrentVersion));
         Assert.False(await store.IsLegacyUpgradeAdmissionBlockedAsync(
             TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task CompletedHistoryRetainsFinalizedRequestedContentAcrossRestart()
+    {
+        var expected = DownloadHistoryRecord.FromCompletedTask(
+            CreateCompletedTask("video-only-history", 123));
+        using (var first = CreateStore())
+        {
+            Assert.True((await first.AddHistoryAsync(
+                expected,
+                TestContext.Current.CancellationToken)).IsSuccess);
+        }
+
+        using var reopened = CreateStore();
+        var restored = Assert.Single((await reopened.GetHistoryPageAsync(
+            null,
+            10,
+            TestContext.Current.CancellationToken)).Items);
+
+        Assert.Equal(expected.RequestedContent, restored.RequestedContent);
+        Assert.True(restored.RequestedContent?.Video);
+        Assert.False(restored.RequestedContent?.Audio);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task VersionNineHistoryUpgradesWithoutInventingRequestedContent(
+        bool withLegacyHistory)
+    {
+        using (var current = CreateStore())
+        {
+            Assert.True((await current.AddHistoryAsync(
+                DownloadHistoryRecord.FromCompletedTask(
+                    CreateCompletedTask("preexisting-history", 123)),
+                TestContext.Current.CancellationToken)).IsSuccess);
+        }
+
+        using (var connection = await OpenConnectionAsync(readOnly: false))
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                ALTER TABLE download_history DROP COLUMN requested_content;
+                PRAGMA user_version = 9;
+                DELETE FROM download_schema_migrations WHERE version = 10;
+                INSERT INTO download_schema_migrations(version, applied_at_utc) VALUES (9, 0);
+                """;
+            await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        }
+
+        if (withLegacyHistory)
+        {
+            await SimulateLegacyVersionWriteAsync();
+        }
+
+        using var upgraded = CreateStore();
+        await upgraded.InitializeAsync(TestContext.Current.CancellationToken);
+        var history = (await upgraded.GetHistoryPageAsync(
+            null,
+            10,
+            TestContext.Current.CancellationToken)).Items;
+
+        Assert.Equal(withLegacyHistory ? 2 : 1, history.Count);
+        Assert.All(history, item => Assert.Null(item.RequestedContent));
+        Assert.Contains(history, item => item.Id.Value == "preexisting-history");
+        if (withLegacyHistory)
+        {
+            Assert.Contains(history, item => item.Id.Value == "legacy-history");
+        }
+        Assert.Equal(DownloadStoreSchema.CurrentVersion, await ReadSchemaVersionAsync());
+        Assert.Contains("requested_content", await ReadTableColumnsAsync("download_history"));
+        Assert.Single(Directory.GetFiles(
+            Path.Combine(_directory, "Backup"),
+            "download.db.schema-v9-*.bak"));
     }
 
     [Fact]
@@ -65,8 +140,8 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
         using var store = CreateStore();
         await store.InitializeAsync(TestContext.Current.CancellationToken);
 
-        Assert.Equal(9, await ReadSchemaVersionAsync());
-        Assert.Equal(1, await CountSchemaMigrationAsync(9));
+        Assert.Equal(DownloadStoreSchema.CurrentVersion, await ReadSchemaVersionAsync());
+        Assert.Equal(1, await CountSchemaMigrationAsync(DownloadStoreSchema.CurrentVersion));
         Assert.Single(Directory.GetFiles(
             Path.Combine(_directory, "Backup"),
             "download.db.schema-v0-*.bak"));
@@ -135,12 +210,12 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
                 history.Items.Select(item => item.Id.Value).Order(StringComparer.Ordinal));
         }
 
-        Assert.Equal(9, await ReadSchemaVersionAsync());
+        Assert.Equal(DownloadStoreSchema.CurrentVersion, await ReadSchemaVersionAsync());
         Assert.False(await TableExistsAsync("downloaded"));
         Assert.Equal(0, await CountDownloadBaseRecordAsync("legacy-history"));
         Assert.Single(Directory.GetFiles(
             Path.Combine(_directory, "Backup"),
-            "download.db.schema-v9-*.bak"));
+            "download.db.schema-v10-*.bak"));
 
         using (var reopened = CreateStore())
         {
@@ -149,7 +224,7 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
 
         Assert.Single(Directory.GetFiles(
             Path.Combine(_directory, "Backup"),
-            "download.db.schema-v9-*.bak"));
+            "download.db.schema-v10-*.bak"));
     }
 
     [Theory]
@@ -172,8 +247,8 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
         Assert.Equal($"legacy-v{version}", restored.Id.Value);
         Assert.Equal(DownloadPhase.Paused, restored.Phase);
         Assert.Equal("aria-gid", restored.Transfer.BackendIdentity);
-        Assert.Equal(9, await ReadSchemaVersionAsync());
-        Assert.Equal(1, await CountSchemaMigrationAsync(9));
+        Assert.Equal(DownloadStoreSchema.CurrentVersion, await ReadSchemaVersionAsync());
+        Assert.Equal(1, await CountSchemaMigrationAsync(DownloadStoreSchema.CurrentVersion));
         Assert.Single(Directory.GetFiles(
             Path.Combine(_directory, "Backup"),
             $"download.db.schema-v{version}-*.bak"));
@@ -244,7 +319,7 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
         Assert.Equal(1, await CountDownloadBaseRecordAsync(active.Id.Value));
         Assert.Equal(1, await CountDownloadingRecordAsync(active.Id.Value));
         Assert.False(await TableExistsAsync("downloaded"));
-        Assert.Equal(9, await ReadSchemaVersionAsync());
+        Assert.Equal(DownloadStoreSchema.CurrentVersion, await ReadSchemaVersionAsync());
 
         using var reopened = CreateStore();
         await reopened.InitializeAsync(TestContext.Current.CancellationToken);
@@ -501,7 +576,7 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
             Assert.Single(await reopened.GetUnfinishedAsync(TestContext.Current.CancellationToken)).Id.Value);
         Assert.True(await reopened.IsLegacyUpgradeAdmissionBlockedAsync(
             TestContext.Current.CancellationToken));
-        Assert.Equal(1, await CountSchemaMigrationAsync(9));
+        Assert.Equal(1, await CountSchemaMigrationAsync(DownloadStoreSchema.CurrentVersion));
     }
 
     [Fact]
@@ -635,7 +710,7 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
         using var reopened = CreateStore();
         await reopened.InitializeAsync(TestContext.Current.CancellationToken);
 
-        Assert.Equal(9, await ReadSchemaVersionAsync());
+        Assert.Equal(DownloadStoreSchema.CurrentVersion, await ReadSchemaVersionAsync());
         Assert.Equal(0, await CountDownloadingRecordAsync("orphaned-download"));
     }
 
@@ -648,7 +723,7 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
 
         await store.InitializeAsync(TestContext.Current.CancellationToken);
 
-        Assert.Equal(9, await ReadSchemaVersionAsync());
+        Assert.Equal(DownloadStoreSchema.CurrentVersion, await ReadSchemaVersionAsync());
         Assert.Equal(1, await CountDownloadBaseRecordAsync("legacy-resume"));
         Assert.Equal(1, await CountDownloadingRecordAsync("legacy-resume"));
         Assert.Equal(0, await CountDownloadingRecordAsync("orphaned-download"));
@@ -867,8 +942,8 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
         await reopened.InitializeAsync(TestContext.Current.CancellationToken);
         var restored = Assert.Single(
             await reopened.GetUnfinishedAsync(TestContext.Current.CancellationToken));
-        Assert.Equal(9, await ReadSchemaVersionAsync());
-        Assert.Equal(1, await CountSchemaMigrationAsync(9));
+        Assert.Equal(DownloadStoreSchema.CurrentVersion, await ReadSchemaVersionAsync());
+        Assert.Equal(1, await CountSchemaMigrationAsync(DownloadStoreSchema.CurrentVersion));
         Assert.Equal(expected.Output.StagingToken, restored.Output.StagingToken);
         Assert.Null(restored.Output.PublishingArtifact);
     }
@@ -886,8 +961,8 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
         Assert.Null(restored.Plan.NfoRequest);
         Assert.Equal(DownloadContentSelection.None, restored.Plan.RequestedContent);
         Assert.Null(restored.Plan.RequestedContent.MediaKind);
-        Assert.Equal(9, await ReadSchemaVersionAsync());
-        Assert.Equal(1, await CountSchemaMigrationAsync(9));
+        Assert.Equal(DownloadStoreSchema.CurrentVersion, await ReadSchemaVersionAsync());
+        Assert.Equal(1, await CountSchemaMigrationAsync(DownloadStoreSchema.CurrentVersion));
     }
 
     [Fact]

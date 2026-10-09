@@ -127,6 +127,29 @@ internal static class CurrentDownloadStoreWriter
         await CompleteAsync(connection, transaction, appliedAtUtc, cancellationToken).ConfigureAwait(false);
     }
 
+    public static async Task UpgradeHistoryContentAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        DateTimeOffset appliedAtUtc,
+        CancellationToken cancellationToken)
+    {
+        await AddHistoryContentColumnAsync(connection, transaction, cancellationToken)
+            .ConfigureAwait(false);
+        await CompleteAsync(connection, transaction, appliedAtUtc, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public static async Task AddHistoryContentColumnAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "ALTER TABLE download_history ADD COLUMN requested_content TEXT";
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     private static async Task CreateHistoryTableAsync(
         SqliteConnection connection,
         SqliteTransaction transaction,
@@ -150,7 +173,8 @@ internal static class CurrentDownloadStoreWriter
                 published_artifacts   TEXT NOT NULL DEFAULT '{}',
                 finished_timestamp    INTEGER NOT NULL DEFAULT 0,
                 finished_time         TEXT NOT NULL DEFAULT '',
-                max_speed_display     TEXT
+                max_speed_display     TEXT,
+                requested_content    TEXT
             )
             """;
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);

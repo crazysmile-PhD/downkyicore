@@ -21,7 +21,8 @@ public sealed record DownloadHistoryRecord
         IEnumerable<KeyValuePair<string, string>> publishedArtifacts,
         long finishedTimestamp,
         string finishedTimeText,
-        string? maximumSpeedText)
+        string? maximumSpeedText,
+        DownloadContentSelection? requestedContent = null)
     {
         ArgumentNullException.ThrowIfNull(id);
         ArgumentNullException.ThrowIfNull(mainTitle);
@@ -52,6 +53,7 @@ public sealed record DownloadHistoryRecord
         FinishedTimestamp = finishedTimestamp;
         FinishedTimeText = finishedTimeText;
         MaximumSpeedText = maximumSpeedText;
+        RequestedContent = requestedContent;
     }
 
     public DownloadTaskId Id { get; }
@@ -70,6 +72,7 @@ public sealed record DownloadHistoryRecord
     public long FinishedTimestamp { get; }
     public string FinishedTimeText { get; }
     public string? MaximumSpeedText { get; }
+    public DownloadContentSelection? RequestedContent { get; }
 
     public static DownloadHistoryRecord FromCompletedTask(DownloadTask task)
     {
@@ -95,6 +98,7 @@ public sealed record DownloadHistoryRecord
             task.Output.PublishedArtifacts,
             task.Completion.FinishedTimestamp,
             task.Completion.FinishedTimeText,
-            task.Completion.MaximumSpeedText);
+            task.Completion.MaximumSpeedText,
+            task.Plan.RequestedContent);
     }
 }

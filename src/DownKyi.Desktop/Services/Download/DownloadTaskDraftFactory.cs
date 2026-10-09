@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using DownKyi.Core.BiliApi.BiliUtils;
@@ -23,7 +24,7 @@ internal static class DownloadTaskDraftFactory
         VideoSection section,
         int sectionCount,
         VideoPage page,
-        VideoQuality videoQuality,
+        VideoQuality? videoQuality,
         ApplicationSettings settings,
         DownloadContentSelection content)
     {
@@ -31,28 +32,29 @@ internal static class DownloadTaskDraftFactory
         ArgumentNullException.ThrowIfNull(video);
         ArgumentNullException.ThrowIfNull(section);
         ArgumentNullException.ThrowIfNull(page);
-        ArgumentNullException.ThrowIfNull(videoQuality);
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(content);
 
-        var needsMedia = content.Audio || content.Video;
-        var mediaKind = needsMedia
-            ? videoQuality.IsDurl
-                ? DownloadMediaKind.Durl
-                : DownloadMediaKind.Dash
-            : DownloadMediaKind.None;
-        if (needsMedia && mediaKind == DownloadMediaKind.None)
+        var capability = DownloadMediaCapabilities.From(
+            page.PlaybackAvailability,
+            videoQuality,
+            page.AudioQualityFormat);
+        if (!capability.Supports(content))
         {
             throw new InvalidOperationException(
-                "A media download draft requires a supported finalized playback format.");
+                "A media download draft requires a supported finalized playback selection.");
         }
 
-        if (mediaKind == DownloadMediaKind.Durl && content.Audio && !content.Video)
+        if (content.Video && videoQuality == null)
         {
             throw new InvalidOperationException(
-                "Audio-only DURL downloads are not supported.");
+                "A video download draft requires a finalized video quality.");
         }
 
+        var mediaKind = content.Video
+            ? videoQuality!.IsDurl ? DownloadMediaKind.Durl : DownloadMediaKind.Dash
+            : content.Audio ? DownloadMediaKind.Dash : DownloadMediaKind.None;
+        var selectedVideo = content.Video ? videoQuality : null;
         var audioCodec = PlaybackQualityCatalog.GetAudioQualities()
             .FirstOrDefault(quality => quality.Name == page.AudioQualityFormat) ?? new Quality();
         var downloadBase = new DownloadBase
@@ -70,19 +72,19 @@ internal static class DownloadTaskDraftFactory
                 section,
                 sectionCount,
                 page,
-                videoQuality,
+                selectedVideo,
                 settings),
             Order = page.Order,
             MainTitle = video.Title,
             Name = page.Name,
             Duration = page.Duration,
-            VideoCodecName = videoQuality.SelectedVideoCodec,
+            VideoCodecName = selectedVideo?.SelectedVideoCodec ?? string.Empty,
             Resolution = new Quality
             {
-                Name = videoQuality.QualityFormat,
-                Id = videoQuality.Quality
+                Name = selectedVideo?.QualityFormat ?? string.Empty,
+                Id = selectedVideo?.Quality ?? 0
             },
-            AudioCodec = audioCodec,
+            AudioCodec = content.Audio ? audioCodec : new Quality(),
             Page = page.Page
         };
         downloadBase.NeedDownloadContent = content with { MediaKind = mediaKind };
@@ -121,7 +123,7 @@ internal static class DownloadTaskDraftFactory
         VideoSection section,
         int sectionCount,
         VideoPage page,
-        VideoQuality videoQuality,
+        VideoQuality? videoQuality,
         ApplicationSettings settings)
     {
         var sectionName = sectionCount > 1 ? section.Title : string.Empty;
@@ -131,8 +133,8 @@ internal static class DownloadTaskDraftFactory
             .SetPageTitle(Format.FormatFileName(page.Name))
             .SetVideoZone(video.VideoZone.Split('>')[0])
             .SetAudioQuality(page.AudioQualityFormat)
-            .SetVideoQuality(videoQuality.QualityFormat)
-            .SetVideoCodec(GetCodecLabel(videoQuality.SelectedVideoCodec))
+            .SetVideoQuality(videoQuality?.QualityFormat ?? string.Empty)
+            .SetVideoCodec(GetCodecLabel(videoQuality?.SelectedVideoCodec ?? string.Empty))
             .SetVideoPublishTime(page.PublishTime)
             .SetAvid(page.Avid)
             .SetBvid(page.Bvid)
@@ -150,7 +152,13 @@ internal static class DownloadTaskDraftFactory
                 break;
         }
 
-        var filePath = Path.Combine(directory, fileName.RelativePath());
+        var relativePath = fileName.RelativePath();
+        if (!relativePath.Any(char.IsLetterOrDigit))
+        {
+            relativePath = page.Cid.ToString(CultureInfo.InvariantCulture);
+        }
+
+        var filePath = Path.Combine(directory, relativePath);
         return filePath;
     }
 

@@ -106,6 +106,57 @@ public sealed class DownloadContentConflictResolverTests
     }
 
     [Fact]
+    public async Task AudioOnlyDashWithoutVideoIsFinalized()
+    {
+        var dialogs = new RecordingDialogService();
+        var page = CreatePage(video: false, audio: true);
+        page.VideoQuality = null;
+        var requested = DownloadContentSelection.None with { Audio = true };
+
+        var finalized = await ResolveAsync(
+            dialogs,
+            requested,
+            CreatePreparedDownload(page));
+
+        Assert.True(page.HasPlayback);
+        var selected = Assert.Single(Assert.Single(finalized.Sections).Pages);
+        Assert.Null(selected.VideoQuality);
+        Assert.Same(requested, selected.RequestedContent);
+        Assert.Empty(dialogs.Requests);
+    }
+
+    [Fact]
+    public async Task IndependentDashAudioRemainsAvailableWithDurlVideo()
+    {
+        var dialogs = new RecordingDialogService();
+        var page = CreateDurlPage();
+        page.AudioQualityFormat = "高质量";
+        page.PlaybackAvailability = PlayUrlAvailability.From(new PlayUrl
+        {
+            Quality = 80,
+            VideoCodecid = 7,
+            Durl = [new PlayUrlDurl { SourceAddress = "https://media.invalid/video.mp4" }],
+            Dash = new PlayUrlDash
+            {
+                Audio = [new PlayUrlDashVideo
+                {
+                    Id = 30280,
+                    BaseAddress = "https://media.invalid/audio.m4s"
+                }]
+            }
+        });
+        var requested = DownloadContentSelection.None with { Audio = true };
+
+        var finalized = await ResolveAsync(
+            dialogs,
+            requested,
+            CreatePreparedDownload(page));
+
+        Assert.Same(requested, Assert.Single(Assert.Single(finalized.Sections).Pages).RequestedContent);
+        Assert.Empty(dialogs.Requests);
+    }
+
+    [Fact]
     public async Task SkipChoiceRemovesPageBeforeTaskCreation()
     {
         var dialogs = new RecordingDialogService(

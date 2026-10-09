@@ -13,6 +13,32 @@ public sealed class VideoPagePlaybackMapperTests : IDisposable
         Guid.NewGuid().ToString("N"));
 
     [Fact]
+    public void AudioOnlyPlaybackRemainsSelectableWithoutVideoQuality()
+    {
+        var page = new VideoPage();
+        var playUrl = new PlayUrl
+        {
+            Dash = new PlayUrlDash
+            {
+                Audio = [new PlayUrlDashVideo
+                {
+                    Id = 30280,
+                    BaseAddress = "https://media.invalid/audio.m4s"
+                }]
+            }
+        };
+
+        VideoPagePlaybackMapper.ApplyPlayUrl(
+            playUrl,
+            page,
+            CreateSettings(videoQuality: 80, isVip: true));
+
+        Assert.True(page.HasPlayback);
+        Assert.Null(page.VideoQuality);
+        Assert.Equal("高质量", page.AudioQualityFormat);
+    }
+
+    [Fact]
     public void ApplyPlayUrlFallsBackToHevcWhenAvcIsUnavailableAtHighestQuality()
     {
         Directory.CreateDirectory(_directory);

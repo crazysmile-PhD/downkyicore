@@ -60,8 +60,10 @@ public sealed class LegacyDownloadStoreFormatDetectorTests
         { "legacy-v6", 6, "AdmissionSafe" },
         { "legacy-v7", 7, "AdmissionSafe" },
         { "legacy-v8", 8, "AdmissionSafe" },
-        { "current-v9-with-legacy-history", 9, "CurrentWithLegacyHistory" },
-        { "current-v9", 9, "Current" }
+        { "current-v9-with-legacy-history", 9, "PreviousCurrentWithLegacyHistory" },
+        { "current-v9", 9, "PreviousCurrent" },
+        { "current-v10-with-legacy-history", 10, "CurrentWithLegacyHistory" },
+        { "current-v10", 10, "Current" }
     };
 
     public static TheoryData<string> MalformedShapes => new()
@@ -130,7 +132,7 @@ public sealed class LegacyDownloadStoreFormatDetectorTests
                 format,
                 TestContext.Current.CancellationToken)).ConfigureAwait(true);
 
-        Assert.Equal(9, failure.UserVersion);
+        Assert.Equal(DownloadStoreSchema.CurrentVersion, failure.UserVersion);
         Assert.Contains("missing column: download_base.staging_token", failure.SchemaDifferences);
         Assert.Contains("download_base.staging_token", failure.Message, StringComparison.Ordinal);
         Assert.DoesNotContain("private_custom_table_73918", failure.Message,
@@ -196,14 +198,25 @@ public sealed class LegacyDownloadStoreFormatDetectorTests
 
         if (shape == "current-v9")
         {
-            CreateCurrentShape(connection, includeStagingToken: true);
+            CreateCurrentShape(connection, includeStagingToken: true, includeContentColumn: false);
             return;
         }
 
         if (shape == "current-v9-with-legacy-history")
         {
-            CreateCurrentShape(connection, includeStagingToken: true);
+            CreateCurrentShape(connection, includeStagingToken: true, includeContentColumn: false);
             CreateTable(connection, "downloaded", CoreDownloadedColumns);
+            return;
+        }
+
+        if (shape is "current-v10" or "current-v10-with-legacy-history")
+        {
+            CreateCurrentShape(connection, includeStagingToken: true);
+            if (shape == "current-v10-with-legacy-history")
+            {
+                CreateTable(connection, "downloaded", CoreDownloadedColumns);
+            }
+
             return;
         }
 
@@ -310,7 +323,8 @@ public sealed class LegacyDownloadStoreFormatDetectorTests
 
     private static void CreateCurrentShape(
         SqliteConnection connection,
-        bool includeStagingToken)
+        bool includeStagingToken,
+        bool includeContentColumn = true)
     {
         var baseColumns = new List<string>(CoreBaseColumns);
         baseColumns.AddRange(BaseStateColumns);
@@ -328,7 +342,9 @@ public sealed class LegacyDownloadStoreFormatDetectorTests
             connection,
             "downloading",
             [.. CoreDownloadingColumns, .. DownloadingStateColumns]);
-        CreateTable(connection, "download_history", CurrentHistoryColumns);
+        CreateTable(connection, "download_history", includeContentColumn
+            ? [.. CurrentHistoryColumns, "requested_content"]
+            : CurrentHistoryColumns);
         CreateMarkerTable(connection, "download_schema_migrations");
         CreateMarkerTable(connection, "download_quarantine");
         CreateMarkerTable(connection, "download_upgrade_admission_gate");

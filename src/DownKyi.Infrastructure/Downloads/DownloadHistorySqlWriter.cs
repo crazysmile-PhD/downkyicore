@@ -19,12 +19,12 @@ internal static class DownloadHistorySqlWriter
                 (id, cid, zone_id, [order], main_title, name, duration,
                  video_codec_name, resolution, audio_codec, file_size,
                  published_artifacts, finished_timestamp, finished_time,
-                 max_speed_display)
+                 max_speed_display, requested_content)
             VALUES
                 (@id, @cid, @zone_id, @order, @main_title, @name, @duration,
                  @video_codec_name, @resolution, @audio_codec, @file_size,
                  @published_artifacts, @finished_timestamp, @finished_time,
-                 @max_speed_display)
+                 @max_speed_display, @requested_content)
             """;
         Bind(command, history);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
@@ -56,5 +56,10 @@ internal static class DownloadHistorySqlWriter
         command.Parameters.AddWithValue(
             "@max_speed_display",
             history.MaximumSpeedText ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue(
+            "@requested_content",
+            history.RequestedContent is { } content
+                ? DownloadStoreJson.WriteContentSelection(content)
+                : DBNull.Value);
     }
 }
