@@ -47,7 +47,7 @@ public sealed class PlaybackSelectionUnavailableException : PlaybackUnavailableE
         int? audioId,
         PlayUrlStreamKind? streamKind)
     {
-        return "The requested Bangumi playback selection is unavailable (" +
+        return "The finalized playback selection is unavailable (" +
                $"quality={quality.ToString(CultureInfo.InvariantCulture)}," +
                $"codec={videoCodecId?.ToString(CultureInfo.InvariantCulture) ?? "any"}," +
                $"audio={audioId?.ToString(CultureInfo.InvariantCulture) ?? "none"}," +

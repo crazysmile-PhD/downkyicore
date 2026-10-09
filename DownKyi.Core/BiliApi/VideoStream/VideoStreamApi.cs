@@ -110,6 +110,51 @@ public static partial class VideoStreamApi
         return playUrl;
     }
 
+    public static async Task<PlayUrl?> GetVideoFinalizedPlaybackAsync(
+        this IBilibiliApiClient client,
+        WbiKeys keys,
+        long unixTimeSeconds,
+        long avid,
+        string bvid,
+        long cid,
+        int page,
+        FinalizedPlaybackSelection selection,
+        bool preferWebPage,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(selection);
+        if (!selection.IsActionable)
+        {
+            throw SelectionUnavailable(selection);
+        }
+
+        if (preferWebPage)
+        {
+            var webpage = await GetPlayUrlWebPageAsync(
+                client,
+                BuildVideoPlayPageUrl(avid, bvid, page),
+                cancellationToken).ConfigureAwait(false);
+            if (webpage != null && BangumiPlaybackResolver.TrySelectDownloadPlayback(
+                    webpage,
+                    supplement: null,
+                    selection,
+                    out var selectedWebpage))
+            {
+                return selectedWebpage;
+            }
+        }
+
+        var api = await client.GetVideoPlayUrlAsync(
+            keys,
+            unixTimeSeconds,
+            avid,
+            bvid,
+            cid,
+            selection.ProbeQuality,
+            cancellationToken).ConfigureAwait(false);
+        return SelectFinalizedPlayback(api, selection);
+    }
+
     internal static string BuildVideoPlayPageUrl(long avid, string bvid, int p)
     {
         const string baseUrl = "https://www.bilibili.com/video";
@@ -182,6 +227,36 @@ public static partial class VideoStreamApi
             audioId,
             streamKind,
             requireVideo,
+            cancellationToken);
+    }
+
+    public static Task<PlayUrl?> GetBangumiFinalizedPlaybackAsync(
+        this IBilibiliApiClient client,
+        long avid,
+        string bvid,
+        long cid,
+        long episodeId,
+        FinalizedPlaybackSelection selection,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(selection);
+        if (!selection.IsActionable)
+        {
+            throw SelectionUnavailable(selection);
+        }
+
+        return GetBangumiPlaybackCoreAsync(
+            client,
+            avid,
+            bvid,
+            cid,
+            episodeId,
+            selection.ProbeQuality,
+            discoverAvailability: false,
+            selection.VideoCodecId,
+            selection.AudioId,
+            selection.StreamKind,
+            selection.RequireVideo,
             cancellationToken);
     }
 
@@ -441,6 +516,57 @@ public static partial class VideoStreamApi
             nameof(GetCheesePlayUrlAsync),
             cancellationToken);
     }
+
+    public static async Task<PlayUrl?> GetCheeseFinalizedPlaybackAsync(
+        this IBilibiliApiClient client,
+        long avid,
+        string bvid,
+        long cid,
+        long episodeId,
+        FinalizedPlaybackSelection selection,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(selection);
+        if (!selection.IsActionable)
+        {
+            throw SelectionUnavailable(selection);
+        }
+
+        var playback = await client.GetCheesePlayUrlAsync(
+            avid,
+            bvid,
+            cid,
+            episodeId,
+            selection.ProbeQuality,
+            cancellationToken).ConfigureAwait(false);
+        return SelectFinalizedPlayback(playback, selection);
+    }
+
+    private static PlayUrl? SelectFinalizedPlayback(
+        PlayUrl? playback,
+        FinalizedPlaybackSelection selection)
+    {
+        if (playback == null)
+        {
+            return null;
+        }
+
+        return BangumiPlaybackResolver.TrySelectDownloadPlayback(
+            playback,
+            supplement: null,
+            selection,
+            out var selected)
+            ? selected
+            : throw SelectionUnavailable(selection);
+    }
+
+    private static PlaybackSelectionUnavailableException SelectionUnavailable(
+        FinalizedPlaybackSelection selection) =>
+        new(
+            selection.VideoQuality,
+            selection.VideoCodecId,
+            selection.AudioId,
+            selection.StreamKind);
 
     /// <summary>
     /// 获取视频流

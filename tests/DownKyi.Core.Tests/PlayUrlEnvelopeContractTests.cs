@@ -141,6 +141,85 @@ public sealed class PlayUrlEnvelopeContractTests
         Assert.Contains("qn=80", requests[1].RequestAddress, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(112, 7)]
+    [InlineData(80, 12)]
+    public async Task FinalizedVideoRefreshQueriesApiWhenWebPageLacksExactRendition(
+        int webQuality,
+        int webCodec)
+    {
+        var requests = new List<BilibiliHttpRequest>();
+        var webpage = """
+            <script>window.__playinfo__={"code":0,"data":{"dash":{"video":[{"id":WEB_QUALITY,"codecid":WEB_CODEC,"base_url":"https://web.invalid/video"}],"audio":[]}}}</script>
+            """
+            .Replace("WEB_QUALITY", webQuality.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                StringComparison.Ordinal)
+            .Replace("WEB_CODEC", webCodec.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                StringComparison.Ordinal);
+        var client = new StubBilibiliApiClient((request, _) =>
+        {
+            requests.Add(request);
+            return Task.FromResult(request.RequestAddress.StartsWith(
+                "https://www.bilibili.com/video/",
+                StringComparison.Ordinal)
+                ? webpage
+                : """
+                  {"code":0,"data":{"dash":{"video":[{"id":80,"codecid":7,"base_url":"https://api.invalid/video"}],"audio":[]}}}
+                  """);
+        });
+
+        var selected = await client.GetVideoFinalizedPlaybackAsync(
+            Keys,
+            1702204169,
+            1,
+            "BV1fixture",
+            2,
+            1,
+            new FinalizedPlaybackSelection(80, 7, null, PlayUrlStreamKind.Dash, true),
+            preferWebPage: true,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal("https://api.invalid/video", Assert.Single(selected!.Dash.Video).BaseAddress);
+        Assert.Equal(2, requests.Count);
+        Assert.Contains("qn=80", requests[1].RequestAddress, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task FinalizedAudioOnlyRefreshRequiresExactAudioWithoutVideoSelection()
+    {
+        var requests = new List<BilibiliHttpRequest>();
+        var client = new StubBilibiliApiClient((request, _) =>
+        {
+            requests.Add(request);
+            return Task.FromResult(request.RequestAddress.StartsWith(
+                "https://www.bilibili.com/video/",
+                StringComparison.Ordinal)
+                ? """
+                  <script>window.__playinfo__={"code":0,"data":{"dash":{"video":[{"id":80,"codecid":7,"base_url":"https://web.invalid/video"}],"audio":[{"id":30232,"base_url":"https://web.invalid/audio"}]}}}</script>
+                  """
+                : """
+                  {"code":0,"data":{"dash":{"video":[],"audio":[{"id":30280,"base_url":"https://api.invalid/audio"}]}}}
+                  """);
+        });
+
+        var selected = await client.GetVideoFinalizedPlaybackAsync(
+            Keys,
+            1702204169,
+            1,
+            "BV1fixture",
+            2,
+            1,
+            new FinalizedPlaybackSelection(0, null, 30280, PlayUrlStreamKind.Dash, false),
+            preferWebPage: true,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Empty(selected!.Dash.Video);
+        Assert.Equal("https://api.invalid/audio", Assert.Single(selected.Dash.Audio).BaseAddress);
+        Assert.Equal(2, requests.Count);
+        Assert.Contains("qn=", requests[1].RequestAddress, StringComparison.Ordinal);
+        Assert.DoesNotContain("qn=0", requests[1].RequestAddress, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task BangumiEndpointUsesResultVideoInfoEnvelope()
     {
