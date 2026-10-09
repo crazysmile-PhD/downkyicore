@@ -46,6 +46,9 @@ foreach ($item in $versions) {
     }
     $release = $releaseByTag[$tag]
     if (-not [bool]$release.draft) { throw "Refusing to alter non-draft release $tag." }
+    if ([string]$release.target_commitish -ne $expectedCommit) {
+        throw "Draft release $tag targets '$($release.target_commitish)', expected '$expectedCommit'."
+    }
     foreach ($platformItem in $selectedPlatforms) {
         $key = "$item|$($platformItem.Name)"
         if (-not $resultByKey.ContainsKey($key)) { continue }
@@ -130,9 +133,9 @@ Converter run: $runLink
 "@
     $payload = [ordered]@{
         # GitHub rewrites a draft to an internal untagged-* reference when a
-        # release PATCH omits tag_name. Always preserve both historical owners.
+        # release PATCH omits tag_name. target_commitish was verified above;
+        # do not retarget here because Actions tokens cannot rewrite old refs.
         tag_name = $tag
-        target_commitish = $expectedCommit
         name = "v$item — Historical Rebuild"
         body = $body
         draft = $true
