@@ -54,6 +54,7 @@ $ensureScript = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Ensure-Histor
 Assert-True ($ensureScript -match "-like 'untagged-\*'") 'Draft setup must recover GitHub-detached historical drafts without creating duplicates.'
 $buildScript = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Invoke-HistoricalBuild.ps1') -Raw
 Assert-True ($buildScript -notmatch "Invoke-Native\s+chmod[^\r\n]*'--'") 'Historical builds must use chmod arguments supported by BSD and GNU hosts.'
+Assert-True ($buildScript -match 'Join-Path\s+\$stubProject\s+''global\.json''') 'The isolated smoke helper must pin its own historical SDK owner.'
 
 $scripts = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.ps1' -File)
 foreach ($script in $scripts) {
