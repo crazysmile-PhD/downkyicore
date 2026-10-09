@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.Models;
 using DownKyi.Core.BiliApi.VideoStream.Models;
 using Newtonsoft.Json;
@@ -77,12 +78,12 @@ internal class VideoPage : ObservableObject
         get => audioQualityFormat;
         set
         {
-            if (value != null)
-            {
-                SetProperty(ref audioQualityFormat, value);
-            }
+            SetProperty(ref audioQualityFormat, value ?? audioQualityFormat);
+            AudioQualityMatch = null;
         }
     }
+
+    internal PlaybackQualityMatch? AudioQualityMatch { get; private set; }
 
     private IList<VideoQuality> videoQualityList = new List<VideoQuality>();
 
@@ -97,7 +98,31 @@ internal class VideoPage : ObservableObject
     public VideoQuality? VideoQuality
     {
         get => videoQuality;
-        set => SetProperty(ref videoQuality, value);
+        set
+        {
+            SetProperty(ref videoQuality, value);
+            VideoQualityMatch = null;
+        }
+    }
+
+    internal PlaybackQualityMatch? VideoQualityMatch { get; private set; }
+
+    internal void SetAutomaticAudioQuality(
+        string value,
+        PlaybackQualityMatch match)
+    {
+        ArgumentNullException.ThrowIfNull(match);
+        SetProperty(ref audioQualityFormat, value);
+        AudioQualityMatch = match;
+    }
+
+    internal void SetAutomaticVideoQuality(
+        VideoQuality? value,
+        PlaybackQualityMatch match)
+    {
+        ArgumentNullException.ThrowIfNull(match);
+        SetProperty(ref videoQuality, value);
+        VideoQualityMatch = match;
     }
 
     [JsonIgnore]

@@ -1,3 +1,4 @@
+using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.VideoStream.Models;
 using DownKyi.Core.Settings;
 using DownKyi.Presentation;
@@ -155,6 +156,7 @@ public sealed class VideoPagePlaybackMapperTests : IDisposable
 
         Assert.Equal([120, 112, 80, 64], page.VideoQualityList.Select(quality => quality.Quality));
         Assert.Equal(64, page.VideoQuality!.Quality);
+        Assert.Equal(PlaybackQualityMatchKind.Exact, page.VideoQualityMatch!.Kind);
     }
 
     [Fact]
@@ -173,15 +175,17 @@ public sealed class VideoPagePlaybackMapperTests : IDisposable
     }
 
     [Fact]
-    public void HigherOnlyFallbackQualityRequiresAnExplicitUserSelection()
+    public void HigherOnlyFallbackQualitySelectsNearestHigherWithoutConfirmation()
     {
         var settings = CreateSettings(videoQuality: 80, isVip: true);
         var page = new VideoPage();
 
-        VideoPagePlaybackMapper.ApplyPlayUrl(CreatePlayUrl(112), page, settings);
+        VideoPagePlaybackMapper.ApplyPlayUrl(CreatePlayUrl(116, 112), page, settings);
 
-        Assert.Equal(112, Assert.Single(page.VideoQualityList).Quality);
-        Assert.Null(page.VideoQuality);
+        Assert.Equal([116, 112], page.VideoQualityList.Select(quality => quality.Quality));
+        Assert.Equal(112, page.VideoQuality!.Quality);
+        Assert.Equal(PlaybackQualityMatchKind.Higher, page.VideoQualityMatch!.Kind);
+        Assert.False(page.VideoQualityMatch.RequiresLowerQualityConfirmation);
     }
 
     [Fact]
@@ -284,6 +288,21 @@ public sealed class VideoPagePlaybackMapperTests : IDisposable
         VideoPagePlaybackMapper.ApplyPlayUrl(CreatePlayUrl(112, 80, 64), page, settings);
 
         Assert.Equal(112, page.VideoQuality!.Quality);
+        Assert.Equal(PlaybackQualityMatchKind.Lower, page.VideoQualityMatch!.Kind);
+        Assert.True(page.VideoQualityMatch.RequiresLowerQualityConfirmation);
+    }
+
+    [Fact]
+    public void ManualVideoQualitySelectionClearsAutomaticMatch()
+    {
+        var settings = CreateSettings(videoQuality: 116, isVip: true);
+        var page = new VideoPage();
+
+        VideoPagePlaybackMapper.ApplyPlayUrl(CreatePlayUrl(112, 80), page, settings);
+        page.VideoQuality = page.VideoQualityList.Single(quality => quality.Quality == 80);
+
+        Assert.Equal(80, page.VideoQuality.Quality);
+        Assert.Null(page.VideoQualityMatch);
     }
 
     [Fact]
@@ -334,6 +353,110 @@ public sealed class VideoPagePlaybackMapperTests : IDisposable
 
         Assert.Equal(["高质量", "中质量", "低质量"], page.AudioQualityFormatList);
         Assert.Equal("中质量", page.AudioQualityFormat);
+        Assert.Equal(PlaybackQualityMatchKind.Exact, page.AudioQualityMatch!.Kind);
+    }
+
+    [Fact]
+    public void HigherOnlyAudioSelectsNearestHigherWithoutConfirmation()
+    {
+        var baseline = CreateSettings(videoQuality: 80, isVip: true);
+        var settings = baseline with
+        {
+            Video = baseline.Video with { AudioQuality = 30232 }
+        };
+        var playUrl = CreatePlayUrl(80);
+        playUrl.Dash.Audio =
+        [
+            new PlayUrlDashVideo
+            {
+                Id = 30280,
+                BaseAddress = "https://media.invalid/audio-30280"
+            },
+            new PlayUrlDashVideo
+            {
+                Id = 30250,
+                BaseAddress = "https://media.invalid/audio-30250"
+            },
+            new PlayUrlDashVideo
+            {
+                Id = 30251,
+                BaseAddress = "https://media.invalid/audio-30251"
+            }
+        ];
+        var page = new VideoPage();
+
+        VideoPagePlaybackMapper.ApplyPlayUrl(playUrl, page, settings);
+
+        Assert.Equal("高质量", page.AudioQualityFormat);
+        Assert.Equal(PlaybackQualityMatchKind.Higher, page.AudioQualityMatch!.Kind);
+        Assert.False(page.AudioQualityMatch.RequiresLowerQualityConfirmation);
+    }
+
+    [Fact]
+    public void LowerOnlyAudioSelectsNearestLowerForConfirmation()
+    {
+        var settings = CreateSettings(videoQuality: 80, isVip: true);
+        var playUrl = CreatePlayUrl(80);
+        playUrl.Dash.Audio =
+        [
+            new PlayUrlDashVideo
+            {
+                Id = 30232,
+                BaseAddress = "https://media.invalid/audio-30232"
+            },
+            new PlayUrlDashVideo
+            {
+                Id = 30216,
+                BaseAddress = "https://media.invalid/audio-30216"
+            }
+        ];
+        var page = new VideoPage();
+
+        VideoPagePlaybackMapper.ApplyPlayUrl(playUrl, page, settings);
+
+        Assert.Equal("中质量", page.AudioQualityFormat);
+        Assert.Equal(PlaybackQualityMatchKind.Lower, page.AudioQualityMatch!.Kind);
+        Assert.True(page.AudioQualityMatch.RequiresLowerQualityConfirmation);
+    }
+
+    [Theory]
+    [InlineData(31250, 30250, "Dolby Atmos")]
+    [InlineData(31251, 30251, "Hi-Res无损")]
+    public void PersistedPremiumAudioPreferenceMatchesPlaybackQuality(
+        int settingsQuality,
+        int playbackQuality,
+        string expectedName)
+    {
+        var baseline = CreateSettings(videoQuality: 80, isVip: true);
+        var settings = baseline with
+        {
+            Video = baseline.Video with { AudioQuality = settingsQuality }
+        };
+        var playUrl = CreatePlayUrl(80);
+        playUrl.Dash.Audio =
+        [
+            new PlayUrlDashVideo
+            {
+                Id = 30280,
+                BaseAddress = "https://media.invalid/audio-30280"
+            },
+            new PlayUrlDashVideo
+            {
+                Id = playbackQuality,
+                BaseAddress = $"https://media.invalid/audio-{playbackQuality}"
+            }
+        ];
+        var page = new VideoPage();
+
+        VideoPagePlaybackMapper.ApplyPlayUrl(playUrl, page, settings);
+
+        Assert.Contains(
+            PlaybackQualityCatalog.GetAudioPreferences(),
+            quality => quality.Id == settingsQuality && quality.Name == expectedName);
+        Assert.Equal(expectedName, page.AudioQualityFormat);
+        Assert.Equal(playbackQuality, page.AudioQualityMatch!.RequestedQuality);
+        Assert.Equal(playbackQuality, page.AudioQualityMatch.SelectedQuality);
+        Assert.Equal(PlaybackQualityMatchKind.Exact, page.AudioQualityMatch.Kind);
     }
 
     [Fact]
