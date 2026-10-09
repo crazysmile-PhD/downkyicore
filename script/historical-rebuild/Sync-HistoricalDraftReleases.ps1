@@ -27,10 +27,25 @@ foreach ($resultFile in @(Get-ChildItem -LiteralPath $ResultsRoot -Recurse -Filt
     }
 }
 
+# GitHub's release-by-tag endpoint returns 404 for draft releases. Resolve each
+# draft from the authenticated release listing, then refresh it by numeric ID.
+$releasePages = & gh api --paginate --slurp "repos/$Repository/releases?per_page=100"
+if ($LASTEXITCODE -ne 0) { throw 'Unable to list repository releases.' }
+$releaseByTag = @{}
+foreach ($releaseItem in @($releasePages | ConvertFrom-Json | ForEach-Object { $_ })) {
+    $releaseByTag[[string]$releaseItem.tag_name] = $releaseItem
+}
+
 $syncFailures = [Collections.Generic.List[string]]::new()
 foreach ($item in $versions) {
     $tag = "archive/v$item"
     $expectedCommit = Assert-HistoricalTag -RepositoryRoot $RepositoryRoot -Version $item
+    if (-not $releaseByTag.ContainsKey($tag)) {
+        $syncFailures.Add("${tag}: unable to find draft release in the authenticated listing")
+        continue
+    }
+    $release = $releaseByTag[$tag]
+    if (-not [bool]$release.draft) { throw "Refusing to alter non-draft release $tag." }
     foreach ($platformItem in $selectedPlatforms) {
         $key = "$item|$($platformItem.Name)"
         if (-not $resultByKey.ContainsKey($key)) { continue }
@@ -68,13 +83,13 @@ foreach ($item in $versions) {
         }
     }
 
-    $encodedTag = [Uri]::EscapeDataString($tag)
-    $releaseJson = & gh api "repos/$Repository/releases/tags/$encodedTag"
+    $releaseJson = & gh api "repos/$Repository/releases/$($release.id)"
     if ($LASTEXITCODE -ne 0) {
         $syncFailures.Add("${tag}: unable to read draft release")
         continue
     }
     $release = $releaseJson | ConvertFrom-Json
+    $releaseByTag[$tag] = $release
     if (-not [bool]$release.draft) { throw "Refusing to alter non-draft release $tag." }
     $assetNames = @($release.assets | ForEach-Object { [string]$_.name })
     $rows = [Collections.Generic.List[string]]::new()
@@ -126,10 +141,8 @@ Converter run: $runLink
 
 foreach ($item in $versions) {
     $tag = "archive/v$item"
-    $encodedTag = [Uri]::EscapeDataString($tag)
-    $releaseJson = & gh api "repos/$Repository/releases/tags/$encodedTag"
-    if ($LASTEXITCODE -ne 0) { continue }
-    $release = $releaseJson | ConvertFrom-Json
+    if (-not $releaseByTag.ContainsKey($tag)) { continue }
+    $release = $releaseByTag[$tag]
     $assetNames = @($release.assets | ForEach-Object { [string]$_.name })
     foreach ($platformItem in $selectedPlatforms) {
         $expectedNames = @(Get-HistoricalAssetNames -Version $item -Platform $platformItem.Name)

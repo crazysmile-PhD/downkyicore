@@ -56,6 +56,10 @@ jobs:
     name: Plan missing builds
     needs: ensure-drafts
     runs-on: ubuntu-22.04
+    # GitHub omits draft releases from a read-scoped token's release listing.
+    # This job never executes historical code or mutates releases.
+    permissions:
+      contents: write
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
       runtime_matrix: ${{ steps.plan.outputs.runtime_matrix }}
