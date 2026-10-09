@@ -129,6 +129,10 @@ macOS packages use ad-hoc signing only. They are not Apple Developer ID signed o
 Converter run: $runLink
 "@
     $payload = [ordered]@{
+        # GitHub rewrites a draft to an internal untagged-* reference when a
+        # release PATCH omits tag_name. Always preserve both historical owners.
+        tag_name = $tag
+        target_commitish = $expectedCommit
         name = "v$item — Historical Rebuild"
         body = $body
         draft = $true
