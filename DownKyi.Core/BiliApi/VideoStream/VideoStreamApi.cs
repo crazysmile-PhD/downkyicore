@@ -301,16 +301,18 @@ public static partial class VideoStreamApi
             return null;
         }
 
-        var response = await BiliApiRequest.RequestJsonAsync<BangumiPlayUrlV2Origin>(
-            client,
-            url,
-            referer,
-            nameof(GetBangumiPlayUrlAsync),
-            "GetBangumiPlayUrl()",
-            cancellationToken: cancellationToken).ConfigureAwait(false);
-        var playUrl = BangumiPlayUrlV2Contract.SelectPayload(
-            response,
-            nameof(GetBangumiPlayUrlAsync));
+        var (response, playUrl) = await RequestPlaybackWithApiCodeRetryAsync(
+            () => BiliApiRequest.RequestJsonAsync<BangumiPlayUrlV2Origin>(
+                client,
+                url,
+                referer,
+                nameof(GetBangumiPlayUrlAsync),
+                "GetBangumiPlayUrl()",
+                cancellationToken: cancellationToken),
+            response => BangumiPlayUrlV2Contract.SelectPayload(
+                response,
+                nameof(GetBangumiPlayUrlAsync)),
+            cancellationToken).ConfigureAwait(false);
         return CompleteBangumiPlayback(
             playUrl,
             discoverAvailability,
@@ -453,15 +455,40 @@ public static partial class VideoStreamApi
         CancellationToken cancellationToken = default)
     {
         const string referer = "https://www.bilibili.com";
-        var response = await BiliApiRequest.RequestJsonAsync<PlayUrlOrigin>(
-            client,
-            url,
-            referer,
-            operationName,
-            "GetPlayUrl()",
-            cancellationToken: cancellationToken).ConfigureAwait(false);
+        var (_, playback) = await RequestPlaybackWithApiCodeRetryAsync(
+            () => BiliApiRequest.RequestJsonAsync<PlayUrlOrigin>(
+                client,
+                url,
+                referer,
+                operationName,
+                "GetPlayUrl()",
+                cancellationToken: cancellationToken),
+            response => SelectPlayUrlPayload(response, payloadField, operationName),
+            cancellationToken).ConfigureAwait(false);
+        return playback;
+    }
 
-        return SelectPlayUrlPayload(response, payloadField, operationName);
+    private static async Task<(TResponse Response, PlayUrl Playback)> RequestPlaybackWithApiCodeRetryAsync<TResponse>(
+        Func<Task<TResponse>> request,
+        Func<TResponse, PlayUrl> select,
+        CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                var response = await request().ConfigureAwait(false);
+                return (response, select(response));
+            }
+            catch (BilibiliApiResponseException exception) when (
+                attempt == 0
+                && !cancellationToken.IsCancellationRequested
+                && exception.Code is not null and not -403)
+            {
+                // Transport retries and WBI -403 refresh belong to their existing owners.
+                continue;
+            }
+        }
     }
 
     internal static PlayUrl SelectPlayUrlPayload(
@@ -485,21 +512,16 @@ public static partial class VideoStreamApi
                 $"{operationName} returned no '{fieldName}' playback payload.");
         }
 
-        if (!HasPlayableMedia(payload))
+        if (payload.IsPreview == true)
         {
             throw new BilibiliApiResponseException(
                 operationName,
-                $"{operationName} returned an empty '{fieldName}' playback payload.");
+                $"{operationName} returned preview-only playback content.");
         }
 
-        return payload;
-    }
-
-    private static bool HasPlayableMedia(PlayUrl payload)
-    {
-        return payload.Durl.Count > 0
-               || payload.Dash.Video.Count > 0
-               || payload.Dash.Audio.Count > 0;
+        return PlayUrlAvailability.From(payload).HasPlayableMedia
+            ? payload
+            : throw new PlaybackResourceUnavailableException(operationName);
     }
 
     /// <summary>
@@ -558,6 +580,10 @@ public static partial class VideoStreamApi
             return null;
         }
         catch (BilibiliApiResponseException)
+        {
+            return null;
+        }
+        catch (PlaybackResourceUnavailableException)
         {
             return null;
         }

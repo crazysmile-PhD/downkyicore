@@ -96,7 +96,7 @@ internal sealed class DownloadPlaybackResolver
                 _ => Task.FromResult<PlayUrl?>(null)
             }).ConfigureAwait(false);
         }
-        catch (PlaybackSelectionUnavailableException exception)
+        catch (PlaybackUnavailableException exception)
         {
             return OperationResult.Failure<PlayUrl>(
                 DownloadMediaContract.SelectionUnavailable(exception.Message));

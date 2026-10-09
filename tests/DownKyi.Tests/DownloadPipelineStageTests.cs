@@ -738,6 +738,7 @@ public sealed class DownloadPipelineStageTests
             TestContext.Current.CancellationToken);
 
         Assert.False(result.IsSuccess);
+        Assert.Equal("download.playback.selection-unavailable", result.Error?.Code);
         Assert.Equal(1, refreshRequestCount);
         Assert.Single(fixture.Backend.Requests);
     }

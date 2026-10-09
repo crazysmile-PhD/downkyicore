@@ -202,6 +202,10 @@ internal static class BangumiPlaybackResolver
         {
             return false;
         }
+        catch (PlaybackResourceUnavailableException)
+        {
+            return false;
+        }
     }
 
     private static BangumiPlayUrlV2Origin ParseEmbeddedEnvelope(
