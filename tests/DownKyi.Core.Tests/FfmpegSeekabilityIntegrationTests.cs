@@ -62,9 +62,12 @@ public sealed class FfmpegSeekabilityIntegrationTests : IDisposable
         Assert.InRange(result.Duration.TotalSeconds, 3.8, 4.2);
     }
 
-    [Fact]
+    [Theory]
+    [InlineData(2)]
+    [InlineData(6)]
     [Trait("Category", "FfmpegIntegration")]
-    public async Task MultiSegmentDurlWithIndependentAudioProducesOnePlayableOutput()
+    public async Task MultiSegmentDurlWithIndependentAudioPreservesVideoDuration(
+        int audioDurationSeconds)
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         var processRunner = new FfmpegProcessRunner();
@@ -85,7 +88,8 @@ public sealed class FfmpegSeekabilityIntegrationTests : IDisposable
             .ConfigureAwait(true);
         await CreateSegmentAsync(processRunner, second, "blue", cancellationToken)
             .ConfigureAwait(true);
-        await CreateAudioOnlyAsync(processRunner, audio, cancellationToken)
+        await CreateAudioOnlyAsync(
+                processRunner, audio, audioDurationSeconds, cancellationToken)
             .ConfigureAwait(true);
         var validator = new FfmpegMediaValidator(processRunner);
         var runtime = new FfmpegConcatRuntime(
@@ -283,6 +287,7 @@ public sealed class FfmpegSeekabilityIntegrationTests : IDisposable
     private static async Task CreateAudioOnlyAsync(
         FfmpegProcessRunner processRunner,
         string output,
+        int durationSeconds,
         CancellationToken cancellationToken)
     {
         var result = await processRunner.RunAsync(
@@ -290,7 +295,7 @@ public sealed class FfmpegSeekabilityIntegrationTests : IDisposable
                 FfmpegExecutableLocator.Ffmpeg,
                 [
                     "-hide_banner", "-nostdin", "-y",
-                    "-f", "lavfi", "-i", "sine=frequency=1000:duration=6",
+                    "-f", "lavfi", "-i", $"sine=frequency=1000:duration={durationSeconds}",
                     "-c:a", "aac", output
                 ],
                 "create-independent-audio-fixture"),

@@ -159,7 +159,7 @@ internal static class FfmpegCommandFactory
         switch (strategy)
         {
             case FfmpegConcatStrategy.StreamCopy:
-                arguments.AddRange(["-c:v", "copy", "-c:a", "copy"]);
+                arguments.AddRange(["-c:v", "copy", "-c:a", externalAudio == null ? "copy" : "aac"]);
                 break;
             case FfmpegConcatStrategy.HardwareEncoder:
                 ArgumentNullException.ThrowIfNull(hardwareEncoder);
@@ -182,7 +182,7 @@ internal static class FfmpegCommandFactory
 
         if (externalAudio != null)
         {
-            arguments.Add("-shortest");
+            arguments.AddRange(["-af", "apad", "-shortest"]);
         }
 
         arguments.AddRange([
