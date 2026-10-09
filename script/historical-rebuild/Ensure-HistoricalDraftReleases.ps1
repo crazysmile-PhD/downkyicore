@@ -36,7 +36,9 @@ Build results are pending. The historical converter will update this draft with 
 "@
     $payload = [ordered]@{
         tag_name = $tag
-        target_commitish = $tag
+        # GitHub validates target_commitish even when tag_name already exists;
+        # an archive/* tag name is not accepted here, while its peeled commit is.
+        target_commitish = $commit
         name = "v$item — Historical Rebuild"
         body = $body
         draft = $true
