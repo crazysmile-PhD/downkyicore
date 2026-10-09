@@ -503,7 +503,7 @@ public sealed class PlayUrlEnvelopeContractTests
             }
         };
 
-        var found = BangumiPlaybackResolver.TrySelectDownloadPlayback(
+        var found = FinalizedPlaybackResolver.TrySelect(
             primary,
             supplement,
             requestedQuality: 112,
@@ -747,7 +747,7 @@ public sealed class PlayUrlEnvelopeContractTests
         var videoOnly = CreateDashVideoOnlyPlayback();
         var audioOnly = CreateDashAudioOnlyPlayback();
 
-        var found = BangumiPlaybackResolver.TrySelectDownloadPlayback(
+        var found = FinalizedPlaybackResolver.TrySelect(
             videoIsPrimary ? videoOnly : audioOnly,
             videoIsPrimary ? audioOnly : videoOnly,
             requestedQuality: 112,
@@ -772,7 +772,7 @@ public sealed class PlayUrlEnvelopeContractTests
         var videoOnly = CreateDashVideoOnlyPlayback();
         var audioOnly = CreateDashAudioOnlyPlayback();
 
-        var found = BangumiPlaybackResolver.TrySelectDownloadPlayback(
+        var found = FinalizedPlaybackResolver.TrySelect(
             audioIsPrimary ? audioOnly : videoOnly,
             audioIsPrimary ? videoOnly : audioOnly,
             requestedQuality: 112,
@@ -791,7 +791,7 @@ public sealed class PlayUrlEnvelopeContractTests
     [Fact]
     public void BangumiPendingSelectionRejectsVideoAndAudioSplitAcrossSources()
     {
-        var found = BangumiPlaybackResolver.TrySelectDownloadPlayback(
+        var found = FinalizedPlaybackResolver.TrySelect(
             CreateDashVideoOnlyPlayback(),
             CreateDashAudioOnlyPlayback(),
             requestedQuality: 112,
@@ -808,7 +808,7 @@ public sealed class PlayUrlEnvelopeContractTests
     [Fact]
     public void BangumiPendingSelectionRejectsRequestWithoutPendingComponents()
     {
-        var found = BangumiPlaybackResolver.TrySelectDownloadPlayback(
+        var found = FinalizedPlaybackResolver.TrySelect(
             CreateDashVideoOnlyPlayback(),
             CreateDashAudioOnlyPlayback(),
             requestedQuality: 112,
