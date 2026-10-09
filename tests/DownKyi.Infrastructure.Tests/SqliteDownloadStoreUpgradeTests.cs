@@ -48,25 +48,8 @@ public sealed class SqliteDownloadStoreUpgradeTests : IDisposable
     public async Task VersionNineHistoryUpgradesWithoutInventingRequestedContent(
         bool withLegacyHistory)
     {
-        using (var current = _fixture.CreateStore())
-        {
-            Assert.True((await current.AddHistoryAsync(
-                DownloadHistoryRecord.FromCompletedTask(
-                    _fixture.CreateCompletedTask("preexisting-history", 123)),
-                TestContext.Current.CancellationToken)).IsSuccess);
-        }
-
-        using (var connection = await _fixture.OpenConnectionAsync(readOnly: false))
-        using (var command = connection.CreateCommand())
-        {
-            command.CommandText = """
-                ALTER TABLE download_history DROP COLUMN requested_content;
-                PRAGMA user_version = 9;
-                DELETE FROM download_schema_migrations WHERE version = 10;
-                INSERT INTO download_schema_migrations(version, applied_at_utc) VALUES (9, 0);
-                """;
-            await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
-        }
+        _fixture.CopyHistoricalDatabase(9);
+        await _fixture.InsertVersionNineHistoryAsync();
 
         if (withLegacyHistory)
         {
@@ -210,6 +193,7 @@ public sealed class SqliteDownloadStoreUpgradeTests : IDisposable
     [InlineData(5)]
     [InlineData(6)]
     [InlineData(7)]
+    [InlineData(8)]
     public async Task InitializeUpgradesEveryRecognizedLegacyFormatDirectlyToCurrent(int version)
     {
         await _fixture.CreateLegacyVersionDatabaseAsync(version);
@@ -434,12 +418,8 @@ public sealed class SqliteDownloadStoreUpgradeTests : IDisposable
     public async Task VersionSevenDatabaseUpgradesWithNoInventedPendingPublication()
     {
         var expected = _fixture.CreatePausedTask("v7-publishing-upgrade");
-        using (var store = _fixture.CreateStore())
-        {
-            Assert.True((await store.AddAsync(expected, TestContext.Current.CancellationToken)).IsSuccess);
-        }
-
-        await _fixture.DowngradeCurrentDatabaseAsync(7).ConfigureAwait(true);
+        _fixture.CopyHistoricalDatabase(7);
+        await _fixture.InsertHistoricalTaskAsync(expected, 7);
         using (var connection = await _fixture.OpenConnectionAsync(readOnly: true).ConfigureAwait(true))
         {
             using var command = connection.CreateCommand();
