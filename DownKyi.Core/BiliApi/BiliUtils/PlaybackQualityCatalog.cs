@@ -2,6 +2,25 @@ using System.Collections.Immutable;
 
 namespace DownKyi.Core.BiliApi.BiliUtils;
 
+public enum PlaybackQualityMatchKind
+{
+    Unavailable,
+    Exact,
+    Higher,
+    Lower
+}
+
+public sealed record PlaybackQualityMatch(
+    int RequestedQuality,
+    int? SelectedQuality,
+    PlaybackQualityMatchKind Kind)
+{
+    public bool SatisfiesWithoutConfirmation =>
+        Kind is PlaybackQualityMatchKind.Exact or PlaybackQualityMatchKind.Higher;
+
+    public bool RequiresLowerQualityConfirmation => Kind == PlaybackQualityMatchKind.Lower;
+}
+
 public static class PlaybackQualityCatalog
 {
     public const int MaximumProbeQuality = 127;
@@ -34,8 +53,8 @@ public static class PlaybackQualityCatalog
         new("低质量", 30216),
         new("中质量", 30232),
         new("高质量", 30280),
-        new("Dolby Atmos", 30250),
-        new("Hi-Res无损", 30251)
+        new("Dolby Atmos", 30250, SettingsId: 31250),
+        new("Hi-Res无损", 30251, SettingsId: 31251)
     ];
 
     public static IReadOnlyList<Quality> GetResolutions()
@@ -53,6 +72,141 @@ public static class PlaybackQualityCatalog
         return CreateMutableOptions(AudioQualities);
     }
 
+    public static IReadOnlyList<Quality> GetAudioPreferences()
+    {
+        return AudioQualities
+            .Select(option => new Quality
+            {
+                Name = option.Name,
+                Id = option.SettingsId ?? option.Id
+            })
+            .ToArray();
+    }
+
+    public static PlaybackQualityMatch SelectVideoQuality(
+        IEnumerable<int> availableQualities,
+        int requestedQuality)
+    {
+        return SelectQuality(Resolutions, availableQualities, requestedQuality);
+    }
+
+    public static PlaybackQualityMatch SelectAudioQuality(
+        IEnumerable<int> availableQualities,
+        int requestedQuality)
+    {
+        var normalizedRequestedQuality = AudioQualities
+            .Where(option => (option.SettingsId ?? option.Id) == requestedQuality)
+            .Select(option => option.Id)
+            .DefaultIfEmpty(requestedQuality)
+            .Single();
+        return SelectQuality(
+            AudioQualities,
+            availableQualities,
+            normalizedRequestedQuality);
+    }
+
+    private static PlaybackQualityMatch SelectQuality(
+        ImmutableArray<QualityOption> catalog,
+        IEnumerable<int> availableQualities,
+        int requestedQuality)
+    {
+        ArgumentNullException.ThrowIfNull(availableQualities);
+        var available = availableQualities
+            .Where(quality => quality > 0)
+            .Distinct()
+            .ToHashSet();
+        return (available.Count, available.Contains(requestedQuality)) switch
+        {
+            (0, _) => new PlaybackQualityMatch(
+                requestedQuality,
+                SelectedQuality: null,
+                PlaybackQualityMatchKind.Unavailable),
+            (_, true) => new PlaybackQualityMatch(
+                requestedQuality,
+                requestedQuality,
+                PlaybackQualityMatchKind.Exact),
+            _ => SelectNearestQuality(catalog, available, requestedQuality)
+        };
+    }
+
+    private static PlaybackQualityMatch SelectNearestQuality(
+        ImmutableArray<QualityOption> catalog,
+        IReadOnlySet<int> available,
+        int requestedQuality)
+    {
+        var ranked = catalog
+            .Select((option, rank) => new RankedQuality(option.Id, rank))
+            .ToArray();
+        var requested = ranked
+            .Where(quality => quality.Id == requestedQuality)
+            .Select(quality => (RankedQuality?)quality)
+            .SingleOrDefault();
+        return requested switch
+        {
+            { } requestedRank => SelectRankedQuality(
+                ranked,
+                available,
+                requestedQuality,
+                requestedRank),
+            null => SelectNumericQuality(available, requestedQuality)
+        };
+    }
+
+    private static PlaybackQualityMatch SelectRankedQuality(
+        IEnumerable<RankedQuality> ranked,
+        IReadOnlySet<int> available,
+        int requestedQuality,
+        RankedQuality requested)
+    {
+        var candidates = ranked
+            .Where(quality => available.Contains(quality.Id))
+            .ToArray();
+        var higher = candidates
+            .Where(quality => quality.Rank > requested.Rank)
+            .OrderBy(quality => quality.Rank)
+            .Select(quality => new QualitySelection(
+                quality.Id,
+                PlaybackQualityMatchKind.Higher))
+            .FirstOrDefault();
+        var lower = candidates
+            .Where(quality => quality.Rank < requested.Rank)
+            .OrderByDescending(quality => quality.Rank)
+            .Select(quality => new QualitySelection(
+                quality.Id,
+                PlaybackQualityMatchKind.Lower))
+            .FirstOrDefault();
+        return (higher ?? lower) switch
+        {
+            { } selected => new PlaybackQualityMatch(
+                requestedQuality,
+                selected.Quality,
+                selected.Kind),
+            null => SelectNumericQuality(available, requestedQuality)
+        };
+    }
+
+    private static PlaybackQualityMatch SelectNumericQuality(
+        IEnumerable<int> available,
+        int requestedQuality)
+    {
+        var higher = available
+            .Where(quality => quality > requestedQuality)
+            .Order()
+            .Cast<int?>()
+            .FirstOrDefault();
+        return higher switch
+        {
+            { } higherQuality => new PlaybackQualityMatch(
+                requestedQuality,
+                higherQuality,
+                PlaybackQualityMatchKind.Higher),
+            null => new PlaybackQualityMatch(
+                requestedQuality,
+                available.Max(),
+                PlaybackQualityMatchKind.Lower)
+        };
+    }
+
     private static Quality[] CreateMutableOptions(ImmutableArray<QualityOption> options)
     {
         return options
@@ -60,5 +214,9 @@ public static class PlaybackQualityCatalog
             .ToArray();
     }
 
-    private readonly record struct QualityOption(string Name, int Id);
+    private readonly record struct QualityOption(string Name, int Id, int? SettingsId = null);
+
+    private readonly record struct RankedQuality(int Id, int Rank);
+
+    private sealed record QualitySelection(int Quality, PlaybackQualityMatchKind Kind);
 }

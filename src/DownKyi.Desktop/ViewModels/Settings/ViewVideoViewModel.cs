@@ -47,9 +47,7 @@ internal partial class ViewVideoViewModel : ViewModelBase
         VideoQualityList = PlaybackQualityCatalog.GetResolutions();
 
         // 优先下载音质
-        AudioQualityList = PlaybackQualityCatalog.GetAudioQualities();
-        AudioQualityList[3].Id += 1000;
-        AudioQualityList[4].Id += 1000;
+        AudioQualityList = PlaybackQualityCatalog.GetAudioPreferences();
 
         // 首选视频解析方式
         VideoParseTypeList = new List<VideoParseType>

@@ -45,20 +45,22 @@ internal static class VideoPagePlaybackMapper
         var defaultAudioQuality = settings.Video.AudioQuality;
 
         page.AudioQualityFormatList = GetAudioQualityFormatList(availability.Audio);
-        if (page.AudioQualityFormatList.Count > 0)
-        {
-            page.AudioQualityFormat = SelectPreferredAudioQuality(
-                page.AudioQualityFormatList,
-                defaultAudioQuality);
-        }
+        var audioMatch = PlaybackQualityCatalog.SelectAudioQuality(
+            availability.Audio,
+            defaultAudioQuality);
+        var selectedAudioQuality = PlaybackQualityCatalog.GetAudioQualities()
+            .FirstOrDefault(quality => quality.Id == audioMatch.SelectedQuality)
+            ?.Name ?? string.Empty;
+        page.SetAutomaticAudioQuality(selectedAudioQuality, audioMatch);
 
         page.VideoQualityList = GetVideoQualityList(availability.Video, videoCodecs);
-        if (page.VideoQualityList.Count > 0)
-        {
-            page.VideoQuality = SelectPreferredVideoQuality(
-                page.VideoQualityList,
-                defaultQuality);
-        }
+        var videoMatch = PlaybackQualityCatalog.SelectVideoQuality(
+            page.VideoQualityList.Select(quality => quality.Quality),
+            defaultQuality);
+        page.SetAutomaticVideoQuality(
+            page.VideoQualityList.FirstOrDefault(quality =>
+                quality.Quality == videoMatch.SelectedQuality),
+            videoMatch);
 
         page.Duration = playUrl.Dash.Duration > 0
             ? Format.FormatDuration(playUrl.Dash.Duration)
@@ -97,25 +99,6 @@ internal static class VideoPagePlaybackMapper
         sortList.Reverse();
 
         return new ObservableCollection<string>(sortList);
-    }
-
-    private static string SelectPreferredAudioQuality(
-        IReadOnlyCollection<string> availableQualities,
-        int preferredQuality)
-    {
-        var catalog = PlaybackQualityCatalog.GetAudioQualities()
-            .Select((quality, index) => new
-            {
-                quality.Name,
-                PreferredId = index >= 3 ? quality.Id + 1000 : quality.Id
-            })
-            .Where(quality => availableQualities.Contains(quality.Name))
-            .OrderByDescending(quality => quality.PreferredId)
-            .ToArray();
-        var selected = catalog.FirstOrDefault(quality => quality.PreferredId == preferredQuality)
-                       ?? catalog.FirstOrDefault(quality => quality.PreferredId <= preferredQuality)
-                       ?? catalog.First();
-        return selected.Name;
     }
 
     /// <summary>
@@ -219,17 +202,6 @@ internal static class VideoPagePlaybackMapper
         return videoQualityList
             .OrderByDescending(quality => quality.Quality)
             .ToList();
-    }
-
-    private static VideoQuality? SelectPreferredVideoQuality(
-        IEnumerable<VideoQuality> availableQualities,
-        int preferredQuality)
-    {
-        var qualities = availableQualities.ToArray();
-        return qualities.FirstOrDefault(quality => quality.Quality == preferredQuality)
-               ?? qualities
-                   .Where(quality => quality.Quality <= preferredQuality)
-                   .MaxBy(quality => quality.Quality);
     }
 
     internal static string BuildCapabilitySummary(
