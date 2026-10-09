@@ -365,7 +365,10 @@ public sealed class VideoPagePlaybackMapperTests : IDisposable
             4048,
             "PLAY_WHOLE\r\nforged",
             PlayUrlResolutionSource.Api,
-            "embedded-playback-unavailable");
+            "embedded-playback-unavailable")
+        {
+            SupplementFailure = PlayUrlSupplementFailureKind.TransientFailure
+        };
         playUrl.Availability = new PlayUrlAvailability(
         [
             new PlayUrlVideoAvailability(
@@ -382,6 +385,7 @@ public sealed class VideoPagePlaybackMapperTests : IDisposable
         Assert.Contains("requestedQuality=127", summary, StringComparison.Ordinal);
         Assert.Contains("playbackSource=Api", summary, StringComparison.Ordinal);
         Assert.Contains("resolution=embedded-playback-unavailable", summary, StringComparison.Ordinal);
+        Assert.Contains("supplementFailure=TransientFailure", summary, StringComparison.Ordinal);
         Assert.Contains("supportQuality=[112(login=True,vip=True)]", summary, StringComparison.Ordinal);
         Assert.Contains("dashVideoIds=[64]", summary, StringComparison.Ordinal);
         Assert.Contains("availableVideo=[112:13:Durl]", summary, StringComparison.Ordinal);

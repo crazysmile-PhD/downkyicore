@@ -141,6 +141,58 @@ public sealed class PlayUrlEnvelopeContractTests
         Assert.Contains("qn=80", requests[1].RequestAddress, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task OrdinaryDiscoveryRetainsUsableWebVideoWhenApiSupplementFails()
+    {
+        var requests = 0;
+        var client = new StubBilibiliApiClient((_, _) =>
+        {
+            requests++;
+            return requests == 1
+                ? Task.FromResult(
+                    """
+                    <script>window.__playinfo__={"code":0,"data":{"dash":{"video":[{"id":80,"codecid":7,"base_url":"https://web.invalid/video"}],"audio":[]}}}</script>
+                    """)
+                : Task.FromException<string>(new HttpRequestException("temporary"));
+        });
+
+        var payload = await client.GetVideoPlayUrlWebPageAsync(
+            Keys, 1702204169, 1, "BV1fixture", 2, 1,
+            quality: 80,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, requests);
+        Assert.Equal("https://web.invalid/video", Assert.Single(payload!.Dash.Video).BaseAddress);
+        Assert.Empty(payload.Dash.Audio);
+        Assert.Equal(PlayUrlResolutionSource.WebPage, payload.Diagnostics?.Source);
+        Assert.Equal(PlayUrlSupplementFailureKind.TransientFailure,
+            payload.Diagnostics?.SupplementFailure);
+    }
+
+    [Fact]
+    public async Task OrdinaryDiscoveryPropagatesApiRejectionAfterUsableWebVideo()
+    {
+        var requests = 0;
+        var client = new StubBilibiliApiClient((_, _) =>
+        {
+            requests++;
+            return Task.FromResult(requests == 1
+                ? """
+                  <script>window.__playinfo__={"code":0,"data":{"dash":{"video":[{"id":80,"codecid":7,"base_url":"https://web.invalid/video"}],"audio":[]}}}</script>
+                  """
+                : """{"code":-10403,"message":"restricted"}""");
+        });
+
+        var failure = await Assert.ThrowsAsync<BilibiliApiResponseException>(() =>
+            client.GetVideoPlayUrlWebPageAsync(
+                Keys, 1702204169, 1, "BV1fixture", 2, 1,
+                quality: 80,
+                cancellationToken: TestContext.Current.CancellationToken));
+
+        Assert.Equal(-10403, failure.Code);
+        Assert.Equal(3, requests);
+    }
+
     [Theory]
     [InlineData(112, 7)]
     [InlineData(80, 12)]
@@ -1012,6 +1064,57 @@ public sealed class PlayUrlEnvelopeContractTests
         Assert.Equal(
             "api-fallback-selected:web-request-timeout",
             payload.Diagnostics?.Outcome);
+    }
+
+    [Fact]
+    public async Task BangumiDiscoveryRetainsUsableEmbeddedVideoWhenApiSupplementFails()
+    {
+        var requests = 0;
+        var client = new StubBilibiliApiClient((_, _) =>
+        {
+            requests++;
+            return requests == 1
+                ? Task.FromResult(
+                    """
+                    <script>const playurlSSRData={"code":0,"result":{"video_info":{"dash":{"video":[{"id":80,"codecid":7,"base_url":"https://web.invalid/video"}],"audio":[]}}}};</script>
+                    """)
+                : Task.FromException<string>(new HttpRequestException("temporary"));
+        });
+
+        var payload = await client.GetBangumiPlaybackDiscoveryAsync(
+            1, "BV1fixture", 2, 3489,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, requests);
+        Assert.Equal("https://web.invalid/video", Assert.Single(payload!.Dash.Video).BaseAddress);
+        Assert.Empty(payload.Availability!.Audio);
+        Assert.Equal(PlayUrlResolutionSource.WebPage, payload.Diagnostics?.Source);
+        Assert.Equal(PlayUrlSupplementFailureKind.TransientFailure,
+            payload.Diagnostics?.SupplementFailure);
+    }
+
+    [Fact]
+    public async Task BangumiDiscoveryClassifiesUnavailableApiSupplement()
+    {
+        var requests = 0;
+        var client = new StubBilibiliApiClient((_, _) =>
+        {
+            requests++;
+            return Task.FromResult(requests == 1
+                ? """
+                  <script>const playurlSSRData={"code":0,"result":{"video_info":{"dash":{"video":[{"id":80,"codecid":7,"base_url":"https://web.invalid/video"}],"audio":[]}}}};</script>
+                  """
+                : """{"code":0,"result":{"video_info":{"dash":{"video":[],"audio":[]}}}}""");
+        });
+
+        var payload = await client.GetBangumiPlaybackDiscoveryAsync(
+            1, "BV1fixture", 2, 3489,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, requests);
+        Assert.Single(payload!.Availability!.Video);
+        Assert.Equal(PlayUrlSupplementFailureKind.ResourceUnavailable,
+            payload.Diagnostics?.SupplementFailure);
     }
 
     [Fact]

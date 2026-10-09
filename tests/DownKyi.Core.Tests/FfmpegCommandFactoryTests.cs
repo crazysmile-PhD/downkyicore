@@ -80,6 +80,7 @@ public sealed class FfmpegCommandFactoryTests
         Assert.DoesNotContain("0:a:0", command.Arguments);
         Assert.DoesNotContain("0:a?", command.Arguments);
         Assert.DoesNotContain("-an", command.Arguments);
+        Assert.Contains("-shortest", command.Arguments);
     }
 
     [Fact]

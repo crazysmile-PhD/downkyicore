@@ -261,6 +261,7 @@ internal static class VideoPagePlaybackMapper
                + $"playDetail={SanitizeDiagnosticToken(diagnostics?.PlayDetail)}; "
                + $"playbackSource={diagnostics?.Source.ToString() ?? "unknown"}; "
                + $"resolution={SanitizeDiagnosticToken(diagnostics?.Outcome)}; "
+               + $"supplementFailure={diagnostics?.SupplementFailure.ToString() ?? "none"}; "
                + $"returnedQuality={playUrl.Quality}; "
                + $"isPreview={playUrl.IsPreview?.ToString() ?? "unknown"}; "
                + $"acceptQuality=[{string.Join(",", playUrl.AcceptQuality ?? [])}]; "

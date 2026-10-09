@@ -88,9 +88,18 @@ public enum PlayUrlResolutionSource
     Mixed
 }
 
+public enum PlayUrlSupplementFailureKind
+{
+    ResourceUnavailable,
+    TransientFailure
+}
+
 public sealed record PlayUrlDiagnostics(
     int RequestedQuality,
     int? Fnval,
     string? PlayDetail,
     PlayUrlResolutionSource Source,
-    string Outcome);
+    string Outcome)
+{
+    public PlayUrlSupplementFailureKind? SupplementFailure { get; init; }
+}

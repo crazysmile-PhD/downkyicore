@@ -180,6 +180,11 @@ internal static class FfmpegCommandFactory
                 throw new ArgumentOutOfRangeException(nameof(strategy), strategy, "Unsupported concat strategy.");
         }
 
+        if (externalAudio != null)
+        {
+            arguments.Add("-shortest");
+        }
+
         arguments.AddRange([
             "-pix_fmt", "yuv420p",
             "-avoid_negative_ts", "make_zero",

@@ -109,6 +109,7 @@ public sealed class FfmpegSeekabilityIntegrationTests : IDisposable
             cancellationToken: cancellationToken).ConfigureAwait(true);
 
         Assert.True(result.Succeeded, result.FailureReason);
+        Assert.InRange(result.Duration.TotalSeconds, 3.8, 4.2);
         Assert.True(await validator.ValidateRequiredStreamsAsync(
             output, requireAudio: true, requireVideo: true,
             cancellationToken).ConfigureAwait(true));
@@ -289,7 +290,7 @@ public sealed class FfmpegSeekabilityIntegrationTests : IDisposable
                 FfmpegExecutableLocator.Ffmpeg,
                 [
                     "-hide_banner", "-nostdin", "-y",
-                    "-f", "lavfi", "-i", "sine=frequency=1000:duration=4",
+                    "-f", "lavfi", "-i", "sine=frequency=1000:duration=6",
                     "-c:a", "aac", output
                 ],
                 "create-independent-audio-fixture"),
