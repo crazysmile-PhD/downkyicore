@@ -418,12 +418,17 @@
     <system:String x:Key="Yes">是</system:String>
     <system:String x:Key="No">否</system:String>
     <system:String x:Key="ApplyToAll">全部应用</system:String>
-    <system:String x:Key="DownloadContentConflictTitle">下载内容不可用</system:String>
-    <system:String x:Key="DownloadContentConflictMessage">“{0}”无法提供所选的音视频内容。请选择有效输出，或跳过这一页。</system:String>
-    <system:String x:Key="UseAvailableDownloadContent">改为下载{0}</system:String>
+    <system:String x:Key="DownloadContentConflictTitle">下载选择需要确认</system:String>
+    <system:String x:Key="DownloadContentConflictMessage">“{0}”无法完全符合原下载设置。请接受实际可取得的内容和品质，或跳过这一页。</system:String>
+    <system:String x:Key="UseAvailableDownloadContent">使用{0}继续下载</system:String>
+    <system:String x:Key="VideoQualitySubstitution">畫質：{0} → {1}</system:String>
+    <system:String x:Key="AudioQualitySubstitution">音質：{0} → {1}</system:String>
+    <system:String x:Key="QualitySubstitutionSeparator">；</system:String>
     <system:String x:Key="DownloadAudioAndVideo">音频和视频</system:String>
     <system:String x:Key="SkipDownloadPage">跳过此页</system:String>
     <system:String x:Key="ApplyToAllSameContentConflict">应用到具有相同冲突的所有页面</system:String>
+    <system:String x:Key="ApplyToAllQualitySubstitution">一鍵確定</system:String>
+    <system:String x:Key="ApplyToAllQualitySubstitutionExplanation">「一鍵確定」表示對本次批次中的每一集，分別使用該集實際可取得、最接近原設定的替代品質。&#x000A;&#x000A;不同集數可能使用不同畫質或音質，不會強制全部使用相同品質，也不會增加原本未勾選的下載內容。&#x000A;&#x000A;使用者仍可選擇跳過下載。</system:String>
     
     
     <!-- CustomControl -->

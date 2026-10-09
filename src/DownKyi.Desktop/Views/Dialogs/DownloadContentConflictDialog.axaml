@@ -23,9 +23,18 @@
                 <TextBlock Foreground="{DynamicResource BrushTextDark}"
                            Text="{Binding Message}"
                            TextWrapping="Wrap" />
-                <CheckBox Content="{DynamicResource ApplyToAllSameContentConflict}"
+                <TextBlock Foreground="{DynamicResource BrushTextDark}"
+                           IsVisible="{Binding HasQualitySubstitution}"
+                           Text="{Binding QualitySubstitution}"
+                           TextWrapping="Wrap" />
+                <CheckBox Content="{Binding ApplyToAllText}"
                           Foreground="{DynamicResource BrushTextDark}"
                           IsChecked="{Binding ApplyToAll, Mode=TwoWay}" />
+                <TextBlock MaxWidth="560"
+                           Foreground="{DynamicResource BrushTextDark}"
+                           IsVisible="{Binding HasQualitySubstitution}"
+                           Text="{DynamicResource ApplyToAllQualitySubstitutionExplanation}"
+                           TextWrapping="Wrap" />
                 <Grid ColumnDefinitions="*,*" ColumnSpacing="16">
                     <Button Grid.Column="0"
                             Command="{Binding UseAvailableContentCommand}"

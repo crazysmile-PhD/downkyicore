@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.VideoStream.Models;
@@ -147,9 +148,93 @@ internal sealed record DownloadMediaCapabilities(
     }
 }
 
+internal sealed record DownloadQualitySubstitution(
+    int RequestedQuality,
+    string RequestedName,
+    int SelectedQuality,
+    string SelectedName);
+
+internal sealed record DownloadQualitySubstitutions(
+    DownloadQualitySubstitution? Video,
+    DownloadQualitySubstitution? Audio)
+{
+    public static DownloadQualitySubstitutions None { get; } = new(
+        Video: null,
+        Audio: null);
+
+    public bool HasAny => Video != null || Audio != null;
+
+    public DownloadQualitySubstitutions For(DownloadContentSelection content)
+    {
+        ArgumentNullException.ThrowIfNull(content);
+        return new DownloadQualitySubstitutions(
+            content.Video ? Video : null,
+            content.Audio ? Audio : null);
+    }
+
+    public static DownloadQualitySubstitutions From(VideoPage page)
+    {
+        ArgumentNullException.ThrowIfNull(page);
+        return new DownloadQualitySubstitutions(
+            CreateVideoSubstitution(page.VideoQualityMatch, page.VideoQuality),
+            CreateAudioSubstitution(page.AudioQualityMatch, page.AudioQualityFormat));
+    }
+
+    private static DownloadQualitySubstitution? CreateVideoSubstitution(
+        PlaybackQualityMatch? match,
+        VideoQuality? selected)
+    {
+        return (match, selected) switch
+        {
+            ({ RequiresLowerQualityConfirmation: true, SelectedQuality: { } selectedQuality },
+                { } selectedVideo) => new DownloadQualitySubstitution(
+                    match.RequestedQuality,
+                    ResolveName(PlaybackQualityCatalog.GetResolutions(), match.RequestedQuality),
+                    selectedQuality,
+                    ResolveName(
+                        PlaybackQualityCatalog.GetResolutions(),
+                        selectedQuality,
+                        selectedVideo.QualityFormat)),
+            _ => null
+        };
+    }
+
+    private static DownloadQualitySubstitution? CreateAudioSubstitution(
+        PlaybackQualityMatch? match,
+        string selectedName)
+    {
+        return match switch
+        {
+            { RequiresLowerQualityConfirmation: true, SelectedQuality: { } selectedQuality } =>
+                new DownloadQualitySubstitution(
+                    match.RequestedQuality,
+                    ResolveName(PlaybackQualityCatalog.GetAudioQualities(), match.RequestedQuality),
+                    selectedQuality,
+                    ResolveName(
+                        PlaybackQualityCatalog.GetAudioQualities(),
+                        selectedQuality,
+                        selectedName)),
+            _ => null
+        };
+    }
+
+    private static string ResolveName(
+        IEnumerable<Quality> catalog,
+        int quality,
+        string? preferredName = null) => new[]
+        {
+            preferredName?.Trim(),
+            catalog.FirstOrDefault(option => option.Id == quality)?.Name,
+            quality.ToString(CultureInfo.InvariantCulture)
+        }
+        .OfType<string>()
+        .First(name => name.Length > 0);
+}
+
 internal sealed record PreparedDownloadPage(
     VideoPage Page,
-    DownloadMediaCapabilities AvailableMedia);
+    DownloadMediaCapabilities AvailableMedia,
+    DownloadQualitySubstitutions QualitySubstitutions);
 
 internal sealed record PreparedDownloadSection(
     VideoSection Section,
@@ -181,7 +266,8 @@ internal sealed record PreparedDownload(
                             DownloadMediaCapabilities.From(
                                 page.PlaybackAvailability,
                                 page.VideoQuality,
-                                page.AudioQualityFormat));
+                                page.AudioQualityFormat),
+                            DownloadQualitySubstitutions.From(page));
                     }).ToArray());
             }).ToArray());
     }

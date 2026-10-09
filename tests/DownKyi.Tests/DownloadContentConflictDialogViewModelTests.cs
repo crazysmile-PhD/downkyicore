@@ -53,6 +53,19 @@ public sealed class DownloadContentConflictDialogViewModelTests
     }
 
     [Fact]
+    public void LowerQualityReplacementEnablesExistingDialogPresentation()
+    {
+        var viewModel = new DownloadContentConflictDialogViewModel();
+        var prompt = CreatePrompt(new DownloadQualitySubstitutions(
+            new DownloadQualitySubstitution(80, "1080P 高清", 64, "720P 高清"),
+            new DownloadQualitySubstitution(30280, "高质量", 30232, "中质量")));
+
+        viewModel.OnDialogOpened(DownloadContentConflictDialogContract.CreateRequest(prompt));
+
+        Assert.True(viewModel.HasQualitySubstitution);
+    }
+
+    [Fact]
     public async Task NonAcceptedResultFailsClosed()
     {
         var dialogs = new StubDialogService(new AppDialogResult(
@@ -80,12 +93,14 @@ public sealed class DownloadContentConflictDialogViewModelTests
                 TestContext.Current.CancellationToken));
     }
 
-    private static DownloadContentConflictPrompt CreatePrompt() => new(
+    private static DownloadContentConflictPrompt CreatePrompt(
+        DownloadQualitySubstitutions? substitutions = null) => new(
         "page",
         new DownloadContentConflict(
             DownloadContentSelection.All,
             new DownloadMediaCapabilities(DownloadMediaOutputModes.VideoOnly),
-            DownloadContentSelection.All with { Audio = false }));
+            DownloadContentSelection.All with { Audio = false },
+            substitutions ?? DownloadQualitySubstitutions.None));
 
     private sealed class StubDialogService(AppDialogResult result) : IAppDialogService
     {
