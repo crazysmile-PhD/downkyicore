@@ -51,7 +51,7 @@ internal static class LegacyDownloadStoreFormatDetector
         "finished_time"
     ];
 
-    private static readonly string[] CurrentHistoryColumns =
+    private static readonly string[] PreviousHistoryColumns =
     [
         "id",
         "cid",
@@ -68,6 +68,12 @@ internal static class LegacyDownloadStoreFormatDetector
         "finished_timestamp",
         "finished_time",
         "max_speed_display"
+    ];
+
+    private static readonly string[] CurrentHistoryColumns =
+    [
+        .. PreviousHistoryColumns,
+        "requested_content"
     ];
 
     private static readonly string[] BaseStateColumns =
@@ -151,6 +157,9 @@ internal static class LegacyDownloadStoreFormatDetector
         var hasCurrentHistoryShape = CoreBaseColumns.All(baseColumns.Contains)
                                      && CoreDownloadingColumns.All(downloadingColumns.Contains)
                                      && CurrentHistoryColumns.All(historyColumns.Contains);
+        var hasPreviousHistoryShape = CoreBaseColumns.All(baseColumns.Contains)
+                                      && CoreDownloadingColumns.All(downloadingColumns.Contains)
+                                      && PreviousHistoryColumns.All(historyColumns.Contains);
         var hasStateColumns = BaseStateColumns.All(baseColumns.Contains)
                               && DownloadingStateColumns.All(downloadingColumns.Contains);
         var hasAnyStateColumns = BaseStateColumns.Any(baseColumns.Contains)
@@ -168,6 +177,7 @@ internal static class LegacyDownloadStoreFormatDetector
             HasLegacyCoreTables: hasLegacyCoreTables,
             HasHistoryTable: tables.Contains("download_history"),
             HasCurrentHistoryShape: hasCurrentHistoryShape,
+            HasPreviousHistoryShape: hasPreviousHistoryShape,
             HasLegacyDownloadedTable: tables.Contains("downloaded"),
             HasLegacyDownloadedShape: hasLegacyDownloadedShape,
             HasSchemaLedger: tables.Contains("download_schema_migrations"),
@@ -195,7 +205,7 @@ internal static class LegacyDownloadStoreFormatDetector
             Kind: kind,
             DatabaseExisted: true,
             UserVersion: userVersion,
-            HasCoreTables: hasLegacyCoreTables || hasCurrentHistoryShape,
+            HasCoreTables: hasLegacyCoreTables || hasPreviousHistoryShape,
             HasSchemaLedger: tables.Contains("download_schema_migrations"),
             HasQuarantine: tables.Contains("download_quarantine"),
             HasStateColumns: hasStateColumns,
@@ -222,7 +232,7 @@ internal static class LegacyDownloadStoreFormatDetector
         AddMissingColumns(differences, "download_base", CoreBaseColumns, baseColumns);
         AddMissingColumns(differences, "downloading", CoreDownloadingColumns, downloadingColumns);
 
-        if (userVersion == DownloadStoreSchema.CurrentVersion)
+        if (userVersion >= 9)
         {
             AddMissingTable(differences, tables, "download_history");
             AddMissingTable(differences, tables, "download_schema_migrations");
@@ -234,7 +244,11 @@ internal static class LegacyDownloadStoreFormatDetector
                 baseColumns);
             AddMissingColumns(differences, "download_base", PublishingColumns, baseColumns);
             AddMissingColumns(differences, "downloading", DownloadingStateColumns, downloadingColumns);
-            AddMissingColumns(differences, "download_history", CurrentHistoryColumns, historyColumns);
+            AddMissingColumns(differences, "download_history",
+                userVersion == DownloadStoreSchema.CurrentVersion
+                    ? CurrentHistoryColumns
+                    : PreviousHistoryColumns,
+                historyColumns);
             if (tables.Contains("downloaded"))
             {
                 differences.Add("unexpected legacy table: downloaded");
@@ -362,6 +376,16 @@ internal static class LegacyDownloadStoreFormatDetector
             return LegacyDownloadStoreKind.CurrentWithLegacyHistory;
         }
 
+        if (fingerprint.IsPreviousCurrent)
+        {
+            return LegacyDownloadStoreKind.PreviousCurrent;
+        }
+
+        if (fingerprint.IsPreviousCurrentWithLegacyHistory)
+        {
+            return LegacyDownloadStoreKind.PreviousCurrentWithLegacyHistory;
+        }
+
         if (fingerprint.IsStructurallyIncomplete)
         {
             return LegacyDownloadStoreKind.Unsupported;
@@ -404,6 +428,7 @@ internal static class LegacyDownloadStoreFormatDetector
         bool HasLegacyCoreTables,
         bool HasHistoryTable,
         bool HasCurrentHistoryShape,
+        bool HasPreviousHistoryShape,
         bool HasLegacyDownloadedTable,
         bool HasLegacyDownloadedShape,
         bool HasSchemaLedger,
@@ -443,6 +468,32 @@ internal static class LegacyDownloadStoreFormatDetector
                                                   && HasPublishedArtifacts
                                                   && HasStagingToken
                                                   && HasPublishingArtifact;
+
+        public bool IsPreviousCurrent => HasPreviousHistoryShape
+                                         && !HasCurrentHistoryShape
+                                         && !HasLegacyDownloadedTable
+                                         && UserVersion == DownloadStoreSchema.CurrentVersion - 1
+                                         && HasRequiredSchemaMetadata
+                                         && HasStateColumns
+                                         && HasReservationKey
+                                         && HasAdmissionGate
+                                         && HasNfoRequest
+                                         && HasPublishedArtifacts
+                                         && HasStagingToken
+                                         && HasPublishingArtifact;
+
+        public bool IsPreviousCurrentWithLegacyHistory => HasPreviousHistoryShape
+                                                          && !HasCurrentHistoryShape
+                                                          && HasLegacyDownloadedShape
+                                                          && UserVersion == DownloadStoreSchema.CurrentVersion - 1
+                                                          && HasRequiredSchemaMetadata
+                                                          && HasStateColumns
+                                                          && HasReservationKey
+                                                          && HasAdmissionGate
+                                                          && HasNfoRequest
+                                                          && HasPublishedArtifacts
+                                                          && HasStagingToken
+                                                          && HasPublishingArtifact;
 
         public bool IsStructurallyIncomplete => HasHistoryTable
                                                 || !HasLegacyCoreTables

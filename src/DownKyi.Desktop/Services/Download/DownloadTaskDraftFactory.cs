@@ -84,7 +84,7 @@ internal static class DownloadTaskDraftFactory
                 Name = selectedVideo?.QualityFormat ?? string.Empty,
                 Id = selectedVideo?.Quality ?? 0
             },
-            AudioCodec = audioCodec,
+            AudioCodec = content.Audio ? audioCodec : new Quality(),
             Page = page.Page
         };
         downloadBase.NeedDownloadContent = content with { MediaKind = mediaKind };

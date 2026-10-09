@@ -64,7 +64,13 @@ public sealed class DownloadAddOwnerTests : IDisposable
     [Fact]
     public async Task CompletedVideoOnlyTaskDoesNotBlockAudioOnlyRequest()
     {
-        using var context = DuplicatePolicyContext.WithCompleted(AppDialogOutcome.Canceled);
+        using var context = DuplicatePolicyContext.WithCompleted(
+            AppDialogOutcome.Canceled,
+            content: DownloadContentSelection.None with
+            {
+                Video = true,
+                MediaKind = DownloadMediaKind.Dash
+            });
         var page = CreatePage();
         page.AudioQualityFormat = "高质量";
 
@@ -76,6 +82,29 @@ public sealed class DownloadAddOwnerTests : IDisposable
             TestContext.Current.CancellationToken);
 
         Assert.False(shouldSkip);
+    }
+
+    [Fact]
+    public async Task CompletedVideoOnlyTaskStillBlocksSameVideoOutput()
+    {
+        var videoOnly = DownloadContentSelection.None with
+        {
+            Video = true,
+            MediaKind = DownloadMediaKind.Dash
+        };
+        using var context = DuplicatePolicyContext.WithCompleted(
+            AppDialogOutcome.Canceled,
+            content: videoOnly);
+
+        var shouldSkip = await context.Policy.ShouldSkipAsync(
+            CreatePage(),
+            CreateVideoQuality(),
+            videoOnly,
+            DownKyi.Core.Settings.RepeatDownloadStrategy.JumpOver,
+            TestContext.Current.CancellationToken);
+
+        Assert.True(shouldSkip);
+        Assert.Equal(videoOnly, context.Store.History!.RequestedContent);
     }
 
     [Fact]
@@ -500,6 +529,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
             DownloadContentSelection.None with { Video = true });
 
         Assert.Equal(DownloadMediaKind.Durl, item.DownloadBase.NeedDownloadContent.MediaKind);
+        Assert.Equal(0, item.AudioCodec.Id);
         Assert.Contains(
             page.PlaybackAvailability!.Video,
             video => video.StreamKind == PlayUrlStreamKind.Durl);
@@ -653,9 +683,10 @@ public sealed class DownloadAddOwnerTests : IDisposable
 
         public static DuplicatePolicyContext WithCompleted(
             AppDialogOutcome outcome,
-            bool loadUi = false)
+            bool loadUi = false,
+            DownloadContentSelection? content = null)
         {
-            var history = CreateCompletedHistory();
+            var history = CreateCompletedHistory(content);
             var context = new DuplicatePolicyContext(outcome, history: history);
             if (loadUi)
             {
@@ -666,10 +697,17 @@ public sealed class DownloadAddOwnerTests : IDisposable
             return context;
         }
 
-        public static DownloadHistoryRecord CreateCompletedHistory()
+        public static DownloadHistoryRecord CreateCompletedHistory(
+            DownloadContentSelection? content = null)
         {
+            var draft = CreateDownloadingItem();
+            if (content != null)
+            {
+                draft.DownloadBase.NeedDownloadContent = content;
+            }
+
             var queued = DownloadTaskProjectionMapper.CreateNewTask(
-                CreateDownloadingItem(),
+                draft,
                 DateTimeOffset.UnixEpoch);
             Assert.True(queued.Start(DateTimeOffset.UnixEpoch.AddSeconds(1))
                 .TryGetValue(out var started));

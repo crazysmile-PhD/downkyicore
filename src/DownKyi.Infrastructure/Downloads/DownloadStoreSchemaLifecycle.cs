@@ -44,7 +44,7 @@ internal static class DownloadStoreSchemaLifecycle
 
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = "PRAGMA user_version = 9";
+        command.CommandText = "PRAGMA user_version = 10";
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 

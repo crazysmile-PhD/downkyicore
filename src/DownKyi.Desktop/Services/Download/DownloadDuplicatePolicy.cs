@@ -213,6 +213,11 @@ internal sealed class DownloadDuplicatePolicy
             return content;
         }
 
+        if (history.RequestedContent is { } finalizedContent)
+        {
+            return finalizedContent;
+        }
+
         if (!history.PublishedArtifacts.TryGetValue("media", out var mediaPath))
         {
             return history.PublishedArtifacts.Count == 0
