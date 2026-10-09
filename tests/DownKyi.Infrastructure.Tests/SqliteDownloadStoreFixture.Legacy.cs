@@ -9,51 +9,24 @@ namespace DownKyi.Infrastructure.Tests;
 
 internal sealed partial class SqliteDownloadStoreFixture
 {
-    private const string LegacyDownloadBaseTableSql = """
-            CREATE TABLE download_base (
-                id TEXT PRIMARY KEY, need_download_content TEXT NOT NULL DEFAULT '{}',
-                bvid TEXT NOT NULL DEFAULT '', avid INTEGER NOT NULL DEFAULT 0,
-                cid INTEGER NOT NULL DEFAULT 0, episode_id INTEGER NOT NULL DEFAULT 0,
-                cover_url TEXT NOT NULL DEFAULT '', page_cover_url TEXT NOT NULL DEFAULT '',
-                zone_id INTEGER NOT NULL DEFAULT 0, [order] INTEGER NOT NULL DEFAULT 0,
-                main_title TEXT NOT NULL DEFAULT '', name TEXT NOT NULL DEFAULT '',
-                duration TEXT NOT NULL DEFAULT '', video_codec_name TEXT NOT NULL DEFAULT '',
-                resolution TEXT NOT NULL DEFAULT '{}', audio_codec TEXT,
-                file_path TEXT NOT NULL DEFAULT '', file_size TEXT, page INTEGER NOT NULL DEFAULT 1
-            );
-        """;
-
     internal async Task CreateVersionThreeDatabaseAsync(params DownloadTask[] tasks)
     {
-        using (var store = CreateStore())
+        CopyHistoricalDatabase(3);
+        foreach (var task in tasks)
         {
-            await store.InitializeAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
-            foreach (var task in tasks.Where(task => task.Phase != DownloadPhase.Completed))
-            {
-                Assert.True((await store.AddAsync(
-                    task,
-                    TestContext.Current.CancellationToken).ConfigureAwait(false)).IsSuccess);
-            }
+            await InsertHistoricalTaskAsync(task, 3).ConfigureAwait(false);
         }
-
-        await DowngradeCurrentDatabaseAsync(
-            3,
-            tasks.Where(task => task.Phase == DownloadPhase.Completed)).ConfigureAwait(false);
     }
 
     internal async Task CreateVersionFourDatabaseAsync()
     {
-        using (var store = CreateStore())
-        {
-            Assert.True((await store.AddAsync(
-                CreatePausedTask(
-                    "version-four",
-                    "version-four-output",
-                    requestedContent: DownloadContentSelection.None),
-                TestContext.Current.CancellationToken).ConfigureAwait(false)).IsSuccess);
-        }
-
-        await DowngradeCurrentDatabaseAsync(4).ConfigureAwait(false);
+        CopyHistoricalDatabase(4);
+        await InsertHistoricalTaskAsync(
+            CreatePausedTask(
+                "version-four",
+                "version-four-output",
+                requestedContent: DownloadContentSelection.None),
+            4).ConfigureAwait(false);
     }
 
     internal async Task SimulateLegacyVersionWriteAsync()
@@ -90,148 +63,123 @@ internal sealed partial class SqliteDownloadStoreFixture
 
     internal async Task CreateLegacyVersionDatabaseAsync(int version)
     {
-        if (version is < 1 or > 7)
+        if (version is < 1 or > 8)
         {
             throw new ArgumentOutOfRangeException(nameof(version));
         }
 
-        using (var store = CreateStore())
-        {
-            Assert.True((await store.AddAsync(
-                CreatePausedTask($"legacy-v{version}"),
-                TestContext.Current.CancellationToken).ConfigureAwait(false)).IsSuccess);
-        }
-
-        await DowngradeCurrentDatabaseAsync(version).ConfigureAwait(false);
+        CopyHistoricalDatabase(version);
+        await InsertHistoricalTaskAsync(CreatePausedTask($"legacy-v{version}"), version)
+            .ConfigureAwait(false);
     }
 
-    internal async Task DowngradeCurrentDatabaseAsync(
-        int version,
-        IEnumerable<DownloadTask>? completedTasks = null)
+    internal void CopyHistoricalDatabase(int version)
+    {
+        if (version is < 0 or > 9)
+        {
+            throw new ArgumentOutOfRangeException(nameof(version));
+        }
+
+        Directory.CreateDirectory(_directory);
+        var source = Path.Combine(
+            AppContext.BaseDirectory,
+            "Fixtures",
+            $"download-store-v{version}.db");
+        File.Copy(source, Path.Combine(_directory, "download.db"));
+    }
+
+    internal async Task InsertHistoricalTaskAsync(DownloadTask task, int version)
     {
         using var connection = await OpenConnectionAsync(readOnly: false).ConfigureAwait(false);
         using var transaction = (SqliteTransaction)await connection
-            .BeginTransactionAsync(TestContext.Current.CancellationToken)
-            .ConfigureAwait(false);
+            .BeginTransactionAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            CREATE TABLE downloaded (
-                id TEXT PRIMARY KEY REFERENCES download_base(id) ON DELETE CASCADE,
-                max_speed_display TEXT,
-                finished_timestamp INTEGER NOT NULL DEFAULT 0,
-                finished_time TEXT NOT NULL DEFAULT ''
-            );
-            DROP TABLE download_history;
-            """;
-        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
-
-        foreach (var task in completedTasks ?? [])
-        {
-            await InsertLegacyCompletedTaskAsync(connection, transaction, task).ConfigureAwait(false);
-        }
-
-        command.CommandText = """
-            ALTER TABLE download_base DROP COLUMN publishing_key;
-            ALTER TABLE download_base DROP COLUMN publishing_file_name;
-            ALTER TABLE download_base DROP COLUMN publishing_length;
-            ALTER TABLE download_base DROP COLUMN publishing_sha256;
-            """;
-        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
-
-        if (version < 7)
-        {
-            command.CommandText = "ALTER TABLE download_base DROP COLUMN staging_token";
-            await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
-        }
-
-        if (version < 6)
-        {
-            command.CommandText = "ALTER TABLE download_base DROP COLUMN published_artifacts";
-            await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
-        }
-
-        if (version < 5)
-        {
-            command.CommandText = "ALTER TABLE download_base DROP COLUMN nfo_request";
-            await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
-        }
-
-        if (version < 4)
-        {
-            command.CommandText = "DROP TABLE download_upgrade_admission_gate";
-            await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
-        }
-
-        if (version < 3)
-        {
-            command.CommandText = """
-                DROP INDEX ux_download_base_output_reservation;
-                DROP INDEX ix_download_base_file_path;
-                DROP INDEX ix_download_base_file_path_nocase;
-                ALTER TABLE download_base DROP COLUMN output_reservation_key;
-                """;
-            await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
-        }
-
-        if (version < 2)
-        {
-            command.CommandText = """
-                ALTER TABLE download_base DROP COLUMN version;
-                ALTER TABLE download_base DROP COLUMN created_at_utc;
-                ALTER TABLE download_base DROP COLUMN updated_at_utc;
-                ALTER TABLE downloading DROP COLUMN phase;
-                ALTER TABLE downloading DROP COLUMN failure_code;
-                ALTER TABLE downloading DROP COLUMN failure_message;
-                ALTER TABLE downloading DROP COLUMN failure_transient;
-                ALTER TABLE downloading DROP COLUMN downloaded_bytes;
-                ALTER TABLE downloading DROP COLUMN total_bytes;
-                ALTER TABLE downloading DROP COLUMN bytes_per_second;
-                """;
-            await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
-        }
-
-        command.CommandText = """
-            DELETE FROM download_schema_migrations;
-            WITH RECURSIVE versions(value) AS (
-                SELECT 1
-                UNION ALL
-                SELECT value + 1 FROM versions WHERE value < @version
-            )
-            INSERT INTO download_schema_migrations(version, applied_at_utc)
-            SELECT value, @applied_at_utc FROM versions;
-            """;
-        command.Parameters.AddWithValue("@version", version);
-        command.Parameters.AddWithValue("@applied_at_utc", _clock.UtcNow.ToUnixTimeMilliseconds());
-        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
-        SetLegacyUserVersionCommandText(command, version);
-        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
-        await transaction.CommitAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
-    }
-
-    internal static async Task InsertLegacyCompletedTaskAsync(
-        SqliteConnection connection,
-        SqliteTransaction transaction,
-        DownloadTask task)
-    {
-        await DownloadTaskSqlWriter.InsertBaseAsync(
-            connection,
-            transaction,
-            task,
-            TestContext.Current.CancellationToken).ConfigureAwait(false);
-        using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = """
-            INSERT INTO downloaded
-                (id, max_speed_display, finished_timestamp, finished_time)
-            VALUES (@id, @max_speed_display, @finished_timestamp, @finished_time)
+            INSERT INTO download_base
+                (id, need_download_content, bvid, avid, cid, main_title, name,
+                 resolution, audio_codec, file_path, file_size)
+            VALUES
+                (@id, @content, @bvid, @avid, @cid, @title, @name,
+                 @resolution, @audio, @path, @size)
             """;
         command.Parameters.AddWithValue("@id", task.Id.Value);
         command.Parameters.AddWithValue(
-            "@max_speed_display",
-            task.Completion!.MaximumSpeedText ?? (object)DBNull.Value);
-        command.Parameters.AddWithValue("@finished_timestamp", task.Completion.FinishedTimestamp);
-        command.Parameters.AddWithValue("@finished_time", task.Completion.FinishedTimeText);
+            "@content", DownloadStoreJson.WriteContentSelection(task.Plan.RequestedContent));
+        command.Parameters.AddWithValue("@bvid", task.Metadata.Media.Bvid);
+        command.Parameters.AddWithValue("@avid", task.Metadata.Media.Avid);
+        command.Parameters.AddWithValue("@cid", task.Metadata.Media.Cid);
+        command.Parameters.AddWithValue("@title", task.Metadata.MainTitle);
+        command.Parameters.AddWithValue("@name", task.Metadata.Name);
+        command.Parameters.AddWithValue(
+            "@resolution", DownloadStoreJson.WriteQuality(task.Metadata.Resolution));
+        command.Parameters.AddWithValue(
+            "@audio", DownloadStoreJson.WriteQuality(task.Metadata.AudioCodec));
+        command.Parameters.AddWithValue("@path", task.Output.BasePath);
+        command.Parameters.AddWithValue("@size", task.Output.FileSizeText ?? (object)DBNull.Value);
+        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
+
+        command.Parameters.Clear();
+        command.Parameters.AddWithValue("@id", task.Id.Value);
+        if (version >= 7)
+        {
+            command.CommandText = "UPDATE download_base SET staging_token = @token WHERE id = @id";
+            command.Parameters.AddWithValue("@token", task.Output.StagingToken);
+            await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
+            command.Parameters.Clear();
+            command.Parameters.AddWithValue("@id", task.Id.Value);
+        }
+
+        if (task.Phase == DownloadPhase.Completed)
+        {
+            command.CommandText = """
+                INSERT INTO downloaded (id, max_speed_display, finished_timestamp, finished_time)
+                VALUES (@id, @speed, @timestamp, @time)
+                """;
+            command.Parameters.AddWithValue(
+                "@speed", task.Completion!.MaximumSpeedText ?? (object)DBNull.Value);
+            command.Parameters.AddWithValue("@timestamp", task.Completion.FinishedTimestamp);
+            command.Parameters.AddWithValue("@time", task.Completion.FinishedTimeText);
+        }
+        else
+        {
+            command.CommandText = """
+                INSERT INTO downloading
+                    (id, gid, download_files, downloaded_files, play_stream_type,
+                     download_status, progress, max_speed)
+                VALUES
+                    (@id, @gid, @files, @completed, 1, 3, @progress, @speed)
+                """;
+            command.Parameters.AddWithValue("@gid", task.Transfer.BackendIdentity ?? (object)DBNull.Value);
+            command.Parameters.AddWithValue(
+                "@files", DownloadStoreJson.WriteStringMap(task.Plan.TransferFiles));
+            command.Parameters.AddWithValue(
+                "@completed", DownloadStoreJson.WriteStringList(task.Transfer.CompletedFileKeys));
+            command.Parameters.AddWithValue("@progress", task.Progress.Percentage);
+            command.Parameters.AddWithValue("@speed", task.Transfer.MaximumBytesPerSecond);
+        }
+
+        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
+        if (version >= 2 && task.Phase != DownloadPhase.Completed)
+        {
+            command.Parameters.Clear();
+            command.CommandText = "UPDATE downloading SET phase = @phase WHERE id = @id";
+            command.Parameters.AddWithValue("@phase", (int)task.Phase);
+            command.Parameters.AddWithValue("@id", task.Id.Value);
+            await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
+        }
+
+        await transaction.CommitAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
+    }
+
+    internal async Task InsertVersionNineHistoryAsync()
+    {
+        using var connection = await OpenConnectionAsync(readOnly: false).ConfigureAwait(false);
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO download_history (id, name, finished_timestamp, finished_time)
+            VALUES ('preexisting-history', 'preexisting-history', 123, 'finished')
+            """;
         await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
     }
 
@@ -264,37 +212,6 @@ internal sealed partial class SqliteDownloadStoreFixture
         await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
     }
 
-    internal static void SetLegacyUserVersionCommandText(SqliteCommand command, int version)
-    {
-        command.Parameters.Clear();
-        switch (version)
-        {
-            case 1:
-                command.CommandText = "PRAGMA user_version = 1";
-                break;
-            case 2:
-                command.CommandText = "PRAGMA user_version = 2";
-                break;
-            case 3:
-                command.CommandText = "PRAGMA user_version = 3";
-                break;
-            case 4:
-                command.CommandText = "PRAGMA user_version = 4";
-                break;
-            case 5:
-                command.CommandText = "PRAGMA user_version = 5";
-                break;
-            case 6:
-                command.CommandText = "PRAGMA user_version = 6";
-                break;
-            case 7:
-                command.CommandText = "PRAGMA user_version = 7";
-                break;
-            default:
-                throw new ArgumentOutOfRangeException(nameof(version));
-        }
-    }
-
     internal async Task SetLegacyDownloadStatusAsync(int status)
     {
         using var connection = await OpenConnectionAsync(readOnly: false).ConfigureAwait(false);
@@ -321,22 +238,10 @@ internal sealed partial class SqliteDownloadStoreFixture
 
     internal async Task CreateLegacyDatabaseAsync()
     {
-        using var connection = await OpenNewDatabaseAsync()
-            .ConfigureAwait(false);
-        using var schema = connection.CreateCommand();
-        schema.CommandText = LegacyDownloadBaseTableSql + "\n" + """
-            CREATE TABLE downloading (
-                id TEXT PRIMARY KEY REFERENCES download_base(id) ON DELETE CASCADE, gid TEXT,
-                download_files TEXT NOT NULL DEFAULT '{}', downloaded_files TEXT NOT NULL DEFAULT '[]',
-                play_stream_type INTEGER NOT NULL DEFAULT 0, download_status INTEGER NOT NULL DEFAULT 0,
-                download_content TEXT, download_status_title TEXT, progress REAL NOT NULL DEFAULT 0,
-                downloading_file_size TEXT, max_speed INTEGER NOT NULL DEFAULT 0, speed_display TEXT
-            );
-            CREATE TABLE downloaded (
-                id TEXT PRIMARY KEY REFERENCES download_base(id) ON DELETE CASCADE,
-                max_speed_display TEXT, finished_timestamp INTEGER NOT NULL DEFAULT 0,
-                finished_time TEXT NOT NULL DEFAULT ''
-            );
+        CopyHistoricalDatabase(0);
+        using var connection = await OpenConnectionAsync(readOnly: false).ConfigureAwait(false);
+        using var command = connection.CreateCommand();
+        command.CommandText = """
             INSERT INTO download_base
                 (id, need_download_content, bvid, avid, cid, main_title, name, resolution,
                  audio_codec, file_path)
@@ -349,17 +254,19 @@ internal sealed partial class SqliteDownloadStoreFixture
             VALUES
                 ('legacy-resume', 'aria-gid', '{"video":"video.m4s"}', '["cover"]', 1, 3, 42.5, 4000000);
             """;
-        await schema.ExecuteNonQueryAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
+        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
     }
 
     internal async Task CreateIncompatibleLegacyDatabaseAsync()
     {
-        using var connection = await OpenNewDatabaseAsync()
-            .ConfigureAwait(false);
-        using var schema = connection.CreateCommand();
-        schema.CommandText = LegacyDownloadBaseTableSql + "\n" + """
+        CopyHistoricalDatabase(0);
+        using var connection = await OpenConnectionAsync(readOnly: false).ConfigureAwait(false);
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            DROP TABLE downloading;
+            DROP TABLE downloaded;
             CREATE TABLE downloading (id TEXT PRIMARY KEY);
             """;
-        await schema.ExecuteNonQueryAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
+        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
     }
 }
