@@ -27,12 +27,55 @@ public sealed class DownloadAddOwnerTests : IDisposable
         var shouldSkip = await context.Policy.ShouldSkipAsync(
             CreatePage(),
             CreateVideoQuality(),
+            DownloadContentSelection.All,
             DownKyi.Core.Settings.RepeatDownloadStrategy.ReDownload,
             TestContext.Current.CancellationToken);
 
         Assert.True(shouldSkip);
         Assert.Single(context.Notifications.Messages);
         Assert.Equal(0, context.Dialogs.ShowCount);
+    }
+
+    [Fact]
+    public async Task VideoOnlyActiveTaskDoesNotBlockAudioOnlyRequest()
+    {
+        using var context = new DuplicatePolicyContext(AppDialogOutcome.Canceled);
+        var videoOnly = CreateDownloadingItem();
+        videoOnly.DownloadBase.NeedDownloadContent = DownloadContentSelection.None with
+        {
+            Video = true,
+            MediaKind = DownloadMediaKind.Dash
+        };
+        context.ListState.AddDownloading(videoOnly);
+        var page = CreatePage();
+        page.AudioQualityFormat = "高质量";
+
+        var shouldSkip = await context.Policy.ShouldSkipAsync(
+            page,
+            null,
+            DownloadContentSelection.None with { Audio = true },
+            DownKyi.Core.Settings.RepeatDownloadStrategy.JumpOver,
+            TestContext.Current.CancellationToken);
+
+        Assert.False(shouldSkip);
+        Assert.Empty(context.Notifications.Messages);
+    }
+
+    [Fact]
+    public async Task CompletedVideoOnlyTaskDoesNotBlockAudioOnlyRequest()
+    {
+        using var context = DuplicatePolicyContext.WithCompleted(AppDialogOutcome.Canceled);
+        var page = CreatePage();
+        page.AudioQualityFormat = "高质量";
+
+        var shouldSkip = await context.Policy.ShouldSkipAsync(
+            page,
+            null,
+            DownloadContentSelection.None with { Audio = true },
+            DownKyi.Core.Settings.RepeatDownloadStrategy.JumpOver,
+            TestContext.Current.CancellationToken);
+
+        Assert.False(shouldSkip);
     }
 
     [Fact]
@@ -48,6 +91,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
         var shouldSkip = await context.Policy.ShouldSkipAsync(
             CreatePage(),
             CreateVideoQuality(),
+            DownloadContentSelection.All,
             DownKyi.Core.Settings.RepeatDownloadStrategy.JumpOver,
             TestContext.Current.CancellationToken,
             completedCandidates);
@@ -65,6 +109,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
         var shouldSkip = await context.Policy.ShouldSkipAsync(
             CreatePage(),
             CreateVideoQuality(),
+            DownloadContentSelection.All,
             DownKyi.Core.Settings.RepeatDownloadStrategy.JumpOver,
             TestContext.Current.CancellationToken);
 
@@ -84,6 +129,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
         var shouldSkip = await context.Policy.ShouldSkipAsync(
             CreatePage(),
             CreateVideoQuality(),
+            DownloadContentSelection.All,
             DownKyi.Core.Settings.RepeatDownloadStrategy.ReDownload,
             TestContext.Current.CancellationToken);
 
@@ -103,6 +149,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
         var shouldSkip = await context.Policy.ShouldSkipAsync(
             CreatePage(),
             CreateVideoQuality(),
+            DownloadContentSelection.All,
             DownKyi.Core.Settings.RepeatDownloadStrategy.Ask,
             TestContext.Current.CancellationToken);
 
@@ -126,6 +173,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
         var shouldSkip = await context.Policy.ShouldSkipAsync(
             CreatePage(),
             CreateVideoQuality(),
+            DownloadContentSelection.All,
             DownKyi.Core.Settings.RepeatDownloadStrategy.Ask,
             TestContext.Current.CancellationToken);
 
@@ -153,6 +201,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
         var shouldSkip = await context.Policy.ShouldSkipAsync(
             CreatePage(),
             CreateVideoQuality(),
+            DownloadContentSelection.All,
             DownKyi.Core.Settings.RepeatDownloadStrategy.Ask,
             TestContext.Current.CancellationToken,
             completedCandidates);
@@ -178,6 +227,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
         var shouldSkip = await context.Policy.ShouldSkipAsync(
             CreatePage(),
             CreateVideoQuality(),
+            DownloadContentSelection.All,
             DownKyi.Core.Settings.RepeatDownloadStrategy.JumpOver,
             TestContext.Current.CancellationToken,
             completedCandidates);
@@ -198,6 +248,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
             context.Policy.ShouldSkipAsync(
                 CreatePage(),
                 CreateVideoQuality(),
+                DownloadContentSelection.All,
                 DownKyi.Core.Settings.RepeatDownloadStrategy.Ask,
                 cancellation.Token));
         Assert.Equal(0, context.Dialogs.ShowCount);
@@ -278,9 +329,9 @@ public sealed class DownloadAddOwnerTests : IDisposable
         Assert.Equal(page.Cid, item.DownloadBase.Cid);
         Assert.Equal(page.EpisodeId, item.DownloadBase.EpisodeId);
         Assert.Equal(page.Page, item.DownloadBase.Page);
-        Assert.Equal(80, item.Resolution.Id);
-        Assert.Equal("1080P", item.Resolution.Name);
-        Assert.Equal("H.264/AVC", item.VideoCodecName);
+        Assert.Equal(0, item.Resolution.Id);
+        Assert.Equal(string.Empty, item.Resolution.Name);
+        Assert.Equal(string.Empty, item.VideoCodecName);
         Assert.Equal(
             DownKyi.Core.BiliApi.VideoStream.PlayStreamType.Cheese,
             item.Downloading.PlayStreamType);
@@ -371,7 +422,51 @@ public sealed class DownloadAddOwnerTests : IDisposable
             settingsStore.Current,
             DownloadContentSelection.None with { Audio = true }));
 
-        Assert.Equal("Audio-only DURL downloads are not supported.", error.Message);
+        Assert.Equal(
+            "A media download draft requires a supported finalized playback selection.",
+            error.Message);
+    }
+
+    [Fact]
+    public void DraftFactoryUsesIndependentDashAudioWithoutSelectedVideo()
+    {
+        Directory.CreateDirectory(_directory);
+        using var settingsStore = new DownKyi.Core.Settings.SettingsStore(
+            Path.Combine(_directory, "settings.json"));
+        var page = CreatePage();
+        page.AudioQualityFormat = "高质量";
+        page.VideoQuality = null;
+        page.PlaybackAvailability = PlayUrlAvailability.From(new PlayUrl
+        {
+            Quality = 80,
+            VideoCodecid = 7,
+            Durl = [new PlayUrlDurl { SourceAddress = "https://media.invalid/video.mp4" }],
+            Dash = new PlayUrlDash
+            {
+                Audio = [new PlayUrlDashVideo
+                {
+                    Id = 30280,
+                    BaseAddress = "https://media.invalid/audio.m4s"
+                }]
+            }
+        });
+        var video = new VideoInfoView { Title = "main", VideoZone = "Technology" };
+        var section = new VideoSection { VideoPages = [page] };
+
+        var item = DownloadTaskDraftFactory.Create(
+            _directory,
+            video,
+            section,
+            1,
+            page,
+            null,
+            settingsStore.Current,
+            DownloadContentSelection.None with { Audio = true });
+
+        Assert.Equal(DownloadMediaKind.Dash, item.DownloadBase.NeedDownloadContent.MediaKind);
+        Assert.Equal(0, item.Resolution.Id);
+        Assert.Equal(string.Empty, item.VideoCodecName);
+        Assert.Equal(30280, item.AudioCodec.Id);
     }
 
     [Fact]
@@ -381,6 +476,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
         using var settingsStore = new DownKyi.Core.Settings.SettingsStore(
             Path.Combine(_directory, "settings.json"));
         var page = CreatePage();
+        page.PlaybackAvailability = PlayUrlAvailability.From(CreateDurlPlayUrl());
         var video = new VideoInfoView
         {
             Title = "main",
@@ -406,7 +502,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
         Assert.Equal(DownloadMediaKind.Durl, item.DownloadBase.NeedDownloadContent.MediaKind);
         Assert.Contains(
             page.PlaybackAvailability!.Video,
-            video => video.StreamKind == PlayUrlStreamKind.Dash);
+            video => video.StreamKind == PlayUrlStreamKind.Durl);
     }
 
     public void Dispose()

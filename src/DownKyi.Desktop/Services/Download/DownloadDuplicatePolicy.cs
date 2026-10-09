@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Desktop;
 using DownKyi.Core.Settings;
+using DownKyi.Domain.Downloads;
 using DownKyi.Presentation;
 using DownKyi.Utils;
 using DownKyi.ViewModels.DownloadManager;
@@ -32,16 +34,17 @@ internal sealed class DownloadDuplicatePolicy
 
     public async Task<bool> ShouldSkipAsync(
         VideoPage page,
-        VideoQuality videoQuality,
+        VideoQuality? videoQuality,
+        DownloadContentSelection requestedContent,
         RepeatDownloadStrategy strategy,
         CancellationToken cancellationToken,
         Lazy<Task<List<DownloadedItem>>>? completedCandidates = null)
     {
         ArgumentNullException.ThrowIfNull(page);
-        ArgumentNullException.ThrowIfNull(videoQuality);
+        ArgumentNullException.ThrowIfNull(requestedContent);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (ShouldSkipActiveDownload(page, videoQuality))
+        if (ShouldSkipActiveDownload(page, videoQuality, requestedContent))
         {
             return true;
         }
@@ -52,7 +55,7 @@ internal sealed class DownloadDuplicatePolicy
         MergeLiveCompletedCandidates(candidates);
         foreach (var item in candidates)
         {
-            if (!IsSameVideo(item, page, videoQuality))
+            if (!IsSameOutput(item, page, videoQuality, requestedContent))
             {
                 continue;
             }
@@ -92,11 +95,14 @@ internal sealed class DownloadDuplicatePolicy
         return new List<DownloadedItem>(downloadedItems);
     }
 
-    private bool ShouldSkipActiveDownload(VideoPage page, VideoQuality videoQuality)
+    private bool ShouldSkipActiveDownload(
+        VideoPage page,
+        VideoQuality? videoQuality,
+        DownloadContentSelection requestedContent)
     {
         foreach (var item in _downloadLists.Downloading)
         {
-            if (!IsSameVideo(item, page, videoQuality))
+            if (!IsSameOutput(item, page, videoQuality, requestedContent))
             {
                 continue;
             }
@@ -149,20 +155,79 @@ internal sealed class DownloadDuplicatePolicy
         return false;
     }
 
-    private static bool IsSameVideo(
+    private static bool IsSameOutput(
         DownloadBaseItem item,
         VideoPage page,
-        VideoQuality videoQuality)
+        VideoQuality? videoQuality,
+        DownloadContentSelection requestedContent)
     {
         var downloadBase = item.DownloadBase;
-        var isSameVideo = downloadBase.Cid == page.Cid
-            && item.Resolution.Id == videoQuality.Quality
-            && item.VideoCodecName == videoQuality.SelectedVideoCodec;
-        if (!videoQuality.IsDurl)
+        if (downloadBase.Cid != page.Cid)
         {
-            isSameVideo = isSameVideo && item.AudioCodec.Name == page.AudioQualityFormat;
+            return false;
         }
 
-        return isSameVideo;
+        var existingContent = GetRecordedMediaContent(item);
+        if (existingContent.Audio != requestedContent.Audio
+            || existingContent.Video != requestedContent.Video)
+        {
+            return false;
+        }
+
+        if (requestedContent.Video)
+        {
+            if (videoQuality == null
+                || item.Resolution.Id != videoQuality.Quality
+                || item.VideoCodecName != videoQuality.SelectedVideoCodec)
+            {
+                return false;
+            }
+
+            var requestedKind = videoQuality.IsDurl
+                ? DownloadMediaKind.Durl
+                : DownloadMediaKind.Dash;
+            if (existingContent.MediaKind is { } kind && kind != requestedKind)
+            {
+                return false;
+            }
+        }
+
+        if (requestedContent.Audio
+            && (!requestedContent.Video || videoQuality?.IsDurl != true)
+            && item.AudioCodec.Name != page.AudioQualityFormat)
+        {
+            return false;
+        }
+
+        return requestedContent.Audio || requestedContent.Video
+            || (existingContent.Danmaku == requestedContent.Danmaku
+                && existingContent.Subtitle == requestedContent.Subtitle
+                && existingContent.Cover == requestedContent.Cover);
+    }
+
+    private static DownloadContentSelection GetRecordedMediaContent(DownloadBaseItem item)
+    {
+        var content = item.DownloadBase.NeedDownloadContent;
+        if (item is not DownloadedItem { HistoryRecord: { } history })
+        {
+            return content;
+        }
+
+        if (!history.PublishedArtifacts.TryGetValue("media", out var mediaPath))
+        {
+            return history.PublishedArtifacts.Count == 0
+                ? content
+                : content with { Audio = false, Video = false, MediaKind = DownloadMediaKind.None };
+        }
+
+        var extension = Path.GetExtension(mediaPath);
+        if (extension.Equals(".mp3", StringComparison.OrdinalIgnoreCase)
+            || extension.Equals(".aac", StringComparison.OrdinalIgnoreCase)
+            || extension.Equals(".flac", StringComparison.OrdinalIgnoreCase))
+        {
+            return content with { Audio = true, Video = false, MediaKind = DownloadMediaKind.Dash };
+        }
+
+        return content;
     }
 }

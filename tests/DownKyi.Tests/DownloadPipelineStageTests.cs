@@ -19,6 +19,41 @@ namespace DownKyi.Tests;
 public sealed class DownloadPipelineStageTests
 {
     [Fact]
+    public async Task AudioOnlyRefreshProbesWithValidQualityInsteadOfZero()
+    {
+        using var settings = new TestSettingsStore();
+        string? requestedAddress = null;
+        var client = new TestBilibiliApiClient
+        {
+            GetStringAsyncHandler = (request, _) =>
+            {
+                requestedAddress = request.RequestAddress;
+                return Task.FromResult(
+                    """
+                    {"code":0,"data":{"dash":{"audio":[{"id":30280,"base_url":"https://media.invalid/audio.m4s"}]}}}
+                    """);
+            }
+        };
+        var context = CreateContext(
+            settings.Store.Current,
+            requestedContent: DownloadContentSelection.None with { Audio = true },
+            audioCodecId: 30280,
+            streamType: PlayStreamType.Video);
+        var resolver = new DownloadPlaybackResolver(
+            new TestWbiKeyProvider(),
+            TimeProvider.System,
+            client);
+
+        var result = await resolver.ResolveAsync(
+            context,
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsSuccess, result.Error?.Message);
+        Assert.Contains("qn=127", requestedAddress, StringComparison.Ordinal);
+        Assert.DoesNotContain("qn=0", requestedAddress, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task StageSequenceStopsAtFirstFailureAndPreservesOrder()
     {
         using var settings = new TestSettingsStore();
@@ -1047,6 +1082,25 @@ public sealed class DownloadPipelineStageTests
             Assert.Single(request.Urls));
     }
 
+    [Fact]
+    public async Task AudioOnlyMediaStageTransfersOnlySelectedAudio()
+    {
+        using var fixture = await MediaStageFixture.CreateAsync(
+            CreateAudioOnlyPlayUrl(),
+            downloadAudio: true,
+            downloadVideo: false).ConfigureAwait(true);
+
+        var result = await fixture.Stage.ExecuteAsync(
+            fixture.Context,
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.True(result.IsSuccess, result.Error?.Message);
+        Assert.NotNull(fixture.Context.AudioFile);
+        Assert.Null(fixture.Context.VideoFile);
+        var request = Assert.Single(fixture.Backend.Requests);
+        Assert.Equal("https://example.invalid/audio", Assert.Single(request.Urls));
+    }
+
     [Theory]
     [InlineData(false, true)]
     [InlineData(true, false)]
@@ -1245,7 +1299,8 @@ public sealed class DownloadPipelineStageTests
         int resolutionId = 0,
         string videoCodecName = "",
         int audioCodecId = 0,
-        PlayUrl? playUrl = null)
+        PlayUrl? playUrl = null,
+        PlayStreamType streamType = PlayStreamType.None)
     {
         var taskId = new DownloadTaskId("stage-test");
         var selection = requestedContent ?? DownloadContentSelection.All;
@@ -1278,7 +1333,8 @@ public sealed class DownloadPipelineStageTests
             {
                 Id = taskId.Value,
                 DownloadBase = downloadBase,
-                DownloadStatus = DownloadStatus.Downloading
+                DownloadStatus = DownloadStatus.Downloading,
+                PlayStreamType = streamType
             }
         };
         var context = DownloadExecutionContextTestFactory.Create(downloading, settings);

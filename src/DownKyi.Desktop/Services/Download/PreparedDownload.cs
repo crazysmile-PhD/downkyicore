@@ -17,7 +17,9 @@ internal enum DownloadMediaOutputModes
     AudioVideo = 4
 }
 
-internal sealed record DownloadMediaCapabilities(DownloadMediaOutputModes SupportedModes)
+internal sealed record DownloadMediaCapabilities(
+    DownloadMediaOutputModes SupportedModes,
+    bool VideoSelectionRequired = false)
 {
     public bool HasAnyMedia => SupportedModes != DownloadMediaOutputModes.None;
 
@@ -38,6 +40,12 @@ internal sealed record DownloadMediaCapabilities(DownloadMediaOutputModes Suppor
         {
             compatibleContent = requestedContent;
             return true;
+        }
+
+        if (requestedContent.Video && VideoSelectionRequired)
+        {
+            compatibleContent = requestedContent with { Audio = false, Video = false };
+            return false;
         }
 
         if (requestedContent.Audio && requestedContent.Video)
@@ -64,9 +72,48 @@ internal sealed record DownloadMediaCapabilities(DownloadMediaOutputModes Suppor
         VideoQuality? selectedVideoQuality,
         string selectedAudioQuality)
     {
-        if (availability == null || selectedVideoQuality == null)
+        if (availability == null)
         {
             return new DownloadMediaCapabilities(DownloadMediaOutputModes.None);
+        }
+
+        var selectedAudioId = PlaybackQualityCatalog.GetAudioQualities()
+            .FirstOrDefault(audio => string.Equals(
+                audio.Name,
+                selectedAudioQuality,
+                StringComparison.Ordinal))
+            ?.Id;
+        var hasAudio = selectedAudioId is > 0
+            && availability.Audio.Contains(selectedAudioId.Value);
+        var videoKind = ResolveSelectedVideoKind(availability, selectedVideoQuality);
+        var modes = videoKind switch
+        {
+            PlayUrlStreamKind.Durl =>
+                DownloadMediaOutputModes.VideoOnly | DownloadMediaOutputModes.AudioVideo,
+            PlayUrlStreamKind.Dash => DownloadMediaOutputModes.VideoOnly,
+            _ => DownloadMediaOutputModes.None
+        };
+        if (hasAudio)
+        {
+            modes |= DownloadMediaOutputModes.AudioOnly;
+            if (videoKind == PlayUrlStreamKind.Dash)
+            {
+                modes |= DownloadMediaOutputModes.AudioVideo;
+            }
+        }
+
+        return new DownloadMediaCapabilities(
+            modes,
+            VideoSelectionRequired: selectedVideoQuality == null && availability.Video.Count > 0);
+    }
+
+    private static PlayUrlStreamKind? ResolveSelectedVideoKind(
+        PlayUrlAvailability availability,
+        VideoQuality? selectedVideoQuality)
+    {
+        if (selectedVideoQuality == null)
+        {
+            return null;
         }
 
         var streamKind = selectedVideoQuality.IsDurl
@@ -78,39 +125,13 @@ internal sealed record DownloadMediaCapabilities(DownloadMediaOutputModes Suppor
                 selectedVideoQuality.SelectedVideoCodec,
                 StringComparison.Ordinal))
             ?.Id;
-        if (selectedCodecId == null)
-        {
-            return new DownloadMediaCapabilities(DownloadMediaOutputModes.None);
-        }
-
-        var hasVideo = availability.Video.Any(video =>
-            video.StreamKind == streamKind
-            && video.Quality == selectedVideoQuality.Quality
-            && video.CodecId == selectedCodecId.Value);
-        if (!hasVideo)
-        {
-            return new DownloadMediaCapabilities(DownloadMediaOutputModes.None);
-        }
-
-        if (streamKind == PlayUrlStreamKind.Durl)
-        {
-            return new DownloadMediaCapabilities(
-                DownloadMediaOutputModes.VideoOnly | DownloadMediaOutputModes.AudioVideo);
-        }
-
-        var selectedAudioId = PlaybackQualityCatalog.GetAudioQualities()
-            .FirstOrDefault(audio => string.Equals(
-                audio.Name,
-                selectedAudioQuality,
-                StringComparison.Ordinal))
-            ?.Id;
-        var modes = DownloadMediaOutputModes.VideoOnly;
-        if (selectedAudioId is > 0 && availability.Audio.Contains(selectedAudioId.Value))
-        {
-            modes |= DownloadMediaOutputModes.AudioOnly | DownloadMediaOutputModes.AudioVideo;
-        }
-
-        return new DownloadMediaCapabilities(modes);
+        return selectedCodecId is { } codecId
+               && availability.Video.Any(video =>
+                   video.StreamKind == streamKind
+                   && video.Quality == selectedVideoQuality.Quality
+                   && video.CodecId == codecId)
+            ? streamKind
+            : null;
     }
 
     private static DownloadMediaOutputModes GetRequestedMode(
@@ -168,7 +189,7 @@ internal sealed record PreparedDownload(
 
 internal sealed record FinalizedDownloadPage(
     VideoPage Page,
-    VideoQuality VideoQuality,
+    VideoQuality? VideoQuality,
     DownloadContentSelection RequestedContent);
 
 internal sealed record FinalizedDownloadSection(

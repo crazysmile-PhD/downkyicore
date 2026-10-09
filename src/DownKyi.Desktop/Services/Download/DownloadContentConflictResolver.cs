@@ -85,7 +85,7 @@ internal sealed class DownloadContentConflictResolver
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var page = preparedPage.Page;
-                if ((!isAll && !page.IsSelected) || !page.HasPlayback || page.VideoQuality == null)
+                if ((!isAll && !page.IsSelected) || !page.HasPlayback)
                 {
                     continue;
                 }
