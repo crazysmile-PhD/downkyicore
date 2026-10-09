@@ -523,7 +523,7 @@ public sealed class DownloadRuntimeArchitectureTests
         Assert.Contains("context.NeedsPendingAudio", resolverSource, StringComparison.Ordinal);
         Assert.Contains("context.NeedsPendingVideo", resolverSource, StringComparison.Ordinal);
         Assert.Contains("OperationResult<PlayUrl>", resolverSource, StringComparison.Ordinal);
-        Assert.Contains("catch (PlaybackSelectionUnavailableException", resolverSource,
+        Assert.Contains("catch (PlaybackUnavailableException", resolverSource,
             StringComparison.Ordinal);
         Assert.Contains("DownloadMediaContract.SelectionUnavailable", resolverSource,
             StringComparison.Ordinal);

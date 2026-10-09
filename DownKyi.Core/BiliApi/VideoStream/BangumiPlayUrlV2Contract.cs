@@ -33,44 +33,12 @@ internal static class BangumiPlayUrlV2Contract
                 $"{operationName} returned preview-only playback content.");
         }
 
-        if (payload.Durl == null)
+        if (!PlayUrlAvailability.From(payload).HasPlayableMedia)
         {
-            throw MalformedPayload(operationName, "result.video_info.durl");
-        }
-
-        if (payload.Dash == null)
-        {
-            throw MalformedPayload(operationName, "result.video_info.dash");
-        }
-
-        if (payload.Dash.Video == null)
-        {
-            throw MalformedPayload(operationName, "result.video_info.dash.video");
-        }
-
-        if (payload.Dash.Audio == null)
-        {
-            throw MalformedPayload(operationName, "result.video_info.dash.audio");
-        }
-
-        if (payload.Durl.Count == 0
-            && payload.Dash.Video.Count == 0
-            && payload.Dash.Audio.Count == 0)
-        {
-            throw new BilibiliApiResponseException(
-                operationName,
-                $"{operationName} returned an empty 'result.video_info' playback payload.");
+            throw new PlaybackResourceUnavailableException(operationName);
         }
 
         return payload;
     }
 
-    private static BilibiliApiResponseException MalformedPayload(
-        string operationName,
-        string fieldName)
-    {
-        return new BilibiliApiResponseException(
-            operationName,
-            $"{operationName} returned a malformed playback payload: '{fieldName}' was null.");
-    }
 }

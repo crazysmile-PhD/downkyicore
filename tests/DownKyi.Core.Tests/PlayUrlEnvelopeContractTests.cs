@@ -74,17 +74,17 @@ public sealed class PlayUrlEnvelopeContractTests
     }
 
     [Fact]
-    public void PresentButEmptyEnvelopeThrowsTypedContractFailure()
+    public void PresentButEmptyEnvelopeIsUnavailable()
     {
         var response = ReadSample("playurl-empty-data.json");
 
-        var exception = Assert.Throws<BilibiliApiResponseException>(() =>
+        var exception = Assert.Throws<PlaybackResourceUnavailableException>(() =>
             VideoStreamApi.SelectPlayUrlPayload(
                 response,
                 VideoStreamApi.PlayUrlPayloadField.Data,
                 "video"));
 
-        Assert.Contains("empty 'data'", exception.Message, StringComparison.Ordinal);
+        Assert.Equal("video", exception.Operation);
     }
 
     [Fact]
@@ -470,7 +470,7 @@ public sealed class PlayUrlEnvelopeContractTests
         Assert.Equal(2, requests);
         Assert.Equal(PlayUrlResolutionSource.Api, payload.Diagnostics?.Source);
         Assert.Equal(
-            "api-fallback-selected:embedded-playback-without-usable-address",
+            "api-fallback-selected:embedded-playback-unavailable",
             payload.Diagnostics?.Outcome);
     }
 
@@ -505,7 +505,7 @@ public sealed class PlayUrlEnvelopeContractTests
             && video.StreamKind == PlayUrlStreamKind.Dash);
         Assert.Equal(PlayUrlResolutionSource.Api, payload.Diagnostics?.Source);
         Assert.Equal(
-            "api-fallback-selected:embedded-playback-without-usable-address",
+            "api-fallback-selected:embedded-playback-unavailable",
             payload.Diagnostics?.Outcome);
     }
 
@@ -1067,14 +1067,32 @@ public sealed class PlayUrlEnvelopeContractTests
     }
 
     [Theory]
-    [MemberData(nameof(MalformedBangumiPlaybackPayloads))]
-    public async Task BangumiV2NullPlaybackFieldThrowsTypedMalformedFailure(
-        string fieldName,
+    [MemberData(nameof(NullBangumiMediaPayloads))]
+    public async Task BangumiV2NullMediaKindIsAbsentWhenAnotherKindIsPlayable(
         string responseBody)
     {
         var client = CreateClientFromBody(responseBody);
 
-        var exception = await Assert.ThrowsAsync<BilibiliApiResponseException>(() =>
+        var payload = await client.GetBangumiPlaybackDiscoveryAsync(
+            1,
+            "BV1fixture",
+            2,
+            3489,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.NotNull(payload);
+        Assert.True(payload.Availability?.HasPlayableMedia);
+    }
+
+    [Fact]
+    public async Task BangumiV2EmptyPlaybackCollectionsAreUnavailable()
+    {
+        var client = CreateClientFromBody(
+            """
+            {"code":0,"message":"success","result":{"video_info":{"durl":[],"dash":{"video":[],"audio":[]}}}}
+            """);
+
+        var exception = await Assert.ThrowsAsync<PlaybackResourceUnavailableException>(() =>
             client.GetBangumiPlayUrlAsync(
                 1,
                 "BV1fixture",
@@ -1083,27 +1101,6 @@ public sealed class PlayUrlEnvelopeContractTests
                 cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Equal(nameof(VideoStreamApi.GetBangumiPlayUrlAsync), exception.Operation);
-        Assert.Contains("malformed playback payload", exception.Message, StringComparison.Ordinal);
-        Assert.Contains(fieldName, exception.Message, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task BangumiV2EmptyPlaybackCollectionsThrowTypedEmptyFailure()
-    {
-        var client = CreateClientFromBody(
-            """
-            {"code":0,"message":"success","result":{"video_info":{"durl":[],"dash":{"video":[],"audio":[]}}}}
-            """);
-
-        var exception = await Assert.ThrowsAsync<BilibiliApiResponseException>(() =>
-            client.GetBangumiPlayUrlAsync(
-                1,
-                "BV1fixture",
-                2,
-                3489,
-                cancellationToken: TestContext.Current.CancellationToken));
-
-        Assert.Contains("empty 'result.video_info'", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1201,7 +1198,7 @@ public sealed class PlayUrlEnvelopeContractTests
 
         Assert.Equal(nameof(VideoStreamApi.GetBangumiPlayUrlAsync), exception.Operation);
         Assert.Equal(-10403, exception.Code);
-        Assert.Equal(2, requests);
+        Assert.Equal(3, requests);
     }
 
     [Fact]
@@ -1225,11 +1222,11 @@ public sealed class PlayUrlEnvelopeContractTests
     }
 
     [Fact]
-    public async Task OrdinaryVideoEndpointRejectsEmptyDataEnvelope()
+    public async Task OrdinaryVideoEndpointClassifiesEmptyDataAsUnavailable()
     {
         var client = CreateClient("playurl-empty-data.json");
 
-        var exception = await Assert.ThrowsAsync<BilibiliApiResponseException>(() =>
+        var exception = await Assert.ThrowsAsync<PlaybackResourceUnavailableException>(() =>
             client.GetVideoPlayUrlAsync(
                 Keys,
                 1702204169,
@@ -1239,6 +1236,149 @@ public sealed class PlayUrlEnvelopeContractTests
                 cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Equal(nameof(VideoStreamApi.GetVideoPlayUrlAsync), exception.Operation);
+    }
+
+    [Fact]
+    public async Task OrdinaryVideoEndpointAcceptsVideoWhenAudioIsExplicitlyNull()
+    {
+        var client = CreateClientFromBody(
+            """
+            {"code":0,"data":{"dash":{"video":[{"id":80,"codecid":7,"base_url":"https://media.invalid/video"}],"audio":null}}}
+            """);
+
+        var playback = await client.GetVideoPlayUrlAsync(
+            Keys,
+            1702204169,
+            1,
+            "BV1fixture",
+            2,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(80, Assert.Single(PlayUrlAvailability.From(playback!).Video).Quality);
+        Assert.Empty(playback!.Dash.Audio);
+    }
+
+    [Fact]
+    public async Task OrdinaryVideoEndpointRejectsPreviewEvenWithUsableMedia()
+    {
+        var requests = 0;
+        var client = new StubBilibiliApiClient((_, _) =>
+        {
+            requests++;
+            return Task.FromResult(
+                """
+                {"code":0,"data":{"is_preview":true,"dash":{"video":[{"id":80,"codecid":7,"base_url":"https://media.invalid/video"}],"audio":[]}}}
+                """);
+        });
+
+        var failure = await Assert.ThrowsAsync<BilibiliApiResponseException>(() =>
+            client.GetVideoPlayUrlAsync(
+                Keys,
+                1702204169,
+                1,
+                "BV1fixture",
+                2,
+                cancellationToken: TestContext.Current.CancellationToken));
+
+        Assert.Contains("preview-only", failure.Message, StringComparison.Ordinal);
+        Assert.Equal(1, requests);
+    }
+
+    [Fact]
+    public async Task OrdinaryVideoEndpointDoesNotTreatInvalidAddressAsMedia()
+    {
+        var requests = 0;
+        var client = new StubBilibiliApiClient((_, _) =>
+        {
+            requests++;
+            return Task.FromResult(
+                """
+                {"code":0,"data":{"dash":{"video":[{"id":80,"codecid":7,"base_url":"not-a-media-url"}],"audio":[]}}}
+                """);
+        });
+
+        await Assert.ThrowsAsync<PlaybackResourceUnavailableException>(() =>
+            client.GetVideoPlayUrlAsync(
+                Keys,
+                1702204169,
+                1,
+                "BV1fixture",
+                2,
+                cancellationToken: TestContext.Current.CancellationToken));
+
+        Assert.Equal(1, requests);
+    }
+
+    [Fact]
+    public async Task OrdinaryVideoEndpointRetriesApiCodeFailureOnce()
+    {
+        var requests = 0;
+        var body = await File.ReadAllTextAsync(
+            Path.Combine(SampleDirectory, "playurl-video-data.json"),
+            TestContext.Current.CancellationToken);
+        var client = new StubBilibiliApiClient((_, _) =>
+        {
+            requests++;
+            return requests == 1
+                ? Task.FromResult("{\"code\":-500,\"message\":\"temporary\"}")
+                : Task.FromResult(body);
+        });
+
+        var playback = await client.GetVideoPlayUrlAsync(
+            Keys,
+            1702204169,
+            1,
+            "BV1fixture",
+            2,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(80, Assert.Single(playback!.Dash.Video).Id);
+        Assert.Equal(2, requests);
+    }
+
+    [Fact]
+    public async Task OrdinaryVideoEndpointLeavesWbiRejectionToKeyRefresh()
+    {
+        var requests = 0;
+        var client = new StubBilibiliApiClient((_, _) =>
+        {
+            requests++;
+            return Task.FromResult("{\"code\":-403,\"message\":\"stale signature\"}");
+        });
+
+        var failure = await Assert.ThrowsAsync<BilibiliApiResponseException>(() =>
+            client.GetVideoPlayUrlAsync(
+                Keys,
+                1702204169,
+                1,
+                "BV1fixture",
+                2,
+                cancellationToken: TestContext.Current.CancellationToken));
+
+        Assert.Equal(-403, failure.Code);
+        Assert.Equal(1, requests);
+    }
+
+    [Fact]
+    public async Task OrdinaryVideoEndpointPreservesTransportFailureForTransportOwner()
+    {
+        var requests = 0;
+        var client = new StubBilibiliApiClient((_, _) =>
+        {
+            requests++;
+            return Task.FromException<string>(new HttpRequestException("temporary"));
+        });
+
+        await Assert.ThrowsAsync<HttpRequestException>(() =>
+            client.GetVideoPlayUrlAsync(
+                Keys,
+                1702204169,
+                1,
+                "BV1fixture",
+                2,
+                cancellationToken: TestContext.Current.CancellationToken));
+
+        Assert.Equal(1, requests);
     }
 
     private static PlayUrlOrigin ReadSample(string name)
@@ -1281,30 +1421,26 @@ public sealed class PlayUrlEnvelopeContractTests
             }
         };
 
-    public static TheoryData<string, string> MalformedBangumiPlaybackPayloads => new()
+    public static TheoryData<string> NullBangumiMediaPayloads => new()
     {
         {
-            "result.video_info.durl",
             """
-            {"code":0,"message":"success","result":{"video_info":{"durl":null,"dash":{"video":[{}],"audio":[{}]}}}}
-            """
-        },
-        {
-            "result.video_info.dash",
-            """
-            {"code":0,"message":"success","result":{"video_info":{"durl":[{}],"dash":null}}}
+            {"code":0,"message":"success","result":{"video_info":{"durl":null,"dash":{"video":[{"id":80,"codecid":7,"base_url":"https://media.invalid/video"}],"audio":null}}}}
             """
         },
         {
-            "result.video_info.dash.video",
             """
-            {"code":0,"message":"success","result":{"video_info":{"durl":[],"dash":{"video":null,"audio":[{}]}}}}
+            {"code":0,"message":"success","result":{"video_info":{"quality":80,"video_codecid":7,"durl":[{"order":1,"url":"https://media.invalid/segment"}],"dash":null}}}
             """
         },
         {
-            "result.video_info.dash.audio",
             """
-            {"code":0,"message":"success","result":{"video_info":{"durl":[],"dash":{"video":[{}],"audio":null}}}}
+            {"code":0,"message":"success","result":{"video_info":{"durl":[],"dash":{"video":null,"audio":[{"id":30280,"base_url":"https://media.invalid/audio"}]}}}}
+            """
+        },
+        {
+            """
+            {"code":0,"message":"success","result":{"video_info":{"durl":[],"dash":{"video":[{"id":80,"codecid":7,"base_url":"https://media.invalid/video"}],"audio":null}}}}
             """
         }
     };
@@ -1312,13 +1448,13 @@ public sealed class PlayUrlEnvelopeContractTests
     public static TheoryData<string> EmbeddedBangumiPlaybackShapes => new()
     {
         """
-        <script>const playurlSSRData = {"code":0,"result":{"play_check":{"play_detail":"PLAY_WHOLE"},"video_info":{"durl":[],"dash":{"video":[{"id":112}],"audio":[{"id":30280}]}}}};</script>
+        <script>const playurlSSRData = {"code":0,"result":{"play_check":{"play_detail":"PLAY_WHOLE"},"video_info":{"durl":[],"dash":{"video":[{"id":112,"codecid":7,"base_url":"https://media.invalid/video"}],"audio":[{"id":30280,"base_url":"https://media.invalid/audio"}]}}}};</script>
         """,
         """
-        <script>const playurlSSRData = {"code":0,"raw":{"data":{"play_check":{"play_detail":"PLAY_WHOLE"},"video_info":{"durl":[],"dash":{"video":[{"id":112}],"audio":[{"id":30280}]}}}}};</script>
+        <script>const playurlSSRData = {"code":0,"raw":{"data":{"play_check":{"play_detail":"PLAY_WHOLE"},"video_info":{"durl":[],"dash":{"video":[{"id":112,"codecid":7,"base_url":"https://media.invalid/video"}],"audio":[{"id":30280,"base_url":"https://media.invalid/audio"}]}}}}};</script>
         """,
         """
-        <script>const playurlSSRData = {"data":{"code":0,"result":{"play_check":{"play_detail":"PLAY_WHOLE"},"video_info":{"durl":[],"dash":{"video":[{"id":112}],"audio":[{"id":30280}]}}}}};</script>
+        <script>const playurlSSRData = {"data":{"code":0,"result":{"play_check":{"play_detail":"PLAY_WHOLE"},"video_info":{"durl":[],"dash":{"video":[{"id":112,"codecid":7,"base_url":"https://media.invalid/video"}],"audio":[{"id":30280,"base_url":"https://media.invalid/audio"}]}}}}};</script>
         """
     };
 

@@ -3,7 +3,7 @@ using DownKyi.Core.BiliApi.VideoStream.Models;
 
 namespace DownKyi.Core.BiliApi.VideoStream;
 
-public sealed class PlaybackSelectionUnavailableException : InvalidOperationException
+public sealed class PlaybackSelectionUnavailableException : PlaybackUnavailableException
 {
     public PlaybackSelectionUnavailableException()
         : this(0, null, null, null)
