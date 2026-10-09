@@ -5,6 +5,7 @@
 - `ffmpeg-asset-mirroring.md`：FFmpeg immutable mirror、updater 權限、失敗恢復與 manifest 驗證。
 - `v1.1.2-release-notes.md`：immutable v1.1.2 recovery workflow 的固定發布說明輸入。
 - `bilibili-api-audit.md`：Bilibili generated endpoint inventory、非推導 contract 例外與 live-audit 安全邊界。
+- `historical-source-archive.md`：1.0.24 以前的原始 Git 提交、封存 tags、快照辨識與查閱指令。
 - `../maintenance.md`：依賴、analyzers、external binaries、package 與 release 維護。
 - `../performance-baseline.md`：系統效能基準欄位與比較規則。
 
