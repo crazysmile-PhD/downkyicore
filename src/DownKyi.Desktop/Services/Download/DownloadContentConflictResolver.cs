@@ -16,27 +16,32 @@ internal enum DownloadContentConflictAction
 internal sealed record DownloadContentConflict(
     DownloadContentSelection RequestedContent,
     DownloadMediaCapabilities AvailableMedia,
-    DownloadContentSelection AvailableContent)
+    DownloadContentSelection AvailableContent,
+    DownloadQualitySubstitutions QualitySubstitutions)
 {
     public bool HasAvailableMedia => AvailableContent.Audio || AvailableContent.Video;
 
     public static DownloadContentConflict? Find(
         DownloadContentSelection requestedContent,
-        DownloadMediaCapabilities availableMedia)
+        DownloadMediaCapabilities availableMedia,
+        DownloadQualitySubstitutions qualitySubstitutions)
     {
         ArgumentNullException.ThrowIfNull(requestedContent);
         ArgumentNullException.ThrowIfNull(availableMedia);
+        ArgumentNullException.ThrowIfNull(qualitySubstitutions);
 
-        if (availableMedia.Supports(requestedContent))
+        var requestedMediaAvailable = availableMedia.Supports(requestedContent);
+        _ = availableMedia.TryGetCompatibleContent(requestedContent, out var availableContent);
+        var relevantSubstitutions = qualitySubstitutions.For(availableContent);
+        return (requestedMediaAvailable, relevantSubstitutions.HasAny) switch
         {
-            return null;
-        }
-
-        availableMedia.TryGetCompatibleContent(requestedContent, out var availableContent);
-        return new DownloadContentConflict(
-            requestedContent,
-            availableMedia,
-            availableContent);
+            (true, false) => null,
+            _ => new DownloadContentConflict(
+                requestedContent,
+                availableMedia,
+                availableContent,
+                relevantSubstitutions)
+        };
     }
 }
 
@@ -46,15 +51,58 @@ internal sealed record DownloadContentConflictDecision(
 
 internal sealed class DownloadContentConflictChoices
 {
-    private readonly Dictionary<DownloadContentConflict, DownloadContentConflictAction> _choices = [];
+    private readonly Dictionary<DownloadContentConflictKey, DownloadContentConflictAction> _choices = [];
 
     public bool TryGet(
         DownloadContentConflict conflict,
-        out DownloadContentConflictAction action) => _choices.TryGetValue(conflict, out action);
+        out DownloadContentConflictAction action) =>
+        _choices.TryGetValue(DownloadContentConflictKey.From(conflict), out action);
 
-    public void Remember(
+    public DownloadContentConflictAction Remember(
         DownloadContentConflict conflict,
-        DownloadContentConflictAction action) => _choices[conflict] = action;
+        DownloadContentConflictAction action) =>
+        (conflict.QualitySubstitutions.HasAny, action) switch
+        {
+            (true, DownloadContentConflictAction.SkipPage) => action,
+            _ => Store(DownloadContentConflictKey.From(conflict), action)
+        };
+
+    private DownloadContentConflictAction Store(
+        DownloadContentConflictKey key,
+        DownloadContentConflictAction action)
+    {
+        _choices[key] = action;
+        return action;
+    }
+
+    private abstract record DownloadContentConflictKey
+    {
+        public static DownloadContentConflictKey From(DownloadContentConflict conflict)
+        {
+            ArgumentNullException.ThrowIfNull(conflict);
+            return conflict.QualitySubstitutions.HasAny switch
+            {
+                true => new QualitySubstitutionConflictKey(
+                    conflict.RequestedContent,
+                    conflict.AvailableContent),
+                false => new MediaAvailabilityConflictKey(
+                    conflict.RequestedContent,
+                    conflict.AvailableContent,
+                    conflict.AvailableMedia.SupportedModes,
+                    conflict.AvailableMedia.VideoSelectionRequired)
+            };
+        }
+
+        private sealed record QualitySubstitutionConflictKey(
+            DownloadContentSelection RequestedContent,
+            DownloadContentSelection AvailableContent) : DownloadContentConflictKey;
+
+        private sealed record MediaAvailabilityConflictKey(
+            DownloadContentSelection RequestedContent,
+            DownloadContentSelection AvailableContent,
+            DownloadMediaOutputModes SupportedModes,
+            bool VideoSelectionRequired) : DownloadContentConflictKey;
+    }
 }
 
 internal sealed class DownloadContentConflictResolver
@@ -92,7 +140,8 @@ internal sealed class DownloadContentConflictResolver
 
                 var conflict = DownloadContentConflict.Find(
                     requestedContent,
-                    preparedPage.AvailableMedia);
+                    preparedPage.AvailableMedia,
+                    preparedPage.QualitySubstitutions);
                 if (conflict == null)
                 {
                     pages.Add(new FinalizedDownloadPage(page, page.VideoQuality, requestedContent));
@@ -139,11 +188,10 @@ internal sealed class DownloadContentConflictResolver
             _dialogService,
             new DownloadContentConflictPrompt(pageName, conflict),
             cancellationToken).ConfigureAwait(true);
-        if (decision.ApplyToAll)
+        return decision.ApplyToAll switch
         {
-            choices.Remember(conflict, decision.Action);
-        }
-
-        return decision.Action;
+            true => choices.Remember(conflict, decision.Action),
+            false => decision.Action
+        };
     }
 }

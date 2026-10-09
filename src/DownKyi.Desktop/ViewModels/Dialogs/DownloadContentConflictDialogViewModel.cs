@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Services.Download;
@@ -9,7 +10,10 @@ namespace DownKyi.ViewModels.Dialogs;
 internal sealed class DownloadContentConflictDialogViewModel : BaseDialogViewModel
 {
     private DownloadContentConflict? _conflict;
+    private bool _hasQualitySubstitution;
+    private string _applyToAllText = string.Empty;
     private string _message = string.Empty;
+    private string _qualitySubstitution = string.Empty;
     private string _useAvailableContent = string.Empty;
     private bool _applyToAll;
 
@@ -34,10 +38,28 @@ internal sealed class DownloadContentConflictDialogViewModel : BaseDialogViewMod
         private set => SetProperty(ref _useAvailableContent, value);
     }
 
+    public bool HasQualitySubstitution
+    {
+        get => _hasQualitySubstitution;
+        private set => SetProperty(ref _hasQualitySubstitution, value);
+    }
+
+    public string QualitySubstitution
+    {
+        get => _qualitySubstitution;
+        private set => SetProperty(ref _qualitySubstitution, value);
+    }
+
     public bool ApplyToAll
     {
         get => _applyToAll;
         set => SetProperty(ref _applyToAll, value);
+    }
+
+    public string ApplyToAllText
+    {
+        get => _applyToAllText;
+        private set => SetProperty(ref _applyToAllText, value);
     }
 
     public RelayCommand UseAvailableContentCommand { get; }
@@ -64,6 +86,12 @@ internal sealed class DownloadContentConflictDialogViewModel : BaseDialogViewMod
         var media = DescribeMedia(prompt.Conflict.AvailableContent);
         Message = DictionaryResource.GetString("DownloadContentConflictMessage")
             .Replace("{0}", prompt.PageName, StringComparison.Ordinal);
+        HasQualitySubstitution = prompt.Conflict.QualitySubstitutions.HasAny;
+        ApplyToAllText = DictionaryResource.GetString(HasQualitySubstitution
+            ? "ApplyToAllQualitySubstitution"
+            : "ApplyToAllSameContentConflict");
+        QualitySubstitution = DescribeQualitySubstitutions(
+            prompt.Conflict.QualitySubstitutions);
         UseAvailableContent = DictionaryResource.GetString("UseAvailableDownloadContent")
             .Replace("{0}", media, StringComparison.Ordinal);
     }
@@ -89,6 +117,32 @@ internal sealed class DownloadContentConflictDialogViewModel : BaseDialogViewMod
             (true, false) => DictionaryResource.GetString("DownloadAudio"),
             (false, true) => DictionaryResource.GetString("DownloadVideo"),
             _ => throw new InvalidOperationException("Available media cannot be empty.")
+        };
+    }
+
+    private static string DescribeQualitySubstitutions(
+        DownloadQualitySubstitutions substitutions)
+    {
+        ArgumentNullException.ThrowIfNull(substitutions);
+        return string.Join(
+            DictionaryResource.GetString("QualitySubstitutionSeparator"),
+            new[]
+            {
+                DescribeQualitySubstitution("VideoQualitySubstitution", substitutions.Video),
+                DescribeQualitySubstitution("AudioQualitySubstitution", substitutions.Audio)
+            }.Where(description => !string.IsNullOrEmpty(description)));
+    }
+
+    private static string DescribeQualitySubstitution(
+        string resourceKey,
+        DownloadQualitySubstitution? substitution)
+    {
+        return substitution switch
+        {
+            null => string.Empty,
+            _ => DictionaryResource.GetString(resourceKey)
+                .Replace("{0}", substitution.RequestedName, StringComparison.Ordinal)
+                .Replace("{1}", substitution.SelectedName, StringComparison.Ordinal)
         };
     }
 }
