@@ -96,11 +96,7 @@ public static partial class VideoStreamApi
             .ConfigureAwait(false);
         if (playUrl != null)
         {
-            var availability = PlayUrlAvailability.From(playUrl);
-            if (availability.Video.Count > 0
-                && (availability.Audio.Count > 0
-                    || (playUrl.Quality == quality
-                        && PlayUrlAvailability.HasUsableDurl(playUrl))))
+            if (BangumiPlaybackResolver.HasCompleteDiscovery(playUrl, quality))
             {
                 return AttachVideoDiagnostics(playUrl, quality, "webpage-selected");
             }
@@ -339,9 +335,8 @@ public static partial class VideoStreamApi
                 var hasUsableEmbeddedPlayback = requireVideo
                     ? embeddedAvailability.Video.Count > 0
                     : embeddedAvailability.Audio.Count > 0;
-                if (discoverAvailability && embeddedAvailability.Video.Count > 0
-                    && (embeddedAvailability.Audio.Count > 0
-                        || PlayUrlAvailability.HasUsableDurl(embeddedPlayUrl)))
+                if (discoverAvailability
+                    && BangumiPlaybackResolver.HasCompleteDiscovery(embeddedPlayUrl))
                 {
                     return CompleteBangumiPlayback(
                         embeddedPlayUrl,

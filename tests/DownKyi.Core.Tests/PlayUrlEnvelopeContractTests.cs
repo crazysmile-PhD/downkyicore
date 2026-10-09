@@ -116,7 +116,7 @@ public sealed class PlayUrlEnvelopeContractTests
             {
                 return Task.FromResult(
                     """
-                    <script>window.__playinfo__={"code":0,"message":"success","data":{"quality":64,"video_codecid":7,"durl":[{"order":1,"url":"https://example.invalid/default"}]}}</script>
+                    <script>window.__playinfo__={"code":0,"message":"success","data":{"quality":64,"video_codecid":7,"durl":[{"order":1,"url":"https://example.invalid/default"}],"dash":{"audio":[{"id":30280,"base_url":"https://example.invalid/audio"}]}}}</script>
                     """);
             }
 

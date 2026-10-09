@@ -8,6 +8,20 @@ internal static class BangumiPlaybackResolver
 {
     private const string EmbeddedPlaybackMarker = "playurlSSRData";
 
+    public static bool HasCompleteDiscovery(
+        PlayUrl playback,
+        int? requestedDurlQuality = null)
+    {
+        ArgumentNullException.ThrowIfNull(playback);
+        var availability = PlayUrlAvailability.From(playback);
+        return availability.Video.Count > 0
+               && (availability.Audio.Count > 0
+                   || PlayUrlAvailability.HasUsableDurl(playback))
+               && (requestedDurlQuality == null
+                   || playback.Durl.Count == 0
+                   || playback.Quality == requestedDurlQuality);
+    }
+
     public static PlayUrl CombineDiscovery(
         PlayUrl primary,
         PlayUrl supplement,
