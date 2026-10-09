@@ -52,6 +52,8 @@ Assert-True ($syncScript -match '(?m)^\s*tag_name\s*=\s*\$tag\s*$') 'Draft updat
 Assert-True ($syncScript -match '(?m)^\s*target_commitish\s*=\s*\$expectedCommit\s*$') 'Draft updates must preserve the historical source commit.'
 $ensureScript = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Ensure-HistoricalDraftReleases.ps1') -Raw
 Assert-True ($ensureScript -match "-like 'untagged-\*'") 'Draft setup must recover GitHub-detached historical drafts without creating duplicates.'
+$buildScript = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Invoke-HistoricalBuild.ps1') -Raw
+Assert-True ($buildScript -notmatch "Invoke-Native\s+chmod[^\r\n]*'--'") 'Historical builds must use chmod arguments supported by BSD and GNU hosts.'
 
 $scripts = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.ps1' -File)
 foreach ($script in $scripts) {

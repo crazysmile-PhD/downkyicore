@@ -150,7 +150,7 @@ Thread.Sleep(TimeSpan.FromMinutes(2));
     }
     New-Item -ItemType Directory -Path $AriaDirectory -Force | Out-Null
     Copy-Item -Path (Join-Path $stubOutput '*') -Destination $AriaDirectory -Recurse -Force
-    if ($Platform -ne 'windows-x64') { Invoke-Native chmod '+x' '--' (Join-Path $AriaDirectory 'aria2c') }
+    if ($Platform -ne 'windows-x64') { Invoke-Native chmod '+x' (Join-Path $AriaDirectory 'aria2c') }
     return $ApplicationRoot
 }
 
@@ -192,7 +192,7 @@ function Install-RuntimeAssets {
         }
         New-Item -ItemType Directory -Path (Split-Path -Parent $entry.Destination) -Force | Out-Null
         Copy-Item -LiteralPath $entry.Source -Destination $entry.Destination -Force
-        if ($Platform -ne 'windows-x64') { Invoke-Native chmod '+x' '--' $entry.Destination }
+        if ($Platform -ne 'windows-x64') { Invoke-Native chmod '+x' $entry.Destination }
     }
     $compatibility.Add('Injected converter-prepared, checksum-verified aria2 and FFmpeg runtime binaries in the temporary checkout; the historical commit was not changed.')
 }
@@ -250,7 +250,7 @@ function New-MacPackage {
     $plist = Join-Path $appBundle 'Contents/Info.plist'
     Invoke-Native /usr/libexec/PlistBuddy '-c' "Set :CFBundleVersion $Version" $plist
     Invoke-Native /usr/libexec/PlistBuddy '-c' "Set :CFBundleShortVersionString $Version" $plist
-    Invoke-Native chmod '+x' '--' (Join-Path $macOSRoot 'DownKyi') (Join-Path $macOSRoot 'aria2/aria2c') (Join-Path $macOSRoot 'ffmpeg/ffmpeg') (Join-Path $macOSRoot 'ffmpeg/ffprobe')
+    Invoke-Native chmod '+x' (Join-Path $macOSRoot 'DownKyi') (Join-Path $macOSRoot 'aria2/aria2c') (Join-Path $macOSRoot 'ffmpeg/ffmpeg') (Join-Path $macOSRoot 'ffmpeg/ffprobe')
     Invoke-Native codesign '--deep' '--force' '--sign' '-' '--timestamp=none' $appBundle
     Invoke-Native codesign '--verify' '--deep' '--strict' '--verbose=2' $appBundle
     $signing.type = 'ad-hoc'
@@ -291,7 +291,7 @@ HERE="$(dirname "$(readlink -f "$0")")"
 exec "$HERE/usr/bin/DownKyi" "$@"
 '@
     Set-Content -LiteralPath (Join-Path $appDir 'AppRun') -Value $appRun -Encoding utf8NoBOM
-    Invoke-Native chmod '+x' '--' (Join-Path $appDir 'AppRun') (Join-Path $binRoot 'DownKyi') (Join-Path $binRoot 'aria2/aria2c') (Join-Path $binRoot 'ffmpeg/ffmpeg') (Join-Path $binRoot 'ffmpeg/ffprobe')
+    Invoke-Native chmod '+x' (Join-Path $appDir 'AppRun') (Join-Path $binRoot 'DownKyi') (Join-Path $binRoot 'aria2/aria2c') (Join-Path $binRoot 'ffmpeg/ffmpeg') (Join-Path $binRoot 'ffmpeg/ffprobe')
     $tool = Join-Path $RuntimeAssetsRoot 'appimagetool/appimagetool-x86_64.AppImage'
     if (-not (Test-Path -LiteralPath $tool -PathType Leaf)) { throw 'Prepared appimagetool is missing.' }
     $toolMetadata = Get-Content -LiteralPath (Join-Path $RuntimeAssetsRoot 'runtime-assets.json') -Raw | ConvertFrom-Json
@@ -299,7 +299,7 @@ exec "$HERE/usr/bin/DownKyi" "$@"
     if ($toolEntries.Count -ne 1 -or (Get-FileHash -LiteralPath $tool -Algorithm SHA256).Hash.ToLowerInvariant() -ne ([string]$toolEntries[0].binarySha256).ToLowerInvariant()) {
         throw 'Prepared appimagetool checksum does not match runtime metadata.'
     }
-    Invoke-Native chmod '+x' '--' $tool
+    Invoke-Native chmod '+x' $tool
     $oldArch = $env:ARCH
     $oldExtract = $env:APPIMAGE_EXTRACT_AND_RUN
     try {
