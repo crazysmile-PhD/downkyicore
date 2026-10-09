@@ -196,6 +196,7 @@ internal sealed class FfmpegConcatRuntime
         bool overwriteDestination,
         Action<string>? progress = null,
         FfmpegEmbeddedAudioMode embeddedAudioMode = FfmpegEmbeddedAudioMode.Optional,
+        string? externalAudio = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(segments);
@@ -208,8 +209,10 @@ internal sealed class FfmpegConcatRuntime
         }
 
         var orderedSegments = segments.OrderBy(segment => segment.Order).ToArray();
-        var preflightFailures = FfmpegInputDiagnostic.ProbeInputs(
-            orderedSegments.Select(segment => segment.FilePath));
+        var sourceFiles = orderedSegments.Select(segment => segment.FilePath)
+            .Concat(externalAudio == null ? [] : [externalAudio])
+            .ToArray();
+        var preflightFailures = FfmpegInputDiagnostic.ProbeInputs(sourceFiles);
         if (preflightFailures.Count > 0)
         {
             return FfmpegOperationResult.Failure(
@@ -253,7 +256,8 @@ internal sealed class FfmpegConcatRuntime
                             temporaryOutput,
                             strategy,
                             hardwareEncoder,
-                            embeddedAudioMode);
+                            embeddedAudioMode,
+                            externalAudio);
                         var processResult = await _processRunner
                             .RunAsync(command, ConcatTimeout, cancellationToken)
                             .ConfigureAwait(false);
@@ -300,7 +304,7 @@ internal sealed class FfmpegConcatRuntime
                 ? await FfmpegInputDiagnostic.FindInputFailuresAsync(
                         _processRunner,
                         _concurrencyGate,
-                        orderedSegments.Select(segment => segment.FilePath),
+                        sourceFiles,
                         ConcatTimeout,
                         cancellationToken)
                     .ConfigureAwait(false)

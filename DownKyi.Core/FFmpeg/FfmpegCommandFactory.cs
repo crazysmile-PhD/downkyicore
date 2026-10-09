@@ -118,7 +118,8 @@ internal static class FfmpegCommandFactory
         string outputFile,
         FfmpegConcatStrategy strategy,
         FfmpegHardwareEncoderProfile? hardwareEncoder,
-        FfmpegEmbeddedAudioMode embeddedAudioMode)
+        FfmpegEmbeddedAudioMode embeddedAudioMode,
+        string? externalAudio = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(listFile);
         ArgumentException.ThrowIfNullOrWhiteSpace(outputFile);
@@ -135,21 +136,24 @@ internal static class FfmpegCommandFactory
             "-safe",
             "0",
             "-i",
-            listFile,
-            "-map",
-            "0:v:0"
+            listFile
         };
-        if (embeddedAudioMode == FfmpegEmbeddedAudioMode.Required)
+        if (externalAudio != null)
         {
-            arguments.AddRange(["-map", "0:a:0"]);
+            ArgumentException.ThrowIfNullOrWhiteSpace(externalAudio);
+            arguments.AddRange(["-i", externalAudio, "-map", "0:v:0", "-map", "1:a:0"]);
+        }
+        else if (embeddedAudioMode == FfmpegEmbeddedAudioMode.Required)
+        {
+            arguments.AddRange(["-map", "0:v:0", "-map", "0:a:0"]);
         }
         else if (embeddedAudioMode == FfmpegEmbeddedAudioMode.Excluded)
         {
-            arguments.Add("-an");
+            arguments.AddRange(["-map", "0:v:0", "-an"]);
         }
         else
         {
-            arguments.AddRange(["-map", "0:a?"]);
+            arguments.AddRange(["-map", "0:v:0", "-map", "0:a?"]);
         }
 
         switch (strategy)

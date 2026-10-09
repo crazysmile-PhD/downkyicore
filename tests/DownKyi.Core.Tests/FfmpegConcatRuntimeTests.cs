@@ -49,6 +49,65 @@ public sealed class FfmpegConcatRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task ConcatWithIndependentAudioProducesOneValidatedOutput()
+    {
+        var segment = CreateSegment("video.flv");
+        var audio = CreateSegment("selected-audio.m4s");
+        var runner = new RecordingConcatRunner();
+        var runtime = new FfmpegConcatRuntime(
+            runner,
+            new StubMediaValidator(isValid: true),
+            new AsyncConcurrencyGate(() => 1),
+            NullLogger<FfmpegConcatRuntime>.Instance);
+        var output = Path.Combine(_testDirectory, "combined.mp4");
+
+        var result = await runtime.ConcatAsync(
+            [new FfmpegConcatSegment(1, segment, TimeSpan.FromSeconds(5))],
+            output,
+            hardwareEncoder: null,
+            allowStreamCopy: false,
+            overwriteDestination: false,
+            embeddedAudioMode: FfmpegEmbeddedAudioMode.Excluded,
+            cancellationToken: TestContext.Current.CancellationToken,
+            externalAudio: audio);
+
+        Assert.True(result.Succeeded);
+        Assert.True(File.Exists(output));
+        Assert.True(File.Exists(segment));
+        Assert.True(File.Exists(audio));
+        Assert.Contains(audio, runner.Commands[0].Arguments);
+        Assert.Contains("1:a:0", runner.Commands[0].Arguments);
+    }
+
+    [Fact]
+    public async Task MissingIndependentAudioFailsBeforeConcatAndPreservesSegments()
+    {
+        var segment = CreateSegment("video.flv");
+        var missingAudio = Path.Combine(_testDirectory, "missing-audio.m4a");
+        var runner = new RecordingConcatRunner();
+        var runtime = new FfmpegConcatRuntime(
+            runner,
+            new StubMediaValidator(isValid: true),
+            new AsyncConcurrencyGate(() => 1),
+            NullLogger<FfmpegConcatRuntime>.Instance);
+
+        var result = await runtime.ConcatAsync(
+            [new FfmpegConcatSegment(1, segment, TimeSpan.FromSeconds(5))],
+            Path.Combine(_testDirectory, "combined.mp4"),
+            hardwareEncoder: null,
+            allowStreamCopy: false,
+            overwriteDestination: false,
+            externalAudio: missingAudio,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(FfmpegOperationFailureKind.InvalidInput, result.FailureKind);
+        Assert.Equal(missingAudio, Assert.Single(result.InvalidInputPaths));
+        Assert.Empty(runner.Commands);
+        Assert.True(File.Exists(segment));
+    }
+
+    [Fact]
     public async Task ConcatDeletesRejectedOutputAndReturnsFailure()
     {
         var segment = CreateSegment("bad.flv");

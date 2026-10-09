@@ -81,12 +81,6 @@ public sealed class MuxFailureRecoveryTests
         await using var testLifetime = test.ConfigureAwait(true);
         var sources = await test.AddDurlSourcesAsync(segmentCount).ConfigureAwait(true);
         test.Execution.MediaKind = DownloadMediaKind.DurlWithDashAudio;
-        if (segmentCount > 1)
-        {
-            await File.WriteAllBytesAsync(
-                test.Execution.WorkingBasePath + ".durl-video.mp4",
-                [0], TestContext.Current.CancellationToken).ConfigureAwait(true);
-        }
         var stage = test.CreateStage(new FfmpegOperationResult(
             succeeded: true,
             outputPath: test.Execution.WorkingBasePath + ".mp4",
@@ -98,19 +92,24 @@ public sealed class MuxFailureRecoveryTests
             TestContext.Current.CancellationToken).ConfigureAwait(true);
 
         Assert.True(result.IsSuccess);
-        Assert.Equal(test.AudioFile, test.Muxer!.MergeAudio);
-        Assert.Equal(FfmpegEmbeddedAudioMode.Excluded,
-            test.Muxer.MergeEmbeddedAudioMode);
-        Assert.Equal(segmentCount == 1 ? sources[0].FilePath : test.Muxer.ConcatOutput,
-            test.Muxer.MergeVideo);
-        Assert.Equal(segmentCount == 1 ? 0 : 1, test.Muxer.ConcatCalls);
-        if (segmentCount > 1)
+        if (segmentCount == 1)
         {
-            Assert.Equal(test.Execution.WorkingBasePath + ".durl-video.mp4",
+            Assert.Equal(test.AudioFile, test.Muxer!.MergeAudio);
+            Assert.Equal(sources[0].FilePath, test.Muxer.MergeVideo);
+            Assert.Equal(FfmpegEmbeddedAudioMode.Excluded,
+                test.Muxer.MergeEmbeddedAudioMode);
+            Assert.Equal(0, test.Muxer.ConcatCalls);
+        }
+        else
+        {
+            Assert.Equal(test.AudioFile, test.Muxer!.ConcatExternalAudio);
+            Assert.Equal(test.Execution.WorkingBasePath + ".mp4",
                 test.Muxer.ConcatOutput);
             Assert.Equal(FfmpegEmbeddedAudioMode.Excluded,
                 test.Muxer.ConcatEmbeddedAudioMode);
-            Assert.False(File.Exists(test.Muxer.ConcatOutput));
+            Assert.Equal(1, test.Muxer.ConcatCalls);
+            Assert.Null(test.Muxer.MergeAudio);
+            Assert.False(File.Exists(test.Execution.WorkingBasePath + ".durl-video.mp4"));
         }
 
         Assert.All(sources, source => Assert.True(File.Exists(source.FilePath)));
@@ -485,6 +484,8 @@ public sealed class MuxFailureRecoveryTests
 
         public string? ConcatOutput { get; private set; }
 
+        public string? ConcatExternalAudio { get; private set; }
+
         public int ConcatCalls { get; private set; }
 
         public Task<FfmpegOperationResult> ConcatDurlVideosAsync(
@@ -494,10 +495,12 @@ public sealed class MuxFailureRecoveryTests
             bool overwriteDestination,
             Action<string>? action = null,
             FfmpegEmbeddedAudioMode embeddedAudioMode = FfmpegEmbeddedAudioMode.Optional,
+            string? externalAudio = null,
             CancellationToken cancellationToken = default)
         {
             ConcatEmbeddedAudioMode = embeddedAudioMode;
             ConcatOutput = outputVideo;
+            ConcatExternalAudio = externalAudio;
             ConcatCalls++;
             if (result.Succeeded)
             {

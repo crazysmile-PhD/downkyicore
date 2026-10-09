@@ -65,6 +65,24 @@ public sealed class FfmpegCommandFactoryTests
     }
 
     [Fact]
+    public void ConcatWithIndependentAudioMapsOnlyTheSelectedTrack()
+    {
+        var command = FfmpegCommandFactory.BuildConcat(
+            "segments.txt",
+            "output.mp4",
+            FfmpegConcatStrategy.StreamCopy,
+            hardwareEncoder: null,
+            embeddedAudioMode: FfmpegEmbeddedAudioMode.Excluded,
+            externalAudio: "selected-audio.m4s");
+
+        Assert.Contains("selected-audio.m4s", command.Arguments);
+        Assert.Contains("1:a:0", command.Arguments);
+        Assert.DoesNotContain("0:a:0", command.Arguments);
+        Assert.DoesNotContain("0:a?", command.Arguments);
+        Assert.DoesNotContain("-an", command.Arguments);
+    }
+
+    [Fact]
     public void GenericConcatPreservesOptionalAudioBehavior()
     {
         var command = FfmpegCommandFactory.BuildConcat(

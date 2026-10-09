@@ -20,6 +20,7 @@ public interface IFfmpegMediaMuxer
         bool overwriteDestination,
         Action<string>? action = null,
         FfmpegEmbeddedAudioMode embeddedAudioMode = FfmpegEmbeddedAudioMode.Optional,
+        string? externalAudio = null,
         CancellationToken cancellationToken = default);
 
     Task<FfmpegOperationResult> MergeMediaAsync(
@@ -101,6 +102,7 @@ public sealed class FfmpegProcessor : IFfmpegMediaMuxer, IFfmpegMediaStreamValid
         bool overwriteDestination,
         Action<string>? action = null,
         FfmpegEmbeddedAudioMode embeddedAudioMode = FfmpegEmbeddedAudioMode.Optional,
+        string? externalAudio = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(videoSettings);
@@ -116,6 +118,7 @@ public sealed class FfmpegProcessor : IFfmpegMediaMuxer, IFfmpegMediaStreamValid
                 overwriteDestination,
                 action,
                 embeddedAudioMode,
+                externalAudio,
                 cancellationToken)
             .ConfigureAwait(false);
     }
