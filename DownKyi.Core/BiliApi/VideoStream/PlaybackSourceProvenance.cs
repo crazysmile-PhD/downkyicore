@@ -10,12 +10,13 @@ internal static class PlaybackSourceProvenance
         foreach (var stream in playback.Dash.Video
                      .Concat(playback.Dash.Audio)
                      .Concat(playback.Dash.Dolby?.Audio ?? [])
-                     .Concat(playback.Dash.Flac?.Audio is { } flac ? [flac] : []))
+                     .Concat(playback.Dash.Flac?.Audio is { } flac ? [flac] : [])
+                     .Where(stream => stream != null))
         {
             stream.Source = source;
         }
 
-        foreach (var segment in playback.Durl)
+        foreach (var segment in playback.Durl.Where(segment => segment != null))
         {
             segment.Source = source;
         }
@@ -34,7 +35,9 @@ internal static class PlaybackSourceProvenance
             .Concat(playback.Dash.Flac?.Audio is { } flac ? [flac] : [])
             .Where(PlayUrlAvailability.HasUsableAddress)
             .Select(stream => stream.Source)
-            .Concat(playback.Durl.Select(segment => segment.Source))
+            .Concat(PlayUrlAvailability.HasUsableDurl(playback)
+                ? playback.Durl.Select(segment => segment.Source)
+                : [])
             .Where(source => source != null)
             .Distinct()
             .ToArray();

@@ -198,40 +198,23 @@ internal sealed class MuxStage : IDownloadPipelineStage
         }
 
         var finalFile = $"{context.WorkingBasePath}.mp4";
-        FfmpegOperationResult result;
-        if (context.DurlDownloads.Count == 1)
-        {
-            await _presenter.ShowMuxingAsync(context, cancellationToken)
-                .ConfigureAwait(true);
-            result = await _ffmpegProcessor.MergeMediaAsync(
-                context.Input.VideoSettings,
-                context.AudioFile,
-                context.DurlDownloads[0].FilePath,
-                finalFile,
-                overwriteDestination: false,
-                embeddedAudioMode: FfmpegEmbeddedAudioMode.Excluded,
-                cancellationToken).ConfigureAwait(true);
-        }
-        else
-        {
-            await _presenter.ShowConcatenatingAsync(context, cancellationToken)
-                .ConfigureAwait(true);
-            var segments = context.DurlDownloads
-                .OrderBy(download => download.Durl.Order)
-                .Select(download => new FfmpegConcatSegment(
-                    download.Durl.Order,
-                    download.FilePath,
-                    TimeSpan.FromMilliseconds(download.Durl.Length)))
-                .ToArray();
-            result = await _ffmpegProcessor.ConcatDurlVideosAsync(
-                context.Input.VideoSettings,
-                segments,
-                finalFile,
-                overwriteDestination: false,
-                embeddedAudioMode: FfmpegEmbeddedAudioMode.Excluded,
-                externalAudio: context.AudioFile,
-                cancellationToken: cancellationToken).ConfigureAwait(true);
-        }
+        await _presenter.ShowConcatenatingAsync(context, cancellationToken)
+            .ConfigureAwait(true);
+        var segments = context.DurlDownloads
+            .OrderBy(download => download.Durl.Order)
+            .Select(download => new FfmpegConcatSegment(
+                download.Durl.Order,
+                download.FilePath,
+                TimeSpan.FromMilliseconds(download.Durl.Length)))
+            .ToArray();
+        var result = await _ffmpegProcessor.ConcatDurlVideosAsync(
+            context.Input.VideoSettings,
+            segments,
+            finalFile,
+            overwriteDestination: false,
+            embeddedAudioMode: FfmpegEmbeddedAudioMode.Excluded,
+            externalAudio: context.AudioFile,
+            cancellationToken: cancellationToken).ConfigureAwait(true);
 
         var invalidation = result.Succeeded
             ? SourceInvalidationOutcome.None

@@ -63,10 +63,13 @@ public sealed class FfmpegSeekabilityIntegrationTests : IDisposable
     }
 
     [Theory]
-    [InlineData(2)]
-    [InlineData(6)]
+    [InlineData(1, 1)]
+    [InlineData(1, 4)]
+    [InlineData(2, 2)]
+    [InlineData(2, 6)]
     [Trait("Category", "FfmpegIntegration")]
-    public async Task MultiSegmentDurlWithIndependentAudioPreservesVideoDuration(
+    public async Task DurlWithIndependentAudioPreservesVideoDuration(
+        int segmentCount,
         int audioDurationSeconds)
     {
         var cancellationToken = TestContext.Current.CancellationToken;
@@ -99,11 +102,17 @@ public sealed class FfmpegSeekabilityIntegrationTests : IDisposable
             NullLogger<FfmpegConcatRuntime>.Instance);
         var output = Path.Combine(_testDirectory, "cross-source.mp4");
 
+        var segments = new List<FfmpegConcatSegment>
+        {
+            new(1, first, TimeSpan.FromSeconds(2))
+        };
+        if (segmentCount == 2)
+        {
+            segments.Add(new FfmpegConcatSegment(2, second, TimeSpan.FromSeconds(2)));
+        }
+
         var result = await runtime.ConcatAsync(
-            [
-                new FfmpegConcatSegment(1, first, TimeSpan.FromSeconds(2)),
-                new FfmpegConcatSegment(2, second, TimeSpan.FromSeconds(2))
-            ],
+            segments,
             output,
             hardwareEncoder: null,
             allowStreamCopy: false,
@@ -113,7 +122,8 @@ public sealed class FfmpegSeekabilityIntegrationTests : IDisposable
             cancellationToken: cancellationToken).ConfigureAwait(true);
 
         Assert.True(result.Succeeded, result.FailureReason);
-        Assert.InRange(result.Duration.TotalSeconds, 3.8, 4.2);
+        Assert.InRange(result.Duration.TotalSeconds,
+            segmentCount * 2 - 0.2, segmentCount * 2 + 0.2);
         Assert.True(await validator.ValidateRequiredStreamsAsync(
             output, requireAudio: true, requireVideo: true,
             cancellationToken).ConfigureAwait(true));

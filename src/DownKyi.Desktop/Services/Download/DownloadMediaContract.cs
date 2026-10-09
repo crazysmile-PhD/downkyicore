@@ -113,6 +113,11 @@ internal static class DownloadMediaContract
                 "Audio-only DURL downloads are not supported.");
         }
 
+        if (!context.NeedsPendingVideo)
+        {
+            return null;
+        }
+
         var metadata = context.Input.Metadata;
         if (playUrl == null
             || playUrl.Quality != metadata.Resolution.Id

@@ -76,6 +76,7 @@ internal sealed class ResolvePlaybackStage : IDownloadPipelineStage
 
         context.DownloadDirectory = path;
         RestoreCompletedDashTransfers(context);
+        DurlManifestStore.TryRestoreCompleted(context);
         _presenter.Reset(context);
         await _presenter.ShowParsingAsync(context, cancellationToken).ConfigureAwait(true);
 

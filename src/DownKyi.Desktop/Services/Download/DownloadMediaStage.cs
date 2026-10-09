@@ -76,7 +76,7 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
         {
             return await DownloadDurlsAsync(
                 context,
-                playUrl!.Durl,
+                playUrl?.Durl ?? [],
                 cancellationToken).ConfigureAwait(true);
         }
 
@@ -85,7 +85,7 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
             var audioResult = await DownloadAudioAsync(context, cancellationToken)
                 .ConfigureAwait(true);
             return audioResult.IsSuccess
-                ? await DownloadDurlsAsync(context, playUrl!.Durl, cancellationToken)
+                ? await DownloadDurlsAsync(context, playUrl?.Durl ?? [], cancellationToken)
                     .ConfigureAwait(true)
                 : audioResult;
         }
@@ -179,7 +179,7 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
         IEnumerable<PlayUrlDurl> source,
         CancellationToken cancellationToken)
     {
-        if (!context.NeedsMedia)
+        if (!context.NeedsPendingVideo)
         {
             context.EnsureActive(cancellationToken);
             return DownloadStageResult.Success(Name);
@@ -190,6 +190,15 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
             return DownloadStageResult.Failure(
                 "download.media.durl-manifest",
                 "The segmented media manifest is invalid.");
+        }
+
+        if (!await DurlManifestStore.EnsureRecordedAsync(
+                context, orderedDurls, _projectionStore, _stateWriter, cancellationToken)
+            .ConfigureAwait(true))
+        {
+            return OperationResult.Failure<DownloadStageResult>(
+                DownloadMediaContract.SelectionUnavailable(
+                    "The refreshed DURL segment manifest changed from the finalized task."));
         }
 
         _presenter.ShowDownloadingVideo(context);

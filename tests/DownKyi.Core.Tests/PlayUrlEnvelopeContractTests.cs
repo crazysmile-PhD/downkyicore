@@ -170,6 +170,23 @@ public sealed class PlayUrlEnvelopeContractTests
     }
 
     [Fact]
+    public async Task OrdinaryDiscoveryIgnoresNullEntriesWhenMarkingRetainedSources()
+    {
+        var client = new StubBilibiliApiClient((_, _) => Task.FromResult(
+            """
+            <script>window.__playinfo__={"code":0,"data":{"quality":80,"durl":[null],"dash":{"video":[null,{"id":80,"codecid":7,"base_url":"https://web.invalid/video"}],"audio":[null,{"id":30280,"base_url":"https://web.invalid/audio"}]}}}</script>
+            """));
+
+        var payload = await client.GetVideoPlayUrlWebPageAsync(
+            Keys, 1702204169, 1, "BV1fixture", 2, 1,
+            quality: 80,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Single(payload!.Availability?.Video ?? PlayUrlAvailability.From(payload).Video);
+        Assert.Equal(PlayUrlResolutionSource.WebPage, payload.Diagnostics?.Source);
+    }
+
+    [Fact]
     public async Task OrdinaryDiscoveryPropagatesApiRejectionAfterUsableWebVideo()
     {
         var requests = 0;

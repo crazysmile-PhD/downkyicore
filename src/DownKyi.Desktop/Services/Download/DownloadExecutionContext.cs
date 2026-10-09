@@ -109,7 +109,11 @@ internal sealed class DownloadExecutionContext
 
     public bool NeedsPendingAudio => NeedsAudio && AudioFile == null;
 
-    public bool NeedsPendingVideo => NeedsVideo && VideoFile == null;
+    public bool NeedsPendingVideo => NeedsVideo
+                                     && VideoFile == null
+                                     && !(Input.RequestedContent.MediaKind is
+                                         (DownloadMediaKind.Durl or DownloadMediaKind.DurlWithDashAudio)
+                                         && DurlDownloads.Count > 0);
 
     public bool NeedsPendingMedia => NeedsPendingAudio || NeedsPendingVideo;
 

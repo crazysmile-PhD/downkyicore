@@ -828,6 +828,76 @@ public sealed class DownloadPipelineStageTests
     }
 
     [Fact]
+    public async Task CompletedDurlManifestSurvivesAudioFailureAndAudioOnlyRefresh()
+    {
+        var playback = new PlayUrl
+        {
+            Quality = 80,
+            VideoCodecid = 7,
+            Durl =
+            [
+                new PlayUrlDurl { Order = 1, Length = 2000,
+                    SourceAddress = "https://web.invalid/segment-1" },
+                new PlayUrlDurl { Order = 2, Length = 2000,
+                    SourceAddress = "https://web.invalid/segment-2" }
+            ],
+            Dash = new PlayUrlDash
+            {
+                Audio =
+                [
+                    new PlayUrlDashVideo { Id = 30280, Codecs = "mp4a.40.2",
+                        BaseAddress = "https://api.invalid/audio" }
+                ]
+            }
+        };
+        var client = new TestBilibiliApiClient
+        {
+            GetStringAsyncHandler = (_, _) => Task.FromResult(
+                """
+                {"code":0,"data":{"dash":{"video":[],"audio":[{"id":30280,"codecs":"mp4a.40.2","base_url":"https://api.invalid/refreshed-audio"}]}}}
+                """)
+        };
+        using var fixture = await MediaStageFixture.CreateAsync(
+            playback, downloadAudio: true, downloadVideo: true,
+            apiClient: client).ConfigureAwait(true);
+        var first = await fixture.Stage.ExecuteAsync(
+            fixture.Context, TestContext.Current.CancellationToken).ConfigureAwait(true);
+        Assert.True(first.IsSuccess, first.Error?.Message);
+        Assert.Equal(2, fixture.Context.DurlDownloads.Count);
+        Assert.Equal(2, (await fixture.LoadDurlFromSeparateStoreAsync().ConfigureAwait(true)).Count);
+
+        await fixture.InvalidateAudioAndResolveAgainAsync(client).ConfigureAwait(true);
+
+        Assert.False(fixture.Context.NeedsPendingVideo);
+        Assert.True(fixture.Context.NeedsPendingAudio);
+        Assert.Equal(2, fixture.Context.DurlDownloads.Count);
+        Assert.Equal([1, 2], fixture.Context.DurlDownloads
+            .Select(download => download.Durl.Order).ToArray());
+        fixture.Backend.Requests.Clear();
+        var resumed = await fixture.Stage.ExecuteAsync(
+            fixture.Context, TestContext.Current.CancellationToken).ConfigureAwait(true);
+        Assert.True(resumed.IsSuccess, resumed.Error?.Message);
+        Assert.Equal("https://api.invalid/refreshed-audio",
+            Assert.Single(Assert.Single(fixture.Backend.Requests).Urls));
+        Assert.Equal(2, fixture.Context.DurlDownloads.Count);
+    }
+
+    [Fact]
+    public async Task PartialDurlManifestDoesNotCountAsCompletedVideo()
+    {
+        using var fixture = await MediaStageFixture.CreateAsync(
+            CreateDurlPlayUrl(), downloadAudio: false, downloadVideo: true)
+            .ConfigureAwait(true);
+        var first = await fixture.Stage.ExecuteAsync(
+            fixture.Context, TestContext.Current.CancellationToken).ConfigureAwait(true);
+        Assert.True(first.IsSuccess, first.Error?.Message);
+        var segment = Assert.Single(fixture.Context.DurlDownloads);
+        await fixture.InvalidateTransferAsync(segment.TransferKey).ConfigureAwait(true);
+
+        Assert.Empty(await fixture.LoadDurlFromSeparateStoreAsync().ConfigureAwait(true));
+    }
+
+    [Fact]
     public async Task MediaStageRejectsMalformedRefreshedDurlManifestBeforeRetryTransfer()
     {
         var playUrl = new PlayUrl
@@ -1542,6 +1612,59 @@ public sealed class DownloadPipelineStageTests
         public DownloadMediaStage Stage { get; }
 
         public DownloadExecutionContext Context { get; private set; }
+
+        public async Task InvalidateTransferAsync(string key)
+        {
+            var invalidated = await _tasks.InvalidateCompletedFileAsync(
+                Context.TaskId, key, TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+            Assert.True(invalidated.IsSuccess, invalidated.Error?.Message);
+        }
+
+        public async Task<IReadOnlyList<DurlDownloadResult>> LoadDurlFromSeparateStoreAsync()
+        {
+            using var reopened = new SqliteDownloadTaskStore(
+                new SqliteDownloadTaskStoreOptions(_databasePath), new SystemClock());
+            await reopened.InitializeAsync(TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+            var task = await reopened.FindAsync(
+                Context.TaskId, TestContext.Current.CancellationToken).ConfigureAwait(true);
+            Assert.NotNull(task);
+            var context = new DownloadExecutionContext(
+                Context.TaskId,
+                DownloadExecutionContextFactory.CreateInput(task, _settings.Store.Current),
+                static (_, _) => { })
+            {
+                DownloadDirectory = _directory
+            };
+            return DurlManifestStore.TryRestoreCompleted(context)
+                ? context.DurlDownloads : [];
+        }
+
+        public async Task InvalidateAudioAndResolveAgainAsync(TestBilibiliApiClient client)
+        {
+            var audioKey = Context.AudioTransferKey
+                ?? throw new InvalidOperationException("Audio transfer was not completed.");
+            var invalidated = await _tasks.InvalidateCompletedFileAsync(
+                Context.TaskId, audioKey, TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+            Assert.True(invalidated.IsSuccess, invalidated.Error?.Message);
+            var taskId = Context.TaskId;
+            Context = new DownloadExecutionContextFactory(_projections, _settings.Store)
+                .Create(taskId);
+            Context.StagingDirectory = _directory;
+            var writer = new DownloadTaskStateWriter(_tasks);
+            var resolver = new DownloadPlaybackResolver(
+                new TestWbiKeyProvider(), TimeProvider.System, client);
+            var stage = new ResolvePlaybackStage(
+                new TestDesktopInteractionContext().Notifications,
+                new DownloadActivityPresenter(_projections, writer),
+                resolver,
+                NullLogger<ResolvePlaybackStage>.Instance);
+            var result = await stage.ExecuteAsync(
+                Context, TestContext.Current.CancellationToken).ConfigureAwait(true);
+            Assert.True(result.IsSuccess, result.Error?.Message);
+        }
 
         public Task<(string Key, string FilePath)> AddCompletedAudioTransferAsync() =>
             AddAudioTransferAsync(markCompleted: true, writeUsableFile: true);
