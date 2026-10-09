@@ -9,6 +9,20 @@ namespace DownKyi.Infrastructure.Tests;
 
 internal sealed partial class SqliteDownloadStoreFixture
 {
+    private const string LegacyDownloadBaseTableSql = """
+            CREATE TABLE download_base (
+                id TEXT PRIMARY KEY, need_download_content TEXT NOT NULL DEFAULT '{}',
+                bvid TEXT NOT NULL DEFAULT '', avid INTEGER NOT NULL DEFAULT 0,
+                cid INTEGER NOT NULL DEFAULT 0, episode_id INTEGER NOT NULL DEFAULT 0,
+                cover_url TEXT NOT NULL DEFAULT '', page_cover_url TEXT NOT NULL DEFAULT '',
+                zone_id INTEGER NOT NULL DEFAULT 0, [order] INTEGER NOT NULL DEFAULT 0,
+                main_title TEXT NOT NULL DEFAULT '', name TEXT NOT NULL DEFAULT '',
+                duration TEXT NOT NULL DEFAULT '', video_codec_name TEXT NOT NULL DEFAULT '',
+                resolution TEXT NOT NULL DEFAULT '{}', audio_codec TEXT,
+                file_path TEXT NOT NULL DEFAULT '', file_size TEXT, page INTEGER NOT NULL DEFAULT 1
+            );
+        """;
+
     internal async Task CreateVersionThreeDatabaseAsync(params DownloadTask[] tasks)
     {
         using (var store = CreateStore())
@@ -307,27 +321,10 @@ internal sealed partial class SqliteDownloadStoreFixture
 
     internal async Task CreateLegacyDatabaseAsync()
     {
-        Directory.CreateDirectory(_directory);
-        using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
-        {
-            DataSource = Path.Combine(_directory, "download.db"),
-            Mode = SqliteOpenMode.ReadWriteCreate,
-            Pooling = false
-        }.ToString());
-        await connection.OpenAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
+        using var connection = await OpenNewDatabaseAsync()
+            .ConfigureAwait(false);
         using var schema = connection.CreateCommand();
-        schema.CommandText = """
-            CREATE TABLE download_base (
-                id TEXT PRIMARY KEY, need_download_content TEXT NOT NULL DEFAULT '{}',
-                bvid TEXT NOT NULL DEFAULT '', avid INTEGER NOT NULL DEFAULT 0,
-                cid INTEGER NOT NULL DEFAULT 0, episode_id INTEGER NOT NULL DEFAULT 0,
-                cover_url TEXT NOT NULL DEFAULT '', page_cover_url TEXT NOT NULL DEFAULT '',
-                zone_id INTEGER NOT NULL DEFAULT 0, [order] INTEGER NOT NULL DEFAULT 0,
-                main_title TEXT NOT NULL DEFAULT '', name TEXT NOT NULL DEFAULT '',
-                duration TEXT NOT NULL DEFAULT '', video_codec_name TEXT NOT NULL DEFAULT '',
-                resolution TEXT NOT NULL DEFAULT '{}', audio_codec TEXT,
-                file_path TEXT NOT NULL DEFAULT '', file_size TEXT, page INTEGER NOT NULL DEFAULT 1
-            );
+        schema.CommandText = LegacyDownloadBaseTableSql + "\n" + """
             CREATE TABLE downloading (
                 id TEXT PRIMARY KEY REFERENCES download_base(id) ON DELETE CASCADE, gid TEXT,
                 download_files TEXT NOT NULL DEFAULT '{}', downloaded_files TEXT NOT NULL DEFAULT '[]',
@@ -357,27 +354,10 @@ internal sealed partial class SqliteDownloadStoreFixture
 
     internal async Task CreateIncompatibleLegacyDatabaseAsync()
     {
-        Directory.CreateDirectory(_directory);
-        using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
-        {
-            DataSource = Path.Combine(_directory, "download.db"),
-            Mode = SqliteOpenMode.ReadWriteCreate,
-            Pooling = false
-        }.ToString());
-        await connection.OpenAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
+        using var connection = await OpenNewDatabaseAsync()
+            .ConfigureAwait(false);
         using var schema = connection.CreateCommand();
-        schema.CommandText = """
-            CREATE TABLE download_base (
-                id TEXT PRIMARY KEY, need_download_content TEXT NOT NULL DEFAULT '{}',
-                bvid TEXT NOT NULL DEFAULT '', avid INTEGER NOT NULL DEFAULT 0,
-                cid INTEGER NOT NULL DEFAULT 0, episode_id INTEGER NOT NULL DEFAULT 0,
-                cover_url TEXT NOT NULL DEFAULT '', page_cover_url TEXT NOT NULL DEFAULT '',
-                zone_id INTEGER NOT NULL DEFAULT 0, [order] INTEGER NOT NULL DEFAULT 0,
-                main_title TEXT NOT NULL DEFAULT '', name TEXT NOT NULL DEFAULT '',
-                duration TEXT NOT NULL DEFAULT '', video_codec_name TEXT NOT NULL DEFAULT '',
-                resolution TEXT NOT NULL DEFAULT '{}', audio_codec TEXT,
-                file_path TEXT NOT NULL DEFAULT '', file_size TEXT, page INTEGER NOT NULL DEFAULT 1
-            );
+        schema.CommandText = LegacyDownloadBaseTableSql + "\n" + """
             CREATE TABLE downloading (id TEXT PRIMARY KEY);
             """;
         await schema.ExecuteNonQueryAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);

@@ -9,17 +9,8 @@ namespace DownKyi.Infrastructure.Tests;
 
 internal sealed partial class SqliteDownloadStoreFixture
 {
-    internal async Task<SqliteConnection> OpenReadOnlyConnectionAsync()
-    {
-        var connection = new SqliteConnection(new SqliteConnectionStringBuilder
-        {
-            DataSource = Path.Combine(_directory, "download.db"),
-            Mode = SqliteOpenMode.ReadOnly,
-            Pooling = false
-        }.ToString());
-        await connection.OpenAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
-        return connection;
-    }
+    internal Task<SqliteConnection> OpenReadOnlyConnectionAsync() =>
+        OpenConnectionAsync(readOnly: true);
 
     internal async Task<long> CountDownloadBaseRecordAsync(string id)
     {
@@ -279,12 +270,21 @@ internal sealed partial class SqliteDownloadStoreFixture
         await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
     }
 
-    internal async Task<SqliteConnection> OpenConnectionAsync(bool readOnly)
+    internal Task<SqliteConnection> OpenConnectionAsync(bool readOnly) =>
+        OpenConnectionAsync(readOnly ? SqliteOpenMode.ReadOnly : SqliteOpenMode.ReadWrite);
+
+    internal Task<SqliteConnection> OpenNewDatabaseAsync()
+    {
+        Directory.CreateDirectory(_directory);
+        return OpenConnectionAsync(SqliteOpenMode.ReadWriteCreate);
+    }
+
+    private async Task<SqliteConnection> OpenConnectionAsync(SqliteOpenMode mode)
     {
         var connection = new SqliteConnection(new SqliteConnectionStringBuilder
         {
             DataSource = Path.Combine(_directory, "download.db"),
-            Mode = readOnly ? SqliteOpenMode.ReadOnly : SqliteOpenMode.ReadWrite,
+            Mode = mode,
             Pooling = false
         }.ToString());
         await connection.OpenAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
