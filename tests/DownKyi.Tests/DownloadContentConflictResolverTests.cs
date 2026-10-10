@@ -29,6 +29,36 @@ public sealed class DownloadContentConflictResolverTests
         Assert.Empty(dialogs.Requests);
     }
 
+    [Theory]
+    [InlineData(true, false, false)]
+    [InlineData(false, true, false)]
+    [InlineData(false, false, true)]
+    [InlineData(true, true, true)]
+    public async Task SidecarOnlyRequestWithoutPlaybackPassesThroughWithoutDialog(
+        bool danmaku,
+        bool subtitle,
+        bool cover)
+    {
+        var dialogs = new RecordingDialogService();
+        var requested = DownloadContentSelection.None with
+        {
+            Danmaku = danmaku,
+            Subtitle = subtitle,
+            Cover = cover
+        };
+        var page = CreatePage(video: false, audio: false);
+        var prepared = CreatePreparedDownload(page);
+
+        var finalized = await ResolveAsync(dialogs, requested, prepared);
+
+        Assert.False(page.HasPlayback);
+        Assert.False(Assert.Single(Assert.Single(prepared.Sections).Pages).AvailableMedia.HasAnyMedia);
+        Assert.Same(
+            requested,
+            Assert.Single(Assert.Single(finalized.Sections).Pages).RequestedContent);
+        Assert.Empty(dialogs.Requests);
+    }
+
     [Fact]
     public async Task AvailableMediaChoiceBecomesPageRequestedContent()
     {

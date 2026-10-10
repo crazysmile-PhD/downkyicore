@@ -133,7 +133,7 @@ internal sealed class DownloadContentConflictResolver
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var page = preparedPage.Page;
-                if ((!isAll && !page.IsSelected) || !page.HasPlayback)
+                if (!isAll && !page.IsSelected)
                 {
                     continue;
                 }
