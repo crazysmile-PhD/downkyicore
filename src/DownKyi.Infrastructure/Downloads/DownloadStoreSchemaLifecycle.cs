@@ -111,4 +111,43 @@ internal static class DownloadStoreSchemaLifecycle
             throw;
         }
     }
+
+    public static async Task BackupForUserResetAsync(
+        SqliteConnection source,
+        string databasePath,
+        int sourceVersion,
+        IClock clock,
+        CancellationToken cancellationToken)
+    {
+        var backupDirectory = Path.Combine(Path.GetDirectoryName(databasePath) ?? ".", "Backup");
+        Directory.CreateDirectory(backupDirectory);
+        var timestamp = clock.UtcNow.ToString("yyyyMMdd'T'HHmmssfff'Z'", CultureInfo.InvariantCulture);
+        var backupPath = Path.Combine(
+            backupDirectory,
+            $"{Path.GetFileName(databasePath)}.user-reset-v{sourceVersion}-{timestamp}-{Guid.NewGuid():N}.bak");
+        var connectionString = new SqliteConnectionStringBuilder
+        {
+            DataSource = backupPath,
+            Mode = SqliteOpenMode.ReadWriteCreate,
+            Pooling = false
+        }.ToString();
+
+        try
+        {
+            using var backup = new SqliteConnection(connectionString);
+            await backup.OpenAsync(cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            source.BackupDatabase(backup);
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+        catch
+        {
+            if (File.Exists(backupPath))
+            {
+                File.Delete(backupPath);
+            }
+
+            throw;
+        }
+    }
 }

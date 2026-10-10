@@ -100,6 +100,67 @@ public sealed class SqliteDownloadStoreFailureTests : IDisposable
     }
 
     [Fact]
+    public async Task UserResetBacksUpFailedDatabaseBeforeCreatingFreshSchema()
+    {
+        await _fixture.CreateIncompatibleLegacyDatabaseAsync();
+        var unrelatedMedia = Path.Combine(_fixture.TempDirectory, "already-downloaded.mp4");
+        await File.WriteAllTextAsync(
+            unrelatedMedia,
+            "media",
+            TestContext.Current.CancellationToken);
+        using var store = _fixture.CreateStore();
+
+        await Assert.ThrowsAsync<DownloadStoreSchemaMismatchException>(() =>
+            store.InitializeAsync(TestContext.Current.CancellationToken));
+
+        await store.BackupAndResetAsync(TestContext.Current.CancellationToken);
+
+        Assert.Empty(await store.GetUnfinishedAsync(TestContext.Current.CancellationToken));
+        Assert.True(File.Exists(unrelatedMedia));
+        var backupPath = Assert.Single(Directory.GetFiles(
+            Path.Combine(_fixture.TempDirectory, "Backup"),
+            "download.db.user-reset-v0-*.bak"));
+        var backupConnectionString = new SqliteConnectionStringBuilder
+        {
+            DataSource = backupPath,
+            Mode = SqliteOpenMode.ReadOnly,
+            Pooling = false
+        }.ToString();
+        using var backup = new SqliteConnection(backupConnectionString);
+        await backup.OpenAsync(TestContext.Current.CancellationToken);
+        using var legacyShape = backup.CreateCommand();
+        legacyShape.CommandText =
+            "SELECT COUNT(*) FROM pragma_table_info('downloading') WHERE name = 'phase'";
+        Assert.Equal(0L, await legacyShape.ExecuteScalarAsync(TestContext.Current.CancellationToken));
+
+        using var current = await _fixture.OpenReadOnlyConnectionAsync().ConfigureAwait(true);
+        using var currentShape = current.CreateCommand();
+        currentShape.CommandText =
+            "SELECT COUNT(*) FROM pragma_table_info('downloading') WHERE name = 'phase'";
+        Assert.Equal(1L, await currentShape.ExecuteScalarAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task UserResetRefusesAnInitializedDatabase()
+    {
+        using var store = _fixture.CreateStore();
+        await store.InitializeAsync(TestContext.Current.CancellationToken);
+        Assert.True((await store.AddAsync(
+            _fixture.CreatePausedTask("preserved"),
+            TestContext.Current.CancellationToken)).IsSuccess);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            store.BackupAndResetAsync(TestContext.Current.CancellationToken));
+
+        Assert.Equal(
+            "preserved",
+            Assert.Single(await store.GetUnfinishedAsync(TestContext.Current.CancellationToken)).Id.Value);
+        var backupDirectory = Path.Combine(_fixture.TempDirectory, "Backup");
+        Assert.False(Directory.Exists(backupDirectory)
+            && Directory.EnumerateFiles(backupDirectory, "download.db.user-reset-*.bak").Any());
+    }
+
+    [Fact]
     public async Task CorruptRecordIsQuarantinedWithoutHidingValidRecordsOrPrivateData()
     {
         const string sensitiveValue = "C:\\Users\\private-user\\Downloads\\secret";

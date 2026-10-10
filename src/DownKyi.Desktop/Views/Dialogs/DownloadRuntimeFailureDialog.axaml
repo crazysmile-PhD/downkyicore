@@ -36,7 +36,7 @@
 
             <TextBlock Grid.Row="1"
                        Margin="0,0,0,12"
-                       Text="{DynamicResource DownloadRuntimeFailureMessage}"
+                       Text="{Binding FailureMessage}"
                        TextWrapping="Wrap" />
 
             <TextBox Grid.Row="2"
@@ -58,6 +58,13 @@
                 <Button MinWidth="140"
                         Content="{DynamicResource CreateGitHubIssue}"
                         Command="{Binding CreateGitHubIssueCommand}" />
+                <Button MinWidth="150"
+                        IsVisible="{Binding CanResetDownloadStore}"
+                        Content="{DynamicResource ResetDownloadStore}"
+                        Command="{Binding ResetDownloadStoreCommand}"
+                        Background="{DynamicResource BrushWarning}"
+                        BorderBrush="{DynamicResource BrushWarning}"
+                        Foreground="White" />
                 <Button MinWidth="90"
                         Content="{DynamicResource Close}"
                         Command="{Binding CloseCommand}" />

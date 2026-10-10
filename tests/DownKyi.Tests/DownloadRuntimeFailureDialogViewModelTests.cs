@@ -1,6 +1,7 @@
 using DownKyi.Application.Desktop;
 using DownKyi.Application.Diagnostics;
 using DownKyi.Core.Aria2cNet.Server;
+using DownKyi.Infrastructure.Downloads;
 using DownKyi.ViewModels.Dialogs;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -9,6 +10,47 @@ namespace DownKyi.Tests;
 
 public sealed class DownloadRuntimeFailureDialogViewModelTests
 {
+    [Fact]
+    public async Task ResetActionIsAvailableOnlyForDownloadSchemaMismatch()
+    {
+        var viewModel = new DownloadRuntimeFailureDialogViewModel(
+            new RedactingLogService(),
+            new RecordingClipboardService(),
+            new RecordingPlatformLauncher(),
+            new RecordingNotificationService(),
+            NullLogger<DownloadRuntimeFailureDialogViewModel>.Instance);
+
+        viewModel.OnDialogOpened(new AppDialogRequest(
+            AppDialog.DownloadRuntimeFailure,
+            new Dictionary<string, object?>
+            {
+                ["failure"] = new InvalidOperationException(
+                    "bootstrap wrapper",
+                    new DownloadStoreSchemaMismatchException("unsupported schema"))
+            }));
+
+        Assert.True(viewModel.CanResetDownloadStore);
+        Assert.Equal("DownloadStoreSchemaMismatchMessage", viewModel.FailureMessageResourceKey);
+
+        var closeCompletion = new TaskCompletionSource<AppDialogResult>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        viewModel.CloseRequested += (_, closeResult) =>
+            closeCompletion.TrySetResult(closeResult);
+        viewModel.ResetDownloadStoreCommand.Execute(null);
+        var result = await closeCompletion.Task.WaitAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(AppDialogOutcome.Accepted, result.Outcome);
+
+        viewModel.OnDialogOpened(new AppDialogRequest(
+            AppDialog.DownloadRuntimeFailure,
+            new Dictionary<string, object?>
+            {
+                ["failure"] = new SqliteException("database is locked", 5)
+            }));
+
+        Assert.False(viewModel.CanResetDownloadStore);
+        Assert.Equal("DownloadRuntimeFailureMessage", viewModel.FailureMessageResourceKey);
+    }
+
     [Fact]
     public async Task DialogCopiesRedactedDiagnosticAndPrefillsNewIssue()
     {

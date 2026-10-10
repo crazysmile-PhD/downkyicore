@@ -11,6 +11,7 @@ public sealed class SqliteDownloadTaskStore :
     IDownloadTaskStore,
     IDownloadHistoryStore,
     IDownloadCompletionStore,
+    IDownloadStoreRecovery,
     IDisposable
 {
     private readonly SqliteDownloadStoreDatabase _database;
@@ -73,6 +74,9 @@ public sealed class SqliteDownloadTaskStore :
 
     public Task InitializeAsync(CancellationToken cancellationToken) =>
         _database.InitializeAsync(cancellationToken);
+
+    public Task BackupAndResetAsync(CancellationToken cancellationToken) =>
+        _database.BackupAndResetAsync(cancellationToken);
 
     public async Task<OperationResult> AddAsync(DownloadTask task, CancellationToken cancellationToken) =>
         await _outputReservations.AddAsync(task, cancellationToken).ConfigureAwait(false);

@@ -46,6 +46,54 @@ internal sealed class SqliteDownloadStoreDatabase : IDisposable
     public Task InitializeAsync(CancellationToken cancellationToken) =>
         EnsureInitializedAsync(cancellationToken);
 
+    public async Task BackupAndResetAsync(CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, _disposedObjectType);
+        await _initializationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (_initialized)
+            {
+                throw new InvalidOperationException(
+                    "An initialized download database cannot be reset while the application is running.");
+            }
+
+            if (!File.Exists(_options.DatabasePath)
+                || new FileInfo(_options.DatabasePath).Length == 0)
+            {
+                throw new InvalidOperationException("The failed download database is unavailable.");
+            }
+
+            using (var connection = await OpenConnectionCoreAsync(cancellationToken)
+                       .ConfigureAwait(false))
+            {
+                var sourceVersion = await DownloadStoreSchemaLifecycle
+                    .ReadUserVersionAsync(connection, cancellationToken)
+                    .ConfigureAwait(false);
+                await DownloadStoreSchemaLifecycle
+                    .BackupForUserResetAsync(
+                        connection,
+                        _options.DatabasePath,
+                        sourceVersion,
+                        _clock,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                await connection.CloseAsync().ConfigureAwait(false);
+                SqliteConnection.ClearPool(connection);
+            }
+
+            // A completed backup is the reset commit boundary. From here onward cancellation
+            // must not leave a partially removed database set at the application path.
+            DeleteDatabaseFileSet();
+            await InitializeCoreAsync(CancellationToken.None).ConfigureAwait(false);
+            _initialized = true;
+        }
+        finally
+        {
+            _initializationGate.Release();
+        }
+    }
+
     public async Task<SqliteConnection> OpenConnectionAsync(CancellationToken cancellationToken)
     {
         await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
@@ -121,28 +169,48 @@ internal sealed class SqliteDownloadStoreDatabase : IDisposable
                 return;
             }
 
-            var databaseExisted = File.Exists(_options.DatabasePath)
-                && new FileInfo(_options.DatabasePath).Length > 0;
-            Directory.CreateDirectory(Path.GetDirectoryName(_options.DatabasePath) ?? ".");
-            using var connection = await OpenConnectionCoreAsync(cancellationToken).ConfigureAwait(false);
-            await DownloadStoreSchema.InitializeAsync(
-                connection,
-                _options.DatabasePath,
-                databaseExisted,
-                _clock,
-                _physicalOutputPathResolver,
-                cancellationToken).ConfigureAwait(false);
-            await DownloadStoreReservationKeyCompatibility.EnsureAsync(
-                connection,
-                _options.DatabasePath,
-                _clock,
-                cancellationToken).ConfigureAwait(false);
-            await RemoveOrphanedDownloadingRecordsAsync(connection, cancellationToken).ConfigureAwait(false);
+            await InitializeCoreAsync(cancellationToken).ConfigureAwait(false);
             _initialized = true;
         }
         finally
         {
             _initializationGate.Release();
+        }
+    }
+
+    private async Task InitializeCoreAsync(CancellationToken cancellationToken)
+    {
+        var databaseExisted = File.Exists(_options.DatabasePath)
+            && new FileInfo(_options.DatabasePath).Length > 0;
+        Directory.CreateDirectory(Path.GetDirectoryName(_options.DatabasePath) ?? ".");
+        using var connection = await OpenConnectionCoreAsync(cancellationToken).ConfigureAwait(false);
+        await DownloadStoreSchema.InitializeAsync(
+            connection,
+            _options.DatabasePath,
+            databaseExisted,
+            _clock,
+            _physicalOutputPathResolver,
+            cancellationToken).ConfigureAwait(false);
+        await DownloadStoreReservationKeyCompatibility.EnsureAsync(
+            connection,
+            _options.DatabasePath,
+            _clock,
+            cancellationToken).ConfigureAwait(false);
+        await RemoveOrphanedDownloadingRecordsAsync(connection, cancellationToken).ConfigureAwait(false);
+    }
+
+    private void DeleteDatabaseFileSet()
+    {
+        using var poolKey = new SqliteConnection(_connectionString);
+        SqliteConnection.ClearPool(poolKey);
+        foreach (var path in new[]
+                 {
+                     _options.DatabasePath,
+                     _options.DatabasePath + "-wal",
+                     _options.DatabasePath + "-shm"
+                 })
+        {
+            File.Delete(path);
         }
     }
 
