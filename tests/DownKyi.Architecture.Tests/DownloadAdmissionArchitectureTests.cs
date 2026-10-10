@@ -177,6 +177,10 @@ public sealed class DownloadAdmissionArchitectureTests
         Assert.Contains("SubtractFrom(DownloadContentSelection", contract, StringComparison.Ordinal);
         Assert.Contains("coveredClaims.SubtractFrom(requestedContent)", coverage, StringComparison.Ordinal);
         Assert.Contains("MatchesOutputOwner", duplicatePolicy, StringComparison.Ordinal);
+        Assert.Contains("IPhysicalOutputPathResolver", duplicatePolicy, StringComparison.Ordinal);
+        Assert.Contains("_physicalOutputPathResolver", duplicatePolicy, StringComparison.Ordinal);
+        Assert.Contains("ResolvePhysicalBasePath", coverage, StringComparison.Ordinal);
+        Assert.DoesNotContain("OperatingSystem.IsMacOS", coverage, StringComparison.Ordinal);
         Assert.Contains("AllowExistingBasePath: hasMatchingOutputOwner", duplicatePolicy, StringComparison.Ordinal);
         Assert.Contains("DownloadActionClaim.Nfo", outputResolver, StringComparison.Ordinal);
         Assert.Contains("existingClaims.Overlaps(requestedClaims)", reservations, StringComparison.Ordinal);

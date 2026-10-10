@@ -659,6 +659,92 @@ public sealed class VideoTagLoadingTests : IDisposable
     }
 
     [Fact]
+    public async Task SubtitleSupplementUsesOnePhysicalOwnerAcrossPathAliases()
+    {
+        var aliasRoot = Path.Combine(_directory, $"alias-{Guid.NewGuid():N}");
+        var logicalDirectory = Path.Combine(aliasRoot, "logical");
+        var physicalDirectory = Path.Combine(aliasRoot, "physical");
+        using var context = CreateContext(
+            generateMetadata: false,
+            new AliasPhysicalOutputPathResolver(logicalDirectory, physicalDirectory));
+        context.UseContentIndependentFileName();
+        var preparedDownload = await context.PrepareAsync(
+            CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([])));
+
+        Assert.Equal(1, await context.AddToDownloadAsync(
+            CreateSelection(
+                logicalDirectory,
+                DownloadContentSelection.None with { Video = true }),
+            preparedDownload,
+            cancellationToken: TestContext.Current.CancellationToken));
+        var mediaItem = Assert.Single(context.ListState.Downloading);
+        Assert.StartsWith(
+            Path.GetFullPath(physicalDirectory),
+            mediaItem.DownloadBase.FilePath,
+            StringComparison.Ordinal);
+        Directory.CreateDirectory(Path.GetDirectoryName(mediaItem.DownloadBase.FilePath)!);
+        await File.WriteAllTextAsync(
+            mediaItem.DownloadBase.FilePath + ".mp4",
+            "existing-media",
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, await context.AddToDownloadAsync(
+            CreateSelection(
+                logicalDirectory,
+                DownloadContentSelection.None with { Subtitle = true }),
+            preparedDownload,
+            cancellationToken: TestContext.Current.CancellationToken));
+
+        var subtitleItem = Assert.Single(
+            context.ListState.Downloading,
+            item => item.DownloadBase.NeedDownloadContent.HasSubtitleAction);
+        Assert.Equal(mediaItem.DownloadBase.FilePath, subtitleItem.DownloadBase.FilePath);
+        Assert.DoesNotContain("(1)", subtitleItem.DownloadBase.FilePath, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AliasedSubtitleConflictDoesNotOverwriteTheExistingSubtitle()
+    {
+        var aliasRoot = Path.Combine(_directory, $"conflict-{Guid.NewGuid():N}");
+        var logicalDirectory = Path.Combine(aliasRoot, "logical");
+        var physicalDirectory = Path.Combine(aliasRoot, "physical");
+        using var context = CreateContext(
+            generateMetadata: false,
+            new AliasPhysicalOutputPathResolver(logicalDirectory, physicalDirectory));
+        context.UseContentIndependentFileName();
+        var preparedDownload = await context.PrepareAsync(
+            CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([])));
+
+        Assert.Equal(1, await context.AddToDownloadAsync(
+            CreateSelection(
+                logicalDirectory,
+                DownloadContentSelection.None with { Video = true }),
+            preparedDownload,
+            cancellationToken: TestContext.Current.CancellationToken));
+        var mediaItem = Assert.Single(context.ListState.Downloading);
+        Directory.CreateDirectory(Path.GetDirectoryName(mediaItem.DownloadBase.FilePath)!);
+        var subtitlePath = mediaItem.DownloadBase.FilePath + ".srt";
+        await File.WriteAllTextAsync(
+            subtitlePath,
+            "existing-subtitle",
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, await context.AddToDownloadAsync(
+            CreateSelection(
+                logicalDirectory,
+                DownloadContentSelection.None with { Subtitle = true }),
+            preparedDownload,
+            cancellationToken: TestContext.Current.CancellationToken));
+
+        Assert.Equal(
+            "existing-subtitle",
+            await File.ReadAllTextAsync(
+                subtitlePath,
+                TestContext.Current.CancellationToken));
+        Assert.Single(context.ListState.Downloading);
+    }
+
+    [Fact]
     public async Task ConflictChoiceIsStoredAsThePageRequestedContent()
     {
         using var context = CreateContext(generateMetadata: false);
@@ -984,6 +1070,8 @@ public sealed class VideoTagLoadingTests : IDisposable
             Logger = new RecordingLogger<DownloadMovieMetadataBuilder>();
             Dialogs = new RecordingDialogService();
             client ??= new TestBilibiliApiClient();
+            var physicalOutputPathResolver = resolver
+                ?? new FileSystemPhysicalOutputPathResolver();
             _admission = new DownloadTaskAdmissionService(
                 ListState,
                 _taskService,
@@ -991,10 +1079,11 @@ public sealed class VideoTagLoadingTests : IDisposable
                 new DownloadTaskStateWriter(_taskService),
                 taskQueue ?? Queue,
                 runtimeAvailability ?? new ReadyDownloadRuntimeAvailability(),
-                resolver ?? new FileSystemPhysicalOutputPathResolver());
+                physicalOutputPathResolver);
             var duplicatePolicy = new DownloadDuplicatePolicy(
                 ListState,
                 _projectionStore,
+                physicalOutputPathResolver,
                 Dialogs);
             Service = new AddToDownloadService(
                 DownKyi.Core.BiliApi.VideoStream.PlayStreamType.Video,
@@ -1151,6 +1240,26 @@ public sealed class VideoTagLoadingTests : IDisposable
         public string ResolvePhysicalBasePath(string logicalBasePath)
         {
             throw new InvalidOperationException("Unexpected resolver failure.");
+        }
+    }
+
+    private sealed class AliasPhysicalOutputPathResolver(
+        string logicalRoot,
+        string physicalRoot) : IPhysicalOutputPathResolver
+    {
+        private readonly string _logicalRoot = Path.GetFullPath(logicalRoot);
+        private readonly string _physicalRoot = Path.GetFullPath(physicalRoot);
+
+        public string ResolvePhysicalBasePath(string logicalBasePath)
+        {
+            var fullPath = Path.GetFullPath(logicalBasePath);
+            var relativePath = Path.GetRelativePath(_logicalRoot, fullPath);
+            return relativePath == ".."
+                   || relativePath.StartsWith(
+                       ".." + Path.DirectorySeparatorChar,
+                       StringComparison.Ordinal)
+                ? fullPath
+                : Path.GetFullPath(Path.Combine(_physicalRoot, relativePath));
         }
     }
 

@@ -3,6 +3,7 @@ using DownKyi.Application.Downloads;
 using DownKyi.Core.BiliApi.VideoStream.Models;
 using DownKyi.Domain.Downloads;
 using DownKyi.Domain.Results;
+using DownKyi.Infrastructure.Downloads;
 using DownKyi.Infrastructure.Time;
 using DownKyi.Models;
 using DownKyi.Presentation;
@@ -872,6 +873,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
             Policy = new DownloadDuplicatePolicy(
                 ListState,
                 _projectionStore,
+                new FileSystemPhysicalOutputPathResolver(),
                 Dialogs);
         }
 

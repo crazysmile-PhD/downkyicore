@@ -13,9 +13,10 @@ internal static class DownloadActionCoverage
         DownloadBaseItem existingItem,
         DownloadingItem requestedItem,
         DownloadContentSelection requestedContent,
+        bool matchesOutputOwner,
         bool requireUsableArtifacts)
     {
-        if (!MatchesOutputOwner(existingItem, requestedItem))
+        if (!matchesOutputOwner)
         {
             return requestedContent;
         }
@@ -68,31 +69,40 @@ internal static class DownloadActionCoverage
 
     public static bool MatchesOutputOwner(
         DownloadBaseItem existingItem,
-        DownloadingItem requestedItem)
+        DownloadingItem requestedItem,
+        IPhysicalOutputPathResolver physicalOutputPathResolver)
     {
         ArgumentNullException.ThrowIfNull(existingItem);
         ArgumentNullException.ThrowIfNull(requestedItem);
+        ArgumentNullException.ThrowIfNull(physicalOutputPathResolver);
         return existingItem.DownloadBase.Cid == requestedItem.DownloadBase.Cid
-               && HasSameOutputPath(existingItem, requestedItem.DownloadBase.FilePath);
+               && HasSameOutputPath(
+                   existingItem,
+                   requestedItem.DownloadBase.FilePath,
+                   physicalOutputPathResolver);
     }
 
-    private static bool HasSameOutputPath(DownloadBaseItem item, string requestedPath)
+    private static bool HasSameOutputPath(
+        DownloadBaseItem item,
+        string requestedPath,
+        IPhysicalOutputPathResolver physicalOutputPathResolver)
     {
         if (string.IsNullOrWhiteSpace(requestedPath))
         {
             return false;
         }
 
+        var requestedKey = DownloadOutputPathKey.Create(
+            physicalOutputPathResolver.ResolvePhysicalBasePath(requestedPath),
+            DownloadOutputPathKey.UsesCaseInsensitiveComparison);
         var existingPath = item.DownloadBase.FilePath;
         if (!string.IsNullOrWhiteSpace(existingPath))
         {
             return string.Equals(
                 DownloadOutputPathKey.Create(
-                    existingPath,
+                    physicalOutputPathResolver.ResolvePhysicalBasePath(existingPath),
                     DownloadOutputPathKey.UsesCaseInsensitiveComparison),
-                DownloadOutputPathKey.Create(
-                    requestedPath,
-                    DownloadOutputPathKey.UsesCaseInsensitiveComparison),
+                requestedKey,
                 StringComparison.Ordinal);
         }
 
@@ -101,13 +111,10 @@ internal static class DownloadActionCoverage
             return false;
         }
 
-        var requestedKey = DownloadOutputPathKey.Create(
-            requestedPath,
-            DownloadOutputPathKey.UsesCaseInsensitiveComparison);
         return history.PublishedArtifacts.Values.Any(path =>
         {
             var artifactKey = DownloadOutputPathKey.Create(
-                path,
+                physicalOutputPathResolver.ResolvePhysicalBasePath(path),
                 DownloadOutputPathKey.UsesCaseInsensitiveComparison);
             return artifactKey.StartsWith(requestedKey + ".", StringComparison.Ordinal)
                    || artifactKey.StartsWith(requestedKey + "_", StringComparison.Ordinal);

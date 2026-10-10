@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Desktop;
+using DownKyi.Application.Downloads;
 using DownKyi.Core.Settings;
 using DownKyi.Domain.Downloads;
 using DownKyi.ViewModels.DownloadManager;
@@ -14,15 +15,19 @@ internal sealed class DownloadDuplicatePolicy
 {
     private readonly DownloadListState _downloadLists;
     private readonly DownloadTaskProjectionStore _projectionStore;
+    private readonly IPhysicalOutputPathResolver _physicalOutputPathResolver;
     private readonly IAppDialogService _dialogService;
 
     public DownloadDuplicatePolicy(
         DownloadListState downloadLists,
         DownloadTaskProjectionStore projectionStore,
+        IPhysicalOutputPathResolver physicalOutputPathResolver,
         IAppDialogService dialogService)
     {
         _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
         _projectionStore = projectionStore ?? throw new ArgumentNullException(nameof(projectionStore));
+        _physicalOutputPathResolver = physicalOutputPathResolver
+            ?? throw new ArgumentNullException(nameof(physicalOutputPathResolver));
         _dialogService = dialogService ?? throw new ArgumentNullException(nameof(dialogService));
     }
 
@@ -45,13 +50,16 @@ internal sealed class DownloadDuplicatePolicy
         MergeLiveActiveCandidates(active);
         foreach (var item in active)
         {
-            hasMatchingOutputOwner |= DownloadActionCoverage.MatchesOutputOwner(
+            var matchesOutputOwner = DownloadActionCoverage.MatchesOutputOwner(
                 item,
-                requestedItem);
+                requestedItem,
+                _physicalOutputPathResolver);
+            hasMatchingOutputOwner |= matchesOutputOwner;
             var reduced = DownloadActionCoverage.RemoveCoveredActions(
                 item,
                 requestedItem,
                 remainingContent,
+                matchesOutputOwner,
                 requireUsableArtifacts: false);
             remainingContent = reduced;
             if (!remainingContent.HasAnyRequestedAction)
@@ -67,7 +75,10 @@ internal sealed class DownloadDuplicatePolicy
         if (strategy == RepeatDownloadStrategy.ReDownload)
         {
             hasMatchingOutputOwner |= candidates.Any(item =>
-                DownloadActionCoverage.MatchesOutputOwner(item, requestedItem));
+                DownloadActionCoverage.MatchesOutputOwner(
+                    item,
+                    requestedItem,
+                    _physicalOutputPathResolver));
             return new DownloadDuplicateResolution(
                 requestedContent,
                 AllowExistingBasePath: hasMatchingOutputOwner);
@@ -75,13 +86,16 @@ internal sealed class DownloadDuplicatePolicy
 
         foreach (var item in candidates.ToArray())
         {
-            hasMatchingOutputOwner |= DownloadActionCoverage.MatchesOutputOwner(
+            var matchesOutputOwner = DownloadActionCoverage.MatchesOutputOwner(
                 item,
-                requestedItem);
+                requestedItem,
+                _physicalOutputPathResolver);
+            hasMatchingOutputOwner |= matchesOutputOwner;
             var reduced = DownloadActionCoverage.RemoveCoveredActions(
                 item,
                 requestedItem,
                 remainingContent,
+                matchesOutputOwner,
                 requireUsableArtifacts: true);
             if (reduced == remainingContent)
             {
