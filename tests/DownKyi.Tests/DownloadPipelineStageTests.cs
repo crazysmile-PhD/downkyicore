@@ -254,6 +254,41 @@ public sealed class DownloadPipelineStageTests
         }
     }
 
+    [Fact]
+    public async Task ValidateStageRejectsPartialSelectedSubtitleTrackCoverage()
+    {
+        using var settings = new TestSettingsStore();
+        var context = CreateContext(
+            settings.Store.Current,
+            requestedContent: DownloadContentSelection.None with
+            {
+                Subtitle = true,
+                SelectedSubtitleTrackIds = [11, 22]
+            });
+        var subtitle = Path.Combine(
+            Path.GetTempPath(),
+            $"partial-subtitle-{Guid.NewGuid():N}.srt");
+        try
+        {
+            await File.WriteAllTextAsync(
+                subtitle,
+                "1\n00:00:00,000 --> 00:00:01,000\nhello",
+                TestContext.Current.CancellationToken);
+            context.SubtitleFiles = [subtitle];
+            context.SubtitleTrackFiles = new Dictionary<long, string> { [11] = subtitle };
+
+            var result = await new ValidateStage(new StubFfmpegMediaStreamValidator())
+                .ExecuteAsync(context, TestContext.Current.CancellationToken);
+
+            Assert.False(result.IsSuccess);
+            Assert.Equal("download.validate.subtitle", result.Error?.Code);
+        }
+        finally
+        {
+            File.Delete(subtitle);
+        }
+    }
+
     [Theory]
     [InlineData("subtitle:missing.srt")]
     [InlineData("cover")]

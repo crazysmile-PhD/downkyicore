@@ -336,6 +336,29 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         Assert.Equal(basePath + "(1)", item.DownloadBase.FilePath);
     }
 
+    [Theory]
+    [InlineData(DownloadActionClaim.Media, ".mp4")]
+    [InlineData(DownloadActionClaim.Subtitle, "_English.srt")]
+    [InlineData(DownloadActionClaim.DanmakuAss, ".ass")]
+    [InlineData(DownloadActionClaim.DanmakuXml, ".xml")]
+    [InlineData(DownloadActionClaim.Cover, ".Cover.png")]
+    [InlineData(DownloadActionClaim.Nfo, ".nfo")]
+    public void ExistingOutputClaimsUseCanonicalUnicodeNormalization(
+        DownloadActionClaim claim,
+        string outputSuffix)
+    {
+        Directory.CreateDirectory(_directory);
+        var requestedBasePath = Path.Combine(_directory, "caf\u00e9-output");
+        var existingBasePath = Path.Combine(_directory, "cafe\u0301-output");
+        File.WriteAllText(existingBasePath + outputSuffix, "occupied");
+
+        var hasConflict = DownloadOutputPathResolver.HasExistingOutputClaimConflict(
+            requestedBasePath,
+            new DownloadActionClaims(claim));
+
+        Assert.True(hasConflict);
+    }
+
     [Fact]
     public async Task CollisionResolutionPreservesRawCandidateSpelling()
     {

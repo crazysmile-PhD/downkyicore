@@ -99,6 +99,10 @@ internal sealed class DownloadExecutionContext
 
     public IReadOnlyList<string>? SubtitleFiles { get; set; }
 
+    public IReadOnlyDictionary<long, string>? SubtitleTrackFiles { get; set; }
+
+    public string? DefaultSubtitleFile { get; set; }
+
     public string? CoverFile { get; set; }
 
     public string? PageCoverFile { get; set; }

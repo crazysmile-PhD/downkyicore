@@ -99,12 +99,8 @@ internal sealed class DownloadArtifactsStage : IDownloadPipelineStage
                 context,
                 "DownloadingSubtitle",
                 cancellationToken).ConfigureAwait(true);
-            var defaultSubtitle = $"{context.WorkingBasePath}.srt";
-            var subtitleResult = context.StagingDirectory != null &&
-                                 DownloadFileIntegrity.Check(defaultSubtitle).IsUsable
-                ? OperationResult.Success(DownloadArtifactWriteResult.Created(
-                    Directory.EnumerateFiles(Path.GetDirectoryName(context.WorkingBasePath)!,
-                        Path.GetFileName(context.WorkingBasePath) + "*.srt").ToArray()))
+            var subtitleResult = TryGetReusableSubtitles(context, out var reusableSubtitles)
+                ? OperationResult.Success(reusableSubtitles)
                 : await _artifactWriter.DownloadSubtitleAsync(
                     context.TaskId, input.Metadata, context.WorkingBasePath,
                     input.RequestedContent, cancellationToken).ConfigureAwait(true);
@@ -113,10 +109,25 @@ internal sealed class DownloadArtifactsStage : IDownloadPipelineStage
                 return StageFailure(subtitleResult.Error);
             }
 
-            foreach (var subtitle in subtitles.Files)
+            foreach (var subtitle in subtitles.TrackFiles)
             {
                 var published = await PublishAsync(
-                    context, "subtitle:" + Path.GetFileName(subtitle), subtitle,
+                    context,
+                    DownloadArtifactWriter.GetSubtitleArtifactKey(subtitle.Key),
+                    subtitle.Value,
+                    cancellationToken).ConfigureAwait(true);
+                if (!published.IsSuccess)
+                {
+                    return StageFailure(published.Error);
+                }
+            }
+
+            if (subtitles.DefaultFile != null)
+            {
+                var published = await PublishAsync(
+                    context,
+                    DownloadArtifactWriter.DefaultSubtitleArtifactKey,
+                    subtitles.DefaultFile,
                     cancellationToken).ConfigureAwait(true);
                 if (!published.IsSuccess)
                 {
@@ -125,6 +136,8 @@ internal sealed class DownloadArtifactsStage : IDownloadPipelineStage
             }
 
             context.SubtitleFiles = subtitles.Files;
+            context.SubtitleTrackFiles = subtitles.TrackFiles;
+            context.DefaultSubtitleFile = subtitles.DefaultFile;
         }
 
         context.EnsureActive(cancellationToken);
@@ -213,6 +226,77 @@ internal sealed class DownloadArtifactsStage : IDownloadPipelineStage
         context.HasPublished(key) || _fileService == null
             ? Task.FromResult(OperationResult.Success())
             : _fileService.PublishAsync(context, key, file, cancellationToken);
+
+    private static bool TryGetReusableSubtitles(
+        DownloadExecutionContext context,
+        out DownloadSubtitleWriteResult result)
+    {
+        if (context.StagingDirectory == null)
+        {
+            result = DownloadSubtitleWriteResult.NotAvailable();
+            return false;
+        }
+
+        var trackFiles = new Dictionary<long, string>();
+        if (context.SubtitleTrackFiles != null)
+        {
+            foreach (var trackFile in context.SubtitleTrackFiles)
+            {
+                if (DownloadFileIntegrity.Check(trackFile.Value).IsUsable)
+                {
+                    trackFiles[trackFile.Key] = trackFile.Value;
+                }
+            }
+        }
+
+        foreach (var transferFile in context.Input.TransferFiles)
+        {
+            if (DownloadArtifactWriter.TryGetSubtitleTrackIdFromTransferKey(
+                    transferFile.Key,
+                    out var trackId)
+                && DownloadFileIntegrity.Check(transferFile.Value).IsUsable)
+            {
+                trackFiles[trackId] = transferFile.Value;
+            }
+        }
+
+        foreach (var artifact in context.PublishedArtifacts)
+        {
+            if (DownloadArtifactWriter.TryGetSubtitleTrackIdFromArtifactKey(
+                    artifact.Key,
+                    out var trackId)
+                && DownloadFileIntegrity.Check(artifact.Value).IsUsable)
+            {
+                trackFiles[trackId] = artifact.Value;
+            }
+        }
+
+        var defaultFile = DownloadFileIntegrity.Check(context.DefaultSubtitleFile).IsUsable
+            ? context.DefaultSubtitleFile
+            : null;
+        if (context.PublishedArtifacts.TryGetValue(
+                DownloadArtifactWriter.DefaultSubtitleArtifactKey,
+                out var publishedDefault)
+            && DownloadFileIntegrity.Check(publishedDefault).IsUsable)
+        {
+            defaultFile = publishedDefault;
+        }
+        else if (context.Input.TransferFiles.TryGetValue(
+                     DownloadArtifactWriter.DefaultSubtitleTransferKey,
+                     out var stagedDefault)
+                 && DownloadFileIntegrity.Check(stagedDefault).IsUsable)
+        {
+            defaultFile = stagedDefault;
+        }
+
+        var requested = context.Input.RequestedContent;
+        var isComplete = requested.SelectedSubtitleTrackIds is { } selectedTrackIds
+            ? selectedTrackIds.All(trackFiles.ContainsKey)
+              && (requested.DefaultSubtitleTrackId == null || defaultFile != null)
+            : trackFiles.Count > 0 && defaultFile != null;
+        result = DownloadSubtitleWriteResult.Created(trackFiles, defaultFile);
+        return isComplete;
+    }
 
     private static OperationResult<DownloadStageResult> StageFailure(OperationError? error)
     {

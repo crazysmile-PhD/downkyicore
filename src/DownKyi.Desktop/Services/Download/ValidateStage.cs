@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -70,10 +71,7 @@ internal sealed class ValidateStage : IDownloadPipelineStage
                 "The requested danmaku file was not created.");
         }
 
-        if (context.NeedsSubtitle &&
-            context.SubtitleFiles != null &&
-            context.SubtitleFiles.Any(subtitle =>
-                !context.HasPublished("subtitle:" + Path.GetFileName(subtitle)) && !File.Exists(subtitle)))
+        if (context.NeedsSubtitle && !HasCompleteSubtitleOutput(context))
         {
             return DownloadStageResult.Failure(
                 "download.validate.subtitle",
@@ -100,4 +98,48 @@ internal sealed class ValidateStage : IDownloadPipelineStage
 
     private static bool HasDurlConcatVideoEvidence(DownloadExecutionContext context) =>
         context.MediaKind == DownloadMediaKind.Durl && context.DurlDownloads.Count > 1;
+
+    private static bool HasCompleteSubtitleOutput(DownloadExecutionContext context)
+    {
+        if (context.SubtitleTrackFiles == null)
+        {
+            return context.SubtitleFiles == null
+                   || context.SubtitleFiles.All(subtitle =>
+                       context.HasPublished("subtitle:" + Path.GetFileName(subtitle))
+                       || File.Exists(subtitle));
+        }
+
+        if (context.DefaultSubtitleFile != null
+            && !context.HasPublished(DownloadArtifactWriter.DefaultSubtitleArtifactKey)
+            && !DownloadFileIntegrity.Check(context.DefaultSubtitleFile).IsUsable)
+        {
+            return false;
+        }
+
+        if (context.Input.RequestedContent.DefaultSubtitleTrackId != null
+            && context.DefaultSubtitleFile == null
+            && !context.HasPublished(DownloadArtifactWriter.DefaultSubtitleArtifactKey))
+        {
+            return false;
+        }
+
+        IEnumerable<long> trackIds =
+            context.Input.RequestedContent.SelectedSubtitleTrackIds is { } selectedTrackIds
+                ? selectedTrackIds
+                : context.SubtitleTrackFiles.Keys;
+        return trackIds.All(trackId =>
+            context.SubtitleTrackFiles.TryGetValue(trackId, out var stagedFile)
+            && HasUsableSubtitleTrack(context, trackId, stagedFile));
+    }
+
+    private static bool HasUsableSubtitleTrack(
+        DownloadExecutionContext context,
+        long trackId,
+        string stagedFile)
+    {
+        var artifactKey = DownloadArtifactWriter.GetSubtitleArtifactKey(trackId);
+        return context.PublishedArtifacts.TryGetValue(artifactKey, out var publishedFile)
+               && DownloadFileIntegrity.Check(publishedFile).IsUsable
+               || DownloadFileIntegrity.Check(stagedFile).IsUsable;
+    }
 }

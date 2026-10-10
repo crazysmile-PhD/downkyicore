@@ -86,14 +86,15 @@ internal static class DownloadOutputPathResolver
             return false;
         }
 
-        var baseName = Path.GetFileName(basePath);
+        var baseKey = CreateComparisonKey(basePath);
         return Directory.EnumerateFiles(directory).Any(file =>
         {
-            var fileName = Path.GetFileName(file);
-            var stem = Path.GetFileNameWithoutExtension(file);
+            var fileKey = CreateComparisonKey(file);
+            var stemKey = CreateComparisonKey(
+                Path.Combine(directory, Path.GetFileNameWithoutExtension(file)));
             var extension = Path.GetExtension(file);
             if (requestedClaims.Contains(DownloadActionClaim.Media)
-                && PlatformComparer.Equals(stem, baseName)
+                && PlatformComparer.Equals(stemKey, baseKey)
                 && MediaExtensions.Contains(extension))
             {
                 return true;
@@ -101,30 +102,30 @@ internal static class DownloadOutputPathResolver
 
             if (requestedClaims.Contains(DownloadActionClaim.Subtitle)
                 && extension.Equals(".srt", StringComparison.OrdinalIgnoreCase)
-                && (PlatformComparer.Equals(stem, baseName)
-                    || stem.StartsWith(baseName + "_", PlatformComparison)))
+                && (PlatformComparer.Equals(stemKey, baseKey)
+                    || stemKey.StartsWith(baseKey + "_", PlatformComparison)))
             {
                 return true;
             }
 
             if ((requestedClaims.Contains(DownloadActionClaim.DanmakuAss)
-                    && PlatformComparer.Equals(fileName, baseName + ".ass")
+                    && PlatformComparer.Equals(fileKey, baseKey + ".ass")
                     || requestedClaims.Contains(DownloadActionClaim.DanmakuXml)
-                    && PlatformComparer.Equals(fileName, baseName + ".xml")))
+                    && PlatformComparer.Equals(fileKey, baseKey + ".xml")))
             {
                 return true;
             }
 
             if (requestedClaims.Contains(DownloadActionClaim.Nfo)
-                && PlatformComparer.Equals(fileName, baseName + ".nfo"))
+                && PlatformComparer.Equals(fileKey, baseKey + ".nfo"))
             {
                 return true;
             }
 
             return requestedClaims.Contains(DownloadActionClaim.Cover)
                    && ImageExtensions.Contains(extension)
-                   && (PlatformComparer.Equals(stem, baseName)
-                       || stem.StartsWith(baseName + ".Cover", PlatformComparison));
+                   && (PlatformComparer.Equals(stemKey, baseKey)
+                       || stemKey.StartsWith(baseKey + ".Cover", PlatformComparison));
         });
     }
 
