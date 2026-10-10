@@ -29,24 +29,26 @@ internal static class DownloadStoreReservationKeyCompatibility
                     clock,
                     cancellationToken)
                 .ConfigureAwait(false);
-            var targetClaims = new Dictionary<string, List<DownloadActionClaims>>(
+            var targetReservations = new Dictionary<string, List<ReservationClaim>>(
                 StringComparer.Ordinal);
             var changes = new List<(string Id, string Target)>();
             foreach (var row in rows)
             {
                 var target = CreateCurrentKey(row.Path);
-                if (!targetClaims.TryGetValue(target, out var existingClaims))
+                if (!targetReservations.TryGetValue(target, out var existingReservations))
                 {
-                    existingClaims = [];
-                    targetClaims.Add(target, existingClaims);
+                    existingReservations = [];
+                    targetReservations.Add(target, existingReservations);
                 }
 
-                if (existingClaims.Any(claims => claims.Overlaps(row.Claims)))
+                if (existingReservations.Any(reservation =>
+                        reservation.Cid != row.Cid
+                        || reservation.Claims.Overlaps(row.Claims)))
                 {
                     throw new InvalidOperationException(BlockedMessage);
                 }
 
-                existingClaims.Add(row.Claims);
+                existingReservations.Add(new ReservationClaim(row.Cid, row.Claims));
 
                 if (!StringComparer.Ordinal.Equals(row.StoredKey, target))
                 {
@@ -115,6 +117,7 @@ internal static class DownloadStoreReservationKeyCompatibility
                         task.Output.BasePath,
                         await reader.IsDBNullAsync(keyOrdinal, cancellationToken).ConfigureAwait(false)
                             ? null : reader.GetString(keyOrdinal),
+                        task.Metadata.Media.Cid,
                         task.Plan.ActionClaims));
                 }
                 catch (DownloadRecordCorruptException exception)
@@ -193,5 +196,10 @@ internal static class DownloadStoreReservationKeyCompatibility
         string Id,
         string Path,
         string? StoredKey,
+        long Cid,
+        DownloadActionClaims Claims);
+
+    private sealed record ReservationClaim(
+        long Cid,
         DownloadActionClaims Claims);
 }
