@@ -60,10 +60,12 @@ public sealed class LegacyDownloadStoreFormatDetectorTests
         { "legacy-v6", 6, "AdmissionSafe" },
         { "legacy-v7", 7, "AdmissionSafe" },
         { "legacy-v8", 8, "AdmissionSafe" },
-        { "current-v9-with-legacy-history", 9, "PreviousCurrentWithLegacyHistory" },
-        { "current-v9", 9, "PreviousCurrent" },
-        { "current-v10-with-legacy-history", 10, "CurrentWithLegacyHistory" },
-        { "current-v10", 10, "Current" }
+        { "current-v9-with-legacy-history", 9, "HistoryContentUpgradeWithLegacyHistory" },
+        { "current-v9", 9, "HistoryContentUpgrade" },
+        { "current-v10-with-legacy-history", 10, "PreviousCurrentWithLegacyHistory" },
+        { "current-v10", 10, "PreviousCurrent" },
+        { "current-v11-with-legacy-history", 11, "CurrentWithLegacyHistory" },
+        { "current-v11", 11, "Current" }
     };
 
     public static TheoryData<string> MalformedShapes => new()
@@ -85,6 +87,7 @@ public sealed class LegacyDownloadStoreFormatDetectorTests
         int userVersion,
         string expectedKind)
     {
+        ArgumentNullException.ThrowIfNull(shape);
         using var connection = OpenConnection();
         CreateRecognizedShape(connection, shape, userVersion);
 
@@ -209,10 +212,11 @@ public sealed class LegacyDownloadStoreFormatDetectorTests
             return;
         }
 
-        if (shape is "current-v10" or "current-v10-with-legacy-history")
+        if (shape is "current-v10" or "current-v10-with-legacy-history"
+            or "current-v11" or "current-v11-with-legacy-history")
         {
             CreateCurrentShape(connection, includeStagingToken: true);
-            if (shape == "current-v10-with-legacy-history")
+            if (shape.EndsWith("with-legacy-history", StringComparison.Ordinal))
             {
                 CreateTable(connection, "downloaded", CoreDownloadedColumns);
             }

@@ -9,7 +9,7 @@ internal static class DownloadTaskSqlReader
             db.name, db.duration, db.video_codec_name, db.resolution, db.audio_codec,
             db.file_path, db.file_size, db.published_artifacts, db.staging_token,
             db.publishing_key, db.publishing_file_name, db.publishing_length, db.publishing_sha256,
-            db.page, db.nfo_request, db.version,
+            db.page, db.nfo_request, db.version, db.output_reservation_key,
             db.created_at_utc, db.updated_at_utc,
             dl.gid, dl.download_files, dl.downloaded_files, dl.play_stream_type,
             dl.download_status, dl.download_content, dl.download_status_title, dl.progress,

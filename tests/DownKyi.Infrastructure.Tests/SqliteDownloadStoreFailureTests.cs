@@ -19,6 +19,9 @@ public sealed class SqliteDownloadStoreFailureTests : IDisposable
     [InlineData("""{"downloadVideo":true,"defaultSubtitleTrackId":"bad"}""")]
     [InlineData("""{"downloadVideo":true,"mediaKind":"unknown"}""")]
     [InlineData("""{"downloadVideo":true,"mediaKind":7}""")]
+    [InlineData("""{"downloadDanmaku":true,"danmakuOutputFormat":"ass"}""")]
+    [InlineData("""{"downloadDanmaku":true,"danmakuOutputFormat":0}""")]
+    [InlineData("""{"downloadDanmaku":true,"danmakuOutputFormat":4}""")]
     public async Task InvalidRequestedContentIsQuarantinedWithoutHidingValidRecords(string payload)
     {
         using var store = _fixture.CreateStore();

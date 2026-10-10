@@ -6,6 +6,7 @@ using DownKyi.Application.Desktop;
 using DownKyi.Commands;
 using DownKyi.Core.Settings;
 using DownKyi.Services;
+using DownKyi.Services.Download;
 using DownKyi.Services.Video;
 using DownKyi.ViewModels;
 using DownKyi.ViewModels.UiState;
@@ -231,10 +232,12 @@ public sealed class VideoDetailCommandStateTests
         var interactions = new DesktopInteractionContextStub();
         var downloadCoordinator = new VideoDetailDownloadCoordinatorStub
         {
-            Result = 0,
-            WaitForRelease = true,
-            BeforeReturn = () => interactions.RecordedNotifications.Show(
-                DownKyi.Utils.DictionaryResource.GetString("TipAlreadyToAddDownloading"))
+            Result = new DownloadAddResult(
+                AddedCount: 0,
+                DuplicateCount: 1,
+                FailedCount: 0,
+                SkippedCount: 0),
+            WaitForRelease = true
         };
         using var viewModel = new ViewVideoDetailViewModel(
             interactions,
@@ -288,7 +291,15 @@ public sealed class VideoDetailCommandStateTests
         using var settings = new SettingsStore(settingsPath);
         using var workflow = new VideoDetailWorkflowCoordinatorStub();
         var interactions = new DesktopInteractionContextStub();
-        var downloadCoordinator = new VideoDetailDownloadCoordinatorStub { Result = 0 };
+        var downloadCoordinator = new VideoDetailDownloadCoordinatorStub
+        {
+            Result = new DownloadAddResult(
+                AddedCount: 0,
+                DuplicateCount: 0,
+                FailedCount: 0,
+                SkippedCount: 0,
+                StopReason: DownloadPlanningStopReason.NoPagesSelected)
+        };
         using var viewModel = new ViewVideoDetailViewModel(
             interactions,
             new ClipboardServiceStub(),
@@ -673,11 +684,15 @@ public sealed class VideoDetailCommandStateTests
 
         public DownKyi.Presentation.VideoInfoView? LastVideoInfo { get; private set; }
 
-        public int? Result { get; init; } = 1;
+        public DownloadAddResult? Result { get; init; } = new DownloadAddResult(
+            AddedCount: 1,
+            DuplicateCount: 0,
+            FailedCount: 0,
+            SkippedCount: 0);
 
         public Action? BeforeReturn { get; init; }
 
-        public async Task<int?> AddAsync(
+        public async Task<DownloadAddResult?> AddAsync(
             string input,
             DownKyi.Presentation.VideoInfoView videoInfoView,
             IList<DownKyi.Presentation.VideoSection> videoSections,

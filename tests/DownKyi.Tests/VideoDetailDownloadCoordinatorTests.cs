@@ -101,7 +101,7 @@ public sealed class VideoDetailDownloadCoordinatorTests
             isAll: true,
             TestContext.Current.CancellationToken);
 
-        Assert.Equal(1, result);
+        Assert.Equal(1, result?.AddedCount);
         Assert.Equal(1, session.PrepareCount);
         Assert.Equal(1, session.AddCount);
         Assert.Same(video, session.CreatedPreparedDownload!.Video);
@@ -165,11 +165,13 @@ public sealed class VideoDetailDownloadCoordinatorTests
         public Task<PreparedDownload> PrepareAsync(
             VideoInfoView videoInfoView,
             IList<VideoSection> videoSections,
+            DownloadContentSelection requestedContent,
             bool isAll,
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
             Assert.True(isAll);
+            Assert.Equal(Selection.RequestedContent, requestedContent);
             PrepareCount++;
             CreatedPreparedDownload = PreparedDownload.Create(videoInfoView, videoSections);
             return Task.FromResult(CreatedPreparedDownload);
@@ -177,10 +179,11 @@ public sealed class VideoDetailDownloadCoordinatorTests
 
         public Task<PreparedDownload?> PrepareAsync(
             IInfoService videoInfoService,
+            DownloadContentSelection requestedContent,
             CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 
-        public Task<int> AddToDownload(
+        public Task<DownloadAddResult> AddToDownload(
             string directory,
             FinalizedDownload finalizedDownload,
             CancellationToken cancellationToken = default)
@@ -189,14 +192,20 @@ public sealed class VideoDetailDownloadCoordinatorTests
             AddCount++;
             ReceivedDirectory = directory;
             ReceivedFinalizedDownload = finalizedDownload;
-            return Task.FromResult(1);
+            return Task.FromResult(new DownloadAddResult(
+                AddedCount: 1,
+                DuplicateCount: 0,
+                FailedCount: 0,
+                SkippedCount: 0));
         }
     }
 
     private static VideoDetailDownloadCoordinator CreateCoordinator(
-        IAddToDownloadServiceFactory factory) => new(
-            factory,
-            new DownloadContentConflictResolver(new UnexpectedDialogService()));
+        IAddToDownloadServiceFactory factory)
+    {
+        var resolver = new DownloadContentConflictResolver(new UnexpectedDialogService());
+        return new VideoDetailDownloadCoordinator(factory, new DownloadActionPlanner(resolver));
+    }
 
     private sealed class UnexpectedDialogService : DownKyi.Application.Desktop.IAppDialogService
     {

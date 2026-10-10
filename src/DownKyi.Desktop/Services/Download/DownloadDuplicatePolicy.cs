@@ -1,14 +1,12 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Desktop;
+using DownKyi.Application.Downloads;
 using DownKyi.Core.Settings;
 using DownKyi.Domain.Downloads;
-using DownKyi.Presentation;
-using DownKyi.Utils;
 using DownKyi.ViewModels.DownloadManager;
 
 namespace DownKyi.Services.Download;
@@ -17,101 +15,143 @@ internal sealed class DownloadDuplicatePolicy
 {
     private readonly DownloadListState _downloadLists;
     private readonly DownloadTaskProjectionStore _projectionStore;
-    private readonly IUserNotificationService _notificationService;
+    private readonly IPhysicalOutputPathResolver _physicalOutputPathResolver;
     private readonly IAppDialogService _dialogService;
 
     public DownloadDuplicatePolicy(
         DownloadListState downloadLists,
         DownloadTaskProjectionStore projectionStore,
-        IUserNotificationService notificationService,
+        IPhysicalOutputPathResolver physicalOutputPathResolver,
         IAppDialogService dialogService)
     {
         _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
         _projectionStore = projectionStore ?? throw new ArgumentNullException(nameof(projectionStore));
-        _notificationService = notificationService ?? throw new ArgumentNullException(nameof(notificationService));
+        _physicalOutputPathResolver = physicalOutputPathResolver
+            ?? throw new ArgumentNullException(nameof(physicalOutputPathResolver));
         _dialogService = dialogService ?? throw new ArgumentNullException(nameof(dialogService));
     }
 
-    public async Task<bool> ShouldSkipAsync(
-        VideoPage page,
-        VideoQuality? videoQuality,
-        DownloadContentSelection requestedContent,
+    public async Task<DownloadDuplicateResolution> ResolveAsync(
+        DownloadingItem requestedItem,
         RepeatDownloadStrategy strategy,
         CancellationToken cancellationToken,
-        Lazy<Task<List<DownloadedItem>>>? completedCandidates = null)
+        Lazy<Task<List<DownloadedItem>>>? completedCandidates = null,
+        Lazy<Task<List<DownloadingItem>>>? activeCandidates = null)
     {
-        ArgumentNullException.ThrowIfNull(page);
-        ArgumentNullException.ThrowIfNull(requestedContent);
+        ArgumentNullException.ThrowIfNull(requestedItem);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (ShouldSkipActiveDownload(page, videoQuality, requestedContent))
+        var requestedContent = requestedItem.DownloadBase.NeedDownloadContent;
+        var remainingContent = requestedContent;
+        var hasMatchingOutputOwner = false;
+        var active = activeCandidates == null
+            ? await LoadActiveCandidatesAsync(cancellationToken).ConfigureAwait(true)
+            : await activeCandidates.Value.ConfigureAwait(true);
+        MergeLiveActiveCandidates(active);
+        foreach (var item in active)
         {
-            return true;
+            var matchesOutputOwner = DownloadActionCoverage.MatchesOutputOwner(
+                item,
+                requestedItem,
+                _physicalOutputPathResolver);
+            hasMatchingOutputOwner |= matchesOutputOwner;
+            var reduced = DownloadActionCoverage.RemoveCoveredActions(
+                item,
+                requestedItem,
+                remainingContent,
+                matchesOutputOwner,
+                requireUsableArtifacts: false);
+            remainingContent = reduced;
+            if (!remainingContent.HasAnyRequestedAction)
+            {
+                return DownloadDuplicateResolution.FullyCovered(requestedContent);
+            }
         }
 
         var candidates = completedCandidates == null
-            ? await LoadCompletedCandidatesAsync(strategy, cancellationToken).ConfigureAwait(true)
+            ? await LoadCompletedCandidatesAsync(cancellationToken).ConfigureAwait(true)
             : await completedCandidates.Value.ConfigureAwait(true);
         MergeLiveCompletedCandidates(candidates);
-        foreach (var item in candidates)
+        if (strategy == RepeatDownloadStrategy.ReDownload)
         {
-            if (!IsSameOutput(item, page, videoQuality, requestedContent))
+            hasMatchingOutputOwner |= candidates.Any(item =>
+                DownloadActionCoverage.MatchesOutputOwner(
+                    item,
+                    requestedItem,
+                    _physicalOutputPathResolver));
+            return new DownloadDuplicateResolution(
+                requestedContent,
+                AllowExistingBasePath: hasMatchingOutputOwner);
+        }
+
+        foreach (var item in candidates.ToArray())
+        {
+            var matchesOutputOwner = DownloadActionCoverage.MatchesOutputOwner(
+                item,
+                requestedItem,
+                _physicalOutputPathResolver);
+            hasMatchingOutputOwner |= matchesOutputOwner;
+            var reduced = DownloadActionCoverage.RemoveCoveredActions(
+                item,
+                requestedItem,
+                remainingContent,
+                matchesOutputOwner,
+                requireUsableArtifacts: true);
+            if (reduced == remainingContent)
             {
                 continue;
             }
 
-            var shouldSkip = strategy switch
-            {
-                RepeatDownloadStrategy.Ask => await ResolveAskAsync(item, cancellationToken)
-                    .ConfigureAwait(true),
-                RepeatDownloadStrategy.ReDownload => false,
-                RepeatDownloadStrategy.JumpOver => true,
-                _ => true
-            };
-            if (!shouldSkip)
+            if (strategy == RepeatDownloadStrategy.Ask
+                && await ShouldRedownloadAsync(item, cancellationToken).ConfigureAwait(true))
             {
                 candidates.Remove(item);
+                continue;
             }
 
-            return shouldSkip;
+            remainingContent = reduced;
+            if (!remainingContent.HasAnyRequestedAction)
+            {
+                return DownloadDuplicateResolution.FullyCovered(requestedContent);
+            }
         }
 
-        return false;
+        return new DownloadDuplicateResolution(
+            remainingContent,
+            AllowExistingBasePath: hasMatchingOutputOwner);
+    }
+
+    internal async Task<bool> ShouldSkipAsync(
+        DownloadingItem requestedItem,
+        RepeatDownloadStrategy strategy,
+        CancellationToken cancellationToken,
+        Lazy<Task<List<DownloadedItem>>>? completedCandidates = null,
+        Lazy<Task<List<DownloadingItem>>>? activeCandidates = null) =>
+        (await ResolveAsync(
+            requestedItem,
+            strategy,
+            cancellationToken,
+            completedCandidates,
+            activeCandidates).ConfigureAwait(true)).IsFullyCovered;
+
+    public async Task<List<DownloadingItem>> LoadActiveCandidatesAsync(
+        CancellationToken cancellationToken)
+    {
+        var startup = await _projectionStore
+            .GetDownloadingStateAsync(cancellationToken)
+            .ConfigureAwait(true);
+        return new List<DownloadingItem>(startup.Projections);
     }
 
     public async Task<List<DownloadedItem>> LoadCompletedCandidatesAsync(
-        RepeatDownloadStrategy strategy,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (strategy == RepeatDownloadStrategy.ReDownload)
-        {
-            return [];
-        }
 
         var downloadedItems = await _projectionStore
             .GetDownloadedAsync(cancellationToken)
             .ConfigureAwait(true);
         return new List<DownloadedItem>(downloadedItems);
-    }
-
-    private bool ShouldSkipActiveDownload(
-        VideoPage page,
-        VideoQuality? videoQuality,
-        DownloadContentSelection requestedContent)
-    {
-        foreach (var item in _downloadLists.Downloading)
-        {
-            if (!IsSameOutput(item, page, videoQuality, requestedContent))
-            {
-                continue;
-            }
-
-            _notificationService.Show(DictionaryResource.GetString("TipAlreadyToAddDownloading"));
-            return true;
-        }
-
-        return false;
     }
 
     private void MergeLiveCompletedCandidates(List<DownloadedItem> completedCandidates)
@@ -128,10 +168,24 @@ internal sealed class DownloadDuplicatePolicy
         }
     }
 
+    private void MergeLiveActiveCandidates(List<DownloadingItem> activeCandidates)
+    {
+        var candidateIds = activeCandidates
+            .Select(static item => item.DownloadBase.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        foreach (var item in _downloadLists.Downloading.ToArray())
+        {
+            if (candidateIds.Add(item.DownloadBase.Id))
+            {
+                activeCandidates.Add(item);
+            }
+        }
+    }
+
     private static string GetTaskId(DownloadedItem item) =>
         item.HistoryRecord?.Id.Value ?? item.DownloadBase.Id;
 
-    private async Task<bool> ResolveAskAsync(
+    private async Task<bool> ShouldRedownloadAsync(
         DownloadedItem item,
         CancellationToken cancellationToken)
     {
@@ -145,94 +199,25 @@ internal sealed class DownloadDuplicatePolicy
             cancellationToken).ConfigureAwait(true);
         if (result.Outcome != AppDialogOutcome.Accepted)
         {
-            return true;
+            return false;
         }
 
         await _projectionStore
             .RemoveDownloadedAsync(item, cancellationToken)
             .ConfigureAwait(true);
         _downloadLists.RemoveDownloaded(item);
-        return false;
+        return true;
     }
 
-    private static bool IsSameOutput(
-        DownloadBaseItem item,
-        VideoPage page,
-        VideoQuality? videoQuality,
-        DownloadContentSelection requestedContent)
-    {
-        var downloadBase = item.DownloadBase;
-        if (downloadBase.Cid != page.Cid)
-        {
-            return false;
-        }
+}
 
-        var existingContent = GetRecordedMediaContent(item);
-        if (existingContent.Audio != requestedContent.Audio
-            || existingContent.Video != requestedContent.Video)
-        {
-            return false;
-        }
+internal sealed record DownloadDuplicateResolution(
+    DownloadContentSelection RemainingContent,
+    bool AllowExistingBasePath)
+{
+    public bool IsFullyCovered => !RemainingContent.HasAnyRequestedAction;
 
-        if (requestedContent.Video)
-        {
-            if (videoQuality == null
-                || item.Resolution.Id != videoQuality.Quality
-                || item.VideoCodecName != videoQuality.SelectedVideoCodec)
-            {
-                return false;
-            }
-
-            var requestedKind = videoQuality.IsDurl
-                ? DownloadMediaKind.Durl
-                : DownloadMediaKind.Dash;
-            if (existingContent.MediaKind is { } kind && kind != requestedKind)
-            {
-                return false;
-            }
-        }
-
-        if (requestedContent.Audio
-            && (!requestedContent.Video || videoQuality?.IsDurl != true)
-            && item.AudioCodec.Name != page.AudioQualityFormat)
-        {
-            return false;
-        }
-
-        return requestedContent.Audio || requestedContent.Video
-            || (existingContent.Danmaku == requestedContent.Danmaku
-                && existingContent.Subtitle == requestedContent.Subtitle
-                && existingContent.Cover == requestedContent.Cover);
-    }
-
-    private static DownloadContentSelection GetRecordedMediaContent(DownloadBaseItem item)
-    {
-        var content = item.DownloadBase.NeedDownloadContent;
-        if (item is not DownloadedItem { HistoryRecord: { } history })
-        {
-            return content;
-        }
-
-        if (history.RequestedContent is { } finalizedContent)
-        {
-            return finalizedContent;
-        }
-
-        if (!history.PublishedArtifacts.TryGetValue("media", out var mediaPath))
-        {
-            return history.PublishedArtifacts.Count == 0
-                ? content
-                : content with { Audio = false, Video = false, MediaKind = DownloadMediaKind.None };
-        }
-
-        var extension = Path.GetExtension(mediaPath);
-        if (extension.Equals(".mp3", StringComparison.OrdinalIgnoreCase)
-            || extension.Equals(".aac", StringComparison.OrdinalIgnoreCase)
-            || extension.Equals(".flac", StringComparison.OrdinalIgnoreCase))
-        {
-            return content with { Audio = true, Video = false, MediaKind = DownloadMediaKind.Dash };
-        }
-
-        return content;
-    }
+    public static DownloadDuplicateResolution FullyCovered(
+        DownloadContentSelection requestedContent) =>
+        new(DownloadContentSelection.None, requestedContent.HasAnyRequestedAction);
 }

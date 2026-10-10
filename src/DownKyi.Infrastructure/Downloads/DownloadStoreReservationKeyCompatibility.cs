@@ -1,5 +1,6 @@
 using DownKyi.Application.Downloads;
 using DownKyi.Application.Time;
+using DownKyi.Domain.Downloads;
 using Microsoft.Data.Sqlite;
 
 namespace DownKyi.Infrastructure.Downloads;
@@ -22,46 +23,34 @@ internal static class DownloadStoreReservationKeyCompatibility
         using var transaction = SqliteDownloadStoreDatabase.BeginImmediateTransaction(connection);
         try
         {
-            var rows = await ReadRowsAsync(connection, transaction, cancellationToken)
+            var rows = await ReadRowsAsync(
+                    connection,
+                    transaction,
+                    clock,
+                    cancellationToken)
                 .ConfigureAwait(false);
-            var occupied = new Dictionary<string, string>(StringComparer.Ordinal);
-            var targets = new Dictionary<string, string>(StringComparer.Ordinal);
-            var activeIds = new HashSet<string>(StringComparer.Ordinal);
+            var targetClaims = new Dictionary<string, List<DownloadActionClaims>>(
+                StringComparer.Ordinal);
             var changes = new List<(string Id, string Target)>();
             foreach (var row in rows)
             {
-                if (row.StoredKey is not null)
-                {
-                    occupied.Add(row.StoredKey, row.Id);
-                }
-
-                if (!row.IsActive)
-                {
-                    continue;
-                }
-
-                activeIds.Add(row.Id);
                 var target = CreateCurrentKey(row.Path);
-                if (!targets.TryAdd(target, row.Id))
+                if (!targetClaims.TryGetValue(target, out var existingClaims))
+                {
+                    existingClaims = [];
+                    targetClaims.Add(target, existingClaims);
+                }
+
+                if (existingClaims.Any(claims => claims.Overlaps(row.Claims)))
                 {
                     throw new InvalidOperationException(BlockedMessage);
                 }
+
+                existingClaims.Add(row.Claims);
 
                 if (!StringComparer.Ordinal.Equals(row.StoredKey, target))
                 {
                     changes.Add((row.Id, target));
-                }
-            }
-
-            // The UNIQUE index covers quarantine and any completed row retaining
-            // a non-NULL key, even when snapshots exclude those rows.
-            foreach (var (target, id) in targets)
-            {
-                if (occupied.TryGetValue(target, out var holder)
-                    && !StringComparer.Ordinal.Equals(holder, id)
-                    && !activeIds.Contains(holder))
-                {
-                    throw new InvalidOperationException(BlockedMessage);
                 }
             }
 
@@ -78,15 +67,6 @@ internal static class DownloadStoreReservationKeyCompatibility
                     await backupSource.OpenAsync(cancellationToken).ConfigureAwait(false);
                     await DownloadStoreSchemaLifecycle.BackupReservationKeysAsync(
                         backupSource, databasePath, clock, cancellationToken).ConfigureAwait(false);
-                }
-
-                // These intermediate NULLs are private to this transaction. The
-                // retained UNIQUE index guards the final state; legal writers
-                // cannot acquire a write transaction until after this commit.
-                foreach (var (id, _) in changes)
-                {
-                    await SetKeyAsync(connection, transaction, id, null, cancellationToken)
-                        .ConfigureAwait(false);
                 }
 
                 foreach (var (id, target) in changes)
@@ -108,31 +88,57 @@ internal static class DownloadStoreReservationKeyCompatibility
     private static async Task<IReadOnlyList<ReservationRow>> ReadRowsAsync(
         SqliteConnection connection,
         SqliteTransaction transaction,
+        IClock clock,
         CancellationToken cancellationToken)
     {
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = """
-            SELECT db.id, db.file_path, db.output_reservation_key,
-                   CASE WHEN dl.id IS NOT NULL AND q.record_id IS NULL THEN 1 ELSE 0 END
-            FROM download_base db
-            LEFT JOIN downloading dl ON dl.id = db.id
+        command.CommandText = DownloadTaskSqlReader.SelectColumns + "\n" + """
             LEFT JOIN download_quarantine q
                    ON q.source_table = 'downloading' AND q.record_id = db.id
-            WHERE db.output_reservation_key IS NOT NULL
-               OR (dl.id IS NOT NULL AND q.record_id IS NULL)
+            WHERE q.record_id IS NULL
             ORDER BY db.id
             """;
-        using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         var rows = new List<ReservationRow>();
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        var corrupt = new List<(string RecordId, DownloadRecordCorruptException Error)>();
+        using (var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
         {
-            rows.Add(new ReservationRow(
-                reader.GetString(0),
-                reader.GetString(1),
-                await reader.IsDBNullAsync(2, cancellationToken).ConfigureAwait(false)
-                    ? null : reader.GetString(2),
-                reader.GetInt32(3) != 0));
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                var recordId = reader.GetString(reader.GetOrdinal("id"));
+                try
+                {
+                    var task = DownloadTaskRecordMapper.Read(reader);
+                    var keyOrdinal = reader.GetOrdinal("output_reservation_key");
+                    rows.Add(new ReservationRow(
+                        recordId,
+                        task.Output.BasePath,
+                        await reader.IsDBNullAsync(keyOrdinal, cancellationToken).ConfigureAwait(false)
+                            ? null : reader.GetString(keyOrdinal),
+                        task.Plan.ActionClaims));
+                }
+                catch (DownloadRecordCorruptException exception)
+                {
+                    corrupt.Add((recordId, exception));
+                }
+            }
+        }
+
+        if (corrupt.Count > 0)
+        {
+            var quarantinedAtUtc = clock.UtcNow;
+            foreach (var item in corrupt)
+            {
+                await SqliteDownloadStoreQuarantine.RecordAsync(
+                        connection,
+                        "downloading",
+                        item.RecordId,
+                        item.Error,
+                        quarantinedAtUtc,
+                        cancellationToken,
+                        transaction)
+                    .ConfigureAwait(false);
+            }
         }
 
         return rows;
@@ -183,5 +189,9 @@ internal static class DownloadStoreReservationKeyCompatibility
         }
     }
 
-    private sealed record ReservationRow(string Id, string Path, string? StoredKey, bool IsActive);
+    private sealed record ReservationRow(
+        string Id,
+        string Path,
+        string? StoredKey,
+        DownloadActionClaims Claims);
 }

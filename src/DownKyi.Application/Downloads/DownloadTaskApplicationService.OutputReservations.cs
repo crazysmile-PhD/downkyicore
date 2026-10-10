@@ -1,3 +1,5 @@
+using DownKyi.Domain.Downloads;
+
 namespace DownKyi.Application.Downloads;
 
 public sealed partial class DownloadTaskApplicationService
@@ -18,5 +20,20 @@ public sealed partial class DownloadTaskApplicationService
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         return _store.GetActiveOutputReservationKeysAsync(ignoreCase, cancellationToken);
+    }
+
+    public Task<bool> HasOutputClaimConflictAsync(
+        string basePath,
+        DownloadActionClaims requestedClaims,
+        bool ignoreCase,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(basePath);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return _store.HasOutputClaimConflictAsync(
+            basePath,
+            requestedClaims,
+            ignoreCase,
+            cancellationToken);
     }
 }

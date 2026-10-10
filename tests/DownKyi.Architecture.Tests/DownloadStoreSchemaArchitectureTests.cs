@@ -11,7 +11,7 @@ public sealed class DownloadStoreSchemaArchitectureTests
     {
         var source = ReadDownloadSource("DownloadStoreSchema.cs");
 
-        Assert.Contains("public const int CurrentVersion = 10", source, StringComparison.Ordinal);
+        Assert.Contains("public const int CurrentVersion = 11", source, StringComparison.Ordinal);
         Assert.Contains("LegacyDownloadStoreFormatDetector", source, StringComparison.Ordinal);
         Assert.Contains("LegacyDownloadStoreReader", source, StringComparison.Ordinal);
         Assert.Contains("LegacyDownloadStoreNormalizer", source, StringComparison.Ordinal);

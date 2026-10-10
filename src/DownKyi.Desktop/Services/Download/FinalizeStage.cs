@@ -45,6 +45,15 @@ internal sealed class FinalizeStage : IDownloadPipelineStage
     {
         ArgumentNullException.ThrowIfNull(context);
         context.EnsureActive(cancellationToken);
+        DownloadActionResultEvaluator.Evaluate(context);
+        if (!context.ActionResults.HasSucceeded)
+        {
+            return DownloadStageResult.Failure(
+                "download.finalize.no-output",
+                "A download cannot complete without a successful requested action.",
+                OperationErrorKind.NotFound);
+        }
+
         if (context.NeedsMedia && !context.HasPublished("media"))
         {
             var published = await _fileService.PublishAsync(

@@ -135,6 +135,11 @@
     <system:String x:Key="TipAlreadyToAddDownloading">此内容已加入下载队列，无需重复添加。</system:String>
     <system:String x:Key="TipAlreadyToAddDownloaded">已经下载完成~</system:String>
     <system:String x:Key="TipAddDownloadingZero">没有选中项符合下载要求！</system:String>
+    <system:String x:Key="TipAddDownloadingUnavailable">所选内容目前没有可下载的资源。</system:String>
+    <system:String x:Key="TipAddDownloadingSkippedByChoice">已按你的选择跳过下载。</system:String>
+    <system:String x:Key="TipAddDownloadingFailed">新增下载任务失败。</system:String>
+    <system:String x:Key="TipAddDownloadingSummary">新增 {0} 项；重复 {1} 项，跳过 {2} 项，失败 {3} 项。</system:String>
+    <system:String x:Key="TipAddDownloadingNoAddedSummary">未新增任务；重复 {0} 项，跳过 {1} 项，失败 {2} 项。</system:String>
     <system:String x:Key="TipAddDownloadingFinished1">成功添加了</system:String>
     <system:String x:Key="TipAddDownloadingFinished2">项~</system:String>
     <system:String x:Key="TipAddDownloadingFinishedWithSkipped">成功添加了 {0} 项，跳过了 {1} 个不可用项目。</system:String>

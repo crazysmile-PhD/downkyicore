@@ -711,6 +711,35 @@ public sealed class DownloadArtifactStageTests
         }
     }
 
+    [Theory]
+    [InlineData(nameof(ArtifactKind.MainCover), nameof(DownloadActionKind.Cover))]
+    [InlineData(nameof(ArtifactKind.Subtitle), nameof(DownloadActionKind.Subtitle))]
+    [InlineData(nameof(ArtifactKind.Danmaku), nameof(DownloadActionKind.Danmaku))]
+    public async Task IndependentOnlyActionProducesAValidatedSuccessfulOutput(
+        string kindName,
+        string actionName)
+    {
+        var kind = Enum.Parse<ArtifactKind>(kindName);
+        var action = Enum.Parse<DownloadActionKind>(actionName);
+        using var context = await ArtifactTestContext.CreateAsync(
+            CreateSuccessfulArtifactClient(kind),
+            cover: kind == ArtifactKind.MainCover,
+            subtitle: kind == ArtifactKind.Subtitle,
+            danmaku: kind == ArtifactKind.Danmaku,
+            coverUrl: kind == ArtifactKind.MainCover ? "https://example.test/main.bin" : null)
+            .ConfigureAwait(true);
+
+        var run = await DownloadPipeline.ExecuteStagesAsync(
+            [context.Stage, new ValidateStage(new StubFfmpegMediaStreamValidator())],
+            context.Execution,
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.True(run.Result.IsSuccess, run.Result.Error?.Message);
+        Assert.Equal(
+            DownloadActionResultStatus.Succeeded,
+            context.Execution.ActionResults.Results[action]);
+    }
+
     [Fact]
     public async Task OwnershipOracleRejectsSyntheticMissingOwnerMutation()
     {

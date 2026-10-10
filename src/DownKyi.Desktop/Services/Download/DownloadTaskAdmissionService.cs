@@ -42,7 +42,8 @@ internal sealed class DownloadTaskAdmissionService : IDisposable
     public async Task AdmitAsync(
         DownloadingItem item,
         bool autoAddNumberSuffix,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool allowExistingBasePath = false)
     {
         ArgumentNullException.ThrowIfNull(item);
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -52,17 +53,25 @@ internal sealed class DownloadTaskAdmissionService : IDisposable
             _runtimeAvailability.EnsureAcceptingTasks();
             var physicalBasePath = _physicalOutputPathResolver.ResolvePhysicalBasePath(
                 item.DownloadBase.FilePath);
+            var requestedClaims = DownloadActionClaims.From(
+                item.DownloadBase.NeedDownloadContent,
+                includesNfo: item.Metadata != null);
             var admittedBasePath = await DownloadOutputPathResolver.ResolveAdmissionCollisionAsync(
                 physicalBasePath,
                 autoAddNumberSuffix,
-                (path, token) => _tasks.IsOutputPathReservedAsync(
+                (path, token) => _tasks.HasOutputClaimConflictAsync(
                     path,
+                    requestedClaims,
                     DownloadOutputPathKey.UsesCaseInsensitiveComparison,
                     token),
                 token => _tasks.GetActiveOutputReservationKeysAsync(
                     DownloadOutputPathKey.UsesCaseInsensitiveComparison,
                     token),
-                cancellationToken).ConfigureAwait(true);
+                cancellationToken,
+                allowExistingBasePath,
+                path => DownloadOutputPathResolver.HasExistingOutputClaimConflict(
+                    path,
+                    requestedClaims)).ConfigureAwait(true);
             item.DownloadBase.FilePath = admittedBasePath;
 
             await _projections.AddDownloadingAsync(item, cancellationToken).ConfigureAwait(true);

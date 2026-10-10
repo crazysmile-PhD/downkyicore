@@ -29,6 +29,21 @@ public interface IDownloadTaskApplicationService
         bool ignoreCase,
         CancellationToken cancellationToken);
 
+    async Task<bool> HasOutputClaimConflictAsync(
+        string basePath,
+        DownloadActionClaims requestedClaims,
+        bool ignoreCase,
+        CancellationToken cancellationToken)
+    {
+        var key = DownloadOutputPathKey.Create(basePath, ignoreCase);
+        return (await GetUnfinishedAsync(cancellationToken).ConfigureAwait(false)).Any(task =>
+            string.Equals(
+                DownloadOutputPathKey.Create(task.Output.BasePath, ignoreCase),
+                key,
+                StringComparison.Ordinal)
+            && task.Plan.ActionClaims.Overlaps(requestedClaims));
+    }
+
     Task<bool> IsLegacyUpgradeAdmissionBlockedAsync(CancellationToken cancellationToken);
 
     Task<OperationResult> ConfirmLegacyRemoteTasksStoppedAsync(

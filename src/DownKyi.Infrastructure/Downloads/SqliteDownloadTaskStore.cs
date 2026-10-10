@@ -125,6 +125,19 @@ public sealed class SqliteDownloadTaskStore :
             .GetActiveOutputReservationKeysAsync(ignoreCase, cancellationToken)
             .ConfigureAwait(false);
 
+    public async Task<bool> HasOutputClaimConflictAsync(
+        string basePath,
+        DownloadActionClaims requestedClaims,
+        bool ignoreCase,
+        CancellationToken cancellationToken) =>
+        await _outputReservations
+            .HasOutputClaimConflictAsync(
+                basePath,
+                requestedClaims,
+                ignoreCase,
+                cancellationToken)
+            .ConfigureAwait(false);
+
     public async Task<DownloadHistoryPage> GetHistoryPageAsync(
         DownloadHistoryCursor? cursor,
         int pageSize,

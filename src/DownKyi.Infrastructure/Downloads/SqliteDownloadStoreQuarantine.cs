@@ -69,9 +69,11 @@ internal sealed class SqliteDownloadStoreQuarantine(SqliteDownloadStoreDatabase 
         string recordId,
         DownloadRecordCorruptException error,
         DateTimeOffset quarantinedAtUtc,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        SqliteTransaction? transaction = null)
     {
         using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             INSERT INTO download_quarantine
                 (source_table, record_id, field_name, reason, quarantined_at_utc)

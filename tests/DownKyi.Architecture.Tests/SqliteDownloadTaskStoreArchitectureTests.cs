@@ -66,6 +66,10 @@ public sealed class SqliteDownloadTaskStoreArchitectureTests
         ["GetActiveOutputReservationKeysAsync"] =
             "await _outputReservations.GetActiveOutputReservationKeysAsync(ignoreCase, cancellationToken)" +
             ".ConfigureAwait(false)",
+        ["HasOutputClaimConflictAsync"] =
+            "await _outputReservations.HasOutputClaimConflictAsync(" +
+            "basePath, requestedClaims, ignoreCase, cancellationToken)" +
+            ".ConfigureAwait(false)",
         ["GetHistoryPageAsync"] =
             "await _queries.GetHistoryPageAsync(cursor, pageSize, cancellationToken).ConfigureAwait(false)",
         ["DeleteAsync"] = "await _commands.DeleteAsync(taskId, cancellationToken).ConfigureAwait(false)",

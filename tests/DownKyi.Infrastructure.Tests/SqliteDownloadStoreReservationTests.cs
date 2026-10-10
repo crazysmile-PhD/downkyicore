@@ -32,6 +32,122 @@ public sealed class SqliteDownloadStoreReservationTests : IDisposable
     }
 
     [Fact]
+    public async Task DisjointActionsCanAtomicallyShareOneOutputBasePath()
+    {
+        var outputPath = Path.Combine(_fixture.TempDirectory, "shared-action-output");
+        var media = _fixture.CreateQueuedTask(
+            "media-claim",
+            outputPath,
+            DownloadContentSelection.None with { Video = true });
+        var subtitle = _fixture.CreateQueuedTask(
+            "subtitle-claim",
+            outputPath,
+            DownloadContentSelection.None with
+            {
+                Subtitle = true,
+                SelectedSubtitleTrackIds = [11]
+            });
+        using var store = _fixture.CreateStore();
+
+        Assert.True((await store.AddAsync(
+            media,
+            TestContext.Current.CancellationToken)).IsSuccess);
+        Assert.True((await store.AddAsync(
+            subtitle,
+            TestContext.Current.CancellationToken)).IsSuccess);
+
+        var unfinished = await store.GetUnfinishedAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(2, unfinished.Count);
+        Assert.All(unfinished, task => Assert.Equal(outputPath, task.Output.BasePath));
+    }
+
+    [Fact]
+    public async Task SubtitleClaimsRemainExclusiveBecauseFileNamesAreLanguageDerived()
+    {
+        var outputPath = Path.Combine(_fixture.TempDirectory, "shared-subtitle-output");
+        using var store = _fixture.CreateStore();
+        var first = _fixture.CreateQueuedTask(
+            "subtitle-first",
+            outputPath,
+            DownloadContentSelection.None with
+            {
+                Subtitle = true,
+                SelectedSubtitleTrackIds = [11]
+            });
+        var second = _fixture.CreateQueuedTask(
+            "subtitle-second",
+            outputPath,
+            DownloadContentSelection.None with
+            {
+                Subtitle = true,
+                SelectedSubtitleTrackIds = [22]
+            });
+
+        Assert.True((await store.AddAsync(
+            first,
+            TestContext.Current.CancellationToken)).IsSuccess);
+        var rejected = await store.AddAsync(second, TestContext.Current.CancellationToken);
+
+        Assert.False(rejected.IsSuccess);
+        Assert.Equal("download.store.output_path_reserved", rejected.Error?.Code);
+    }
+
+    [Fact]
+    public async Task DistinctDanmakuFormatsCanShareOneOutputBasePath()
+    {
+        var outputPath = Path.Combine(_fixture.TempDirectory, "shared-danmaku-output");
+        using var store = _fixture.CreateStore();
+        var ass = _fixture.CreateQueuedTask(
+            "danmaku-ass",
+            outputPath,
+            DownloadContentSelection.None with
+            {
+                Danmaku = true,
+                DanmakuOutputFormat = DownloadDanmakuOutputFormat.Ass
+            });
+        var xml = _fixture.CreateQueuedTask(
+            "danmaku-xml",
+            outputPath,
+            DownloadContentSelection.None with
+            {
+                Danmaku = true,
+                DanmakuOutputFormat = DownloadDanmakuOutputFormat.Xml
+            });
+
+        Assert.True((await store.AddAsync(
+            ass,
+            TestContext.Current.CancellationToken)).IsSuccess);
+        Assert.True((await store.AddAsync(
+            xml,
+            TestContext.Current.CancellationToken)).IsSuccess);
+    }
+
+    [Fact]
+    public async Task NfoClaimsRemainExclusiveAcrossOtherwiseDisjointActions()
+    {
+        var outputPath = Path.Combine(_fixture.TempDirectory, "shared-nfo-output");
+        using var store = _fixture.CreateStore();
+        var media = _fixture.CreateQueuedTask(
+            "nfo-media",
+            outputPath,
+            DownloadContentSelection.None with { Video = true },
+            SqliteDownloadStoreFixture.CreateNfoRequest());
+        var cover = _fixture.CreateQueuedTask(
+            "nfo-cover",
+            outputPath,
+            DownloadContentSelection.None with { Cover = true },
+            SqliteDownloadStoreFixture.CreateNfoRequest());
+
+        Assert.True((await store.AddAsync(
+            media,
+            TestContext.Current.CancellationToken)).IsSuccess);
+        var rejected = await store.AddAsync(cover, TestContext.Current.CancellationToken);
+
+        Assert.False(rejected.IsSuccess);
+        Assert.Equal("download.store.output_path_reserved", rejected.Error?.Code);
+    }
+
+    [Fact]
     public async Task CanceledOutputClaimIsReleasedOnlyWhenTaskIsDeleted()
     {
         var outputPath = Path.Combine(_fixture.TempDirectory, "cleanup-owned-output");

@@ -34,7 +34,7 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
     private readonly ISettingsStore _settingsStore;
     private readonly IAppDialogService _dialogService;
     private readonly ILogger<AddToDownloadService> _logger;
-    private readonly IInfoService _playbackService;
+    private readonly DownloadPreparationService _preparationService;
     private readonly IWbiKeyProvider _wbiKeyProvider;
     private readonly IBilibiliApiClient _client;
     public AddToDownloadService(
@@ -61,96 +61,41 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
         ArgumentNullException.ThrowIfNull(tagProvider);
         _wbiKeyProvider = wbiKeyProvider ?? throw new ArgumentNullException(nameof(wbiKeyProvider));
         _client = client ?? throw new ArgumentNullException(nameof(client));
-        _playbackService = streamType switch
-        {
-            PlayStreamType.Video => new VideoInfoService(
-                settingsStore,
-                tagProvider,
-                wbiKeyProvider,
-                client),
-            PlayStreamType.Bangumi => new BangumiInfoService(settingsStore, client),
-            PlayStreamType.Cheese => new CheeseInfoService(settingsStore, client),
-            _ => throw new ArgumentOutOfRangeException(nameof(streamType), streamType, null)
-        };
+        _preparationService = new DownloadPreparationService(
+            streamType,
+            settingsStore,
+            tagProvider,
+            wbiKeyProvider,
+            client,
+            logger);
     }
     public Task<bool> EnsureAdmissionAsync(CancellationToken cancellationToken = default)
     {
         return _admissionPresenter.EnsureAdmissionAsync(cancellationToken);
     }
-    public async Task<PreparedDownload> PrepareAsync(
+    public Task<PreparedDownload> PrepareAsync(
         VideoInfoView videoInfoView,
         IList<VideoSection> videoSections,
+        DownloadContentSelection requestedContent,
         bool isAll,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(videoInfoView);
-        ArgumentNullException.ThrowIfNull(videoSections);
-        foreach (var section in videoSections)
-        {
-            foreach (var page in section.VideoPages)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                if ((isAll || page.IsSelected)
-                    && page.PlaybackAvailability?.Video.Count > 0
-                    && page.VideoQuality == null)
-                {
-                    await RetryMissingVideoQualityAsync(
-                        _playbackService,
-                        page,
-                        cancellationToken).ConfigureAwait(false);
-                }
-            }
-        }
-        return PreparedDownload.Create(videoInfoView, videoSections);
+        return _preparationService.PrepareAsync(
+            videoInfoView,
+            videoSections,
+            requestedContent,
+            isAll,
+            cancellationToken);
     }
-    public async Task<PreparedDownload?> PrepareAsync(
+    public Task<PreparedDownload?> PrepareAsync(
         IInfoService videoInfoService,
+        DownloadContentSelection requestedContent,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(videoInfoService);
-        cancellationToken.ThrowIfCancellationRequested();
-        var videoInfoView = videoInfoService.GetVideoView(cancellationToken);
-        if (videoInfoView == null)
-        {
-            _logger.LogDebugMessage("VideoInfoView is null.");
-            return null;
-        }
-        var videoSections = videoInfoService.GetVideoSections(true, cancellationToken);
-        if (videoSections == null)
-        {
-            _logger.LogDebugMessage("Video sections do not exist.");
-            videoSections =
-            [
-                new VideoSection
-                {
-                    Id = 0,
-                    Title = "default",
-                    IsSelected = true,
-                    VideoPages = videoInfoService.GetVideoPages(cancellationToken) ?? new List<VideoPage>()
-                }
-            ];
-        }
-        var settings = _settingsStore.Current;
-        foreach (var section in videoSections)
-        {
-            foreach (var item in section.VideoPages)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                item.IsSelected = true;
-                var playUrl = await videoInfoService
-                    .GetVideoStreamAsync(item, cancellationToken)
-                    .ConfigureAwait(false);
-                VideoPagePlaybackMapper.ApplyPlayUrl(playUrl, item, settings, _logger);
-                if (item.PlaybackAvailability?.Video.Count > 0 && item.VideoQuality == null)
-                {
-                    await RetryMissingVideoQualityAsync(
-                        videoInfoService,
-                        item,
-                        cancellationToken).ConfigureAwait(false);
-                }
-            }
-        }
-        return PreparedDownload.Create(videoInfoView, videoSections);
+        return _preparationService.PrepareAsync(
+            videoInfoService,
+            requestedContent,
+            cancellationToken);
     }
     public async Task<DownloadAddSelection?> SelectDownloadAsync(
         VideoPage? subtitlePage = null,
@@ -172,7 +117,9 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
         }
         else
         {
-            IReadOnlyList<DownloadSettingsDialog.SubtitleTrack> subtitleTracks = [];
+            var subtitleDiscovery = new DownloadSettingsDialog.SubtitleTrackDiscovery(
+                DownloadSettingsDialog.SubtitleTrackDiscoveryStatus.NotAttempted,
+                []);
             if (subtitlePage != null)
             {
                 try
@@ -184,19 +131,27 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
                             subtitlePage.Cid, cancellationToken),
                         TimeProvider.System,
                         cancellationToken).ConfigureAwait(false);
-                    subtitleTracks = player?.Subtitle?.Subtitles?.Select(track =>
+                    var subtitleTracks = player?.Subtitle?.Subtitles?.Select(track =>
                         new DownloadSettingsDialog.SubtitleTrack(
                             track.Id, track.Lan, track.LanDoc, track.Type, track.SubtitleAddress))
                         .ToArray() ?? [];
+                    subtitleDiscovery = new DownloadSettingsDialog.SubtitleTrackDiscovery(
+                        subtitleTracks.Length > 0
+                            ? DownloadSettingsDialog.SubtitleTrackDiscoveryStatus.Available
+                            : DownloadSettingsDialog.SubtitleTrackDiscoveryStatus.NoResource,
+                        subtitleTracks);
                 }
                 catch (Exception exception) when (exception is HttpRequestException or BilibiliApiResponseException
                                                   || exception is OperationCanceledException && !cancellationToken.IsCancellationRequested)
                 {
                     _logger.LogWarningMessage("Subtitle tracks could not be loaded; opening download settings without them.", exception);
+                    subtitleDiscovery = new DownloadSettingsDialog.SubtitleTrackDiscovery(
+                        DownloadSettingsDialog.SubtitleTrackDiscoveryStatus.Failed,
+                        []);
                 }
             }
             var result = await _dialogService.ShowAsync(
-                DownloadSettingsDialog.CreateRequest(subtitleTracks),
+                DownloadSettingsDialog.CreateRequest(subtitleDiscovery),
                 cancellationToken).ConfigureAwait(true);
             if (DownloadSettingsDialog.DecodeResult(result) is { } dialogSelection)
             {
@@ -222,7 +177,7 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
         }
         return new DownloadAddSelection(directory, requestedContent);
     }
-    public async Task<int> AddToDownload(
+    public async Task<DownloadAddResult> AddToDownload(
         string directory,
         FinalizedDownload finalizedDownload,
         CancellationToken cancellationToken = default)
@@ -230,30 +185,22 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
         ArgumentException.ThrowIfNullOrEmpty(directory);
         ArgumentNullException.ThrowIfNull(finalizedDownload);
         cancellationToken.ThrowIfCancellationRequested();
+        if (finalizedDownload.StopReason != null)
+        {
+            return DownloadAddResult.FromPlan(finalizedDownload);
+        }
+
         var settings = _settingsStore.Current;
         var addedCount = 0;
+        var duplicateCount = 0;
+        var failedCount = 0;
         Lazy<Task<List<DownloadedItem>>>? completedCandidates = null;
+        Lazy<Task<List<DownloadingItem>>>? activeCandidates = null;
         foreach (var finalizedSection in finalizedDownload.Sections)
         {
             foreach (var finalizedPage in finalizedSection.Pages)
             {
                 var page = finalizedPage.Page;
-                completedCandidates ??= new Lazy<Task<List<DownloadedItem>>>(() =>
-                    _duplicatePolicy.LoadCompletedCandidatesAsync(
-                        settings.Basic.RepeatDownloadStrategy,
-                        cancellationToken));
-                if (await _duplicatePolicy
-                    .ShouldSkipAsync(
-                        page,
-                        finalizedPage.VideoQuality,
-                        finalizedPage.RequestedContent,
-                        settings.Basic.RepeatDownloadStrategy,
-                        cancellationToken,
-                        completedCandidates)
-                    .ConfigureAwait(true))
-                {
-                    continue;
-                }
                 var downloadingItem = DownloadTaskDraftFactory.Create(
                     directory,
                     finalizedDownload.Video,
@@ -262,8 +209,29 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
                     page,
                     finalizedPage.VideoQuality,
                     settings,
-                    finalizedPage.RequestedContent);
-                if (settings.Video.Content.GenerateMovieMetadata && finalizedPage.RequestedContent.Video)
+                    finalizedPage.FinalizedContent);
+                completedCandidates ??= new Lazy<Task<List<DownloadedItem>>>(() =>
+                    _duplicatePolicy.LoadCompletedCandidatesAsync(
+                        cancellationToken));
+                activeCandidates ??= new Lazy<Task<List<DownloadingItem>>>(() =>
+                    _duplicatePolicy.LoadActiveCandidatesAsync(cancellationToken));
+                var duplicateResolution = await _duplicatePolicy
+                    .ResolveAsync(
+                        downloadingItem,
+                        settings.Basic.RepeatDownloadStrategy,
+                        cancellationToken,
+                        completedCandidates,
+                        activeCandidates)
+                    .ConfigureAwait(true);
+                if (duplicateResolution.IsFullyCovered)
+                {
+                    duplicateCount++;
+                    continue;
+                }
+                downloadingItem.DownloadBase.NeedDownloadContent =
+                    duplicateResolution.RemainingContent;
+                if (settings.Video.Content.GenerateMovieMetadata
+                    && duplicateResolution.RemainingContent.Video)
                 {
                     downloadingItem.Metadata = await _metadataBuilder
                         .BuildAsync(finalizedDownload.Video, page, cancellationToken)
@@ -275,7 +243,8 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
                         .AdmitAsync(
                             downloadingItem,
                             settings.Basic.RepeatFileAutoAddNumberSuffix,
-                            cancellationToken)
+                             cancellationToken,
+                             duplicateResolution.AllowExistingBasePath)
                         .ConfigureAwait(true);
                     addedCount++;
                 }
@@ -288,10 +257,16 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
                             DictionaryResource.GetString("DownloadRuntimeUnavailable"),
                             cancellationToken)
                         .ConfigureAwait(true);
-                    return addedCount;
+                    failedCount++;
+                    return CreateResult(
+                        addedCount,
+                        duplicateCount,
+                        failedCount,
+                        finalizedDownload.SkippedCount);
                 }
                 catch (IOException exception)
                 {
+                    failedCount++;
                     _logger.LogWarningMessage("Download task admission failed.", exception);
                     var alert = new AlertService(_dialogService);
                     await alert
@@ -303,24 +278,24 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
             }
         }
 
-        return addedCount;
+        return CreateResult(
+            addedCount,
+            duplicateCount,
+            failedCount,
+            finalizedDownload.SkippedCount);
     }
 
-    private async Task RetryMissingVideoQualityAsync(
-        IInfoService videoInfoService,
-        VideoPage page,
-        CancellationToken cancellationToken)
+    private static DownloadAddResult CreateResult(
+        int addedCount,
+        int duplicateCount,
+        int failedCount,
+        int skippedCount)
     {
-        var settings = _settingsStore.Current;
-        var retry = 0;
-        while (page.VideoQuality == null && retry < 5)
-        {
-            var playUrl = await videoInfoService
-                .GetVideoStreamAsync(page, cancellationToken)
-                .ConfigureAwait(false);
-            VideoPagePlaybackMapper.ApplyPlayUrl(playUrl, page, settings, _logger);
-            retry++;
-        }
+        return new DownloadAddResult(
+            addedCount,
+            duplicateCount,
+            failedCount,
+            skippedCount);
     }
 
 }

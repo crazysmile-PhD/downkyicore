@@ -42,10 +42,11 @@ internal sealed class SqliteDownloadStoreOutputReservations(SqliteDownloadStoreD
                         }
                     }
 
-                    if (await IsOutputPathReservedCoreAsync(
+                    if (await HasOutputClaimConflictCoreAsync(
                             connection,
                             transaction,
                             task.Output.BasePath,
+                            task.Plan.ActionClaims,
                             DownloadOutputPathKey.UsesCaseInsensitiveComparison,
                             token).ConfigureAwait(false))
                     {
@@ -62,11 +63,7 @@ internal sealed class SqliteDownloadStoreOutputReservations(SqliteDownloadStoreD
                 }
                 catch (SqliteException exception) when (exception.SqliteErrorCode == 19)
                 {
-                    return exception.Message.Contains(
-                        "output_reservation_key",
-                        StringComparison.OrdinalIgnoreCase)
-                        ? DownloadStoreOperationResults.OutputPathConflict()
-                        : DownloadStoreOperationResults.Conflict(task.Id, "already exists");
+                    return DownloadStoreOperationResults.Conflict(task.Id, "already exists");
                 }
             },
             cancellationToken);
@@ -172,10 +169,30 @@ internal sealed class SqliteDownloadStoreOutputReservations(SqliteDownloadStoreD
         return [.. keys];
     }
 
-    private static async Task<bool> IsOutputPathReservedCoreAsync(
+    public async Task<bool> HasOutputClaimConflictAsync(
+        string basePath,
+        DownloadActionClaims requestedClaims,
+        bool ignoreCase,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(basePath);
+        using var connection = await _database.OpenConnectionAsync(cancellationToken)
+            .ConfigureAwait(false);
+        return await HasOutputClaimConflictCoreAsync(
+                connection,
+                transaction: null,
+                basePath,
+                requestedClaims,
+                ignoreCase,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static async Task<bool> HasOutputClaimConflictCoreAsync(
         SqliteConnection connection,
         SqliteTransaction? transaction,
         string basePath,
+        DownloadActionClaims requestedClaims,
         bool ignoreCase,
         CancellationToken cancellationToken)
     {
@@ -185,34 +202,69 @@ internal sealed class SqliteDownloadStoreOutputReservations(SqliteDownloadStoreD
         if (ignoreCase)
         {
             command.CommandText = """
-                SELECT EXISTS (
-                    SELECT 1
-                    FROM download_base db
-                    INNER JOIN downloading dl ON dl.id = db.id
-                    WHERE (db.output_reservation_key = @key
-                           OR db.file_path = @file_path COLLATE NOCASE)
-                      AND NOT EXISTS (
-                          SELECT 1 FROM download_quarantine q
-                          WHERE q.source_table = 'downloading' AND q.record_id = db.id))
+                SELECT 1, NULL, db.need_download_content, db.nfo_request IS NOT NULL
+                FROM download_base db
+                INNER JOIN downloading dl ON dl.id = db.id
+                WHERE (db.output_reservation_key = @key
+                       OR db.file_path = @file_path COLLATE NOCASE)
+                  AND NOT EXISTS (
+                      SELECT 1 FROM download_quarantine q
+                      WHERE q.source_table = 'downloading' AND q.record_id = db.id)
+                UNION ALL
+                SELECT 0, db.file_path, db.need_download_content, db.nfo_request IS NOT NULL
+                FROM download_base db
+                INNER JOIN downloading dl ON dl.id = db.id
+                WHERE db.output_reservation_key IS NULL
+                  AND NOT EXISTS (
+                      SELECT 1 FROM download_quarantine q
+                      WHERE q.source_table = 'downloading' AND q.record_id = db.id)
                 """;
         }
         else
         {
             command.CommandText = """
-                SELECT EXISTS (
-                    SELECT 1
-                    FROM download_base db
-                    INNER JOIN downloading dl ON dl.id = db.id
-                    WHERE (db.output_reservation_key = @key OR db.file_path = @file_path)
-                      AND NOT EXISTS (
-                          SELECT 1 FROM download_quarantine q
-                          WHERE q.source_table = 'downloading' AND q.record_id = db.id))
+                SELECT 1, NULL, db.need_download_content, db.nfo_request IS NOT NULL
+                FROM download_base db
+                INNER JOIN downloading dl ON dl.id = db.id
+                WHERE (db.output_reservation_key = @key OR db.file_path = @file_path)
+                  AND NOT EXISTS (
+                      SELECT 1 FROM download_quarantine q
+                      WHERE q.source_table = 'downloading' AND q.record_id = db.id)
+                UNION ALL
+                SELECT 0, db.file_path, db.need_download_content, db.nfo_request IS NOT NULL
+                FROM download_base db
+                INNER JOIN downloading dl ON dl.id = db.id
+                WHERE db.output_reservation_key IS NULL
+                  AND NOT EXISTS (
+                      SELECT 1 FROM download_quarantine q
+                      WHERE q.source_table = 'downloading' AND q.record_id = db.id)
                 """;
         }
-
         command.Parameters.AddWithValue("@key", key);
         command.Parameters.AddWithValue("@file_path", basePath);
-        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        return Convert.ToInt64(result, System.Globalization.CultureInfo.InvariantCulture) != 0;
+        using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            if (reader.GetInt32(0) != 1
+                && !StringComparer.Ordinal.Equals(
+                    DownloadOutputPathKey.Create(reader.GetString(1), ignoreCase),
+                    key))
+            {
+                continue;
+            }
+
+            var existingContent = DownloadStoreJson.ReadContentSelection(
+                reader.GetString(2),
+                "need_download_content");
+            var existingClaims = DownloadActionClaims.From(
+                existingContent,
+                includesNfo: reader.GetInt32(3) != 0);
+            if (existingClaims.Overlaps(requestedClaims))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

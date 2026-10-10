@@ -78,6 +78,53 @@ public sealed class SqliteDownloadStoreUpgradeTests : IDisposable
     }
 
     [Fact]
+    public async Task VersionTenUpgradesWholePathReservationToActionClaims()
+    {
+        using (var current = _fixture.CreateStore())
+        {
+            await current.InitializeAsync(TestContext.Current.CancellationToken);
+        }
+
+        using (var connection = await _fixture.OpenConnectionAsync(readOnly: false))
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                PRAGMA user_version = 10;
+                DROP INDEX IF EXISTS ix_download_base_output_reservation;
+                CREATE UNIQUE INDEX ux_download_base_output_reservation
+                    ON download_base(output_reservation_key)
+                    WHERE output_reservation_key IS NOT NULL;
+                """;
+            await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        }
+
+        using (var upgraded = _fixture.CreateStore())
+        {
+            await upgraded.InitializeAsync(TestContext.Current.CancellationToken);
+        }
+
+        using var reopened = await _fixture.OpenConnectionAsync(readOnly: true);
+        using var indexes = reopened.CreateCommand();
+        indexes.CommandText = """
+            SELECT name FROM sqlite_master
+            WHERE type = 'index' AND tbl_name = 'download_base'
+            """;
+        using var reader = await indexes.ExecuteReaderAsync(TestContext.Current.CancellationToken);
+        var names = new List<string>();
+        while (await reader.ReadAsync(TestContext.Current.CancellationToken))
+        {
+            names.Add(reader.GetString(0));
+        }
+
+        Assert.DoesNotContain("ux_download_base_output_reservation", names);
+        Assert.Contains("ix_download_base_output_reservation", names);
+        Assert.Equal(DownloadStoreSchema.CurrentVersion, await _fixture.ReadSchemaVersionAsync());
+        Assert.Single(Directory.GetFiles(
+            Path.Combine(_fixture.TempDirectory, "Backup"),
+            "download.db.schema-v10-*.bak"));
+    }
+
+    [Fact]
     public async Task InitializeTreatsExistingEmptyDatabaseAsNewWithoutLosingBackup()
     {
         Directory.CreateDirectory(_fixture.TempDirectory);
@@ -173,7 +220,7 @@ public sealed class SqliteDownloadStoreUpgradeTests : IDisposable
         Assert.Equal(0, await _fixture.CountDownloadBaseRecordAsync("legacy-history"));
         Assert.Single(Directory.GetFiles(
             Path.Combine(_fixture.TempDirectory, "Backup"),
-            "download.db.schema-v10-*.bak"));
+            "download.db.schema-v11-*.bak"));
 
         using (var reopened = _fixture.CreateStore())
         {
@@ -182,7 +229,7 @@ public sealed class SqliteDownloadStoreUpgradeTests : IDisposable
 
         Assert.Single(Directory.GetFiles(
             Path.Combine(_fixture.TempDirectory, "Backup"),
-            "download.db.schema-v10-*.bak"));
+            "download.db.schema-v11-*.bak"));
     }
 
     [Theory]

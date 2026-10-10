@@ -189,7 +189,125 @@ public sealed class SqliteDownloadStoreReservationRekeyTests : IDisposable
     }
 
     [Fact]
-    public async Task ReservationRekeyPreflightsQuarantinedUniqueOccupants()
+    public async Task CanonicalDisjointActionClaimsRecoverToTheSameReservationKey()
+    {
+        var composed = Path.Combine(_fixture.TempDirectory, "caf\u00e9-disjoint");
+        var decomposed = Path.Combine(_fixture.TempDirectory, "cafe\u0301-disjoint");
+        var cover = new DownloadContentSelection(false, false, false, false, true);
+        using (var first = _fixture.CreateStore())
+        {
+            Assert.True((await first.AddAsync(_fixture.CreatePausedTask("disjoint-media", composed),
+                TestContext.Current.CancellationToken)).IsSuccess);
+            Assert.True((await first.AddAsync(_fixture.CreatePausedTask(
+                "disjoint-cover",
+                requestedContent: cover), TestContext.Current.CancellationToken)).IsSuccess);
+        }
+
+        await _fixture.SetPathAndReservationKeyAsync(
+            "disjoint-cover",
+            decomposed,
+            DownloadOutputPathKey.Create(
+                decomposed,
+                !DownloadOutputPathKey.UsesCaseInsensitiveComparison));
+
+        using var reopened = _fixture.CreateStore();
+        await reopened.InitializeAsync(TestContext.Current.CancellationToken);
+
+        var expectedKey = DownloadOutputPathKey.Create(
+            composed,
+            DownloadOutputPathKey.UsesCaseInsensitiveComparison);
+        Assert.Equal(expectedKey, await _fixture.ReadReservationKeyAsync("disjoint-media"));
+        Assert.Equal(expectedKey, await _fixture.ReadReservationKeyAsync("disjoint-cover"));
+        Assert.Equal(2, (await reopened.GetUnfinishedAsync(
+            TestContext.Current.CancellationToken)).Count);
+        var subtitle = new DownloadContentSelection(false, false, false, true, false);
+        Assert.True((await reopened.AddAsync(_fixture.CreateQueuedTask(
+            "disjoint-subtitle",
+            decomposed,
+            subtitle), TestContext.Current.CancellationToken)).IsSuccess);
+        Assert.Single(Directory.GetFiles(
+            Path.Combine(_fixture.TempDirectory, "Backup"),
+            "download.db.reservation-keys-*.bak"));
+    }
+
+    [Fact]
+    public async Task CorruptActiveRowIsQuarantinedDuringRekeyAndValidSiblingsRecover()
+    {
+        var firstPath = Path.Combine(_fixture.TempDirectory, "valid-rekey");
+        var secondPath = Path.Combine(_fixture.TempDirectory, "valid-current");
+        using (var first = _fixture.CreateStore())
+        {
+            Assert.True((await first.AddAsync(
+                _fixture.CreatePausedTask("valid-rekey", firstPath),
+                TestContext.Current.CancellationToken)).IsSuccess);
+            Assert.True((await first.AddAsync(
+                _fixture.CreatePausedTask("corrupt-rekey"),
+                TestContext.Current.CancellationToken)).IsSuccess);
+            Assert.True((await first.AddAsync(
+                _fixture.CreatePausedTask("valid-current", secondPath),
+                TestContext.Current.CancellationToken)).IsSuccess);
+        }
+
+        await _fixture.CorruptRequestedAssetsAsync("corrupt-rekey", "not-json");
+        await _fixture.SetReservationKeyAsync(
+            "valid-rekey",
+            DownloadOutputPathKey.Create(
+                firstPath,
+                !DownloadOutputPathKey.UsesCaseInsensitiveComparison));
+
+        using var reopened = _fixture.CreateStore();
+        await reopened.InitializeAsync(TestContext.Current.CancellationToken);
+
+        var quarantine = Assert.Single(
+            await reopened.GetQuarantinedRecordsAsync(TestContext.Current.CancellationToken));
+        Assert.Equal("corrupt-rekey", quarantine.RecordId);
+        Assert.Equal("need_download_content", quarantine.FieldName);
+        var restoredIds = (await reopened.GetUnfinishedAsync(TestContext.Current.CancellationToken))
+            .Select(static task => task.Id.Value)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        Assert.Equal(["valid-current", "valid-rekey"], restoredIds);
+        Assert.Equal(DownloadStoreSchema.CurrentVersion, await _fixture.ReadSchemaVersionAsync());
+        Assert.Equal(
+            DownloadOutputPathKey.Create(
+                firstPath,
+                DownloadOutputPathKey.UsesCaseInsensitiveComparison),
+            await _fixture.ReadReservationKeyAsync("valid-rekey"));
+    }
+
+    [Fact]
+    public async Task CanonicalNfoClaimsBlockOtherwiseDisjointContentDuringRecovery()
+    {
+        var composed = Path.Combine(_fixture.TempDirectory, "caf\u00e9-nfo-conflict");
+        var decomposed = Path.Combine(_fixture.TempDirectory, "cafe\u0301-nfo-conflict");
+        var cover = DownloadContentSelection.None with { Cover = true };
+        using (var first = _fixture.CreateStore())
+        {
+            Assert.True((await first.AddAsync(_fixture.CreatePausedTask(
+                "nfo-media",
+                outputPath: composed,
+                nfoRequest: SqliteDownloadStoreFixture.CreateNfoRequest()),
+                TestContext.Current.CancellationToken)).IsSuccess);
+            Assert.True((await first.AddAsync(_fixture.CreatePausedTask(
+                "nfo-cover",
+                nfoRequest: SqliteDownloadStoreFixture.CreateNfoRequest(),
+                requestedContent: cover), TestContext.Current.CancellationToken)).IsSuccess);
+        }
+
+        await _fixture.SetPathAndReservationKeyAsync(
+            "nfo-cover",
+            decomposed,
+            DownloadOutputPathKey.Create(
+                decomposed,
+                !DownloadOutputPathKey.UsesCaseInsensitiveComparison));
+
+        using var reopened = _fixture.CreateStore();
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            reopened.InitializeAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task QuarantinedRowsDoNotOwnActionClaimsDuringRekey()
     {
         var target = Path.Combine(_fixture.TempDirectory, "reserved-target");
         using (var first = _fixture.CreateStore())
@@ -203,12 +321,19 @@ public sealed class SqliteDownloadStoreReservationRekeyTests : IDisposable
         await _fixture.SetPathAndReservationKeyAsync("moving", target,
             DownloadOutputPathKey.Create(Path.Combine(_fixture.TempDirectory, "old"),
                 DownloadOutputPathKey.UsesCaseInsensitiveComparison));
-        using (var reopened = _fixture.CreateStore())
-        {
-            await Assert.ThrowsAsync<InvalidOperationException>(() =>
-                reopened.InitializeAsync(TestContext.Current.CancellationToken));
-        }
+        using var reopened = _fixture.CreateStore();
+        await reopened.InitializeAsync(TestContext.Current.CancellationToken);
 
+        Assert.Equal(
+            DownloadOutputPathKey.Create(
+                target,
+                DownloadOutputPathKey.UsesCaseInsensitiveComparison),
+            await _fixture.ReadReservationKeyAsync("moving"));
+        Assert.Equal("moving", Assert.Single(await reopened.GetUnfinishedAsync(
+            TestContext.Current.CancellationToken)).Id.Value);
+        Assert.Single(Directory.GetFiles(
+            Path.Combine(_fixture.TempDirectory, "Backup"),
+            "download.db.reservation-keys-*.bak"));
     }
 
     [Fact]
@@ -285,7 +410,7 @@ public sealed class SqliteDownloadStoreReservationRekeyTests : IDisposable
     }
 
     [Fact]
-    public async Task ReservationRekeyHandlesKeySwapWithoutDroppingUniqueIndex()
+    public async Task ReservationRekeyHandlesKeySwapAndKeepsActionClaimIndex()
     {
         var firstPath = Path.Combine(_fixture.TempDirectory, "swap-a");
         var secondPath = Path.Combine(_fixture.TempDirectory, "swap-b");
@@ -313,10 +438,21 @@ public sealed class SqliteDownloadStoreReservationRekeyTests : IDisposable
         using var connection = await _fixture.OpenReadOnlyConnectionAsync();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT COUNT(*) FROM sqlite_master
-            WHERE type = 'index' AND name = 'ux_download_base_output_reservation'
+            SELECT name FROM sqlite_master
+            WHERE type = 'index'
+              AND name IN (
+                  'ux_download_base_output_reservation',
+                  'ix_download_base_output_reservation')
+            ORDER BY name
             """;
-        Assert.Equal(1L, await command.ExecuteScalarAsync(TestContext.Current.CancellationToken));
+        using var reader = await command.ExecuteReaderAsync(TestContext.Current.CancellationToken);
+        var names = new List<string>();
+        while (await reader.ReadAsync(TestContext.Current.CancellationToken))
+        {
+            names.Add(reader.GetString(0));
+        }
+
+        Assert.Equal(["ix_download_base_output_reservation"], names);
     }
 
     [Fact]

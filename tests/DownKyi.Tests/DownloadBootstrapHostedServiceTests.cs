@@ -26,6 +26,7 @@ public sealed class DownloadBootstrapHostedServiceTests
         var secondPath = Path.Combine(directory, "cafe\u0301-conflict");
         var destination = firstPath + ".mp4";
         var bytes = new byte[] { 4, 5, 6 };
+        var media = new DownloadContentSelection(false, true, false, false, false);
         try
         {
             using (var firstStore = new SqliteDownloadTaskStore(
@@ -35,7 +36,7 @@ public sealed class DownloadBootstrapHostedServiceTests
                     DownloadHistoryService.CreateForSharedStore(firstStore),
                     new SystemClock());
                 var firstId = new DownloadTaskId("rekey-startup-a");
-                Assert.True((await firstTasks.AddAsync(CreateTask(firstId.Value, firstPath),
+                Assert.True((await firstTasks.AddAsync(CreateTask(firstId.Value, firstPath, media),
                     TestContext.Current.CancellationToken)).IsSuccess);
                 Assert.True((await firstTasks.StartAsync(firstId,
                     TestContext.Current.CancellationToken)).IsSuccess);
@@ -44,7 +45,8 @@ public sealed class DownloadBootstrapHostedServiceTests
                         Convert.ToHexString(SHA256.HashData(bytes))),
                     TestContext.Current.CancellationToken)).IsSuccess);
                 Assert.True((await firstTasks.AddAsync(CreateTask("rekey-startup-b",
-                    Path.Combine(directory, "other")), TestContext.Current.CancellationToken)).IsSuccess);
+                    Path.Combine(directory, "other"), media),
+                    TestContext.Current.CancellationToken)).IsSuccess);
             }
             await File.WriteAllBytesAsync(destination, bytes, TestContext.Current.CancellationToken);
             using (var connection = new SqliteConnection($"Data Source={databasePath};Pooling=False"))
@@ -653,7 +655,10 @@ public sealed class DownloadBootstrapHostedServiceTests
                 TestContext.Current.CancellationToken)).State);
     }
 
-    private static DownloadTask CreateTask(string id, string? outputBase = null)
+    private static DownloadTask CreateTask(
+        string id,
+        string? outputBase = null,
+        DownloadContentSelection? requestedContent = null)
     {
         return DownloadTask.Create(
             new DownloadTaskId(id),
@@ -668,7 +673,7 @@ public sealed class DownloadBootstrapHostedServiceTests
                 string.Empty,
                 string.Empty,
                 0),
-            new DownloadPlan(DownloadContentSelection.None, [], 0, nfoRequest: null),
+            new DownloadPlan(requestedContent ?? DownloadContentSelection.None, [], 0, nfoRequest: null),
             new DownloadOutput(outputBase ?? id, null),
             DateTimeOffset.UnixEpoch);
     }

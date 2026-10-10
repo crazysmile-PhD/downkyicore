@@ -4,6 +4,7 @@ using DownKyi.Application.Desktop;
 using DownKyi.Application.Downloads;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.VideoStream.Models;
+using DownKyi.Core.FileName;
 using DownKyi.Domain.Downloads;
 using DownKyi.Domain.Results;
 using DownKyi.Infrastructure.Downloads;
@@ -177,7 +178,25 @@ public sealed class VideoTagLoadingTests : IDisposable
             TestContext.Current.CancellationToken).ConfigureAwait(true);
 
         Assert.Null(selection);
-        Assert.Single(context.Dialogs.Requests);
+        var request = Assert.Single(context.Dialogs.Requests);
+        Assert.Equal(
+            DownloadSettingsDialog.SubtitleTrackDiscoveryStatus.Failed,
+            DownloadSettingsDialog.ReadSubtitleDiscovery(request).Status);
+    }
+
+    [Fact]
+    public async Task MissingSubtitlePageIsTypedAsDiscoveryNotAttempted()
+    {
+        using var context = CreateContext(generateMetadata: false);
+
+        var selection = await context.Service.SelectDownloadAsync(
+            cancellationToken: TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.Null(selection);
+        Assert.Equal(
+            DownloadSettingsDialog.SubtitleTrackDiscoveryStatus.NotAttempted,
+            DownloadSettingsDialog.ReadSubtitleDiscovery(
+                Assert.Single(context.Dialogs.Requests)).Status);
     }
 
     [Theory]
@@ -199,6 +218,36 @@ public sealed class VideoTagLoadingTests : IDisposable
         Assert.Null(selection);
         var request = Assert.Single(context.Dialogs.Requests);
         Assert.Empty(DownloadSettingsDialog.ReadSubtitleTracks(request));
+        Assert.Equal(
+            DownloadSettingsDialog.SubtitleTrackDiscoveryStatus.NoResource,
+            DownloadSettingsDialog.ReadSubtitleDiscovery(request).Status);
+    }
+
+    [Fact]
+    public async Task SubtitleDiscoveryReturnsTypedAvailableTracksWithoutPlaybackDependency()
+    {
+        var client = new TestBilibiliApiClient
+        {
+            GetStringAsyncHandler = (_, _) => Task.FromResult(
+                """
+                {"code":0,"data":{"aid":1,"bvid":"BV1test","cid":2,"subtitle":{"subtitles":[{"id":11,"lan":"zh","lan_doc":"Chinese","subtitle_url":"//example.test/zh.json","type":0}]}}}
+                """)
+        };
+        using var context = CreateContext(generateMetadata: false, client: client);
+        var page = CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]));
+        page.PlaybackAvailability = null;
+
+        var selection = await context.Service.SelectDownloadAsync(
+            page,
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.Null(selection);
+        var discovery = DownloadSettingsDialog.ReadSubtitleDiscovery(
+            Assert.Single(context.Dialogs.Requests));
+        Assert.Equal(DownloadSettingsDialog.SubtitleTrackDiscoveryStatus.Available, discovery.Status);
+        var track = Assert.Single(discovery.Tracks);
+        Assert.Equal(11, track.TrackId);
+        Assert.Equal("zh", track.Language);
     }
 
     [Fact]
@@ -577,6 +626,125 @@ public sealed class VideoTagLoadingTests : IDisposable
     }
 
     [Fact]
+    public async Task SubtitleSupplementKeepsTheMediaBasePathThroughTheCompleteAddFlow()
+    {
+        using var context = CreateContext(generateMetadata: false);
+        context.UseContentIndependentFileName();
+        var preparedDownload = await context.PrepareAsync(
+            CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([])));
+        var media = DownloadContentSelection.None with { Video = true };
+
+        Assert.Equal(1, await context.AddToDownloadAsync(
+            CreateSelection(_directory, media),
+            preparedDownload,
+            cancellationToken: TestContext.Current.CancellationToken));
+        var mediaItem = Assert.Single(context.ListState.Downloading);
+        Directory.CreateDirectory(Path.GetDirectoryName(mediaItem.DownloadBase.FilePath)!);
+        await File.WriteAllTextAsync(
+            mediaItem.DownloadBase.FilePath + ".mp4",
+            "existing-media",
+            TestContext.Current.CancellationToken);
+
+        var subtitle = DownloadContentSelection.None with { Subtitle = true };
+        Assert.Equal(1, await context.AddToDownloadAsync(
+            CreateSelection(_directory, subtitle),
+            preparedDownload,
+            cancellationToken: TestContext.Current.CancellationToken));
+
+        var subtitleItem = Assert.Single(
+            context.ListState.Downloading,
+            item => item.DownloadBase.NeedDownloadContent.HasSubtitleAction);
+        Assert.Equal(mediaItem.DownloadBase.FilePath, subtitleItem.DownloadBase.FilePath);
+        Assert.DoesNotContain("(1)", subtitleItem.DownloadBase.FilePath, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SubtitleSupplementUsesOnePhysicalOwnerAcrossPathAliases()
+    {
+        var aliasRoot = Path.Combine(_directory, $"alias-{Guid.NewGuid():N}");
+        var logicalDirectory = Path.Combine(aliasRoot, "logical");
+        var physicalDirectory = Path.Combine(aliasRoot, "physical");
+        using var context = CreateContext(
+            generateMetadata: false,
+            new AliasPhysicalOutputPathResolver(logicalDirectory, physicalDirectory));
+        context.UseContentIndependentFileName();
+        var preparedDownload = await context.PrepareAsync(
+            CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([])));
+
+        Assert.Equal(1, await context.AddToDownloadAsync(
+            CreateSelection(
+                logicalDirectory,
+                DownloadContentSelection.None with { Video = true }),
+            preparedDownload,
+            cancellationToken: TestContext.Current.CancellationToken));
+        var mediaItem = Assert.Single(context.ListState.Downloading);
+        Assert.StartsWith(
+            Path.GetFullPath(physicalDirectory),
+            mediaItem.DownloadBase.FilePath,
+            StringComparison.Ordinal);
+        Directory.CreateDirectory(Path.GetDirectoryName(mediaItem.DownloadBase.FilePath)!);
+        await File.WriteAllTextAsync(
+            mediaItem.DownloadBase.FilePath + ".mp4",
+            "existing-media",
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, await context.AddToDownloadAsync(
+            CreateSelection(
+                logicalDirectory,
+                DownloadContentSelection.None with { Subtitle = true }),
+            preparedDownload,
+            cancellationToken: TestContext.Current.CancellationToken));
+
+        var subtitleItem = Assert.Single(
+            context.ListState.Downloading,
+            item => item.DownloadBase.NeedDownloadContent.HasSubtitleAction);
+        Assert.Equal(mediaItem.DownloadBase.FilePath, subtitleItem.DownloadBase.FilePath);
+        Assert.DoesNotContain("(1)", subtitleItem.DownloadBase.FilePath, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AliasedSubtitleConflictDoesNotOverwriteTheExistingSubtitle()
+    {
+        var aliasRoot = Path.Combine(_directory, $"conflict-{Guid.NewGuid():N}");
+        var logicalDirectory = Path.Combine(aliasRoot, "logical");
+        var physicalDirectory = Path.Combine(aliasRoot, "physical");
+        using var context = CreateContext(
+            generateMetadata: false,
+            new AliasPhysicalOutputPathResolver(logicalDirectory, physicalDirectory));
+        context.UseContentIndependentFileName();
+        var preparedDownload = await context.PrepareAsync(
+            CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([])));
+
+        Assert.Equal(1, await context.AddToDownloadAsync(
+            CreateSelection(
+                logicalDirectory,
+                DownloadContentSelection.None with { Video = true }),
+            preparedDownload,
+            cancellationToken: TestContext.Current.CancellationToken));
+        var mediaItem = Assert.Single(context.ListState.Downloading);
+        Directory.CreateDirectory(Path.GetDirectoryName(mediaItem.DownloadBase.FilePath)!);
+        var subtitlePath = mediaItem.DownloadBase.FilePath + ".srt";
+        await File.WriteAllTextAsync(
+            subtitlePath,
+            "existing-subtitle",
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, await context.AddToDownloadAsync(
+            CreateSelection(
+                logicalDirectory,
+                DownloadContentSelection.None with { Subtitle = true }),
+            preparedDownload,
+            cancellationToken: TestContext.Current.CancellationToken));
+
+        Assert.Equal(
+            "existing-subtitle",
+            await File.ReadAllTextAsync(
+                subtitlePath,
+                TestContext.Current.CancellationToken));
+        Assert.Single(context.ListState.Downloading);
+    }
+
+    [Fact]
     public async Task ConflictChoiceIsStoredAsThePageRequestedContent()
     {
         using var context = CreateContext(generateMetadata: false);
@@ -601,7 +769,7 @@ public sealed class VideoTagLoadingTests : IDisposable
         context.Dialogs.Result = new AppDialogResult(
             AppDialogOutcome.Accepted,
             DownloadContentConflictDialogContract.Encode(new DownloadContentConflictDecision(
-                DownloadContentConflictAction.UseAvailableMedia,
+                DownloadContentConflictAction.UseAvailableContent,
                 ApplyToAll: false)));
 
         var added = await context.AddToDownloadAsync(
@@ -614,7 +782,8 @@ public sealed class VideoTagLoadingTests : IDisposable
             DownloadContentSelection.All with
             {
                 Audio = false,
-                MediaKind = DownloadMediaKind.Dash
+                MediaKind = DownloadMediaKind.Dash,
+                DanmakuOutputFormat = DownloadDanmakuOutputFormat.Ass
             },
             Assert.Single(context.ListState.Downloading).DownloadBase.NeedDownloadContent);
     }
@@ -686,6 +855,7 @@ public sealed class VideoTagLoadingTests : IDisposable
 
         var preparedDownload = await context.Service.PrepareAsync(
             infoService,
+            DownloadContentSelection.All,
             TestContext.Current.CancellationToken);
 
         Assert.NotNull(preparedDownload);
@@ -697,6 +867,77 @@ public sealed class VideoTagLoadingTests : IDisposable
             preparedPage.AvailableMedia);
         Assert.True(page.IsSelected);
         Assert.Equal(1, infoService.StreamRequestCount);
+    }
+
+    [Fact]
+    public async Task MissingVideoQualityDoesNotRepeatAnIdenticalPlaybackQuery()
+    {
+        using var context = CreateContext(generateMetadata: false);
+        var page = CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]));
+        page.PlaybackAvailability = null;
+        page.VideoQuality = null;
+        var infoService = new PreparationInfoService(
+            new VideoInfoView { Title = "missing-quality" },
+            [new VideoSection { VideoPages = [page] }],
+            new PlayUrl
+            {
+                Dash = new PlayUrlDash
+                {
+                    Video =
+                    [
+                        new PlayUrlDashVideo
+                        {
+                            Id = 0,
+                            CodecId = 7,
+                            BaseAddress = "https://media.invalid/missing-quality.m4s"
+                        }
+                    ]
+                }
+            });
+
+        var prepared = await context.Service.PrepareAsync(
+            infoService,
+            DownloadContentSelection.None with { Video = true },
+            TestContext.Current.CancellationToken);
+
+        Assert.NotNull(prepared);
+        Assert.Equal(1, infoService.StreamRequestCount);
+        Assert.Null(page.VideoQuality);
+    }
+
+    [Theory]
+    [InlineData(false, true, false)]
+    [InlineData(true, false, false)]
+    [InlineData(false, false, true)]
+    [InlineData(true, true, true)]
+    public async Task IndependentContentPreparationDoesNotRequestPlayback(
+        bool subtitle,
+        bool danmaku,
+        bool cover)
+    {
+        using var context = CreateContext(generateMetadata: false);
+        var page = CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]));
+        page.PlaybackAvailability = null;
+        page.VideoQuality = null;
+        var infoService = new PreparationInfoService(
+            new VideoInfoView { Title = "sidecar-only" },
+            [new VideoSection { VideoPages = [page] }],
+            new PlayUrl());
+        var requested = DownloadContentSelection.None with
+        {
+            Subtitle = subtitle,
+            Danmaku = danmaku,
+            Cover = cover
+        };
+
+        var prepared = await context.Service.PrepareAsync(
+            infoService,
+            requested,
+            TestContext.Current.CancellationToken);
+
+        Assert.NotNull(prepared);
+        Assert.Equal(0, infoService.StreamRequestCount);
+        Assert.False(Assert.Single(Assert.Single(prepared.Sections).Pages).AvailableMedia.HasAnyMedia);
     }
 
     private DownloadTestContext CreateContext(
@@ -828,8 +1069,9 @@ public sealed class VideoTagLoadingTests : IDisposable
             Queue = new RecordingDownloadTaskQueue();
             Logger = new RecordingLogger<DownloadMovieMetadataBuilder>();
             Dialogs = new RecordingDialogService();
-            var desktop = new TestDesktopInteractionContext();
             client ??= new TestBilibiliApiClient();
+            var physicalOutputPathResolver = resolver
+                ?? new FileSystemPhysicalOutputPathResolver();
             _admission = new DownloadTaskAdmissionService(
                 ListState,
                 _taskService,
@@ -837,11 +1079,11 @@ public sealed class VideoTagLoadingTests : IDisposable
                 new DownloadTaskStateWriter(_taskService),
                 taskQueue ?? Queue,
                 runtimeAvailability ?? new ReadyDownloadRuntimeAvailability(),
-                resolver ?? new FileSystemPhysicalOutputPathResolver());
+                physicalOutputPathResolver);
             var duplicatePolicy = new DownloadDuplicatePolicy(
                 ListState,
                 _projectionStore,
-                desktop.Notifications,
+                physicalOutputPathResolver,
                 Dialogs);
             Service = new AddToDownloadService(
                 DownKyi.Core.BiliApi.VideoStream.PlayStreamType.Video,
@@ -869,23 +1111,41 @@ public sealed class VideoTagLoadingTests : IDisposable
 
         public RecordingDialogService Dialogs { get; }
 
+        public void UseContentIndependentFileName()
+        {
+            _settings.Update(settings => settings with
+            {
+                Video = settings.Video with
+                {
+                    FileNameParts =
+                    [
+                        FileNamePart.MainTitle,
+                        FileNamePart.Slash,
+                        FileNamePart.PageTitle
+                    ]
+                }
+            });
+        }
+
         public async Task<int> AddToDownloadAsync(
             DownloadAddSelection selection,
             PreparedDownload preparedDownload,
             bool isAll = false,
             CancellationToken cancellationToken = default)
         {
-            var finalizedDownload = await new DownloadContentConflictResolver(Dialogs)
-                .ResolveAsync(
+            var finalizedDownload = await new DownloadActionPlanner(
+                    new DownloadContentConflictResolver(Dialogs))
+                .PlanAsync(
                     selection.RequestedContent,
                     preparedDownload,
                     isAll,
                     new DownloadContentConflictChoices(),
                     cancellationToken)
                 .ConfigureAwait(true);
-            return await Service
+            var result = await Service
                 .AddToDownload(selection.Directory, finalizedDownload, cancellationToken)
                 .ConfigureAwait(true);
+            return result.AddedCount;
         }
 
         public Task<PreparedDownload> PrepareAsync(params VideoPage[] pages)
@@ -906,6 +1166,7 @@ public sealed class VideoTagLoadingTests : IDisposable
                         VideoPages = pages
                     }
                 ],
+                DownloadContentSelection.All,
                 isAll: false,
                 TestContext.Current.CancellationToken);
         }
@@ -926,6 +1187,7 @@ public sealed class VideoTagLoadingTests : IDisposable
                     Title = $"section-{index + 1}",
                     VideoPages = pages
                 }).ToArray(),
+                DownloadContentSelection.All,
                 isAll: true,
                 TestContext.Current.CancellationToken);
         }
@@ -978,6 +1240,26 @@ public sealed class VideoTagLoadingTests : IDisposable
         public string ResolvePhysicalBasePath(string logicalBasePath)
         {
             throw new InvalidOperationException("Unexpected resolver failure.");
+        }
+    }
+
+    private sealed class AliasPhysicalOutputPathResolver(
+        string logicalRoot,
+        string physicalRoot) : IPhysicalOutputPathResolver
+    {
+        private readonly string _logicalRoot = Path.GetFullPath(logicalRoot);
+        private readonly string _physicalRoot = Path.GetFullPath(physicalRoot);
+
+        public string ResolvePhysicalBasePath(string logicalBasePath)
+        {
+            var fullPath = Path.GetFullPath(logicalBasePath);
+            var relativePath = Path.GetRelativePath(_logicalRoot, fullPath);
+            return relativePath == ".."
+                   || relativePath.StartsWith(
+                       ".." + Path.DirectorySeparatorChar,
+                       StringComparison.Ordinal)
+                ? fullPath
+                : Path.GetFullPath(Path.Combine(_physicalRoot, relativePath));
         }
     }
 

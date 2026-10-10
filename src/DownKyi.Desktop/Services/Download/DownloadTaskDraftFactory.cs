@@ -34,6 +34,12 @@ internal static class DownloadTaskDraftFactory
         ArgumentNullException.ThrowIfNull(page);
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(content);
+        if (!content.HasAnyRequestedAction)
+        {
+            throw new ArgumentException(
+                "A download task must contain at least one finalized action.",
+                nameof(content));
+        }
 
         var capability = DownloadMediaCapabilities.From(
             page.PlaybackAvailability,
@@ -87,7 +93,13 @@ internal static class DownloadTaskDraftFactory
             AudioCodec = content.Audio ? audioCodec : new Quality(),
             Page = page.Page
         };
-        downloadBase.NeedDownloadContent = content with { MediaKind = mediaKind };
+        downloadBase.NeedDownloadContent = content with
+        {
+            MediaKind = mediaKind,
+            DanmakuOutputFormat = content.Danmaku
+                ? ToDomainDanmakuOutputFormat(settings.Danmaku.OutputFormat)
+                : null
+        };
 
         return new DownloadingItem
         {
@@ -191,4 +203,14 @@ internal static class DownloadTaskDraftFactory
             _ => PlayStreamType.Video
         };
     }
+
+    private static DownloadDanmakuOutputFormat ToDomainDanmakuOutputFormat(
+        DanmakuOutputFormat format) => format switch
+        {
+            DanmakuOutputFormat.Ass => DownloadDanmakuOutputFormat.Ass,
+            DanmakuOutputFormat.Xml => DownloadDanmakuOutputFormat.Xml,
+            DanmakuOutputFormat.AssAndXml =>
+                DownloadDanmakuOutputFormat.Ass | DownloadDanmakuOutputFormat.Xml,
+            _ => throw new ArgumentOutOfRangeException(nameof(format), format, null)
+        };
 }

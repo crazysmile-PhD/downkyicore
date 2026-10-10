@@ -25,7 +25,11 @@ internal enum DownloadInfoKind
 
 internal sealed record ContentDownloadItem(string Source, DownloadInfoKind Kind, bool IsSelected);
 
-internal readonly record struct ContentDownloadBatchResult(int AddedCount, int SkippedCount);
+internal readonly record struct ContentDownloadBatchResult(
+    int AddedCount,
+    int SkippedCount,
+    int DuplicateCount = 0,
+    int FailedCount = 0);
 
 internal interface IContentInfoServiceFactory
 {
@@ -92,19 +96,18 @@ internal sealed class ContentDownloadCoordinator : IContentDownloadCoordinator
 {
     private readonly IAddToDownloadServiceFactory _serviceFactory;
     private readonly IContentInfoServiceFactory _infoServiceFactory;
-    private readonly DownloadContentConflictResolver _contentConflictResolver;
+    private readonly DownloadActionPlanner _actionPlanner;
     private readonly ILogger<ContentDownloadCoordinator> _logger;
 
     public ContentDownloadCoordinator(
         IAddToDownloadServiceFactory serviceFactory,
         IContentInfoServiceFactory infoServiceFactory,
-        DownloadContentConflictResolver contentConflictResolver,
+        DownloadActionPlanner actionPlanner,
         ILogger<ContentDownloadCoordinator> logger)
     {
         _serviceFactory = serviceFactory ?? throw new ArgumentNullException(nameof(serviceFactory));
         _infoServiceFactory = infoServiceFactory ?? throw new ArgumentNullException(nameof(infoServiceFactory));
-        _contentConflictResolver = contentConflictResolver
-            ?? throw new ArgumentNullException(nameof(contentConflictResolver));
+        _actionPlanner = actionPlanner ?? throw new ArgumentNullException(nameof(actionPlanner));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -146,6 +149,8 @@ internal sealed class ContentDownloadCoordinator : IContentDownloadCoordinator
         {
             var addedCount = 0;
             var skippedCount = 0;
+            var duplicateCount = 0;
+            var failedCount = 0;
             var conflictChoices = new DownloadContentConflictChoices();
             foreach (var item in items)
             {
@@ -157,7 +162,7 @@ internal sealed class ContentDownloadCoordinator : IContentDownloadCoordinator
                         .CreateAsync(item, cancellationToken)
                         .ConfigureAwait(false);
                     preparedDownload = await addToDownloadSession
-                        .PrepareAsync(infoService, cancellationToken)
+                        .PrepareAsync(infoService, selection.RequestedContent, cancellationToken)
                         .ConfigureAwait(false);
                 }
                 catch (BilibiliApiResponseException exception) when (IsUnavailableVideo(exception))
@@ -178,20 +183,28 @@ internal sealed class ContentDownloadCoordinator : IContentDownloadCoordinator
                 }
 
                 cancellationToken.ThrowIfCancellationRequested();
-                var finalizedDownload = await _contentConflictResolver
-                    .ResolveAsync(
+                var finalizedDownload = await _actionPlanner
+                    .PlanAsync(
                         selection.RequestedContent,
                         preparedDownload,
                         isAll: false,
                         conflictChoices,
                         cancellationToken)
                     .ConfigureAwait(true);
-                addedCount += await addToDownloadSession
+                var addResult = await addToDownloadSession
                     .AddToDownload(selection.Directory, finalizedDownload, cancellationToken)
                     .ConfigureAwait(false);
+                addedCount += addResult.AddedCount;
+                duplicateCount += addResult.DuplicateCount;
+                failedCount += addResult.FailedCount;
+                skippedCount += addResult.SkippedCount;
             }
 
-            return new ContentDownloadBatchResult(addedCount, skippedCount);
+            return new ContentDownloadBatchResult(
+                addedCount,
+                skippedCount,
+                duplicateCount,
+                failedCount);
         }, cancellationToken);
     }
 

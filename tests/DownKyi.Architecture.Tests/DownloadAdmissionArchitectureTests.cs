@@ -92,6 +92,12 @@ public sealed class DownloadAdmissionArchitectureTests
             "src", "DownKyi.Desktop", "Services", "Download", "PreparedDownload.cs");
         var resolver = ReadSource(
             "src", "DownKyi.Desktop", "Services", "Download", "DownloadContentConflictResolver.cs");
+        var planner = ReadSource(
+            "src", "DownKyi.Desktop", "Services", "Download", "DownloadActionPlanner.cs");
+        var duplicatePolicy = ReadSource(
+            "src", "DownKyi.Desktop", "Services", "Download", "DownloadDuplicatePolicy.cs");
+        var actionCoverage = ReadSource(
+            "src", "DownKyi.Desktop", "Services", "Download", "DownloadActionCoverage.cs");
         var content = ReadSource(
             "src", "DownKyi.Desktop", "Services", "Media", "ContentDownloadCoordinator.cs");
         var video = ReadSource(
@@ -108,10 +114,21 @@ public sealed class DownloadAdmissionArchitectureTests
         Assert.Contains("TryGetCompatibleContent(", prepared, StringComparison.Ordinal);
         Assert.DoesNotContain("DownloadMediaCapabilities(bool Video, bool Audio)", prepared, StringComparison.Ordinal);
         Assert.Contains("DownloadContentSelection RequestedContent", prepared, StringComparison.Ordinal);
+        Assert.Contains("DownloadContentSelection FinalizedContent", prepared, StringComparison.Ordinal);
         Assert.Contains("DownloadContentConflictChoices choices", resolver, StringComparison.Ordinal);
         Assert.Contains("DownloadContentConflictDialogContract.ShowAsync", resolver, StringComparison.Ordinal);
-        Assert.Contains("_contentConflictResolver", content, StringComparison.Ordinal);
-        Assert.Contains("_contentConflictResolver", video, StringComparison.Ordinal);
+        Assert.Contains("DownloadPlanningStopReason", planner, StringComparison.Ordinal);
+        Assert.Contains("_conflictResolver", planner, StringComparison.Ordinal);
+        Assert.Contains(".ResolveAsync(", planner, StringComparison.Ordinal);
+        Assert.Contains("_actionPlanner", content, StringComparison.Ordinal);
+        Assert.Contains("_actionPlanner", video, StringComparison.Ordinal);
+        Assert.Contains(
+            "DownloadActionCoverage.RemoveCoveredActions",
+            duplicatePolicy,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("MediaParametersMatch", duplicatePolicy, StringComparison.Ordinal);
+        Assert.Contains("MediaParametersMatch", actionCoverage, StringComparison.Ordinal);
+        Assert.DoesNotContain("HasPlayback", planner, StringComparison.Ordinal);
         Assert.DoesNotContain("_downloadContent", service, StringComparison.Ordinal);
         Assert.DoesNotContain("DownloadContentConflict", service, StringComparison.Ordinal);
         Assert.DoesNotContain("SetVideoInfoService", contract, StringComparison.Ordinal);
@@ -137,6 +154,46 @@ public sealed class DownloadAdmissionArchitectureTests
         Assert.Contains("停止这些旧任务", copy, StringComparison.Ordinal);
         Assert.Contains("取消或关闭不会解除阻止", copy, StringComparison.Ordinal);
         Assert.DoesNotContain("一定在远端", copy, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DuplicateOutputAndRecoveryUseTheSharedActionClaimsContract()
+    {
+        var contract = ReadSource(
+            "src", "DownKyi.Domain", "Downloads", "DownloadContentSelection.cs");
+        var coverage = ReadSource(
+            "src", "DownKyi.Desktop", "Services", "Download", "DownloadActionCoverage.cs");
+        var duplicatePolicy = ReadSource(
+            "src", "DownKyi.Desktop", "Services", "Download", "DownloadDuplicatePolicy.cs");
+        var outputResolver = ReadSource(
+            "src", "DownKyi.Desktop", "Services", "Download", "DownloadOutputPathResolver.cs");
+        var reservations = ReadSource(
+            "src", "DownKyi.Infrastructure", "Downloads", "SqliteDownloadStoreOutputReservations.cs");
+        var recovery = ReadSource(
+            "src", "DownKyi.Infrastructure", "Downloads", "DownloadStoreReservationKeyCompatibility.cs");
+
+        Assert.Contains("record struct DownloadActionClaims", contract, StringComparison.Ordinal);
+        Assert.Contains("Nfo = 32", contract, StringComparison.Ordinal);
+        Assert.Contains("SubtractFrom(DownloadContentSelection", contract, StringComparison.Ordinal);
+        Assert.Contains("coveredClaims.SubtractFrom(requestedContent)", coverage, StringComparison.Ordinal);
+        Assert.Contains("MatchesOutputOwner", duplicatePolicy, StringComparison.Ordinal);
+        Assert.Contains("IPhysicalOutputPathResolver", duplicatePolicy, StringComparison.Ordinal);
+        Assert.Contains("_physicalOutputPathResolver", duplicatePolicy, StringComparison.Ordinal);
+        Assert.Contains("ResolvePhysicalBasePath", coverage, StringComparison.Ordinal);
+        Assert.DoesNotContain("OperatingSystem.IsMacOS", coverage, StringComparison.Ordinal);
+        Assert.Contains("AllowExistingBasePath: hasMatchingOutputOwner", duplicatePolicy, StringComparison.Ordinal);
+        Assert.Contains("DownloadActionClaim.Nfo", outputResolver, StringComparison.Ordinal);
+        Assert.Contains("existingClaims.Overlaps(requestedClaims)", reservations, StringComparison.Ordinal);
+        Assert.Contains("db.nfo_request IS NOT NULL", reservations, StringComparison.Ordinal);
+        Assert.Contains("DownloadTaskSqlReader.SelectColumns", recovery, StringComparison.Ordinal);
+        Assert.Contains("DownloadTaskRecordMapper.Read", recovery, StringComparison.Ordinal);
+        Assert.Contains("SqliteDownloadStoreQuarantine.RecordAsync", recovery, StringComparison.Ordinal);
+        Assert.Contains("task.Plan.ActionClaims", recovery, StringComparison.Ordinal);
+        Assert.DoesNotContain("DownloadStoreJson.ReadContentSelection", recovery, StringComparison.Ordinal);
+        Assert.Contains("claims.Overlaps(row.Claims)", recovery, StringComparison.Ordinal);
+        Assert.DoesNotContain("DownloadOutputClaims", coverage, StringComparison.Ordinal);
+        Assert.DoesNotContain("DownloadOutputClaims", reservations, StringComparison.Ordinal);
+        Assert.DoesNotContain("DownloadOutputClaims", recovery, StringComparison.Ordinal);
     }
 
     private static string ReadSource(params string[] segments)

@@ -596,7 +596,8 @@ public sealed class DownloadRuntimeArchitectureTests
         Assert.DoesNotContain("FromLegacyMap", addSource, StringComparison.Ordinal);
         Assert.Contains("DownloadSettingsDialog.EncodeResult", dialogSource, StringComparison.Ordinal);
         Assert.DoesNotContain(".ToLegacyMap()", dialogSource, StringComparison.Ordinal);
-        Assert.Contains("SubtitleTracksParameter", dialogContractSource, StringComparison.Ordinal);
+        Assert.Contains("SubtitleDiscoveryParameter", dialogContractSource, StringComparison.Ordinal);
+        Assert.Contains("SubtitleTrackDiscoveryStatus", dialogContractSource, StringComparison.Ordinal);
         Assert.Contains("ResultParameter", dialogContractSource, StringComparison.Ordinal);
     }
 

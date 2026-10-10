@@ -62,6 +62,12 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
 
     public ObservableCollection<SubtitleTrackItem> SubtitleTracks { get; } = [];
 
+    public DownloadSettingsDialog.SubtitleTrackDiscoveryStatus SubtitleTrackDiscoveryStatus
+    {
+        get;
+        private set;
+    }
+
     public bool HasSubtitleTracks => SubtitleTracks.Count > 0;
 
 
@@ -207,7 +213,9 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
 
     public override void OnDialogOpened(AppDialogRequest request)
     {
-        var tracks = DownloadSettingsDialog.ReadSubtitleTracks(request);
+        var discovery = DownloadSettingsDialog.ReadSubtitleDiscovery(request);
+        SubtitleTrackDiscoveryStatus = discovery.Status;
+        var tracks = discovery.Tracks;
 
         for (var index = 0; index < tracks.Count; index++)
         {

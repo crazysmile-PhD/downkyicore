@@ -386,6 +386,16 @@ internal static class LegacyDownloadStoreFormatDetector
             return LegacyDownloadStoreKind.PreviousCurrentWithLegacyHistory;
         }
 
+        if (fingerprint.IsHistoryContentUpgrade)
+        {
+            return LegacyDownloadStoreKind.HistoryContentUpgrade;
+        }
+
+        if (fingerprint.IsHistoryContentUpgradeWithLegacyHistory)
+        {
+            return LegacyDownloadStoreKind.HistoryContentUpgradeWithLegacyHistory;
+        }
+
         if (fingerprint.IsStructurallyIncomplete)
         {
             return LegacyDownloadStoreKind.Unsupported;
@@ -469,8 +479,7 @@ internal static class LegacyDownloadStoreFormatDetector
                                                   && HasStagingToken
                                                   && HasPublishingArtifact;
 
-        public bool IsPreviousCurrent => HasPreviousHistoryShape
-                                         && !HasCurrentHistoryShape
+        public bool IsPreviousCurrent => HasCurrentHistoryShape
                                          && !HasLegacyDownloadedTable
                                          && UserVersion == DownloadStoreSchema.CurrentVersion - 1
                                          && HasRequiredSchemaMetadata
@@ -482,8 +491,7 @@ internal static class LegacyDownloadStoreFormatDetector
                                          && HasStagingToken
                                          && HasPublishingArtifact;
 
-        public bool IsPreviousCurrentWithLegacyHistory => HasPreviousHistoryShape
-                                                          && !HasCurrentHistoryShape
+        public bool IsPreviousCurrentWithLegacyHistory => HasCurrentHistoryShape
                                                           && HasLegacyDownloadedShape
                                                           && UserVersion == DownloadStoreSchema.CurrentVersion - 1
                                                           && HasRequiredSchemaMetadata
@@ -494,6 +502,32 @@ internal static class LegacyDownloadStoreFormatDetector
                                                           && HasPublishedArtifacts
                                                           && HasStagingToken
                                                           && HasPublishingArtifact;
+
+        public bool IsHistoryContentUpgrade => HasPreviousHistoryShape
+                                               && !HasCurrentHistoryShape
+                                               && !HasLegacyDownloadedTable
+                                               && UserVersion == DownloadStoreSchema.CurrentVersion - 2
+                                               && HasRequiredSchemaMetadata
+                                               && HasStateColumns
+                                               && HasReservationKey
+                                               && HasAdmissionGate
+                                               && HasNfoRequest
+                                               && HasPublishedArtifacts
+                                               && HasStagingToken
+                                               && HasPublishingArtifact;
+
+        public bool IsHistoryContentUpgradeWithLegacyHistory => HasPreviousHistoryShape
+                                                                && !HasCurrentHistoryShape
+                                                                && HasLegacyDownloadedShape
+                                                                && UserVersion == DownloadStoreSchema.CurrentVersion - 2
+                                                                && HasRequiredSchemaMetadata
+                                                                && HasStateColumns
+                                                                && HasReservationKey
+                                                                && HasAdmissionGate
+                                                                && HasNfoRequest
+                                                                && HasPublishedArtifacts
+                                                                && HasStagingToken
+                                                                && HasPublishingArtifact;
 
         public bool IsStructurallyIncomplete => HasHistoryTable
                                                 || !HasLegacyCoreTables

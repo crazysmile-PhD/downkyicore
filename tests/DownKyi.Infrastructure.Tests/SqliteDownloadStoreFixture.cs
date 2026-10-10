@@ -75,12 +75,16 @@ internal sealed partial class SqliteDownloadStoreFixture : IDisposable
         return task.ConfirmPaused(_clock.UtcNow.AddSeconds(5)).RequireValue();
     }
 
-    internal DownloadTask CreateQueuedTask(string id, string outputPath)
+    internal DownloadTask CreateQueuedTask(
+        string id,
+        string outputPath,
+        DownloadContentSelection? requestedContent = null,
+        DownloadNfoRequest? nfoRequest = null)
     {
         return DownloadTask.Create(
             new DownloadTaskId(id),
             CreateMetadata(id),
-            CreatePlan(),
+            CreatePlan(nfoRequest, requestedContent),
             new DownloadOutput(outputPath, null),
             _clock.UtcNow);
     }

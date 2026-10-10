@@ -334,16 +334,19 @@ public sealed class ContentDownloadCoordinatorTests
         public Task<PreparedDownload> PrepareAsync(
             VideoInfoView videoInfoView,
             IList<VideoSection> videoSections,
+            DownloadContentSelection requestedContent,
             bool isAll,
             CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 
         public Task<PreparedDownload?> PrepareAsync(
             IInfoService videoInfoService,
+            DownloadContentSelection requestedContent,
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
             Assert.NotNull(videoInfoService);
+            Assert.Equal(Selection.RequestedContent, requestedContent);
             PrepareCount++;
             if (skippedPreparationCalls?.Contains(PrepareCount) == true)
             {
@@ -355,7 +358,7 @@ public sealed class ContentDownloadCoordinatorTests
                 [new VideoSection()]));
         }
 
-        public Task<int> AddToDownload(
+        public Task<DownloadAddResult> AddToDownload(
             string selectedDirectory,
             FinalizedDownload finalizedDownload,
             CancellationToken cancellationToken = default)
@@ -365,17 +368,25 @@ public sealed class ContentDownloadCoordinatorTests
             Assert.NotNull(finalizedDownload);
             AddCount++;
             afterAdd?.Invoke(AddCount);
-            return Task.FromResult(1);
+            return Task.FromResult(new DownloadAddResult(
+                AddedCount: 1,
+                DuplicateCount: 0,
+                FailedCount: 0,
+                SkippedCount: 0));
         }
     }
 
     private static ContentDownloadCoordinator CreateCoordinator(
         IAddToDownloadServiceFactory factory,
-        IContentInfoServiceFactory infoServiceFactory) => new(
+        IContentInfoServiceFactory infoServiceFactory)
+    {
+        var resolver = new DownloadContentConflictResolver(new UnexpectedDialogService());
+        return new ContentDownloadCoordinator(
             factory,
             infoServiceFactory,
-            new DownloadContentConflictResolver(new UnexpectedDialogService()),
+            new DownloadActionPlanner(resolver),
             NullLogger<ContentDownloadCoordinator>.Instance);
+    }
 
     private sealed class UnexpectedDialogService : DownKyi.Application.Desktop.IAppDialogService
     {

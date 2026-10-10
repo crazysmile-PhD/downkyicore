@@ -228,6 +228,115 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task DisjointResidualActionSharesTheOwnedBasePath()
+    {
+        Directory.CreateDirectory(_directory);
+        using var store = CreateStore();
+        var clock = new SystemClock();
+        var historyService = DownloadHistoryService.CreateForSharedStore(store);
+        using var tasks = new DownloadTaskApplicationService(store, historyService, clock);
+        using var projections = new DownloadTaskProjectionStore(tasks, historyService, clock);
+        var list = new DownloadListState();
+        using var admission = CreateAdmission(
+            list,
+            tasks,
+            projections,
+            new RecordingDownloadTaskQueue());
+        var basePath = Path.Combine(_directory, "shared-residual-output");
+        var media = CreateItem("media", basePath);
+        media.DownloadBase.NeedDownloadContent =
+            DownloadContentSelection.None with { Video = true };
+        await admission.AdmitAsync(media, true, TestContext.Current.CancellationToken);
+        await File.WriteAllTextAsync(
+            basePath + ".mp4",
+            "owned-media",
+            TestContext.Current.CancellationToken);
+        var subtitle = CreateItem("subtitle", basePath);
+        subtitle.DownloadBase.NeedDownloadContent = DownloadContentSelection.None with
+        {
+            Subtitle = true,
+            SelectedSubtitleTrackIds = [11]
+        };
+
+        await admission.AdmitAsync(
+            subtitle,
+            autoAddNumberSuffix: true,
+            cancellationToken: TestContext.Current.CancellationToken,
+            allowExistingBasePath: true);
+
+        Assert.Equal(basePath, subtitle.DownloadBase.FilePath);
+        Assert.Equal(2, list.Downloading.Count);
+        Assert.Equal(2, (await tasks.GetUnfinishedAsync(
+            TestContext.Current.CancellationToken)).Count);
+    }
+
+    [Fact]
+    public async Task ResidualActionDoesNotOverwriteAnExistingMatchingSidecar()
+    {
+        Directory.CreateDirectory(_directory);
+        using var store = CreateStore();
+        var clock = new SystemClock();
+        var historyService = DownloadHistoryService.CreateForSharedStore(store);
+        using var tasks = new DownloadTaskApplicationService(store, historyService, clock);
+        using var projections = new DownloadTaskProjectionStore(tasks, historyService, clock);
+        using var admission = CreateAdmission(
+            new DownloadListState(),
+            tasks,
+            projections,
+            new RecordingDownloadTaskQueue());
+        var basePath = Path.Combine(_directory, "foreign-sidecar-output");
+        await File.WriteAllTextAsync(
+            basePath + "_English.srt",
+            "foreign-subtitle",
+            TestContext.Current.CancellationToken);
+        var subtitle = CreateItem("subtitle-foreign", basePath);
+        subtitle.DownloadBase.NeedDownloadContent = DownloadContentSelection.None with
+        {
+            Subtitle = true,
+            SelectedSubtitleTrackIds = [11]
+        };
+
+        await admission.AdmitAsync(
+            subtitle,
+            autoAddNumberSuffix: true,
+            cancellationToken: TestContext.Current.CancellationToken,
+            allowExistingBasePath: true);
+
+        Assert.Equal(basePath + "(1)", subtitle.DownloadBase.FilePath);
+    }
+
+    [Fact]
+    public async Task MetadataGeneratingMediaDoesNotOverwriteAnExistingNfo()
+    {
+        Directory.CreateDirectory(_directory);
+        using var store = CreateStore();
+        var clock = new SystemClock();
+        var historyService = DownloadHistoryService.CreateForSharedStore(store);
+        using var tasks = new DownloadTaskApplicationService(store, historyService, clock);
+        using var projections = new DownloadTaskProjectionStore(tasks, historyService, clock);
+        using var admission = CreateAdmission(
+            new DownloadListState(),
+            tasks,
+            projections,
+            new RecordingDownloadTaskQueue());
+        var basePath = Path.Combine(_directory, "existing-nfo-output");
+        await File.WriteAllTextAsync(
+            basePath + ".nfo",
+            "foreign-metadata",
+            TestContext.Current.CancellationToken);
+        var item = CreateItem("nfo-conflict", basePath);
+        item.Metadata = new MovieMetadata { Title = "new metadata" };
+
+        await admission.AdmitAsync(
+            item,
+            autoAddNumberSuffix: true,
+            cancellationToken: TestContext.Current.CancellationToken,
+            allowExistingBasePath: true);
+
+        Assert.Equal(basePath + "(1)", item.DownloadBase.FilePath);
+    }
+
+    [Fact]
     public async Task CollisionResolutionPreservesRawCandidateSpelling()
     {
         var basePath = Path.Combine(_directory, "cafe\u0301-output");
@@ -864,6 +973,20 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         {
             ReservationSnapshotCount++;
             return inner.GetActiveOutputReservationKeysAsync(ignoreCase, cancellationToken);
+        }
+
+        public Task<bool> HasOutputClaimConflictAsync(
+            string basePath,
+            DownloadActionClaims requestedClaims,
+            bool ignoreCase,
+            CancellationToken cancellationToken)
+        {
+            ReservationProbeCount++;
+            return inner.HasOutputClaimConflictAsync(
+                basePath,
+                requestedClaims,
+                ignoreCase,
+                cancellationToken);
         }
 
         public Task<DownloadHistoryPage> GetHistoryPageAsync(

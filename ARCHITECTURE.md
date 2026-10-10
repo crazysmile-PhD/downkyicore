@@ -54,7 +54,10 @@ Bilibili endpoint adapters 留在 `DownKyi.Core/BiliApi` 以維持 DTO 與協定
 
 ```mermaid
 flowchart LR
-    Add["AddToDownloadService"] --> Admission["DownloadTaskAdmissionService"]
+    Select["typed content selection"] --> Prepare["DownloadPreparationService"]
+    Prepare --> Plan["DownloadActionPlanner"]
+    Plan --> Add["AddToDownloadService"]
+    Add --> Admission["DownloadTaskAdmissionService"]
     Admission --> App["Application commands"]
     App --> Domain["Domain DownloadTask"]
     App --> Store["SQLite store"]
@@ -71,7 +74,10 @@ flowchart LR
 - 所有 durable command 都先載入 aggregate、執行合法 transition、以 optimistic version 寫入 SQLite，再發布 committed snapshot。若先更新 UI，crash 後 UI 與可恢復狀態會分裂。
 - Runtime 不得從 mutable UI model 或 lossy history 重建 Domain task。`DownloadTask.Restore` 只允許 SQLite materializer 與 legacy migration adapter 使用。
 - 使用者要求的 audio／video／danmaku／subtitle／cover 由 Domain `DownloadContentSelection` 表達；舊字串 map 只存在於 dialog、SQLite 與 NRBF compatibility boundary。
-- `PreparedDownload` 以允許的輸出組合描述 media capability，而不是把 audio／video presence 當成可獨立選擇。DURL 只支援 video-only 與 audio+video，不支援 audio-only；`DownloadContentConflictResolver` 必須在 task 建立前把使用者要求收斂成相容子集並寫入 finalized selection。後續 refresh 不得改變已確定的 transport、quality、codec 或 audio／video intent。
+- 選擇與執行必須保留四個不同語義：`Requested` 是使用者意圖、`Available` 是已知資源能力、`Finalized` 是使用者確認後可建立 task 的動作、`Result` 是檔案執行證據。不得用 playback presence、空集合或 null 同時代替這些狀態。
+- `DownloadPreparationService` 只有在 requested content 含 media 時查詢 playback／quality；subtitle／danmaku／cover-only 準備仍可取得必要 metadata，但不得觸發 media stream discovery。
+- `PreparedDownload` 以允許的輸出組合描述 media capability，而不是把 audio／video presence 當成可獨立選擇。DURL 只支援 video-only 與 audio+video，不支援 audio-only；`DownloadActionPlanner` 是 page selection 與 finalized action 的唯一 owner，空 selection 不得建立 task。`DownloadContentConflictResolver` 只處理 media capability／quality 衝突；media 不可用時保留獨立動作，並由明確的 continue／skip 決策收斂。後續 refresh 不得改變已確定的 transport、quality、codec 或 audio／video intent。
+- `DownloadActionClaims` 是重複 coverage、實體輸出占用、SQLite admission 與 reservation-key 恢復共用的 action-level 契約；固定粒度為 media、subtitle、danmaku ASS、danmaku XML、cover、NFO。`DownloadDuplicatePolicy` 分別判斷同一 output owner 與已覆蓋動作：output owner 與 admission 必須共用 `IPhysicalOutputPathResolver`，以同一實際路徑識別 symlink／alias，前者允許互補 sidecar 保留原 base path，後者才扣除 residual selection；completed task 只有在對應 published artifact 仍可用時才覆蓋該 action。SQLite 由 persisted `DownloadContentSelection` 與 `nfo_request` 重建同一組 claims，同一 canonical base path 可容納互不重疊的 action，但 admission transaction 或啟動恢復遇到重疊 claim 必須拒絕。通知只由發起操作的 ViewModel 依 counts 與 planning stop reason 發布一次，policy 不擁有通知。
 - 啟動恢復、新增與續傳只傳 `DownloadTaskId`，不得輪詢 UI collection。啟動查詢同時提供 Domain snapshots 與 projections；runtime decision 只用前者。
 
 ### Execution 與 retry
@@ -80,7 +86,9 @@ flowchart LR
 - `DownloadMediaContract` 只驗證尚未完成的 finalized transport component 與其 quality／codec／audio；同一來源可以同時提供 DASH 與 DURL，但只有 finalized transport 參與本次執行。已確定的 DASH 影片與獨立音訊可以分別來自網頁及 API，每個保留自己的來源與下載地址；DURL 仍必須由單一 payload 完整提供。不得要求來源再次提供已完成且有效的 DASH component。
 - 若所有可用來源都無法完整滿足尚未完成的 finalized selection，`DownloadPlaybackResolver` 必須回傳 `download.playback.selection-unavailable` typed failure，由 pipeline 原樣持久化，不得讓 expected availability drift 冒泡成 `download.runtime.failed`。API response error、transport failure 與 caller cancellation 保留各自語義。缺少舊 contract 的 unfinished task 必須重建，不得猜測 fallback；已完成且有效的 selected artifact 在普通 refresh 與重啟續傳時都不因新來源缺少該 stream 而撤銷或重新下載。
 - Pipeline 依序執行 typed stages；每個 stage 以 typed result 保存 failure taxonomy，失敗立即停止並由 typed state writer 更新狀態。不得用 empty／null success sentinel 隱藏錯誤。Presenter／projector 只按 `DownloadTaskId` 更新 UI；`DownloadListState` 只公開穩定 read-only collection。
+- `ValidateStage` 由實際 published／staged file 證據推導 requested media／subtitle／danmaku／cover 的 `Succeeded`、`NoResource` 或 `Failed`；未 requested 的 action 不建立 result entry，planning 中由使用者跳過的 page 不進入 execution。至少一個 requested action 成功才可進入 finalize。單一 action 無資源不等於 transport／解析／寫入失敗，所有 action 都沒有輸出則以 typed not-found failure 結束，不得寫入成功歷史。
 - Retry 只有一個預算 owner：coordinator 決定 typed retry／refresh／source switch，backend 每次只嘗試一個 URL。不得在 backend、RPC caller 或外層另加 retry，否則預算會相乘。
+- Playback metadata query 的 transient API-code／HTTP retry 只由 `VideoStreamApi` 擁有，最多重送一次；成功 response 缺少 requested quality 是 planning availability，不得由 preparation 再發出五次相同查詢。
 - Built-in resume 必須先比較 resource identity；沒有 validator 時驗證已保存 bytes 的 overlap。Mismatch 回報 `ResumeRejected`，coordinator 清除該 transfer artifacts 後，同地址最多重試一次。
 - Cancellation 保持 cancellation，不得轉成 failure 或 retry。來源切換前必須停止舊 transfer 並清除該 identity／target／sidecars；teardown 或 cleanup 失敗要 fail closed。
 - aria2 RPC failure 必須保留最新 GID；只有 terminal failure、確定 task-not-found 或安全完成的 source-switch teardown 才可清除。

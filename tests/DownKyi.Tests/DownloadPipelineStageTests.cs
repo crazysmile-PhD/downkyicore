@@ -199,7 +199,7 @@ public sealed class DownloadPipelineStageTests
     }
 
     [Fact]
-    public async Task ValidateStageAllowsOptionalSubtitleResponseWithoutFiles()
+    public async Task ValidateStageRejectsSubtitleOnlyTaskWithoutFiles()
     {
         using var settings = new TestSettingsStore();
         var context = CreateContext(
@@ -211,7 +211,47 @@ public sealed class DownloadPipelineStageTests
             context,
             TestContext.Current.CancellationToken);
 
-        Assert.True(result.IsSuccess);
+        Assert.False(result.IsSuccess);
+        Assert.Equal("download.validate.no-resource", result.Error?.Code);
+        Assert.Equal(OperationErrorKind.NotFound, result.Error?.Kind);
+    }
+
+    [Fact]
+    public async Task ValidateStageSucceedsWhenCoverProducesOutputAndSubtitleHasNoResource()
+    {
+        using var settings = new TestSettingsStore();
+        var context = CreateContext(
+            settings.Store.Current,
+            requestedContent: DownloadContentSelection.None with
+            {
+                Subtitle = true,
+                Cover = true
+            });
+        var cover = $"{context.WorkingBasePath}.{Guid.NewGuid():N}.jpg";
+        try
+        {
+            await File.WriteAllBytesAsync(
+                cover,
+                [1, 2, 3],
+                TestContext.Current.CancellationToken);
+            context.CoverFile = cover;
+            context.SubtitleFiles = null;
+
+            var result = await new ValidateStage(new StubFfmpegMediaStreamValidator())
+                .ExecuteAsync(context, TestContext.Current.CancellationToken);
+
+            Assert.True(result.IsSuccess);
+            Assert.Equal(
+                DownloadActionResultStatus.NoResource,
+                context.ActionResults.Results[DownloadActionKind.Subtitle]);
+            Assert.Equal(
+                DownloadActionResultStatus.Succeeded,
+                context.ActionResults.Results[DownloadActionKind.Cover]);
+        }
+        finally
+        {
+            File.Delete(cover);
+        }
     }
 
     [Theory]
