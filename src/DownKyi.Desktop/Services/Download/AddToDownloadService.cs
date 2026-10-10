@@ -212,7 +212,6 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
                     finalizedPage.FinalizedContent);
                 completedCandidates ??= new Lazy<Task<List<DownloadedItem>>>(() =>
                     _duplicatePolicy.LoadCompletedCandidatesAsync(
-                        settings.Basic.RepeatDownloadStrategy,
                         cancellationToken));
                 activeCandidates ??= new Lazy<Task<List<DownloadingItem>>>(() =>
                     _duplicatePolicy.LoadActiveCandidatesAsync(cancellationToken));

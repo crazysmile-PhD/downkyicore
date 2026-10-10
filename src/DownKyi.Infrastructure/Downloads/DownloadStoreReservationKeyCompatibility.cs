@@ -89,7 +89,8 @@ internal static class DownloadStoreReservationKeyCompatibility
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            SELECT db.id, db.file_path, db.output_reservation_key, db.need_download_content
+            SELECT db.id, db.file_path, db.output_reservation_key,
+                   db.need_download_content, db.nfo_request IS NOT NULL
             FROM download_base db
             INNER JOIN downloading dl ON dl.id = db.id
             LEFT JOIN download_quarantine q
@@ -106,9 +107,11 @@ internal static class DownloadStoreReservationKeyCompatibility
                 reader.GetString(1),
                 await reader.IsDBNullAsync(2, cancellationToken).ConfigureAwait(false)
                     ? null : reader.GetString(2),
-                DownloadStoreJson.ReadContentSelection(
-                    reader.GetString(3),
-                    "need_download_content").ActionClaims));
+                DownloadActionClaims.From(
+                    DownloadStoreJson.ReadContentSelection(
+                        reader.GetString(3),
+                        "need_download_content"),
+                    includesNfo: reader.GetInt32(4) != 0)));
         }
 
         return rows;

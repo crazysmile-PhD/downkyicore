@@ -68,7 +68,7 @@ public sealed class SqliteDownloadTaskStoreArchitectureTests
             ".ConfigureAwait(false)",
         ["HasOutputClaimConflictAsync"] =
             "await _outputReservations.HasOutputClaimConflictAsync(" +
-            "basePath, requestedContent, ignoreCase, cancellationToken)" +
+            "basePath, requestedClaims, ignoreCase, cancellationToken)" +
             ".ConfigureAwait(false)",
         ["GetHistoryPageAsync"] =
             "await _queries.GetHistoryPageAsync(cursor, pageSize, cancellationToken).ConfigureAwait(false)",

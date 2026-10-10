@@ -38,19 +38,21 @@ internal sealed class DownloadDuplicatePolicy
 
         var requestedContent = requestedItem.DownloadBase.NeedDownloadContent;
         var remainingContent = requestedContent;
-        var hasCoveredContent = false;
+        var hasMatchingOutputOwner = false;
         var active = activeCandidates == null
             ? await LoadActiveCandidatesAsync(cancellationToken).ConfigureAwait(true)
             : await activeCandidates.Value.ConfigureAwait(true);
         MergeLiveActiveCandidates(active);
         foreach (var item in active)
         {
+            hasMatchingOutputOwner |= DownloadActionCoverage.MatchesOutputOwner(
+                item,
+                requestedItem);
             var reduced = DownloadActionCoverage.RemoveCoveredActions(
                 item,
                 requestedItem,
                 remainingContent,
                 requireUsableArtifacts: false);
-            hasCoveredContent |= reduced != remainingContent;
             remainingContent = reduced;
             if (!remainingContent.HasAnyRequestedAction)
             {
@@ -58,19 +60,24 @@ internal sealed class DownloadDuplicatePolicy
             }
         }
 
-        if (strategy == RepeatDownloadStrategy.ReDownload)
-        {
-            return new DownloadDuplicateResolution(
-                requestedContent,
-                AllowExistingBasePath: false);
-        }
-
         var candidates = completedCandidates == null
-            ? await LoadCompletedCandidatesAsync(strategy, cancellationToken).ConfigureAwait(true)
+            ? await LoadCompletedCandidatesAsync(cancellationToken).ConfigureAwait(true)
             : await completedCandidates.Value.ConfigureAwait(true);
         MergeLiveCompletedCandidates(candidates);
+        if (strategy == RepeatDownloadStrategy.ReDownload)
+        {
+            hasMatchingOutputOwner |= candidates.Any(item =>
+                DownloadActionCoverage.MatchesOutputOwner(item, requestedItem));
+            return new DownloadDuplicateResolution(
+                requestedContent,
+                AllowExistingBasePath: hasMatchingOutputOwner);
+        }
+
         foreach (var item in candidates.ToArray())
         {
+            hasMatchingOutputOwner |= DownloadActionCoverage.MatchesOutputOwner(
+                item,
+                requestedItem);
             var reduced = DownloadActionCoverage.RemoveCoveredActions(
                 item,
                 requestedItem,
@@ -88,7 +95,6 @@ internal sealed class DownloadDuplicatePolicy
                 continue;
             }
 
-            hasCoveredContent = true;
             remainingContent = reduced;
             if (!remainingContent.HasAnyRequestedAction)
             {
@@ -98,7 +104,7 @@ internal sealed class DownloadDuplicatePolicy
 
         return new DownloadDuplicateResolution(
             remainingContent,
-            AllowExistingBasePath: hasCoveredContent);
+            AllowExistingBasePath: hasMatchingOutputOwner);
     }
 
     internal async Task<bool> ShouldSkipAsync(
@@ -124,14 +130,9 @@ internal sealed class DownloadDuplicatePolicy
     }
 
     public async Task<List<DownloadedItem>> LoadCompletedCandidatesAsync(
-        RepeatDownloadStrategy strategy,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (strategy == RepeatDownloadStrategy.ReDownload)
-        {
-            return [];
-        }
 
         var downloadedItems = await _projectionStore
             .GetDownloadedAsync(cancellationToken)

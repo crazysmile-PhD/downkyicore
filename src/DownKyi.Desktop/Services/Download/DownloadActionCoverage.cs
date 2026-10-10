@@ -15,10 +15,7 @@ internal static class DownloadActionCoverage
         DownloadContentSelection requestedContent,
         bool requireUsableArtifacts)
     {
-        var existingBase = existingItem.DownloadBase;
-        var requestedBase = requestedItem.DownloadBase;
-        if (existingBase.Cid != requestedBase.Cid
-            || !HasSameOutputPath(existingItem, requestedBase.FilePath))
+        if (!MatchesOutputOwner(existingItem, requestedItem))
         {
             return requestedContent;
         }
@@ -67,6 +64,16 @@ internal static class DownloadActionCoverage
         }
 
         return coveredClaims.SubtractFrom(requestedContent);
+    }
+
+    public static bool MatchesOutputOwner(
+        DownloadBaseItem existingItem,
+        DownloadingItem requestedItem)
+    {
+        ArgumentNullException.ThrowIfNull(existingItem);
+        ArgumentNullException.ThrowIfNull(requestedItem);
+        return existingItem.DownloadBase.Cid == requestedItem.DownloadBase.Cid
+               && HasSameOutputPath(existingItem, requestedItem.DownloadBase.FilePath);
     }
 
     private static bool HasSameOutputPath(DownloadBaseItem item, string requestedPath)

@@ -163,6 +163,8 @@ public sealed class DownloadAdmissionArchitectureTests
             "src", "DownKyi.Domain", "Downloads", "DownloadContentSelection.cs");
         var coverage = ReadSource(
             "src", "DownKyi.Desktop", "Services", "Download", "DownloadActionCoverage.cs");
+        var duplicatePolicy = ReadSource(
+            "src", "DownKyi.Desktop", "Services", "Download", "DownloadDuplicatePolicy.cs");
         var outputResolver = ReadSource(
             "src", "DownKyi.Desktop", "Services", "Download", "DownloadOutputPathResolver.cs");
         var reservations = ReadSource(
@@ -171,11 +173,16 @@ public sealed class DownloadAdmissionArchitectureTests
             "src", "DownKyi.Infrastructure", "Downloads", "DownloadStoreReservationKeyCompatibility.cs");
 
         Assert.Contains("record struct DownloadActionClaims", contract, StringComparison.Ordinal);
+        Assert.Contains("Nfo = 32", contract, StringComparison.Ordinal);
         Assert.Contains("SubtractFrom(DownloadContentSelection", contract, StringComparison.Ordinal);
         Assert.Contains("coveredClaims.SubtractFrom(requestedContent)", coverage, StringComparison.Ordinal);
-        Assert.Contains("requestedContent.ActionClaims", outputResolver, StringComparison.Ordinal);
-        Assert.Contains("existingContent.ActionClaims.Overlaps", reservations, StringComparison.Ordinal);
+        Assert.Contains("MatchesOutputOwner", duplicatePolicy, StringComparison.Ordinal);
+        Assert.Contains("AllowExistingBasePath: hasMatchingOutputOwner", duplicatePolicy, StringComparison.Ordinal);
+        Assert.Contains("DownloadActionClaim.Nfo", outputResolver, StringComparison.Ordinal);
+        Assert.Contains("existingClaims.Overlaps(requestedClaims)", reservations, StringComparison.Ordinal);
+        Assert.Contains("db.nfo_request IS NOT NULL", reservations, StringComparison.Ordinal);
         Assert.Contains("db.need_download_content", recovery, StringComparison.Ordinal);
+        Assert.Contains("db.nfo_request IS NOT NULL", recovery, StringComparison.Ordinal);
         Assert.Contains("claims.Overlaps(row.Claims)", recovery, StringComparison.Ordinal);
         Assert.DoesNotContain("DownloadOutputClaims", coverage, StringComparison.Ordinal);
         Assert.DoesNotContain("DownloadOutputClaims", reservations, StringComparison.Ordinal);

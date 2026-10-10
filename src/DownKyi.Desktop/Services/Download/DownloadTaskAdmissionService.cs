@@ -53,12 +53,15 @@ internal sealed class DownloadTaskAdmissionService : IDisposable
             _runtimeAvailability.EnsureAcceptingTasks();
             var physicalBasePath = _physicalOutputPathResolver.ResolvePhysicalBasePath(
                 item.DownloadBase.FilePath);
+            var requestedClaims = DownloadActionClaims.From(
+                item.DownloadBase.NeedDownloadContent,
+                includesNfo: item.Metadata != null);
             var admittedBasePath = await DownloadOutputPathResolver.ResolveAdmissionCollisionAsync(
                 physicalBasePath,
                 autoAddNumberSuffix,
                 (path, token) => _tasks.HasOutputClaimConflictAsync(
                     path,
-                    item.DownloadBase.NeedDownloadContent,
+                    requestedClaims,
                     DownloadOutputPathKey.UsesCaseInsensitiveComparison,
                     token),
                 token => _tasks.GetActiveOutputReservationKeysAsync(
@@ -68,7 +71,7 @@ internal sealed class DownloadTaskAdmissionService : IDisposable
                 allowExistingBasePath,
                 path => DownloadOutputPathResolver.HasExistingOutputClaimConflict(
                     path,
-                    item.DownloadBase.NeedDownloadContent)).ConfigureAwait(true);
+                    requestedClaims)).ConfigureAwait(true);
             item.DownloadBase.FilePath = admittedBasePath;
 
             await _projections.AddDownloadingAsync(item, cancellationToken).ConfigureAwait(true);

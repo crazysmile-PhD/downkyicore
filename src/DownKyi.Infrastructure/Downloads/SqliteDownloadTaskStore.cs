@@ -127,13 +127,13 @@ public sealed class SqliteDownloadTaskStore :
 
     public async Task<bool> HasOutputClaimConflictAsync(
         string basePath,
-        DownloadContentSelection requestedContent,
+        DownloadActionClaims requestedClaims,
         bool ignoreCase,
         CancellationToken cancellationToken) =>
         await _outputReservations
             .HasOutputClaimConflictAsync(
                 basePath,
-                requestedContent,
+                requestedClaims,
                 ignoreCase,
                 cancellationToken)
             .ConfigureAwait(false);

@@ -130,7 +130,8 @@ public enum DownloadActionClaim
     Subtitle = 2,
     DanmakuAss = 4,
     DanmakuXml = 8,
-    Cover = 16
+    Cover = 16,
+    Nfo = 32
 }
 
 public readonly record struct DownloadActionClaims(DownloadActionClaim Value)
@@ -142,6 +143,8 @@ public readonly record struct DownloadActionClaims(DownloadActionClaim Value)
     public static DownloadActionClaims Subtitle { get; } = new(DownloadActionClaim.Subtitle);
 
     public static DownloadActionClaims Cover { get; } = new(DownloadActionClaim.Cover);
+
+    public static DownloadActionClaims Nfo { get; } = new(DownloadActionClaim.Nfo);
 
     public bool HasAny => Value != DownloadActionClaim.None;
 
@@ -247,6 +250,14 @@ public readonly record struct DownloadActionClaims(DownloadActionClaim Value)
         }
 
         return new DownloadActionClaims(claims);
+    }
+
+    public static DownloadActionClaims From(
+        DownloadContentSelection content,
+        bool includesNfo)
+    {
+        var claims = From(content);
+        return includesNfo ? claims.Union(Nfo) : claims;
     }
 
     public static DownloadActionClaims FromDanmaku(DownloadDanmakuOutputFormat formats)

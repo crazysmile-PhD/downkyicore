@@ -77,10 +77,9 @@ internal static class DownloadOutputPathResolver
 
     internal static bool HasExistingOutputClaimConflict(
         string basePath,
-        DownloadContentSelection requestedContent)
+        DownloadActionClaims requestedClaims)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(basePath);
-        ArgumentNullException.ThrowIfNull(requestedContent);
         var directory = Path.GetDirectoryName(basePath);
         if (directory == null || !Directory.Exists(directory))
         {
@@ -88,7 +87,6 @@ internal static class DownloadOutputPathResolver
         }
 
         var baseName = Path.GetFileName(basePath);
-        var requestedClaims = requestedContent.ActionClaims;
         return Directory.EnumerateFiles(directory).Any(file =>
         {
             var fileName = Path.GetFileName(file);
@@ -113,6 +111,12 @@ internal static class DownloadOutputPathResolver
                     && PlatformComparer.Equals(fileName, baseName + ".ass")
                     || requestedClaims.Contains(DownloadActionClaim.DanmakuXml)
                     && PlatformComparer.Equals(fileName, baseName + ".xml")))
+            {
+                return true;
+            }
+
+            if (requestedClaims.Contains(DownloadActionClaim.Nfo)
+                && PlatformComparer.Equals(fileName, baseName + ".nfo"))
             {
                 return true;
             }

@@ -231,6 +231,37 @@ public sealed class SqliteDownloadStoreReservationRekeyTests : IDisposable
     }
 
     [Fact]
+    public async Task CanonicalNfoClaimsBlockOtherwiseDisjointContentDuringRecovery()
+    {
+        var composed = Path.Combine(_fixture.TempDirectory, "caf\u00e9-nfo-conflict");
+        var decomposed = Path.Combine(_fixture.TempDirectory, "cafe\u0301-nfo-conflict");
+        var cover = DownloadContentSelection.None with { Cover = true };
+        using (var first = _fixture.CreateStore())
+        {
+            Assert.True((await first.AddAsync(_fixture.CreatePausedTask(
+                "nfo-media",
+                outputPath: composed,
+                nfoRequest: SqliteDownloadStoreFixture.CreateNfoRequest()),
+                TestContext.Current.CancellationToken)).IsSuccess);
+            Assert.True((await first.AddAsync(_fixture.CreatePausedTask(
+                "nfo-cover",
+                nfoRequest: SqliteDownloadStoreFixture.CreateNfoRequest(),
+                requestedContent: cover), TestContext.Current.CancellationToken)).IsSuccess);
+        }
+
+        await _fixture.SetPathAndReservationKeyAsync(
+            "nfo-cover",
+            decomposed,
+            DownloadOutputPathKey.Create(
+                decomposed,
+                !DownloadOutputPathKey.UsesCaseInsensitiveComparison));
+
+        using var reopened = _fixture.CreateStore();
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            reopened.InitializeAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
     public async Task QuarantinedRowsDoNotOwnActionClaimsDuringRekey()
     {
         var target = Path.Combine(_fixture.TempDirectory, "reserved-target");

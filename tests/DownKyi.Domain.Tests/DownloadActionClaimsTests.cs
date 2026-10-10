@@ -80,4 +80,17 @@ public sealed class DownloadActionClaimsTests
 
         Assert.False(selection.ActionClaims.HasAny);
     }
+
+    [Fact]
+    public void NfoClaimIsDerivedFromThePlanOutputRatherThanContentSelection()
+    {
+        var content = DownloadContentSelection.None with { Video = true };
+
+        var withoutNfo = DownloadActionClaims.From(content, includesNfo: false);
+        var withNfo = DownloadActionClaims.From(content, includesNfo: true);
+
+        Assert.False(withoutNfo.Contains(DownloadActionClaim.Nfo));
+        Assert.True(withNfo.Contains(DownloadActionClaim.Nfo));
+        Assert.True(withNfo.Overlaps(DownloadActionClaims.Nfo));
+    }
 }

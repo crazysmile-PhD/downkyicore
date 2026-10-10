@@ -24,16 +24,15 @@ public sealed partial class DownloadTaskApplicationService
 
     public Task<bool> HasOutputClaimConflictAsync(
         string basePath,
-        DownloadContentSelection requestedContent,
+        DownloadActionClaims requestedClaims,
         bool ignoreCase,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(basePath);
-        ArgumentNullException.ThrowIfNull(requestedContent);
         ObjectDisposedException.ThrowIf(_disposed, this);
         return _store.HasOutputClaimConflictAsync(
             basePath,
-            requestedContent,
+            requestedClaims,
             ignoreCase,
             cancellationToken);
     }

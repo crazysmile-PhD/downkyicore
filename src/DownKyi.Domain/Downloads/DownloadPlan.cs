@@ -27,6 +27,9 @@ public sealed class DownloadPlan
 
     public DownloadNfoRequest? NfoRequest { get; }
 
+    public DownloadActionClaims ActionClaims =>
+        DownloadActionClaims.From(RequestedContent, NfoRequest != null);
+
     public DownloadPlan WithTransferFiles(IEnumerable<KeyValuePair<string, string>> transferFiles) =>
         new(RequestedContent, transferFiles, StreamType, NfoRequest);
 }

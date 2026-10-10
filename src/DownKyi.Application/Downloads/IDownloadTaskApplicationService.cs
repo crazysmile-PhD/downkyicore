@@ -31,7 +31,7 @@ public interface IDownloadTaskApplicationService
 
     async Task<bool> HasOutputClaimConflictAsync(
         string basePath,
-        DownloadContentSelection requestedContent,
+        DownloadActionClaims requestedClaims,
         bool ignoreCase,
         CancellationToken cancellationToken)
     {
@@ -41,7 +41,7 @@ public interface IDownloadTaskApplicationService
                 DownloadOutputPathKey.Create(task.Output.BasePath, ignoreCase),
                 key,
                 StringComparison.Ordinal)
-            && task.Plan.RequestedContent.ActionClaims.Overlaps(requestedContent.ActionClaims));
+            && task.Plan.ActionClaims.Overlaps(requestedClaims));
     }
 
     Task<bool> IsLegacyUpgradeAdmissionBlockedAsync(CancellationToken cancellationToken);

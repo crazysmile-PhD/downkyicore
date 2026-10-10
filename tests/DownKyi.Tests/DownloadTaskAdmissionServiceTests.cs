@@ -306,6 +306,37 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task MetadataGeneratingMediaDoesNotOverwriteAnExistingNfo()
+    {
+        Directory.CreateDirectory(_directory);
+        using var store = CreateStore();
+        var clock = new SystemClock();
+        var historyService = DownloadHistoryService.CreateForSharedStore(store);
+        using var tasks = new DownloadTaskApplicationService(store, historyService, clock);
+        using var projections = new DownloadTaskProjectionStore(tasks, historyService, clock);
+        using var admission = CreateAdmission(
+            new DownloadListState(),
+            tasks,
+            projections,
+            new RecordingDownloadTaskQueue());
+        var basePath = Path.Combine(_directory, "existing-nfo-output");
+        await File.WriteAllTextAsync(
+            basePath + ".nfo",
+            "foreign-metadata",
+            TestContext.Current.CancellationToken);
+        var item = CreateItem("nfo-conflict", basePath);
+        item.Metadata = new MovieMetadata { Title = "new metadata" };
+
+        await admission.AdmitAsync(
+            item,
+            autoAddNumberSuffix: true,
+            cancellationToken: TestContext.Current.CancellationToken,
+            allowExistingBasePath: true);
+
+        Assert.Equal(basePath + "(1)", item.DownloadBase.FilePath);
+    }
+
+    [Fact]
     public async Task CollisionResolutionPreservesRawCandidateSpelling()
     {
         var basePath = Path.Combine(_directory, "cafe\u0301-output");
@@ -946,14 +977,14 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
 
         public Task<bool> HasOutputClaimConflictAsync(
             string basePath,
-            DownloadContentSelection requestedContent,
+            DownloadActionClaims requestedClaims,
             bool ignoreCase,
             CancellationToken cancellationToken)
         {
             ReservationProbeCount++;
             return inner.HasOutputClaimConflictAsync(
                 basePath,
-                requestedContent,
+                requestedClaims,
                 ignoreCase,
                 cancellationToken);
         }

@@ -94,6 +94,58 @@ public sealed class DownloadAddOwnerTests : IDisposable
     }
 
     [Fact]
+    public async Task DisjointSubtitleRequestStillRecognizesTheMatchingOutputOwner()
+    {
+        using var context = new DuplicatePolicyContext(AppDialogOutcome.Canceled);
+        var mediaOnly = CreateRequestedItem(DownloadContentSelection.None with
+        {
+            Video = true,
+            MediaKind = DownloadMediaKind.Dash
+        });
+        context.ListState.AddDownloading(mediaOnly);
+        var subtitleOnly = DownloadContentSelection.None with
+        {
+            Subtitle = true,
+            SelectedSubtitleTrackIds = [11]
+        };
+
+        var resolution = await context.Policy.ResolveAsync(
+            CreateRequestedItem(subtitleOnly),
+            DownKyi.Core.Settings.RepeatDownloadStrategy.JumpOver,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(subtitleOnly, resolution.RemainingContent);
+        Assert.True(resolution.AllowExistingBasePath);
+    }
+
+    [Fact]
+    public async Task CompletedMediaOwnerAllowsSubtitleOnlyReDownloadAtTheSameBasePath()
+    {
+        var mediaOnly = DownloadContentSelection.None with
+        {
+            Video = true,
+            MediaKind = DownloadMediaKind.Dash
+        };
+        using var context = DuplicatePolicyContext.WithCompleted(
+            AppDialogOutcome.Canceled,
+            content: mediaOnly);
+        var subtitleOnly = DownloadContentSelection.None with
+        {
+            Subtitle = true,
+            SelectedSubtitleTrackIds = [11]
+        };
+
+        var resolution = await context.Policy.ResolveAsync(
+            CreateRequestedItem(subtitleOnly),
+            DownKyi.Core.Settings.RepeatDownloadStrategy.ReDownload,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(subtitleOnly, resolution.RemainingContent);
+        Assert.True(resolution.AllowExistingBasePath);
+        Assert.Equal(1, context.Store.HistoryPageRequestCount);
+    }
+
+    [Fact]
     public async Task ExistingMediaAndSubtitleTaskBlocksTheSameSubtitleOnlyOutput()
     {
         using var context = new DuplicatePolicyContext(AppDialogOutcome.Canceled);
@@ -253,7 +305,6 @@ public sealed class DownloadAddOwnerTests : IDisposable
         context.ListState.AddDownloading(CreateDownloadingItem());
         var completedCandidates = new Lazy<Task<List<DownloadedItem>>>(() =>
             context.Policy.LoadCompletedCandidatesAsync(
-                DownKyi.Core.Settings.RepeatDownloadStrategy.JumpOver,
                 TestContext.Current.CancellationToken));
 
         var shouldSkip = await context.Policy.ShouldSkipAsync(
@@ -298,7 +349,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
         Assert.False(shouldSkip);
         Assert.Empty(context.ListState.Downloaded);
         Assert.NotNull(context.Store.History);
-        Assert.Equal(0, context.Store.HistoryPageRequestCount);
+        Assert.Equal(1, context.Store.HistoryPageRequestCount);
         Assert.Equal(0, context.Store.UpdateCount);
         Assert.Equal(0, context.Dialogs.ShowCount);
     }
@@ -353,7 +404,6 @@ public sealed class DownloadAddOwnerTests : IDisposable
         var staleSnapshot = DownloadTaskProjectionMapper.ToDownloadedItem(context.Store.History!);
         var completedCandidates = new Lazy<Task<List<DownloadedItem>>>(() =>
             context.Policy.LoadCompletedCandidatesAsync(
-                DownKyi.Core.Settings.RepeatDownloadStrategy.Ask,
                 TestContext.Current.CancellationToken));
 
         var shouldSkip = await context.Policy.ShouldSkipAsync(
@@ -373,7 +423,6 @@ public sealed class DownloadAddOwnerTests : IDisposable
     {
         using var context = new DuplicatePolicyContext(AppDialogOutcome.Accepted);
         var candidateList = await context.Policy.LoadCompletedCandidatesAsync(
-            DownKyi.Core.Settings.RepeatDownloadStrategy.JumpOver,
             TestContext.Current.CancellationToken);
         var completedCandidates = new Lazy<Task<List<DownloadedItem>>>(() =>
             Task.FromResult(candidateList));
