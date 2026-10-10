@@ -2,12 +2,14 @@ using System;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
+using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Application.Diagnostics;
 using DownKyi.Commands;
 using DownKyi.Infrastructure.Logging;
 using DownKyi.Models;
 using DownKyi.Services;
+using DownKyi.Services.Download;
 using DownKyi.Utils;
 using Microsoft.Extensions.Logging;
 
@@ -27,8 +29,11 @@ internal sealed class DownloadRuntimeFailureDialogViewModel : BaseDialogViewMode
     private readonly ILogger<DownloadRuntimeFailureDialogViewModel> _logger;
     private DownKyiAsyncDelegateCommand? _copyErrorDetailsCommand;
     private DownKyiAsyncDelegateCommand? _createGitHubIssueCommand;
+    private RelayCommand? _resetDownloadStoreCommand;
+    private string _failureMessage;
     private string _diagnosticText = string.Empty;
     private string _issueDiagnosticText = string.Empty;
+    private bool _canResetDownloadStore;
 
     public DownloadRuntimeFailureDialogViewModel(
         IApplicationLogService logService,
@@ -45,7 +50,17 @@ internal sealed class DownloadRuntimeFailureDialogViewModel : BaseDialogViewMode
         _notifications = notifications ?? throw new ArgumentNullException(nameof(notifications));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         Title = DictionaryResource.GetString("DownloadRuntimeFailureTitle");
+        _failureMessage = DictionaryResource.GetString("DownloadRuntimeFailureMessage");
     }
+
+    public string FailureMessage
+    {
+        get => _failureMessage;
+        private set => SetProperty(ref _failureMessage, value);
+    }
+
+    internal string FailureMessageResourceKey { get; private set; } =
+        "DownloadRuntimeFailureMessage";
 
     public string DiagnosticText
     {
@@ -63,12 +78,27 @@ internal sealed class DownloadRuntimeFailureDialogViewModel : BaseDialogViewMode
             CreateGitHubIssueAsync,
             _logger);
 
+    public bool CanResetDownloadStore
+    {
+        get => _canResetDownloadStore;
+        private set => SetProperty(ref _canResetDownloadStore, value);
+    }
+
+    public RelayCommand ResetDownloadStoreCommand =>
+        _resetDownloadStoreCommand ??= new RelayCommand(() =>
+            CloseDialog(AppDialogOutcome.Accepted));
+
     public override void OnDialogOpened(AppDialogRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
         var failure = GetRequiredParameter<Exception>(request, "failure");
         DiagnosticText = CreateDiagnosticText(failure);
         _issueDiagnosticText = CreateIssueDiagnosticText(failure);
+        CanResetDownloadStore = DownloadStoreRecoveryPresenter.CanReset(failure);
+        FailureMessageResourceKey = CanResetDownloadStore
+            ? "DownloadStoreSchemaMismatchMessage"
+            : "DownloadRuntimeFailureMessage";
+        FailureMessage = DictionaryResource.GetString(FailureMessageResourceKey);
     }
 
     internal async Task CopyErrorDetailsAsync()

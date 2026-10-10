@@ -23,6 +23,8 @@ internal static class DownloadComposition
             provider.GetRequiredService<SqliteDownloadTaskStore>());
         services.AddSingleton<IDownloadCompletionStore>(provider =>
             provider.GetRequiredService<SqliteDownloadTaskStore>());
+        services.AddSingleton<IDownloadStoreRecovery>(provider =>
+            provider.GetRequiredService<SqliteDownloadTaskStore>());
         services.AddSingleton<IDownloadHistoryService, DownloadHistoryService>();
         services.AddSingleton<IDownloadTaskApplicationService, DownloadTaskApplicationService>();
 
@@ -53,6 +55,7 @@ internal static class DownloadComposition
         services.AddSingleton<DownloadDiagnosticLogger>();
         services.AddSingleton<IDownloadRuntimeFactory, DownloadRuntimeFactory>();
         services.AddSingleton<IUiDispatcher, AvaloniaUiDispatcher>();
+        services.AddSingleton<DownloadStoreRecoveryPresenter>();
         services.AddSingleton<DownloadBootstrapHostedService>();
         services.AddSingleton<IHostedService>(provider =>
             provider.GetRequiredService<DownloadBootstrapHostedService>());

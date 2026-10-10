@@ -1,5 +1,7 @@
 using System.Net;
 using DownKyi.Application.Desktop;
+using DownKyi.Application.Downloads;
+using DownKyi.Application.Lifetime;
 using DownKyi.Core.Settings;
 using DownKyi.Platform;
 using DownKyi.Services;
@@ -41,6 +43,7 @@ public sealed class StartupDialogOrderingTests
             new SearchService(settings.Store, navigation),
             new VersionCheckerService(httpClient, "owner", "repo"),
             new RuntimeAvailabilityStub(),
+            CreateRecoveryPresenter(dialogs),
             NullLogger<MainWindowViewModel>.Instance);
 
         var startup = viewModel.RunStartupDialogsAsync();
@@ -90,6 +93,7 @@ public sealed class StartupDialogOrderingTests
             new SearchService(settings.Store, navigation),
             new VersionCheckerService(httpClient, "owner", "repo"),
             new RuntimeAvailabilityStub(),
+            CreateRecoveryPresenter(dialogs),
             NullLogger<MainWindowViewModel>.Instance);
 
         var startup = viewModel.RunStartupDialogsAsync();
@@ -135,6 +139,7 @@ public sealed class StartupDialogOrderingTests
             new SearchService(settings.Store, navigation),
             new VersionCheckerService(httpClient, "owner", "repo"),
             new RuntimeAvailabilityStub(DownloadRuntimeStartupOutcome.Faulted(failure)),
+            CreateRecoveryPresenter(dialogs),
             NullLogger<MainWindowViewModel>.Instance);
 
         var startup = viewModel.RunStartupDialogsAsync();
@@ -156,6 +161,14 @@ public sealed class StartupDialogOrderingTests
             dialogs.Requests);
         Assert.Same(failure, dialogs.DownloadRuntimeFailure);
     }
+
+    private static DownloadStoreRecoveryPresenter CreateRecoveryPresenter(
+        IAppDialogService dialogs) =>
+        new(
+            dialogs,
+            new DownloadStoreRecoveryStub(),
+            new ApplicationLifecycleStub(),
+            NullLogger<DownloadStoreRecoveryPresenter>.Instance);
 
     private sealed class OrderedDialogService : IAppDialogService
     {
@@ -271,6 +284,27 @@ public sealed class StartupDialogOrderingTests
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult(_outcome);
         }
+    }
+
+    private sealed class DownloadStoreRecoveryStub : IDownloadStoreRecovery
+    {
+        public Task BackupAndResetAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class ApplicationLifecycleStub : IApplicationLifecycle
+    {
+        public Task RequestShutdownAsync(CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
+        public Task ExitAsync(CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
+        public Task<bool> RestartAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(true);
     }
 
     private sealed class NavigationStub : IAppNavigationService

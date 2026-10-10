@@ -377,10 +377,15 @@
     <system:String x:Key="Error">错误</system:String>
     <system:String x:Key="DownloadRuntimeFailureTitle">下载系统无法启动</system:String>
     <system:String x:Key="DownloadRuntimeFailureMessage">应用仍可继续使用，但本次运行无法下载。下方是本机错误详情；GitHub 按钮会生成白名单错误诊断包并打开上传表单，请选择 ZIP 附件后提交。</system:String>
+    <system:String x:Key="DownloadStoreSchemaMismatchMessage">检测到下载资料库的结构与当前版本不一致，通常是跨版本更新、降级或混用不同版本造成的。为避免继续读写不完整的数据，需要先备份并重建下载资料库。重建后会清除下载队列、下载历史和续传状态，但不会删除已下载文件、登录信息或程序设置。</system:String>
     <system:String x:Key="CopyErrorDetails">复制错误信息</system:String>
     <system:String x:Key="ErrorDetailsCopied">错误信息已复制</system:String>
     <system:String x:Key="CreateGitHubIssue">在 GitHub 建立议题</system:String>
     <system:String x:Key="OpenGitHubIssueFailed">无法打开 GitHub，请手动前往项目议题页面。</system:String>
+    <system:String x:Key="ResetDownloadStore">重建下载资料库…</system:String>
+    <system:String x:Key="DownloadStoreResetConfirmation">将备份并重建下载资料库，然后重新启动应用。下载队列、下载历史及续传状态会被清除；已经下载的媒体文件、登录信息和程序设置不会被删除。是否继续？</system:String>
+    <system:String x:Key="DownloadStoreResetFailed">无法完成下载资料库的备份与重建。已有备份会保留，请复制错误信息并在 GitHub 建立议题。</system:String>
+    <system:String x:Key="DownloadStoreResetRestartFailed">下载资料库已经备份并重建，但无法自动重新启动。请手动关闭并重新打开 DownKyi。</system:String>
     <system:String x:Key="Allow">确定</system:String>
     <system:String x:Key="ActionUpdate">前往下载</system:String>
     <system:String x:Key="SkipCurrentVersion">跳过此版本</system:String>

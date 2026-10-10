@@ -1,4 +1,5 @@
 using DownKyi.Application.Desktop;
+using DownKyi.Application.Downloads;
 using DownKyi.Composition;
 using DownKyi.Core.Settings;
 using DownKyi.Desktop.Composition;
@@ -67,6 +68,9 @@ public sealed class LocalModuleCompositionTests
                 .OfType<DownloadBootstrapHostedService>()
                 .Single();
             Assert.Same(bootstrap, hostedBootstrap);
+
+            var downloadStore = host.Services.GetRequiredService<SqliteDownloadTaskStore>();
+            Assert.Same(downloadStore, host.Services.GetRequiredService<IDownloadStoreRecovery>());
 
             var batchOwner = host.Services.GetRequiredService<ContentDownloadBatchOwner>();
             Assert.Same(batchOwner, host.Services.GetRequiredService<IContentDownloadCoordinator>());
