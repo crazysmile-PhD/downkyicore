@@ -156,6 +156,32 @@ public sealed class DownloadAdmissionArchitectureTests
         Assert.DoesNotContain("一定在远端", copy, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void DuplicateOutputAndRecoveryUseTheSharedActionClaimsContract()
+    {
+        var contract = ReadSource(
+            "src", "DownKyi.Domain", "Downloads", "DownloadContentSelection.cs");
+        var coverage = ReadSource(
+            "src", "DownKyi.Desktop", "Services", "Download", "DownloadActionCoverage.cs");
+        var outputResolver = ReadSource(
+            "src", "DownKyi.Desktop", "Services", "Download", "DownloadOutputPathResolver.cs");
+        var reservations = ReadSource(
+            "src", "DownKyi.Infrastructure", "Downloads", "SqliteDownloadStoreOutputReservations.cs");
+        var recovery = ReadSource(
+            "src", "DownKyi.Infrastructure", "Downloads", "DownloadStoreReservationKeyCompatibility.cs");
+
+        Assert.Contains("record struct DownloadActionClaims", contract, StringComparison.Ordinal);
+        Assert.Contains("SubtractFrom(DownloadContentSelection", contract, StringComparison.Ordinal);
+        Assert.Contains("coveredClaims.SubtractFrom(requestedContent)", coverage, StringComparison.Ordinal);
+        Assert.Contains("requestedContent.ActionClaims", outputResolver, StringComparison.Ordinal);
+        Assert.Contains("existingContent.ActionClaims.Overlaps", reservations, StringComparison.Ordinal);
+        Assert.Contains("db.need_download_content", recovery, StringComparison.Ordinal);
+        Assert.Contains("claims.Overlaps(row.Claims)", recovery, StringComparison.Ordinal);
+        Assert.DoesNotContain("DownloadOutputClaims", coverage, StringComparison.Ordinal);
+        Assert.DoesNotContain("DownloadOutputClaims", reservations, StringComparison.Ordinal);
+        Assert.DoesNotContain("DownloadOutputClaims", recovery, StringComparison.Ordinal);
+    }
+
     private static string ReadSource(params string[] segments)
     {
         return File.ReadAllText(Path.Combine([RepositoryRoot, .. segments]));

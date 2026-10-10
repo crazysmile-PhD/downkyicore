@@ -257,7 +257,7 @@ internal sealed class SqliteDownloadStoreOutputReservations(SqliteDownloadStoreD
             var existingContent = DownloadStoreJson.ReadContentSelection(
                 reader.GetString(2),
                 "need_download_content");
-            if (DownloadOutputClaims.Overlap(existingContent, requestedContent))
+            if (existingContent.ActionClaims.Overlaps(requestedContent.ActionClaims))
             {
                 return true;
             }

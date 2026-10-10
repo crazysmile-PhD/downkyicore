@@ -24,7 +24,7 @@ internal static class DownloadActionCoverage
         }
 
         var existingContent = GetRecordedContent(existingItem);
-        var remaining = requestedContent;
+        var coveredClaims = DownloadActionClaims.None;
         if (requestedContent.HasMedia
             && MediaParametersMatch(
                 existingItem,
@@ -34,12 +34,7 @@ internal static class DownloadActionCoverage
             && (!requireUsableArtifacts
                 || CompletedOutputExists(existingItem, static key => key == "media")))
         {
-            remaining = remaining with
-            {
-                Audio = false,
-                Video = false,
-                MediaKind = DownloadMediaKind.None
-            };
+            coveredClaims = coveredClaims.Union(DownloadActionClaims.Media);
         }
 
         if (requestedContent.HasSubtitleAction
@@ -48,12 +43,7 @@ internal static class DownloadActionCoverage
                 || CompletedOutputExists(existingItem, static key =>
                     key.StartsWith("subtitle:", StringComparison.Ordinal))))
         {
-            remaining = remaining with
-            {
-                Subtitle = false,
-                SelectedSubtitleTrackIds = null,
-                DefaultSubtitleTrackId = null
-            };
+            coveredClaims = coveredClaims.Union(DownloadActionClaims.Subtitle);
         }
 
         if (requestedContent.Danmaku)
@@ -63,19 +53,8 @@ internal static class DownloadActionCoverage
                 existingContent,
                 requestedContent.DanmakuOutputFormat,
                 requireUsableArtifacts);
-            var requestedFormats = requestedContent.DanmakuOutputFormat
-                                   ?? AllDanmakuFormats;
-            var remainingFormats = requestedFormats & ~coveredFormats;
-            if (remainingFormats != requestedFormats)
-            {
-                remaining = remaining with
-                {
-                    Danmaku = remainingFormats != DownloadDanmakuOutputFormat.None,
-                    DanmakuOutputFormat = remainingFormats == DownloadDanmakuOutputFormat.None
-                        ? null
-                        : remainingFormats
-                };
-            }
+            coveredClaims = coveredClaims.Union(
+                DownloadActionClaims.FromDanmaku(coveredFormats));
         }
 
         if (requestedContent.Cover
@@ -84,10 +63,10 @@ internal static class DownloadActionCoverage
                 || CompletedOutputExists(existingItem, static key =>
                     key is "cover" or "page-cover")))
         {
-            remaining = remaining with { Cover = false };
+            coveredClaims = coveredClaims.Union(DownloadActionClaims.Cover);
         }
 
-        return remaining;
+        return coveredClaims.SubtractFrom(requestedContent);
     }
 
     private static bool HasSameOutputPath(DownloadBaseItem item, string requestedPath)

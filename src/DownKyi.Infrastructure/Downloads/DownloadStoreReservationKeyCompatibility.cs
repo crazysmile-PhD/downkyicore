@@ -1,5 +1,6 @@
 using DownKyi.Application.Downloads;
 using DownKyi.Application.Time;
+using DownKyi.Domain.Downloads;
 using Microsoft.Data.Sqlite;
 
 namespace DownKyi.Infrastructure.Downloads;
@@ -24,44 +25,28 @@ internal static class DownloadStoreReservationKeyCompatibility
         {
             var rows = await ReadRowsAsync(connection, transaction, cancellationToken)
                 .ConfigureAwait(false);
-            var occupied = new Dictionary<string, string>(StringComparer.Ordinal);
-            var targets = new Dictionary<string, string>(StringComparer.Ordinal);
-            var activeIds = new HashSet<string>(StringComparer.Ordinal);
+            var targetClaims = new Dictionary<string, List<DownloadActionClaims>>(
+                StringComparer.Ordinal);
             var changes = new List<(string Id, string Target)>();
             foreach (var row in rows)
             {
-                if (row.StoredKey is not null)
-                {
-                    occupied.Add(row.StoredKey, row.Id);
-                }
-
-                if (!row.IsActive)
-                {
-                    continue;
-                }
-
-                activeIds.Add(row.Id);
                 var target = CreateCurrentKey(row.Path);
-                if (!targets.TryAdd(target, row.Id))
+                if (!targetClaims.TryGetValue(target, out var existingClaims))
+                {
+                    existingClaims = [];
+                    targetClaims.Add(target, existingClaims);
+                }
+
+                if (existingClaims.Any(claims => claims.Overlaps(row.Claims)))
                 {
                     throw new InvalidOperationException(BlockedMessage);
                 }
+
+                existingClaims.Add(row.Claims);
 
                 if (!StringComparer.Ordinal.Equals(row.StoredKey, target))
                 {
                     changes.Add((row.Id, target));
-                }
-            }
-
-            // The UNIQUE index covers quarantine and any completed row retaining
-            // a non-NULL key, even when snapshots exclude those rows.
-            foreach (var (target, id) in targets)
-            {
-                if (occupied.TryGetValue(target, out var holder)
-                    && !StringComparer.Ordinal.Equals(holder, id)
-                    && !activeIds.Contains(holder))
-                {
-                    throw new InvalidOperationException(BlockedMessage);
                 }
             }
 
@@ -78,15 +63,6 @@ internal static class DownloadStoreReservationKeyCompatibility
                     await backupSource.OpenAsync(cancellationToken).ConfigureAwait(false);
                     await DownloadStoreSchemaLifecycle.BackupReservationKeysAsync(
                         backupSource, databasePath, clock, cancellationToken).ConfigureAwait(false);
-                }
-
-                // These intermediate NULLs are private to this transaction. The
-                // retained UNIQUE index guards the final state; legal writers
-                // cannot acquire a write transaction until after this commit.
-                foreach (var (id, _) in changes)
-                {
-                    await SetKeyAsync(connection, transaction, id, null, cancellationToken)
-                        .ConfigureAwait(false);
                 }
 
                 foreach (var (id, target) in changes)
@@ -113,14 +89,12 @@ internal static class DownloadStoreReservationKeyCompatibility
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            SELECT db.id, db.file_path, db.output_reservation_key,
-                   CASE WHEN dl.id IS NOT NULL AND q.record_id IS NULL THEN 1 ELSE 0 END
+            SELECT db.id, db.file_path, db.output_reservation_key, db.need_download_content
             FROM download_base db
-            LEFT JOIN downloading dl ON dl.id = db.id
+            INNER JOIN downloading dl ON dl.id = db.id
             LEFT JOIN download_quarantine q
                    ON q.source_table = 'downloading' AND q.record_id = db.id
-            WHERE db.output_reservation_key IS NOT NULL
-               OR (dl.id IS NOT NULL AND q.record_id IS NULL)
+            WHERE q.record_id IS NULL
             ORDER BY db.id
             """;
         using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -132,7 +106,9 @@ internal static class DownloadStoreReservationKeyCompatibility
                 reader.GetString(1),
                 await reader.IsDBNullAsync(2, cancellationToken).ConfigureAwait(false)
                     ? null : reader.GetString(2),
-                reader.GetInt32(3) != 0));
+                DownloadStoreJson.ReadContentSelection(
+                    reader.GetString(3),
+                    "need_download_content").ActionClaims));
         }
 
         return rows;
@@ -183,5 +159,9 @@ internal static class DownloadStoreReservationKeyCompatibility
         }
     }
 
-    private sealed record ReservationRow(string Id, string Path, string? StoredKey, bool IsActive);
+    private sealed record ReservationRow(
+        string Id,
+        string Path,
+        string? StoredKey,
+        DownloadActionClaims Claims);
 }

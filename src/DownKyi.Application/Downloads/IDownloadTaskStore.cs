@@ -43,7 +43,7 @@ public interface IDownloadTaskStore
                 DownloadOutputPathKey.Create(task.Output.BasePath, ignoreCase),
                 key,
                 StringComparison.Ordinal)
-            && DownloadOutputClaims.Overlap(task.Plan.RequestedContent, requestedContent));
+            && task.Plan.RequestedContent.ActionClaims.Overlaps(requestedContent.ActionClaims));
     }
 
     Task<bool> IsLegacyUpgradeAdmissionBlockedAsync(CancellationToken cancellationToken) =>

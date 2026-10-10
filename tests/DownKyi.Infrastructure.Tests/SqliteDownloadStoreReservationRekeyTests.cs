@@ -189,7 +189,49 @@ public sealed class SqliteDownloadStoreReservationRekeyTests : IDisposable
     }
 
     [Fact]
-    public async Task ReservationRekeyPreflightsQuarantinedUniqueOccupants()
+    public async Task CanonicalDisjointActionClaimsRecoverToTheSameReservationKey()
+    {
+        var composed = Path.Combine(_fixture.TempDirectory, "caf\u00e9-disjoint");
+        var decomposed = Path.Combine(_fixture.TempDirectory, "cafe\u0301-disjoint");
+        var cover = new DownloadContentSelection(false, false, false, false, true);
+        using (var first = _fixture.CreateStore())
+        {
+            Assert.True((await first.AddAsync(_fixture.CreatePausedTask("disjoint-media", composed),
+                TestContext.Current.CancellationToken)).IsSuccess);
+            Assert.True((await first.AddAsync(_fixture.CreatePausedTask(
+                "disjoint-cover",
+                requestedContent: cover), TestContext.Current.CancellationToken)).IsSuccess);
+        }
+
+        await _fixture.SetPathAndReservationKeyAsync(
+            "disjoint-cover",
+            decomposed,
+            DownloadOutputPathKey.Create(
+                decomposed,
+                !DownloadOutputPathKey.UsesCaseInsensitiveComparison));
+
+        using var reopened = _fixture.CreateStore();
+        await reopened.InitializeAsync(TestContext.Current.CancellationToken);
+
+        var expectedKey = DownloadOutputPathKey.Create(
+            composed,
+            DownloadOutputPathKey.UsesCaseInsensitiveComparison);
+        Assert.Equal(expectedKey, await _fixture.ReadReservationKeyAsync("disjoint-media"));
+        Assert.Equal(expectedKey, await _fixture.ReadReservationKeyAsync("disjoint-cover"));
+        Assert.Equal(2, (await reopened.GetUnfinishedAsync(
+            TestContext.Current.CancellationToken)).Count);
+        var subtitle = new DownloadContentSelection(false, false, false, true, false);
+        Assert.True((await reopened.AddAsync(_fixture.CreateQueuedTask(
+            "disjoint-subtitle",
+            decomposed,
+            subtitle), TestContext.Current.CancellationToken)).IsSuccess);
+        Assert.Single(Directory.GetFiles(
+            Path.Combine(_fixture.TempDirectory, "Backup"),
+            "download.db.reservation-keys-*.bak"));
+    }
+
+    [Fact]
+    public async Task QuarantinedRowsDoNotOwnActionClaimsDuringRekey()
     {
         var target = Path.Combine(_fixture.TempDirectory, "reserved-target");
         using (var first = _fixture.CreateStore())
@@ -203,12 +245,19 @@ public sealed class SqliteDownloadStoreReservationRekeyTests : IDisposable
         await _fixture.SetPathAndReservationKeyAsync("moving", target,
             DownloadOutputPathKey.Create(Path.Combine(_fixture.TempDirectory, "old"),
                 DownloadOutputPathKey.UsesCaseInsensitiveComparison));
-        using (var reopened = _fixture.CreateStore())
-        {
-            await Assert.ThrowsAsync<InvalidOperationException>(() =>
-                reopened.InitializeAsync(TestContext.Current.CancellationToken));
-        }
+        using var reopened = _fixture.CreateStore();
+        await reopened.InitializeAsync(TestContext.Current.CancellationToken);
 
+        Assert.Equal(
+            DownloadOutputPathKey.Create(
+                target,
+                DownloadOutputPathKey.UsesCaseInsensitiveComparison),
+            await _fixture.ReadReservationKeyAsync("moving"));
+        Assert.Equal("moving", Assert.Single(await reopened.GetUnfinishedAsync(
+            TestContext.Current.CancellationToken)).Id.Value);
+        Assert.Single(Directory.GetFiles(
+            Path.Combine(_fixture.TempDirectory, "Backup"),
+            "download.db.reservation-keys-*.bak"));
     }
 
     [Fact]

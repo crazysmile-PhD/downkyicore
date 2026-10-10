@@ -88,19 +88,20 @@ internal static class DownloadOutputPathResolver
         }
 
         var baseName = Path.GetFileName(basePath);
+        var requestedClaims = requestedContent.ActionClaims;
         return Directory.EnumerateFiles(directory).Any(file =>
         {
             var fileName = Path.GetFileName(file);
             var stem = Path.GetFileNameWithoutExtension(file);
             var extension = Path.GetExtension(file);
-            if (requestedContent.HasMedia
+            if (requestedClaims.Contains(DownloadActionClaim.Media)
                 && PlatformComparer.Equals(stem, baseName)
                 && MediaExtensions.Contains(extension))
             {
                 return true;
             }
 
-            if (requestedContent.HasSubtitleAction
+            if (requestedClaims.Contains(DownloadActionClaim.Subtitle)
                 && extension.Equals(".srt", StringComparison.OrdinalIgnoreCase)
                 && (PlatformComparer.Equals(stem, baseName)
                     || stem.StartsWith(baseName + "_", PlatformComparison)))
@@ -108,18 +109,15 @@ internal static class DownloadOutputPathResolver
                 return true;
             }
 
-            var requestedDanmaku = requestedContent.DanmakuOutputFormat
-                                    ?? AllDanmakuFormats;
-            if (requestedContent.Danmaku
-                && (requestedDanmaku.HasFlag(DownloadDanmakuOutputFormat.Ass)
+            if ((requestedClaims.Contains(DownloadActionClaim.DanmakuAss)
                     && PlatformComparer.Equals(fileName, baseName + ".ass")
-                    || requestedDanmaku.HasFlag(DownloadDanmakuOutputFormat.Xml)
+                    || requestedClaims.Contains(DownloadActionClaim.DanmakuXml)
                     && PlatformComparer.Equals(fileName, baseName + ".xml")))
             {
                 return true;
             }
 
-            return requestedContent.Cover
+            return requestedClaims.Contains(DownloadActionClaim.Cover)
                    && ImageExtensions.Contains(extension)
                    && (PlatformComparer.Equals(stem, baseName)
                        || stem.StartsWith(baseName + ".Cover", PlatformComparison));
@@ -169,6 +167,4 @@ internal static class DownloadOutputPathResolver
             ".gif",
             ".avif");
 
-    private const DownloadDanmakuOutputFormat AllDanmakuFormats =
-        DownloadDanmakuOutputFormat.Ass | DownloadDanmakuOutputFormat.Xml;
 }
