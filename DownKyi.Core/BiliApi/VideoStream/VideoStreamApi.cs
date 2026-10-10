@@ -625,16 +625,28 @@ public static partial class VideoStreamApi
                 var response = await request().ConfigureAwait(false);
                 return (response, select(response));
             }
-            catch (BilibiliApiResponseException exception) when (
-                attempt == 0
-                && !cancellationToken.IsCancellationRequested
-                && exception.Code is not null and not -403)
+            catch (Exception exception) when (ShouldRetryPlaybackQuery(
+                       exception,
+                       attempt,
+                       cancellationToken))
             {
-                // Transport retries and WBI -403 refresh belong to their existing owners.
                 continue;
             }
         }
     }
+
+    private static bool ShouldRetryPlaybackQuery(
+        Exception exception,
+        int attempt,
+        CancellationToken cancellationToken) =>
+        (attempt, cancellationToken.IsCancellationRequested, exception) switch
+        {
+            (0, false, BilibiliApiResponseException { Code: not -403 }) => true,
+            (0, false, BilibiliHttpRequestException) => false,
+            (0, false, HttpRequestException) => true,
+            (0, false, OperationCanceledException) => true,
+            _ => false
+        };
 
     internal static PlayUrl SelectPlayUrlPayload(
         PlayUrlOrigin response,
