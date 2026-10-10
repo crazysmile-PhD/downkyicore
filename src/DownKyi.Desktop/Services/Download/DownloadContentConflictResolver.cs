@@ -173,23 +173,16 @@ internal sealed class DownloadContentConflictResolver
     }
 }
 
-internal enum DownloadPageResolutionStatus
-{
-    Finalized,
-    NoAvailableContent,
-    SkippedByUser
-}
-
 internal sealed record DownloadPageResolution(
-    DownloadPageResolutionStatus Status,
-    DownloadContentSelection? FinalizedContent)
+    DownloadContentSelection? FinalizedContent,
+    DownloadPlanningStopReason? StopReason)
 {
     public static DownloadPageResolution Finalized(DownloadContentSelection content) =>
-        new(DownloadPageResolutionStatus.Finalized, content);
+        new(content, null);
 
     public static DownloadPageResolution NoAvailableContent() =>
-        new(DownloadPageResolutionStatus.NoAvailableContent, null);
+        new(null, DownloadPlanningStopReason.NoAvailableContent);
 
     public static DownloadPageResolution SkippedByUser() =>
-        new(DownloadPageResolutionStatus.SkippedByUser, null);
+        new(null, DownloadPlanningStopReason.SkippedByUser);
 }

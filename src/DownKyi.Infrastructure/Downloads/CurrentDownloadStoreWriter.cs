@@ -135,6 +135,18 @@ internal static class CurrentDownloadStoreWriter
     {
         await AddHistoryContentColumnAsync(connection, transaction, cancellationToken)
             .ConfigureAwait(false);
+        await EnsureIndexesAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
+        await CompleteAsync(connection, transaction, appliedAtUtc, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public static async Task UpgradeOutputReservationsAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        DateTimeOffset appliedAtUtc,
+        CancellationToken cancellationToken)
+    {
+        await EnsureIndexesAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
         await CompleteAsync(connection, transaction, appliedAtUtc, cancellationToken)
             .ConfigureAwait(false);
     }
@@ -460,7 +472,8 @@ internal static class CurrentDownloadStoreWriter
                 ON download_base(file_path);
             CREATE INDEX IF NOT EXISTS ix_download_base_file_path_nocase
                 ON download_base(file_path COLLATE NOCASE);
-            CREATE UNIQUE INDEX IF NOT EXISTS ux_download_base_output_reservation
+            DROP INDEX IF EXISTS ux_download_base_output_reservation;
+            CREATE INDEX IF NOT EXISTS ix_download_base_output_reservation
                 ON download_base(output_reservation_key)
                 WHERE output_reservation_key IS NOT NULL;
             """;

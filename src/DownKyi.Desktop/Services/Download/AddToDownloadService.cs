@@ -185,7 +185,7 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
         ArgumentException.ThrowIfNullOrEmpty(directory);
         ArgumentNullException.ThrowIfNull(finalizedDownload);
         cancellationToken.ThrowIfCancellationRequested();
-        if (finalizedDownload.Outcome != DownloadActionPlanOutcome.Ready)
+        if (finalizedDownload.StopReason != null)
         {
             return DownloadAddResult.FromPlan(finalizedDownload);
         }
@@ -195,6 +195,7 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
         var duplicateCount = 0;
         var failedCount = 0;
         Lazy<Task<List<DownloadedItem>>>? completedCandidates = null;
+        Lazy<Task<List<DownloadingItem>>>? activeCandidates = null;
         foreach (var finalizedSection in finalizedDownload.Sections)
         {
             foreach (var finalizedPage in finalizedSection.Pages)
@@ -213,18 +214,25 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
                     _duplicatePolicy.LoadCompletedCandidatesAsync(
                         settings.Basic.RepeatDownloadStrategy,
                         cancellationToken));
-                if (await _duplicatePolicy
-                    .ShouldSkipAsync(
+                activeCandidates ??= new Lazy<Task<List<DownloadingItem>>>(() =>
+                    _duplicatePolicy.LoadActiveCandidatesAsync(cancellationToken));
+                var duplicateResolution = await _duplicatePolicy
+                    .ResolveAsync(
                         downloadingItem,
                         settings.Basic.RepeatDownloadStrategy,
                         cancellationToken,
-                        completedCandidates)
-                    .ConfigureAwait(true))
+                        completedCandidates,
+                        activeCandidates)
+                    .ConfigureAwait(true);
+                if (duplicateResolution.IsFullyCovered)
                 {
                     duplicateCount++;
                     continue;
                 }
-                if (settings.Video.Content.GenerateMovieMetadata && finalizedPage.FinalizedContent.Video)
+                downloadingItem.DownloadBase.NeedDownloadContent =
+                    duplicateResolution.RemainingContent;
+                if (settings.Video.Content.GenerateMovieMetadata
+                    && duplicateResolution.RemainingContent.Video)
                 {
                     downloadingItem.Metadata = await _metadataBuilder
                         .BuildAsync(finalizedDownload.Video, page, cancellationToken)
@@ -236,7 +244,8 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
                         .AdmitAsync(
                             downloadingItem,
                             settings.Basic.RepeatFileAutoAddNumberSuffix,
-                            cancellationToken)
+                             cancellationToken,
+                             duplicateResolution.AllowExistingBasePath)
                         .ConfigureAwait(true);
                     addedCount++;
                 }
@@ -283,13 +292,7 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
         int failedCount,
         int skippedCount)
     {
-        var outcome = addedCount > 0
-            ? DownloadAddOutcome.Added
-            : duplicateCount > 0 && failedCount == 0
-                ? DownloadAddOutcome.AllDuplicate
-                : DownloadAddOutcome.Failed;
         return new DownloadAddResult(
-            outcome,
             addedCount,
             duplicateCount,
             failedCount,

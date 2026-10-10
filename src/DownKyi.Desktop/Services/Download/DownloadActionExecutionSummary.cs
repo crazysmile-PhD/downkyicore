@@ -79,15 +79,12 @@ internal enum DownloadActionResultStatus
 {
     Succeeded,
     NoResource,
-    Failed,
-    Skipped
+    Failed
 }
 
 internal sealed class DownloadActionExecutionSummary
 {
-    private readonly Dictionary<DownloadActionKind, DownloadActionResultStatus> _results =
-        Enum.GetValues<DownloadActionKind>()
-            .ToDictionary(static action => action, static _ => DownloadActionResultStatus.Skipped);
+    private readonly Dictionary<DownloadActionKind, DownloadActionResultStatus> _results = [];
 
     public IReadOnlyDictionary<DownloadActionKind, DownloadActionResultStatus> Results => _results;
 

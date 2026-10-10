@@ -238,11 +238,11 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
         if (UiState.VideoInfoView == null)
         {
             PublishAddResult(new Services.Download.DownloadAddResult(
-                Services.Download.DownloadAddOutcome.NoPagesSelected,
                 AddedCount: 0,
                 DuplicateCount: 0,
                 FailedCount: 0,
-                SkippedCount: 0));
+                SkippedCount: 0,
+                StopReason: Services.Download.DownloadPlanningStopReason.NoPagesSelected));
             return;
         }
 

@@ -29,12 +29,12 @@ public sealed class DownloadContentConflictResolverTests
 
             if (mask == 0)
             {
-                Assert.Equal(DownloadActionPlanOutcome.NoContentRequested, finalized.Outcome);
+                Assert.Equal(DownloadPlanningStopReason.NoContentRequested, finalized.StopReason);
                 Assert.Empty(Assert.Single(finalized.Sections).Pages);
             }
             else
             {
-                Assert.Equal(DownloadActionPlanOutcome.Ready, finalized.Outcome);
+                Assert.Null(finalized.StopReason);
                 var page = Assert.Single(Assert.Single(finalized.Sections).Pages);
                 Assert.Equal(requested, page.RequestedContent);
                 Assert.Equal(requested, page.FinalizedContent);
@@ -63,7 +63,7 @@ public sealed class DownloadContentConflictResolverTests
             requested,
             CreatePreparedDownload(CreatePage(video: false, audio: false)));
 
-        Assert.Equal(DownloadActionPlanOutcome.Ready, finalized.Outcome);
+        Assert.Null(finalized.StopReason);
         var page = Assert.Single(Assert.Single(finalized.Sections).Pages);
         Assert.Equal(requested, page.RequestedContent);
         Assert.Equal(
@@ -85,7 +85,7 @@ public sealed class DownloadContentConflictResolverTests
             DownloadContentSelection.None with { Video = true, Danmaku = true },
             CreatePreparedDownload(CreatePage(video: false, audio: false)));
 
-        Assert.Equal(DownloadActionPlanOutcome.SkippedByUser, finalized.Outcome);
+        Assert.Equal(DownloadPlanningStopReason.SkippedByUser, finalized.StopReason);
         Assert.Empty(Assert.Single(finalized.Sections).Pages);
         Assert.Single(dialogs.Requests);
     }
@@ -105,7 +105,7 @@ public sealed class DownloadContentConflictResolverTests
             CreatePreparedDownload(CreatePage(video: false, audio: false)));
 
         Assert.Equal(DownloadSubtitleTrackSelection.NoTracksSelected, requested.SubtitleTrackSelection);
-        Assert.Equal(DownloadActionPlanOutcome.NoContentRequested, finalized.Outcome);
+        Assert.Equal(DownloadPlanningStopReason.NoContentRequested, finalized.StopReason);
         Assert.Empty(Assert.Single(finalized.Sections).Pages);
     }
 

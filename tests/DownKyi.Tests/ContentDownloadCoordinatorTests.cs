@@ -369,7 +369,6 @@ public sealed class ContentDownloadCoordinatorTests
             AddCount++;
             afterAdd?.Invoke(AddCount);
             return Task.FromResult(new DownloadAddResult(
-                DownloadAddOutcome.Added,
                 AddedCount: 1,
                 DuplicateCount: 0,
                 FailedCount: 0,

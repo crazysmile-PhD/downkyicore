@@ -21,20 +21,27 @@ internal static class DownloadAddNotificationFormatter
                 result.SkippedCount);
         }
 
-        return result.Outcome switch
+        if (result.AddedCount > 0)
         {
-            DownloadAddOutcome.Added => FormatCounts(
+            return FormatCounts(
                 result.AddedCount,
                 result.DuplicateCount,
                 result.FailedCount,
-                result.SkippedCount),
-            DownloadAddOutcome.AllDuplicate =>
-                DictionaryResource.GetString("TipAlreadyToAddDownloading"),
-            DownloadAddOutcome.NoAvailableContent =>
+                result.SkippedCount);
+        }
+
+        if (result.IsAllDuplicate)
+        {
+            return DictionaryResource.GetString("TipAlreadyToAddDownloading");
+        }
+
+        return result.StopReason switch
+        {
+            DownloadPlanningStopReason.NoAvailableContent =>
                 DictionaryResource.GetString("TipAddDownloadingUnavailable"),
-            DownloadAddOutcome.SkippedByUser =>
+            DownloadPlanningStopReason.SkippedByUser =>
                 DictionaryResource.GetString("TipAddDownloadingSkippedByChoice"),
-            DownloadAddOutcome.Failed =>
+            _ when result.FailedCount > 0 =>
                 DictionaryResource.GetString("TipAddDownloadingFailed"),
             _ => DictionaryResource.GetString("TipAddDownloadingZero")
         };

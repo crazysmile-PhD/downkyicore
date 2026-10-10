@@ -285,7 +285,7 @@ public sealed class SqliteDownloadStoreReservationRekeyTests : IDisposable
     }
 
     [Fact]
-    public async Task ReservationRekeyHandlesKeySwapWithoutDroppingUniqueIndex()
+    public async Task ReservationRekeyHandlesKeySwapAndKeepsActionClaimIndex()
     {
         var firstPath = Path.Combine(_fixture.TempDirectory, "swap-a");
         var secondPath = Path.Combine(_fixture.TempDirectory, "swap-b");
@@ -313,10 +313,21 @@ public sealed class SqliteDownloadStoreReservationRekeyTests : IDisposable
         using var connection = await _fixture.OpenReadOnlyConnectionAsync();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT COUNT(*) FROM sqlite_master
-            WHERE type = 'index' AND name = 'ux_download_base_output_reservation'
+            SELECT name FROM sqlite_master
+            WHERE type = 'index'
+              AND name IN (
+                  'ux_download_base_output_reservation',
+                  'ix_download_base_output_reservation')
+            ORDER BY name
             """;
-        Assert.Equal(1L, await command.ExecuteScalarAsync(TestContext.Current.CancellationToken));
+        using var reader = await command.ExecuteReaderAsync(TestContext.Current.CancellationToken);
+        var names = new List<string>();
+        while (await reader.ReadAsync(TestContext.Current.CancellationToken))
+        {
+            names.Add(reader.GetString(0));
+        }
+
+        Assert.Equal(["ix_download_base_output_reservation"], names);
     }
 
     [Fact]

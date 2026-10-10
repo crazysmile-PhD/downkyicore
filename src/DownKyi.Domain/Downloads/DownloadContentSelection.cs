@@ -119,3 +119,42 @@ public sealed record DownloadContentSelection(
             : values.GetValueOrDefault(legacyAlias);
     }
 }
+
+public static class DownloadOutputClaims
+{
+    public static bool Overlap(
+        DownloadContentSelection first,
+        DownloadContentSelection second)
+    {
+        ArgumentNullException.ThrowIfNull(first);
+        ArgumentNullException.ThrowIfNull(second);
+        return first.HasMedia && second.HasMedia
+               || SubtitleClaimsOverlap(first, second)
+               || DanmakuClaimsOverlap(first, second)
+               || first.Cover && second.Cover;
+    }
+
+    private static bool SubtitleClaimsOverlap(
+        DownloadContentSelection first,
+        DownloadContentSelection second) =>
+        // Subtitle file names are language-derived, so distinct track ids do not prove
+        // distinct physical outputs.
+        first.HasSubtitleAction && second.HasSubtitleAction;
+
+    private static bool DanmakuClaimsOverlap(
+        DownloadContentSelection first,
+        DownloadContentSelection second)
+    {
+        if (!first.Danmaku || !second.Danmaku)
+        {
+            return false;
+        }
+
+        var firstFormat = first.DanmakuOutputFormat ?? AllDanmakuFormats;
+        var secondFormat = second.DanmakuOutputFormat ?? AllDanmakuFormats;
+        return (firstFormat & secondFormat) != DownloadDanmakuOutputFormat.None;
+    }
+
+    private const DownloadDanmakuOutputFormat AllDanmakuFormats =
+        DownloadDanmakuOutputFormat.Ass | DownloadDanmakuOutputFormat.Xml;
+}

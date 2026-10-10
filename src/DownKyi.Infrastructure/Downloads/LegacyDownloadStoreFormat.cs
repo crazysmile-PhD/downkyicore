@@ -7,6 +7,8 @@ internal enum LegacyDownloadStoreKind
     Stateful,
     Reserved,
     AdmissionSafe,
+    HistoryContentUpgrade,
+    HistoryContentUpgradeWithLegacyHistory,
     PreviousCurrent,
     PreviousCurrentWithLegacyHistory,
     CurrentWithLegacyHistory,
@@ -36,12 +38,18 @@ internal sealed record LegacyDownloadStoreFormat(
 
     public bool IsPreviousCurrent => Kind == LegacyDownloadStoreKind.PreviousCurrent;
 
+    public bool IsHistoryContentUpgrade => Kind == LegacyDownloadStoreKind.HistoryContentUpgrade;
+
+    public bool IsHistoryContentUpgradeWithLegacyHistory =>
+        Kind == LegacyDownloadStoreKind.HistoryContentUpgradeWithLegacyHistory;
+
     public bool IsPreviousCurrentWithLegacyHistory =>
         Kind == LegacyDownloadStoreKind.PreviousCurrentWithLegacyHistory;
 
     public bool RequiresLegacyHistoryRecovery =>
         Kind is LegacyDownloadStoreKind.CurrentWithLegacyHistory
-            or LegacyDownloadStoreKind.PreviousCurrentWithLegacyHistory;
+            or LegacyDownloadStoreKind.PreviousCurrentWithLegacyHistory
+            or LegacyDownloadStoreKind.HistoryContentUpgradeWithLegacyHistory;
 
     public bool IsSupported => Kind != LegacyDownloadStoreKind.Unsupported;
 }

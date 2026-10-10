@@ -7,9 +7,8 @@ using DownKyi.Domain.Downloads;
 
 namespace DownKyi.Services.Download;
 
-internal enum DownloadActionPlanOutcome
+internal enum DownloadPlanningStopReason
 {
-    Ready,
     NoContentRequested,
     NoPagesSelected,
     NoAvailableContent,
@@ -50,7 +49,7 @@ internal sealed class DownloadActionPlanner
         {
             return EmptyPlan(
                 preparedDownload,
-                DownloadActionPlanOutcome.NoContentRequested,
+                DownloadPlanningStopReason.NoContentRequested,
                 candidateCount: 0,
                 skippedCount: 0);
         }
@@ -80,27 +79,28 @@ internal sealed class DownloadActionPlanner
                         choices,
                         cancellationToken)
                     .ConfigureAwait(true);
-                switch (resolution.Status)
+                if (resolution.FinalizedContent is { } finalizedContent)
                 {
-                    case DownloadPageResolutionStatus.Finalized:
-                        var finalizedContent = resolution.FinalizedContent
-                            ?? throw new InvalidOperationException(
-                                "A finalized download page requires finalized content.");
-                        pages.Add(new FinalizedDownloadPage(
-                            page,
-                            page.VideoQuality,
-                            requestedContent,
-                            finalizedContent));
-                        break;
-                    case DownloadPageResolutionStatus.NoAvailableContent:
-                        unavailableCount++;
-                        break;
-                    case DownloadPageResolutionStatus.SkippedByUser:
-                        skippedCount++;
-                        break;
-                    default:
-                        throw new InvalidOperationException(
-                            $"Unsupported page resolution status: {resolution.Status:G}.");
+                    pages.Add(new FinalizedDownloadPage(
+                        page,
+                        page.VideoQuality,
+                        requestedContent,
+                        finalizedContent));
+                }
+                else
+                {
+                    switch (resolution.StopReason)
+                    {
+                        case DownloadPlanningStopReason.NoAvailableContent:
+                            unavailableCount++;
+                            break;
+                        case DownloadPlanningStopReason.SkippedByUser:
+                            skippedCount++;
+                            break;
+                        default:
+                            throw new InvalidOperationException(
+                                "A page resolution must contain finalized content or a stop reason.");
+                    }
                 }
             }
 
@@ -108,24 +108,24 @@ internal sealed class DownloadActionPlanner
         }
 
         var finalizedCount = candidateCount - unavailableCount - skippedCount;
-        var outcome = finalizedCount > 0
-            ? DownloadActionPlanOutcome.Ready
+        var stopReason = finalizedCount > 0
+            ? (DownloadPlanningStopReason?)null
             : candidateCount == 0
-                ? DownloadActionPlanOutcome.NoPagesSelected
+                ? DownloadPlanningStopReason.NoPagesSelected
                 : skippedCount > 0
-                    ? DownloadActionPlanOutcome.SkippedByUser
-                    : DownloadActionPlanOutcome.NoAvailableContent;
+                    ? DownloadPlanningStopReason.SkippedByUser
+                    : DownloadPlanningStopReason.NoAvailableContent;
         return new FinalizedDownload(
             preparedDownload.Video,
             sections,
-            outcome,
+            stopReason,
             candidateCount,
             skippedCount + unavailableCount);
     }
 
     private static FinalizedDownload EmptyPlan(
         PreparedDownload preparedDownload,
-        DownloadActionPlanOutcome outcome,
+        DownloadPlanningStopReason stopReason,
         int candidateCount,
         int skippedCount) =>
         new(
@@ -134,7 +134,7 @@ internal sealed class DownloadActionPlanner
                 .Select(static section =>
                     new FinalizedDownloadSection(section.Section, []))
                 .ToArray(),
-            outcome,
+            stopReason,
             candidateCount,
             skippedCount);
 }

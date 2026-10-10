@@ -76,12 +76,21 @@ public sealed class DownloadAddOwnerTests : IDisposable
             SelectedSubtitleTrackIds = [11]
         };
 
-        var shouldSkip = await context.Policy.ShouldSkipAsync(
+        var resolution = await context.Policy.ResolveAsync(
             CreateRequestedItem(mediaWithSubtitle),
             DownKyi.Core.Settings.RepeatDownloadStrategy.JumpOver,
             TestContext.Current.CancellationToken);
 
-        Assert.False(shouldSkip);
+        Assert.False(resolution.IsFullyCovered);
+        Assert.True(resolution.AllowExistingBasePath);
+        Assert.Equal(
+            mediaWithSubtitle with
+            {
+                Audio = false,
+                Video = false,
+                MediaKind = DownloadMediaKind.None
+            },
+            resolution.RemainingContent);
     }
 
     [Fact]
@@ -870,14 +879,16 @@ public sealed class DownloadAddOwnerTests : IDisposable
                 artifacts["subtitle:test"] = outputPath;
             }
 
-            if (finalizedContent.DanmakuOutputFormat?.HasFlag(
-                    DownloadDanmakuOutputFormat.Ass) == true)
+            var danmakuOutputFormat = finalizedContent.Danmaku
+                ? finalizedContent.DanmakuOutputFormat
+                  ?? DownloadDanmakuOutputFormat.Ass | DownloadDanmakuOutputFormat.Xml
+                : DownloadDanmakuOutputFormat.None;
+            if (danmakuOutputFormat.HasFlag(DownloadDanmakuOutputFormat.Ass))
             {
                 artifacts[DownloadArtifactWriter.DanmakuAssTransferKey] = outputPath;
             }
 
-            if (finalizedContent.DanmakuOutputFormat?.HasFlag(
-                    DownloadDanmakuOutputFormat.Xml) == true)
+            if (danmakuOutputFormat.HasFlag(DownloadDanmakuOutputFormat.Xml))
             {
                 artifacts[DownloadArtifactWriter.DanmakuXmlTransferKey] = outputPath;
             }

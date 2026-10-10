@@ -749,6 +749,42 @@ public sealed class VideoTagLoadingTests : IDisposable
         Assert.Equal(1, infoService.StreamRequestCount);
     }
 
+    [Fact]
+    public async Task MissingVideoQualityDoesNotRepeatAnIdenticalPlaybackQuery()
+    {
+        using var context = CreateContext(generateMetadata: false);
+        var page = CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]));
+        page.PlaybackAvailability = null;
+        page.VideoQuality = null;
+        var infoService = new PreparationInfoService(
+            new VideoInfoView { Title = "missing-quality" },
+            [new VideoSection { VideoPages = [page] }],
+            new PlayUrl
+            {
+                Dash = new PlayUrlDash
+                {
+                    Video =
+                    [
+                        new PlayUrlDashVideo
+                        {
+                            Id = 0,
+                            CodecId = 7,
+                            BaseAddress = "https://media.invalid/missing-quality.m4s"
+                        }
+                    ]
+                }
+            });
+
+        var prepared = await context.Service.PrepareAsync(
+            infoService,
+            DownloadContentSelection.None with { Video = true },
+            TestContext.Current.CancellationToken);
+
+        Assert.NotNull(prepared);
+        Assert.Equal(1, infoService.StreamRequestCount);
+        Assert.Null(page.VideoQuality);
+    }
+
     [Theory]
     [InlineData(false, true, false)]
     [InlineData(true, false, false)]

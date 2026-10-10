@@ -144,34 +144,5 @@ internal sealed class DownloadPreparationService
                 _logger);
         }
 
-        if (requestedContent.Video
-            && page.PlaybackAvailability?.Video.Count > 0
-            && page.VideoQuality == null)
-        {
-            await RetryMissingVideoQualityAsync(
-                videoInfoService,
-                page,
-                cancellationToken).ConfigureAwait(false);
-        }
-    }
-
-    private async Task RetryMissingVideoQualityAsync(
-        IInfoService videoInfoService,
-        VideoPage page,
-        CancellationToken cancellationToken)
-    {
-        var retry = 0;
-        while (page.VideoQuality == null && retry < 5)
-        {
-            var playUrl = await videoInfoService
-                .GetVideoStreamAsync(page, cancellationToken)
-                .ConfigureAwait(false);
-            VideoPagePlaybackMapper.ApplyPlayUrl(
-                playUrl,
-                page,
-                _settingsStore.Current,
-                _logger);
-            retry++;
-        }
     }
 }

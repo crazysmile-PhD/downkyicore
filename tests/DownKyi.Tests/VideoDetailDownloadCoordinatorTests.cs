@@ -193,7 +193,6 @@ public sealed class VideoDetailDownloadCoordinatorTests
             ReceivedDirectory = directory;
             ReceivedFinalizedDownload = finalizedDownload;
             return Task.FromResult(new DownloadAddResult(
-                DownloadAddOutcome.Added,
                 AddedCount: 1,
                 DuplicateCount: 0,
                 FailedCount: 0,

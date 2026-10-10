@@ -1,11 +1,9 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Desktop;
-using DownKyi.Application.Downloads;
 using DownKyi.Core.Settings;
 using DownKyi.Domain.Downloads;
 using DownKyi.ViewModels.DownloadManager;
@@ -28,48 +26,101 @@ internal sealed class DownloadDuplicatePolicy
         _dialogService = dialogService ?? throw new ArgumentNullException(nameof(dialogService));
     }
 
-    public async Task<bool> ShouldSkipAsync(
+    public async Task<DownloadDuplicateResolution> ResolveAsync(
         DownloadingItem requestedItem,
         RepeatDownloadStrategy strategy,
         CancellationToken cancellationToken,
-        Lazy<Task<List<DownloadedItem>>>? completedCandidates = null)
+        Lazy<Task<List<DownloadedItem>>>? completedCandidates = null,
+        Lazy<Task<List<DownloadingItem>>>? activeCandidates = null)
     {
         ArgumentNullException.ThrowIfNull(requestedItem);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (ShouldSkipActiveDownload(requestedItem))
+        var requestedContent = requestedItem.DownloadBase.NeedDownloadContent;
+        var remainingContent = requestedContent;
+        var hasCoveredContent = false;
+        var active = activeCandidates == null
+            ? await LoadActiveCandidatesAsync(cancellationToken).ConfigureAwait(true)
+            : await activeCandidates.Value.ConfigureAwait(true);
+        MergeLiveActiveCandidates(active);
+        foreach (var item in active)
         {
-            return true;
+            var reduced = DownloadActionCoverage.RemoveCoveredActions(
+                item,
+                requestedItem,
+                remainingContent,
+                requireUsableArtifacts: false);
+            hasCoveredContent |= reduced != remainingContent;
+            remainingContent = reduced;
+            if (!remainingContent.HasAnyRequestedAction)
+            {
+                return DownloadDuplicateResolution.FullyCovered(requestedContent);
+            }
+        }
+
+        if (strategy == RepeatDownloadStrategy.ReDownload)
+        {
+            return new DownloadDuplicateResolution(
+                requestedContent,
+                AllowExistingBasePath: false);
         }
 
         var candidates = completedCandidates == null
             ? await LoadCompletedCandidatesAsync(strategy, cancellationToken).ConfigureAwait(true)
             : await completedCandidates.Value.ConfigureAwait(true);
         MergeLiveCompletedCandidates(candidates);
-        foreach (var item in candidates)
+        foreach (var item in candidates.ToArray())
         {
-            if (!IsSameOutput(item, requestedItem))
+            var reduced = DownloadActionCoverage.RemoveCoveredActions(
+                item,
+                requestedItem,
+                remainingContent,
+                requireUsableArtifacts: true);
+            if (reduced == remainingContent)
             {
                 continue;
             }
 
-            var shouldSkip = strategy switch
-            {
-                RepeatDownloadStrategy.Ask => await ResolveAskAsync(item, cancellationToken)
-                    .ConfigureAwait(true),
-                RepeatDownloadStrategy.ReDownload => false,
-                RepeatDownloadStrategy.JumpOver => true,
-                _ => true
-            };
-            if (!shouldSkip)
+            if (strategy == RepeatDownloadStrategy.Ask
+                && await ShouldRedownloadAsync(item, cancellationToken).ConfigureAwait(true))
             {
                 candidates.Remove(item);
+                continue;
             }
 
-            return shouldSkip;
+            hasCoveredContent = true;
+            remainingContent = reduced;
+            if (!remainingContent.HasAnyRequestedAction)
+            {
+                return DownloadDuplicateResolution.FullyCovered(requestedContent);
+            }
         }
 
-        return false;
+        return new DownloadDuplicateResolution(
+            remainingContent,
+            AllowExistingBasePath: hasCoveredContent);
+    }
+
+    internal async Task<bool> ShouldSkipAsync(
+        DownloadingItem requestedItem,
+        RepeatDownloadStrategy strategy,
+        CancellationToken cancellationToken,
+        Lazy<Task<List<DownloadedItem>>>? completedCandidates = null,
+        Lazy<Task<List<DownloadingItem>>>? activeCandidates = null) =>
+        (await ResolveAsync(
+            requestedItem,
+            strategy,
+            cancellationToken,
+            completedCandidates,
+            activeCandidates).ConfigureAwait(true)).IsFullyCovered;
+
+    public async Task<List<DownloadingItem>> LoadActiveCandidatesAsync(
+        CancellationToken cancellationToken)
+    {
+        var startup = await _projectionStore
+            .GetDownloadingStateAsync(cancellationToken)
+            .ConfigureAwait(true);
+        return new List<DownloadingItem>(startup.Projections);
     }
 
     public async Task<List<DownloadedItem>> LoadCompletedCandidatesAsync(
@@ -88,22 +139,6 @@ internal sealed class DownloadDuplicatePolicy
         return new List<DownloadedItem>(downloadedItems);
     }
 
-    private bool ShouldSkipActiveDownload(
-        DownloadingItem requestedItem)
-    {
-        foreach (var item in _downloadLists.Downloading)
-        {
-            if (!IsSameOutput(item, requestedItem))
-            {
-                continue;
-            }
-
-            return true;
-        }
-
-        return false;
-    }
-
     private void MergeLiveCompletedCandidates(List<DownloadedItem> completedCandidates)
     {
         var candidateIds = completedCandidates
@@ -118,10 +153,24 @@ internal sealed class DownloadDuplicatePolicy
         }
     }
 
+    private void MergeLiveActiveCandidates(List<DownloadingItem> activeCandidates)
+    {
+        var candidateIds = activeCandidates
+            .Select(static item => item.DownloadBase.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        foreach (var item in _downloadLists.Downloading.ToArray())
+        {
+            if (candidateIds.Add(item.DownloadBase.Id))
+            {
+                activeCandidates.Add(item);
+            }
+        }
+    }
+
     private static string GetTaskId(DownloadedItem item) =>
         item.HistoryRecord?.Id.Value ?? item.DownloadBase.Id;
 
-    private async Task<bool> ResolveAskAsync(
+    private async Task<bool> ShouldRedownloadAsync(
         DownloadedItem item,
         CancellationToken cancellationToken)
     {
@@ -135,255 +184,25 @@ internal sealed class DownloadDuplicatePolicy
             cancellationToken).ConfigureAwait(true);
         if (result.Outcome != AppDialogOutcome.Accepted)
         {
-            return true;
+            return false;
         }
 
         await _projectionStore
             .RemoveDownloadedAsync(item, cancellationToken)
             .ConfigureAwait(true);
         _downloadLists.RemoveDownloaded(item);
-        return false;
-    }
-
-    private static bool IsSameOutput(
-        DownloadBaseItem item,
-        DownloadingItem requestedItem)
-    {
-        var downloadBase = item.DownloadBase;
-        var requestedBase = requestedItem.DownloadBase;
-        var existingContent = GetRecordedContent(item);
-        var requestedContent = requestedBase.NeedDownloadContent;
-        return downloadBase.Cid == requestedBase.Cid
-               && HasSameOutputPath(item, requestedBase.FilePath)
-               && MediaParametersMatch(item, requestedItem, existingContent, requestedContent)
-               && IndependentActionsMatch(item, existingContent, requestedContent)
-               && CompletedOutputsCover(item, requestedContent);
-    }
-
-    private static bool HasSameOutputPath(DownloadBaseItem item, string requestedPath)
-    {
-        if (string.IsNullOrWhiteSpace(requestedPath))
-        {
-            return false;
-        }
-
-        var existingPath = item.DownloadBase.FilePath;
-        if (!string.IsNullOrWhiteSpace(existingPath))
-        {
-            return string.Equals(
-                DownloadOutputPathKey.Create(
-                    existingPath,
-                    DownloadOutputPathKey.UsesCaseInsensitiveComparison),
-                DownloadOutputPathKey.Create(
-                    requestedPath,
-                    DownloadOutputPathKey.UsesCaseInsensitiveComparison),
-                StringComparison.Ordinal);
-        }
-
-        if (item is not DownloadedItem { HistoryRecord: { } history })
-        {
-            return false;
-        }
-
-        var requestedKey = DownloadOutputPathKey.Create(
-            requestedPath,
-            DownloadOutputPathKey.UsesCaseInsensitiveComparison);
-        return history.PublishedArtifacts.Values.Any(path =>
-        {
-            var artifactKey = DownloadOutputPathKey.Create(
-                path,
-                DownloadOutputPathKey.UsesCaseInsensitiveComparison);
-            return artifactKey.StartsWith(requestedKey + ".", StringComparison.Ordinal)
-                   || artifactKey.StartsWith(requestedKey + "_", StringComparison.Ordinal);
-        });
-    }
-
-    private static bool MediaParametersMatch(
-        DownloadBaseItem item,
-        DownloadingItem requestedItem,
-        DownloadContentSelection existingContent,
-        DownloadContentSelection requestedContent)
-    {
-        if (requestedContent.HasMedia
-            && (existingContent.Audio != requestedContent.Audio
-                || existingContent.Video != requestedContent.Video))
-        {
-            return false;
-        }
-
-        if (requestedContent.Video)
-        {
-            if (item.Resolution.Id != requestedItem.Resolution.Id
-                || item.VideoCodecName != requestedItem.VideoCodecName)
-            {
-                return false;
-            }
-
-            if (existingContent.MediaKind is { } existingKind
-                && requestedContent.MediaKind is { } requestedKind
-                && existingKind != requestedKind)
-            {
-                return false;
-            }
-        }
-
-        if (requestedContent.Audio
-            && (!requestedContent.Video || requestedContent.MediaKind != DownloadMediaKind.Durl)
-            && item.AudioCodec.Name != requestedItem.AudioCodec.Name)
-        {
-            return false;
-        }
-
         return true;
     }
 
-    private static bool IndependentActionsMatch(
-        DownloadBaseItem item,
-        DownloadContentSelection existingContent,
-        DownloadContentSelection requestedContent)
-    {
-        if (requestedContent.Subtitle
-            && (!existingContent.Subtitle
-                || !SubtitleSelectionMatches(existingContent, requestedContent)))
-        {
-            return false;
-        }
+}
 
-        if (requestedContent.Danmaku
-            && (!existingContent.Danmaku
-                || !DanmakuSelectionMatches(item, existingContent, requestedContent)))
-        {
-            return false;
-        }
+internal sealed record DownloadDuplicateResolution(
+    DownloadContentSelection RemainingContent,
+    bool AllowExistingBasePath)
+{
+    public bool IsFullyCovered => !RemainingContent.HasAnyRequestedAction;
 
-        return !requestedContent.Cover || existingContent.Cover;
-    }
-
-    private static bool CompletedOutputsCover(
-        DownloadBaseItem item,
-        DownloadContentSelection requestedContent)
-    {
-        var mediaExists = !requestedContent.HasMedia
-                          || CompletedOutputExists(item, static key => key == "media");
-        var subtitleExists = !requestedContent.Subtitle
-                             || CompletedOutputExists(item, static key =>
-                                 key.StartsWith("subtitle:", StringComparison.Ordinal));
-        var danmakuExists = !requestedContent.Danmaku
-                            || CompletedDanmakuOutputsExist(
-                                item,
-                                requestedContent.DanmakuOutputFormat);
-        var coverExists = !requestedContent.Cover
-                          || CompletedOutputExists(item, static key =>
-                              key is "cover" or "page-cover");
-        return mediaExists && subtitleExists && danmakuExists && coverExists;
-    }
-
-    private static bool SubtitleSelectionMatches(
-        DownloadContentSelection existing,
-        DownloadContentSelection requested)
-    {
-        if (existing.SubtitleTrackSelection != requested.SubtitleTrackSelection
-            || existing.DefaultSubtitleTrackId != requested.DefaultSubtitleTrackId)
-        {
-            return false;
-        }
-
-        return existing.SelectedSubtitleTrackIds is not { } existingIds
-               || requested.SelectedSubtitleTrackIds is { } requestedIds
-               && existingIds.ToHashSet().SetEquals(requestedIds);
-    }
-
-    private static bool DanmakuSelectionMatches(
-        DownloadBaseItem item,
-        DownloadContentSelection existing,
-        DownloadContentSelection requested)
-    {
-        var existingFormat = existing.DanmakuOutputFormat;
-        if (existingFormat == null && item is DownloadedItem { HistoryRecord: { } history })
-        {
-            var hasAss = history.PublishedArtifacts.ContainsKey(
-                DownloadArtifactWriter.DanmakuAssTransferKey);
-            var hasXml = history.PublishedArtifacts.ContainsKey(
-                DownloadArtifactWriter.DanmakuXmlTransferKey);
-            existingFormat = (hasAss, hasXml) switch
-            {
-                (true, true) => DownloadDanmakuOutputFormat.Ass | DownloadDanmakuOutputFormat.Xml,
-                (true, false) => DownloadDanmakuOutputFormat.Ass,
-                (false, true) => DownloadDanmakuOutputFormat.Xml,
-                _ => null
-            };
-        }
-
-        return existingFormat == requested.DanmakuOutputFormat;
-    }
-
-    private static bool CompletedDanmakuOutputsExist(
-        DownloadBaseItem item,
-        DownloadDanmakuOutputFormat? requestedFormat)
-    {
-        if (item is not DownloadedItem { HistoryRecord: { } history })
-        {
-            return true;
-        }
-
-        var requireAss = requestedFormat?.HasFlag(DownloadDanmakuOutputFormat.Ass) == true;
-        var requireXml = requestedFormat?.HasFlag(DownloadDanmakuOutputFormat.Xml) == true;
-        return (!requireAss || HasUsableArtifact(
-                   history,
-                   DownloadArtifactWriter.DanmakuAssTransferKey))
-               && (!requireXml || HasUsableArtifact(
-                   history,
-                   DownloadArtifactWriter.DanmakuXmlTransferKey));
-    }
-
-    private static bool CompletedOutputExists(
-        DownloadBaseItem item,
-        Func<string, bool> keyPredicate)
-    {
-        if (item is not DownloadedItem { HistoryRecord: { } history })
-        {
-            return true;
-        }
-
-        return history.PublishedArtifacts
-            .Where(artifact => keyPredicate(artifact.Key))
-            .Any(artifact => DownloadFileIntegrity.Check(artifact.Value).IsUsable);
-    }
-
-    private static bool HasUsableArtifact(
-        DownKyi.Application.Downloads.DownloadHistoryRecord history,
-        string key) =>
-        history.PublishedArtifacts.TryGetValue(key, out var path)
-        && DownloadFileIntegrity.Check(path).IsUsable;
-
-    private static DownloadContentSelection GetRecordedContent(DownloadBaseItem item)
-    {
-        var content = item.DownloadBase.NeedDownloadContent;
-        if (item is not DownloadedItem { HistoryRecord: { } history })
-        {
-            return content;
-        }
-
-        if (history.RequestedContent is { } finalizedContent)
-        {
-            return finalizedContent;
-        }
-
-        if (!history.PublishedArtifacts.TryGetValue("media", out var mediaPath))
-        {
-            return history.PublishedArtifacts.Count == 0
-                ? content
-                : content with { Audio = false, Video = false, MediaKind = DownloadMediaKind.None };
-        }
-
-        var extension = Path.GetExtension(mediaPath);
-        if (extension.Equals(".mp3", StringComparison.OrdinalIgnoreCase)
-            || extension.Equals(".aac", StringComparison.OrdinalIgnoreCase)
-            || extension.Equals(".flac", StringComparison.OrdinalIgnoreCase))
-        {
-            return content with { Audio = true, Video = false, MediaKind = DownloadMediaKind.Dash };
-        }
-
-        return content;
-    }
+    public static DownloadDuplicateResolution FullyCovered(
+        DownloadContentSelection requestedContent) =>
+        new(DownloadContentSelection.None, requestedContent.HasAnyRequestedAction);
 }

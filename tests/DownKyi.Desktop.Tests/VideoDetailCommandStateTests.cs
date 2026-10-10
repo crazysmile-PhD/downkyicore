@@ -233,7 +233,6 @@ public sealed class VideoDetailCommandStateTests
         var downloadCoordinator = new VideoDetailDownloadCoordinatorStub
         {
             Result = new DownloadAddResult(
-                DownloadAddOutcome.AllDuplicate,
                 AddedCount: 0,
                 DuplicateCount: 1,
                 FailedCount: 0,
@@ -295,11 +294,11 @@ public sealed class VideoDetailCommandStateTests
         var downloadCoordinator = new VideoDetailDownloadCoordinatorStub
         {
             Result = new DownloadAddResult(
-                DownloadAddOutcome.NoPagesSelected,
                 AddedCount: 0,
                 DuplicateCount: 0,
                 FailedCount: 0,
-                SkippedCount: 0)
+                SkippedCount: 0,
+                StopReason: DownloadPlanningStopReason.NoPagesSelected)
         };
         using var viewModel = new ViewVideoDetailViewModel(
             interactions,
@@ -686,7 +685,6 @@ public sealed class VideoDetailCommandStateTests
         public DownKyi.Presentation.VideoInfoView? LastVideoInfo { get; private set; }
 
         public DownloadAddResult? Result { get; init; } = new DownloadAddResult(
-            DownloadAddOutcome.Added,
             AddedCount: 1,
             DuplicateCount: 0,
             FailedCount: 0,

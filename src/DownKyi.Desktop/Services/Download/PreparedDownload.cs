@@ -286,6 +286,6 @@ internal sealed record FinalizedDownloadSection(
 internal sealed record FinalizedDownload(
     VideoInfoView Video,
     IReadOnlyList<FinalizedDownloadSection> Sections,
-    DownloadActionPlanOutcome Outcome,
+    DownloadPlanningStopReason? StopReason,
     int CandidateCount,
     int SkippedCount);
