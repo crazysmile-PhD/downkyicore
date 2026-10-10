@@ -38,8 +38,7 @@ internal static class DownloadActionCoverage
         if (requestedContent.HasSubtitleAction
             && SubtitleSelectionMatches(existingContent, requestedContent)
             && (!requireUsableArtifacts
-                || CompletedOutputExists(existingItem, static key =>
-                    key.StartsWith("subtitle:", StringComparison.Ordinal))))
+                || CompletedSubtitleOutputsExist(existingItem, requestedContent)))
         {
             coveredClaims = coveredClaims.Union(DownloadActionClaims.Subtitle);
         }
@@ -98,12 +97,11 @@ internal static class DownloadActionCoverage
         var existingPath = item.DownloadBase.FilePath;
         if (!string.IsNullOrWhiteSpace(existingPath))
         {
-            return string.Equals(
-                DownloadOutputPathKey.Create(
-                    physicalOutputPathResolver.ResolvePhysicalBasePath(existingPath),
-                    DownloadOutputPathKey.UsesCaseInsensitiveComparison),
-                requestedKey,
-                StringComparison.Ordinal);
+            return TryResolveHistoricalOutputKey(
+                       existingPath,
+                       physicalOutputPathResolver,
+                       out var existingKey)
+                   && string.Equals(existingKey, requestedKey, StringComparison.Ordinal);
         }
 
         if (item is not DownloadedItem { HistoryRecord: { } history })
@@ -113,12 +111,32 @@ internal static class DownloadActionCoverage
 
         return history.PublishedArtifacts.Values.Any(path =>
         {
-            var artifactKey = DownloadOutputPathKey.Create(
+            return TryResolveHistoricalOutputKey(
+                       path,
+                       physicalOutputPathResolver,
+                       out var artifactKey)
+                   && (artifactKey.StartsWith(requestedKey + ".", StringComparison.Ordinal)
+                       || artifactKey.StartsWith(requestedKey + "_", StringComparison.Ordinal));
+        });
+    }
+
+    private static bool TryResolveHistoricalOutputKey(
+        string path,
+        IPhysicalOutputPathResolver physicalOutputPathResolver,
+        out string key)
+    {
+        try
+        {
+            key = DownloadOutputPathKey.Create(
                 physicalOutputPathResolver.ResolvePhysicalBasePath(path),
                 DownloadOutputPathKey.UsesCaseInsensitiveComparison);
-            return artifactKey.StartsWith(requestedKey + ".", StringComparison.Ordinal)
-                   || artifactKey.StartsWith(requestedKey + "_", StringComparison.Ordinal);
-        });
+            return true;
+        }
+        catch (IOException)
+        {
+            key = string.Empty;
+            return false;
+        }
     }
 
     private static bool MediaParametersMatch(
@@ -239,6 +257,27 @@ internal static class DownloadActionCoverage
         return history.PublishedArtifacts
             .Where(artifact => keyPredicate(artifact.Key))
             .Any(artifact => DownloadFileIntegrity.Check(artifact.Value).IsUsable);
+    }
+
+    private static bool CompletedSubtitleOutputsExist(
+        DownloadBaseItem item,
+        DownloadContentSelection requestedContent)
+    {
+        if (requestedContent.SelectedSubtitleTrackIds is not { } selectedTrackIds)
+        {
+            return CompletedOutputExists(item, static key =>
+                key.StartsWith("subtitle:", StringComparison.Ordinal));
+        }
+
+        return selectedTrackIds
+                   .Distinct()
+                   .All(trackId => HasUsableArtifact(
+                       item,
+                       DownloadArtifactWriter.GetSubtitleArtifactKey(trackId)))
+               && (requestedContent.DefaultSubtitleTrackId == null
+                   || HasUsableArtifact(
+                       item,
+                       DownloadArtifactWriter.DefaultSubtitleArtifactKey));
     }
 
     private static bool HasUsableArtifact(DownloadBaseItem item, string key) =>

@@ -147,6 +147,58 @@ public sealed class DownloadAddOwnerTests : IDisposable
     }
 
     [Fact]
+    public async Task UnreachableHistoricalOutputPathDoesNotBlockANewAvailableTarget()
+    {
+        var content = DownloadContentSelection.None with
+        {
+            Video = true,
+            MediaKind = DownloadMediaKind.Dash
+        };
+        var history = DuplicatePolicyContext.CreateCompletedHistory(content);
+        var historicalPath = DownloadTaskProjectionMapper
+            .ToDownloadedItem(history)
+            .DownloadBase.FilePath;
+        var requested = CreateRequestedItem(content);
+        requested.DownloadBase.FilePath = Path.Combine(_directory, "available", "output");
+        var resolver = new DelegatePhysicalOutputPathResolver(path =>
+            path == historicalPath
+                ? throw new IOException("Historical drive is unavailable.")
+                : path);
+        using var context = new DuplicatePolicyContext(
+            AppDialogOutcome.Canceled,
+            history: history,
+            physicalOutputPathResolver: resolver);
+
+        var resolution = await context.Policy.ResolveAsync(
+            requested,
+            DownKyi.Core.Settings.RepeatDownloadStrategy.JumpOver,
+            TestContext.Current.CancellationToken);
+
+        Assert.False(resolution.IsFullyCovered);
+        Assert.Equal(content, resolution.RemainingContent);
+    }
+
+    [Fact]
+    public async Task UnreachableRequestedOutputPathStillFailsOwnerMatching()
+    {
+        var content = DownloadContentSelection.None with
+        {
+            Video = true,
+            MediaKind = DownloadMediaKind.Dash
+        };
+        using var context = new DuplicatePolicyContext(
+            AppDialogOutcome.Canceled,
+            history: DuplicatePolicyContext.CreateCompletedHistory(content),
+            physicalOutputPathResolver: new DelegatePhysicalOutputPathResolver(
+                _ => throw new IOException("Requested drive is unavailable.")));
+
+        await Assert.ThrowsAsync<IOException>(() => context.Policy.ResolveAsync(
+            CreateRequestedItem(content),
+            DownKyi.Core.Settings.RepeatDownloadStrategy.JumpOver,
+            TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
     public async Task ExistingMediaAndSubtitleTaskBlocksTheSameSubtitleOnlyOutput()
     {
         using var context = new DuplicatePolicyContext(AppDialogOutcome.Canceled);
@@ -216,6 +268,27 @@ public sealed class DownloadAddOwnerTests : IDisposable
             TestContext.Current.CancellationToken);
 
         Assert.True(shouldSkip);
+    }
+
+    [Fact]
+    public async Task CompletedSubtitleDuplicateRequiresEverySelectedTrackOutput()
+    {
+        var subtitle = DownloadContentSelection.None with
+        {
+            Subtitle = true,
+            SelectedSubtitleTrackIds = [11, 22]
+        };
+        using var context = DuplicatePolicyContext.WithCompleted(
+            AppDialogOutcome.Canceled,
+            content: subtitle,
+            completedSubtitleTrackIds: [11]);
+
+        var shouldSkip = await context.Policy.ShouldSkipAsync(
+            CreateRequestedItem(subtitle),
+            DownKyi.Core.Settings.RepeatDownloadStrategy.JumpOver,
+            TestContext.Current.CancellationToken);
+
+        Assert.False(shouldSkip);
     }
 
     [Fact]
@@ -858,7 +931,8 @@ public sealed class DownloadAddOwnerTests : IDisposable
         public DuplicatePolicyContext(
             AppDialogOutcome outcome,
             DownloadTask? current = null,
-            DownloadHistoryRecord? history = null)
+            DownloadHistoryRecord? history = null,
+            IPhysicalOutputPathResolver? physicalOutputPathResolver = null)
         {
             Store = new MutableDownloadTaskStore(current, history);
             var historyService = DownloadHistoryService.CreateForSharedStore(Store);
@@ -873,7 +947,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
             Policy = new DownloadDuplicatePolicy(
                 ListState,
                 _projectionStore,
-                new FileSystemPhysicalOutputPathResolver(),
+                physicalOutputPathResolver ?? new FileSystemPhysicalOutputPathResolver(),
                 Dialogs);
         }
 
@@ -892,9 +966,10 @@ public sealed class DownloadAddOwnerTests : IDisposable
         public static DuplicatePolicyContext WithCompleted(
             AppDialogOutcome outcome,
             bool loadUi = false,
-            DownloadContentSelection? content = null)
+            DownloadContentSelection? content = null,
+            IReadOnlyCollection<long>? completedSubtitleTrackIds = null)
         {
-            var history = CreateCompletedHistory(content);
+            var history = CreateCompletedHistory(content, completedSubtitleTrackIds);
             var context = new DuplicatePolicyContext(outcome, history: history);
             if (loadUi)
             {
@@ -906,7 +981,8 @@ public sealed class DownloadAddOwnerTests : IDisposable
         }
 
         public static DownloadHistoryRecord CreateCompletedHistory(
-            DownloadContentSelection? content = null)
+            DownloadContentSelection? content = null,
+            IReadOnlyCollection<long>? completedSubtitleTrackIds = null)
         {
             var draft = CreateDownloadingItem();
             if (content != null)
@@ -927,7 +1003,17 @@ public sealed class DownloadAddOwnerTests : IDisposable
 
             if (finalizedContent.Subtitle)
             {
-                artifacts["subtitle:test"] = outputPath;
+                if (finalizedContent.SelectedSubtitleTrackIds is { } selectedTrackIds)
+                {
+                    foreach (var trackId in completedSubtitleTrackIds ?? selectedTrackIds)
+                    {
+                        artifacts[DownloadArtifactWriter.GetSubtitleArtifactKey(trackId)] = outputPath;
+                    }
+                }
+                else
+                {
+                    artifacts["subtitle:test"] = outputPath;
+                }
             }
 
             var danmakuOutputFormat = finalizedContent.Danmaku
@@ -978,6 +1064,12 @@ public sealed class DownloadAddOwnerTests : IDisposable
             ArgumentNullException.ThrowIfNull(callback);
             PostCount++;
         }
+    }
+
+    private sealed class DelegatePhysicalOutputPathResolver(Func<string, string> resolve)
+        : IPhysicalOutputPathResolver
+    {
+        public string ResolvePhysicalBasePath(string logicalBasePath) => resolve(logicalBasePath);
     }
 
     private sealed class RecordingNotificationService : IUserNotificationService

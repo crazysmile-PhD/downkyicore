@@ -705,8 +705,8 @@ public sealed class DownloadArtifactStageTests
         if (kind == ArtifactKind.Subtitle)
         {
             Assert.Contains(DownloadArtifactWriter.DefaultSubtitleTransferKey, task.Plan.TransferFiles.Keys);
-            Assert.Contains(DownloadArtifactWriter.GetSubtitleTrackTransferKey(0), task.Plan.TransferFiles.Keys);
-            Assert.Contains(DownloadArtifactWriter.GetSubtitleTrackTransferKey(1), task.Plan.TransferFiles.Keys);
+            Assert.Contains(DownloadArtifactWriter.GetSubtitleTrackTransferKey(11), task.Plan.TransferFiles.Keys);
+            Assert.Contains(DownloadArtifactWriter.GetSubtitleTrackTransferKey(22), task.Plan.TransferFiles.Keys);
             Assert.Equal(3, context.GetPhysicalArtifactFiles().Length);
         }
     }
@@ -921,6 +921,40 @@ public sealed class DownloadArtifactStageTests
         Assert.True(result.IsSuccess, result.Error?.Message);
         Assert.False(File.Exists(context.Downloading.DownloadBase.FilePath + ".srt"));
         Assert.Equal(2, Assert.IsAssignableFrom<IReadOnlyList<string>>(context.Execution.SubtitleFiles).Count);
+        Assert.Equal(
+            [11L, 22L],
+            Assert.IsAssignableFrom<IReadOnlyDictionary<long, string>>(
+                    context.Execution.SubtitleTrackFiles)
+                .Keys
+                .Order()
+                .ToArray());
+    }
+
+    [Fact]
+    public async Task MissingSelectedSubtitleTrackFailsBeforeWritingAnySubtitle()
+    {
+        var client = new TestBilibiliApiClient
+        {
+            GetStringAsyncHandler = (request, _) => Task.FromResult(
+                request.RequestAddress.Contains("/x/player/wbi/v2", StringComparison.Ordinal)
+                    ? """
+                      {"code":0,"data":{"aid":1,"bvid":"BV1test","cid":2,"subtitle":{"subtitles":[{"id":11,"lan":"zh","lan_doc":"Chinese","subtitle_url":"//example.test/zh.json","type":0}]}}}
+                      """
+                    : """{"body":[{"from":0,"to":1,"content":"chinese"}]}""")
+        };
+        using var context = await ArtifactTestContext.CreateAsync(
+            client,
+            subtitle: true,
+            selectedSubtitleTrackIds: [11, 22]).ConfigureAwait(true);
+
+        var result = await context.Stage.ExecuteAsync(
+            context.Execution,
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("download.artifact.subtitle.missing-tracks", result.Error?.Code);
+        Assert.Empty(context.GetPhysicalArtifactFiles());
+        Assert.Empty((await context.GetTaskAsync().ConfigureAwait(true)).Plan.TransferFiles);
     }
 
     [Fact]
@@ -1146,7 +1180,7 @@ public sealed class DownloadArtifactStageTests
             {
                 GetStringAsyncHandler = (_, _) => Task.FromResult(request++ == 0
                     ? """
-                      {"code":0,"data":{"aid":1,"bvid":"BV1test","cid":2,"subtitle":{"subtitles":[{"lan":"zh","lan_doc":"Chinese","subtitle_url":"//example.test/subtitle-zh.json","type":0},{"lan":"en","lan_doc":"English","subtitle_url":"//example.test/subtitle-en.json","type":0}]}}}
+                      {"code":0,"data":{"aid":1,"bvid":"BV1test","cid":2,"subtitle":{"subtitles":[{"id":11,"lan":"zh","lan_doc":"Chinese","subtitle_url":"//example.test/subtitle-zh.json","type":0},{"id":22,"lan":"en","lan_doc":"English","subtitle_url":"//example.test/subtitle-en.json","type":0}]}}}
                       """
                     : """
                       {"body":[{"from":0,"to":1,"location":2,"content":"hello"}]}

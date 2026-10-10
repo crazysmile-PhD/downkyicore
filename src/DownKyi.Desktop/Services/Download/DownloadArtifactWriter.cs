@@ -243,7 +243,7 @@ internal sealed partial class DownloadArtifactWriter
         }
     }
 
-    public async Task<OperationResult<DownloadArtifactWriteResult>> DownloadSubtitleAsync(
+    public async Task<OperationResult<DownloadSubtitleWriteResult>> DownloadSubtitleAsync(
         DownloadTaskId taskId,
         DownloadTaskMetadata metadata,
         string outputBasePath,
@@ -255,7 +255,7 @@ internal sealed partial class DownloadArtifactWriter
         ArgumentException.ThrowIfNullOrWhiteSpace(outputBasePath);
         ArgumentNullException.ThrowIfNull(content);
 
-        var srtFiles = new List<string>();
+        var trackFiles = new Dictionary<long, string>();
         string? defaultSubtitleSource = null;
         Exception? parseFailure = null;
         IReadOnlyList<SubRipText> subRipTexts;
@@ -282,14 +282,14 @@ internal sealed partial class DownloadArtifactWriter
         catch (HttpRequestException e)
         {
             _logger.LogErrorMessage("Subtitle download failed.", e);
-            return ArtifactFailure(
+            return SubtitleArtifactFailure(
                 "download.artifact.subtitle.http",
                 "The requested subtitles could not be downloaded.");
         }
         catch (IOException e)
         {
             _logger.LogErrorMessage("Subtitle response could not be read.", e);
-            return ArtifactFailure(
+            return SubtitleArtifactFailure(
                 "download.artifact.subtitle.io",
                 "The requested subtitle response could not be read.");
         }
@@ -297,38 +297,57 @@ internal sealed partial class DownloadArtifactWriter
         if (parseFailure != null)
         {
             _logger.LogErrorMessage("Subtitle response parsing failed.", parseFailure);
-            return ArtifactFailure(
+            return SubtitleArtifactFailure(
                 "download.artifact.subtitle.parse",
                 "The requested subtitle response was invalid.");
+        }
+
+        var returnedTrackIds = subRipTexts.Select(static subtitle => subtitle.TrackId).ToHashSet();
+        if (returnedTrackIds.Count != subRipTexts.Count)
+        {
+            return SubtitleArtifactFailure(
+                "download.artifact.subtitle.duplicate-track",
+                "The subtitle response contained duplicate track identifiers.");
+        }
+
+        var hasMissingSelectedTrack = content.SelectedSubtitleTrackIds is { } selectedTrackIds
+                                      && !returnedTrackIds.SetEquals(selectedTrackIds);
+        var hasMissingDefaultTrack = content.DefaultSubtitleTrackId is { } defaultTrackId
+                                     && !returnedTrackIds.Contains(defaultTrackId);
+        if (hasMissingSelectedTrack || hasMissingDefaultTrack)
+        {
+            _logger.LogWarningMessage("Not all selected subtitle tracks were returned for the download task.");
+            return SubtitleArtifactFailure(
+                "download.artifact.subtitle.missing-tracks",
+                "One or more selected subtitle tracks were not available.");
         }
 
         if (subRipTexts.Count == 0)
         {
             _logger.LogWarningMessage("No usable subtitles were returned for the download task.");
-            return OperationResult.Success(DownloadArtifactWriteResult.NotAvailable());
+            return OperationResult.Success(DownloadSubtitleWriteResult.NotAvailable());
         }
 
-        for (var index = 0; index < subRipTexts.Count; index++)
+        foreach (var subRip in subRipTexts)
         {
-            var subRip = subRipTexts[index];
             var srtFile = $"{outputBasePath}_{subRip.LanDoc}.srt";
             try
             {
                 await _stateWriter.ClaimTransferFileAsync(
                     taskId,
-                    GetSubtitleTrackTransferKey(index),
+                    GetSubtitleTrackTransferKey(subRip.TrackId),
                     srtFile,
                     cancellationToken).ConfigureAwait(false);
                 await File.WriteAllTextAsync(srtFile, subRip.SrtString, cancellationToken).ConfigureAwait(false);
                 var integrity = DownloadFileIntegrity.Check(srtFile);
                 if (!integrity.IsUsable)
                 {
-                    return ArtifactFailure(
+                    return SubtitleArtifactFailure(
                         "download.artifact.subtitle.invalid",
                         "A requested subtitle output is missing or invalid.");
                 }
 
-                srtFiles.Add(srtFile);
+                trackFiles.Add(subRip.TrackId, srtFile);
                 if (subRip.TrackId == content.DefaultSubtitleTrackId)
                 {
                     defaultSubtitleSource = srtFile;
@@ -337,24 +356,27 @@ internal sealed partial class DownloadArtifactWriter
             catch (IOException e)
             {
                 _logger.LogErrorMessage("Subtitle download failed.", e);
-                return ArtifactFailure(
+                return SubtitleArtifactFailure(
                     "download.artifact.subtitle.io",
                     "A requested subtitle could not be written.");
             }
             catch (UnauthorizedAccessException e)
             {
                 _logger.LogErrorMessage("Subtitle download was denied.", e);
-                return ArtifactFailure(
+                return SubtitleArtifactFailure(
                     "download.artifact.subtitle.permission",
                     "Permission was denied while writing a requested subtitle.");
             }
         }
 
         var defaultSubtitleSourceToWrite = defaultSubtitleSource ??
-                                           (content.SelectedSubtitleTrackIds == null ? srtFiles[0] : null);
+                                           (content.SelectedSubtitleTrackIds == null
+                                               ? trackFiles.Values.First()
+                                               : null);
+        string? defaultSubtitleFile = null;
         if (defaultSubtitleSourceToWrite != null)
         {
-            var defaultSubtitleFile = $"{outputBasePath}.srt";
+            defaultSubtitleFile = $"{outputBasePath}.srt";
             try
             {
                 await _stateWriter.ClaimTransferFileAsync(
@@ -365,30 +387,30 @@ internal sealed partial class DownloadArtifactWriter
                 File.Copy(defaultSubtitleSourceToWrite, defaultSubtitleFile, true);
                 if (!DownloadFileIntegrity.Check(defaultSubtitleFile).IsUsable)
                 {
-                    return ArtifactFailure(
+                    return SubtitleArtifactFailure(
                         "download.artifact.subtitle.invalid",
                         "The default subtitle output is missing or invalid.");
                 }
-
-                srtFiles.Add(defaultSubtitleFile);
             }
             catch (IOException e)
             {
                 _logger.LogErrorMessage("Default subtitle write failed.", e);
-                return ArtifactFailure(
+                return SubtitleArtifactFailure(
                     "download.artifact.subtitle.io",
                     "The default subtitle could not be written.");
             }
             catch (UnauthorizedAccessException e)
             {
                 _logger.LogErrorMessage("Default subtitle write was denied.", e);
-                return ArtifactFailure(
+                return SubtitleArtifactFailure(
                     "download.artifact.subtitle.permission",
                     "Permission was denied while writing the default subtitle.");
             }
         }
 
-        return OperationResult.Success(DownloadArtifactWriteResult.Created(srtFiles));
+        return OperationResult.Success(DownloadSubtitleWriteResult.Created(
+            trackFiles,
+            defaultSubtitleFile));
     }
 
     public async Task<OperationResult<DownloadArtifactWriteResult>> GenerateNfoFileAsync(
@@ -459,6 +481,14 @@ internal sealed partial class DownloadArtifactWriter
         string message)
     {
         return OperationResult.Failure<DownloadArtifactWriteResult>(
+            OperationError.Unexpected(code, message));
+    }
+
+    private static OperationResult<DownloadSubtitleWriteResult> SubtitleArtifactFailure(
+        string code,
+        string message)
+    {
+        return OperationResult.Failure<DownloadSubtitleWriteResult>(
             OperationError.Unexpected(code, message));
     }
 
