@@ -1407,7 +1407,7 @@ public sealed class PlayUrlEnvelopeContractTests
                 cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Contains("preview-only", failure.Message, StringComparison.Ordinal);
-        Assert.Equal(1, requests);
+        Assert.Equal(2, requests);
     }
 
     [Fact]
@@ -1486,7 +1486,7 @@ public sealed class PlayUrlEnvelopeContractTests
     }
 
     [Fact]
-    public async Task OrdinaryVideoEndpointPreservesTransportFailureForTransportOwner()
+    public async Task OrdinaryVideoEndpointRetriesTransportFailureOnceAndPreservesFailure()
     {
         var requests = 0;
         var client = new StubBilibiliApiClient((_, _) =>
@@ -1503,6 +1503,110 @@ public sealed class PlayUrlEnvelopeContractTests
                 "BV1fixture",
                 2,
                 cancellationToken: TestContext.Current.CancellationToken));
+
+        Assert.Equal(2, requests);
+    }
+
+    [Fact]
+    public async Task OrdinaryVideoEndpointPreservesTransportOwnerTerminalFailure()
+    {
+        var requests = 0;
+        var client = new StubBilibiliApiClient((_, _) =>
+        {
+            requests++;
+            return Task.FromException<string>(new BilibiliHttpRequestException(
+                "transport retries exhausted",
+                BilibiliHttpFailureKind.Transport));
+        });
+
+        var failure = await Assert.ThrowsAsync<BilibiliHttpRequestException>(() =>
+            client.GetVideoPlayUrlAsync(
+                Keys,
+                1702204169,
+                1,
+                "BV1fixture",
+                2,
+                cancellationToken: TestContext.Current.CancellationToken));
+
+        Assert.Equal(BilibiliHttpFailureKind.Transport, failure.FailureKind);
+        Assert.Equal(1, requests);
+    }
+
+    [Fact]
+    public async Task OrdinaryVideoEndpointRecoversFromTransientTransportFailure()
+    {
+        var requests = 0;
+        var body = await File.ReadAllTextAsync(
+            Path.Combine(SampleDirectory, "playurl-video-data.json"),
+            TestContext.Current.CancellationToken);
+        var client = new StubBilibiliApiClient((_, _) =>
+        {
+            requests++;
+            return requests == 1
+                ? Task.FromException<string>(new HttpRequestException("temporary"))
+                : Task.FromResult(body);
+        });
+
+        var playback = await client.GetVideoPlayUrlAsync(
+            Keys,
+            1702204169,
+            1,
+            "BV1fixture",
+            2,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(80, Assert.Single(playback!.Dash.Video).Id);
+        Assert.Equal(2, requests);
+    }
+
+    [Fact]
+    public async Task OrdinaryVideoEndpointRetriesNonCallerTimeoutOnce()
+    {
+        var requests = 0;
+        var body = await File.ReadAllTextAsync(
+            Path.Combine(SampleDirectory, "playurl-video-data.json"),
+            TestContext.Current.CancellationToken);
+        var timeoutToken = new CancellationToken(canceled: true);
+        var client = new StubBilibiliApiClient((_, _) =>
+        {
+            requests++;
+            return requests == 1
+                ? Task.FromCanceled<string>(timeoutToken)
+                : Task.FromResult(body);
+        });
+
+        var playback = await client.GetVideoPlayUrlAsync(
+            Keys,
+            1702204169,
+            1,
+            "BV1fixture",
+            2,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(80, Assert.Single(playback!.Dash.Video).Id);
+        Assert.Equal(2, requests);
+    }
+
+    [Fact]
+    public async Task OrdinaryVideoEndpointDoesNotRetryCallerCancellation()
+    {
+        var requests = 0;
+        using var caller = new CancellationTokenSource();
+        var client = new StubBilibiliApiClient(async (_, _) =>
+        {
+            requests++;
+            await caller.CancelAsync().ConfigureAwait(false);
+            return await Task.FromCanceled<string>(caller.Token).ConfigureAwait(false);
+        });
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            client.GetVideoPlayUrlAsync(
+                Keys,
+                1702204169,
+                1,
+                "BV1fixture",
+                2,
+                cancellationToken: caller.Token));
 
         Assert.Equal(1, requests);
     }
