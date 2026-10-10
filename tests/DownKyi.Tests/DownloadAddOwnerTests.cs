@@ -19,20 +19,18 @@ public sealed class DownloadAddOwnerTests : IDisposable
         Guid.NewGuid().ToString("N"));
 
     [Fact]
-    public async Task ActiveDuplicateIsSkippedAndReported()
+    public async Task ActiveDuplicateIsSkippedWithoutOwningUiNotification()
     {
         using var context = new DuplicatePolicyContext(AppDialogOutcome.Canceled);
         context.ListState.AddDownloading(CreateDownloadingItem());
 
         var shouldSkip = await context.Policy.ShouldSkipAsync(
-            CreatePage(),
-            CreateVideoQuality(),
-            DownloadContentSelection.All,
+            CreateRequestedItem(DownloadContentSelection.All),
             DownKyi.Core.Settings.RepeatDownloadStrategy.ReDownload,
             TestContext.Current.CancellationToken);
 
         Assert.True(shouldSkip);
-        Assert.Single(context.Notifications.Messages);
+        Assert.Empty(context.Notifications.Messages);
         Assert.Equal(0, context.Dialogs.ShowCount);
     }
 
@@ -51,14 +49,147 @@ public sealed class DownloadAddOwnerTests : IDisposable
         page.AudioQualityFormat = "高质量";
 
         var shouldSkip = await context.Policy.ShouldSkipAsync(
-            page,
-            null,
-            DownloadContentSelection.None with { Audio = true },
+            CreateRequestedItem(
+                DownloadContentSelection.None with { Audio = true },
+                page,
+                videoQuality: null),
             DownKyi.Core.Settings.RepeatDownloadStrategy.JumpOver,
             TestContext.Current.CancellationToken);
 
         Assert.False(shouldSkip);
         Assert.Empty(context.Notifications.Messages);
+    }
+
+    [Fact]
+    public async Task ExistingMediaOnlyTaskDoesNotBlockAddingSubtitleToTheSameOutput()
+    {
+        using var context = new DuplicatePolicyContext(AppDialogOutcome.Canceled);
+        var mediaOnly = CreateRequestedItem(DownloadContentSelection.None with
+        {
+            Video = true,
+            MediaKind = DownloadMediaKind.Dash
+        });
+        context.ListState.AddDownloading(mediaOnly);
+        var mediaWithSubtitle = mediaOnly.DownloadBase.NeedDownloadContent with
+        {
+            Subtitle = true,
+            SelectedSubtitleTrackIds = [11]
+        };
+
+        var shouldSkip = await context.Policy.ShouldSkipAsync(
+            CreateRequestedItem(mediaWithSubtitle),
+            DownKyi.Core.Settings.RepeatDownloadStrategy.JumpOver,
+            TestContext.Current.CancellationToken);
+
+        Assert.False(shouldSkip);
+    }
+
+    [Fact]
+    public async Task ExistingMediaAndSubtitleTaskBlocksTheSameSubtitleOnlyOutput()
+    {
+        using var context = new DuplicatePolicyContext(AppDialogOutcome.Canceled);
+        var mediaAndSubtitle = DownloadContentSelection.None with
+        {
+            Video = true,
+            Subtitle = true,
+            MediaKind = DownloadMediaKind.Dash,
+            SelectedSubtitleTrackIds = [11]
+        };
+        context.ListState.AddDownloading(CreateRequestedItem(mediaAndSubtitle));
+        var subtitleOnly = DownloadContentSelection.None with
+        {
+            Subtitle = true,
+            SelectedSubtitleTrackIds = [11]
+        };
+
+        var shouldSkip = await context.Policy.ShouldSkipAsync(
+            CreateRequestedItem(subtitleOnly),
+            DownKyi.Core.Settings.RepeatDownloadStrategy.JumpOver,
+            TestContext.Current.CancellationToken);
+
+        Assert.True(shouldSkip);
+    }
+
+    [Fact]
+    public async Task SubtitleDuplicateRequiresTheSameTrackSelection()
+    {
+        using var context = new DuplicatePolicyContext(AppDialogOutcome.Canceled);
+        var existing = DownloadContentSelection.None with
+        {
+            Subtitle = true,
+            SelectedSubtitleTrackIds = [11, 22],
+            DefaultSubtitleTrackId = 11
+        };
+        context.ListState.AddDownloading(CreateRequestedItem(existing));
+
+        Assert.True(await context.Policy.ShouldSkipAsync(
+            CreateRequestedItem(existing with { SelectedSubtitleTrackIds = [22, 11] }),
+            DownKyi.Core.Settings.RepeatDownloadStrategy.JumpOver,
+            TestContext.Current.CancellationToken));
+        Assert.False(await context.Policy.ShouldSkipAsync(
+            CreateRequestedItem(existing with
+            {
+                SelectedSubtitleTrackIds = [22],
+                DefaultSubtitleTrackId = 22
+            }),
+            DownKyi.Core.Settings.RepeatDownloadStrategy.JumpOver,
+            TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task CompletedSubtitleDuplicateRequiresAnExistingPublishedTrackOutput()
+    {
+        var subtitle = DownloadContentSelection.None with
+        {
+            Subtitle = true,
+            SelectedSubtitleTrackIds = [11]
+        };
+        using var context = DuplicatePolicyContext.WithCompleted(
+            AppDialogOutcome.Canceled,
+            content: subtitle);
+
+        var shouldSkip = await context.Policy.ShouldSkipAsync(
+            CreateRequestedItem(subtitle),
+            DownKyi.Core.Settings.RepeatDownloadStrategy.JumpOver,
+            TestContext.Current.CancellationToken);
+
+        Assert.True(shouldSkip);
+    }
+
+    [Fact]
+    public async Task DanmakuDuplicateRequiresTheSameOutputFormat()
+    {
+        using var context = new DuplicatePolicyContext(AppDialogOutcome.Canceled);
+        var ass = DownloadContentSelection.None with
+        {
+            Danmaku = true,
+            DanmakuOutputFormat = DownloadDanmakuOutputFormat.Ass
+        };
+        context.ListState.AddDownloading(CreateRequestedItem(ass));
+
+        Assert.True(await context.Policy.ShouldSkipAsync(
+            CreateRequestedItem(ass),
+            DownKyi.Core.Settings.RepeatDownloadStrategy.JumpOver,
+            TestContext.Current.CancellationToken));
+        Assert.False(await context.Policy.ShouldSkipAsync(
+            CreateRequestedItem(ass with { DanmakuOutputFormat = DownloadDanmakuOutputFormat.Xml }),
+            DownKyi.Core.Settings.RepeatDownloadStrategy.JumpOver,
+            TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task CoverOnlyTaskIsDetectedAsDuplicateByActionAndOutputPath()
+    {
+        using var context = new DuplicatePolicyContext(AppDialogOutcome.Canceled);
+        var cover = DownloadContentSelection.None with { Cover = true };
+        context.ListState.AddDownloading(CreateRequestedItem(cover));
+
+        var shouldSkip = await context.Policy.ShouldSkipAsync(
+            CreateRequestedItem(cover),
+            DownKyi.Core.Settings.RepeatDownloadStrategy.JumpOver,
+            TestContext.Current.CancellationToken);
+
+        Assert.True(shouldSkip);
     }
 
     [Fact]
@@ -75,9 +206,10 @@ public sealed class DownloadAddOwnerTests : IDisposable
         page.AudioQualityFormat = "高质量";
 
         var shouldSkip = await context.Policy.ShouldSkipAsync(
-            page,
-            null,
-            DownloadContentSelection.None with { Audio = true },
+            CreateRequestedItem(
+                DownloadContentSelection.None with { Audio = true },
+                page,
+                videoQuality: null),
             DownKyi.Core.Settings.RepeatDownloadStrategy.JumpOver,
             TestContext.Current.CancellationToken);
 
@@ -97,9 +229,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
             content: videoOnly);
 
         var shouldSkip = await context.Policy.ShouldSkipAsync(
-            CreatePage(),
-            CreateVideoQuality(),
-            videoOnly,
+            CreateRequestedItem(videoOnly),
             DownKyi.Core.Settings.RepeatDownloadStrategy.JumpOver,
             TestContext.Current.CancellationToken);
 
@@ -118,9 +248,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
                 TestContext.Current.CancellationToken));
 
         var shouldSkip = await context.Policy.ShouldSkipAsync(
-            CreatePage(),
-            CreateVideoQuality(),
-            DownloadContentSelection.All,
+            CreateRequestedItem(DownloadContentSelection.All),
             DownKyi.Core.Settings.RepeatDownloadStrategy.JumpOver,
             TestContext.Current.CancellationToken,
             completedCandidates);
@@ -136,9 +264,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
         using var context = DuplicatePolicyContext.WithCompleted(AppDialogOutcome.Accepted);
 
         var shouldSkip = await context.Policy.ShouldSkipAsync(
-            CreatePage(),
-            CreateVideoQuality(),
-            DownloadContentSelection.All,
+            CreateRequestedItem(DownloadContentSelection.All),
             DownKyi.Core.Settings.RepeatDownloadStrategy.JumpOver,
             TestContext.Current.CancellationToken);
 
@@ -156,9 +282,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
         using var context = DuplicatePolicyContext.WithCompleted(AppDialogOutcome.Canceled);
 
         var shouldSkip = await context.Policy.ShouldSkipAsync(
-            CreatePage(),
-            CreateVideoQuality(),
-            DownloadContentSelection.All,
+            CreateRequestedItem(DownloadContentSelection.All),
             DownKyi.Core.Settings.RepeatDownloadStrategy.ReDownload,
             TestContext.Current.CancellationToken);
 
@@ -176,9 +300,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
         using var context = DuplicatePolicyContext.WithCompleted(AppDialogOutcome.Canceled);
 
         var shouldSkip = await context.Policy.ShouldSkipAsync(
-            CreatePage(),
-            CreateVideoQuality(),
-            DownloadContentSelection.All,
+            CreateRequestedItem(DownloadContentSelection.All),
             DownKyi.Core.Settings.RepeatDownloadStrategy.Ask,
             TestContext.Current.CancellationToken);
 
@@ -200,9 +322,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
         var historyId = context.Store.History.Id;
 
         var shouldSkip = await context.Policy.ShouldSkipAsync(
-            CreatePage(),
-            CreateVideoQuality(),
-            DownloadContentSelection.All,
+            CreateRequestedItem(DownloadContentSelection.All),
             DownKyi.Core.Settings.RepeatDownloadStrategy.Ask,
             TestContext.Current.CancellationToken);
 
@@ -228,9 +348,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
                 TestContext.Current.CancellationToken));
 
         var shouldSkip = await context.Policy.ShouldSkipAsync(
-            CreatePage(),
-            CreateVideoQuality(),
-            DownloadContentSelection.All,
+            CreateRequestedItem(DownloadContentSelection.All),
             DownKyi.Core.Settings.RepeatDownloadStrategy.Ask,
             TestContext.Current.CancellationToken,
             completedCandidates);
@@ -254,9 +372,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
             DuplicatePolicyContext.CreateCompletedHistory()));
 
         var shouldSkip = await context.Policy.ShouldSkipAsync(
-            CreatePage(),
-            CreateVideoQuality(),
-            DownloadContentSelection.All,
+            CreateRequestedItem(DownloadContentSelection.All),
             DownKyi.Core.Settings.RepeatDownloadStrategy.JumpOver,
             TestContext.Current.CancellationToken,
             completedCandidates);
@@ -275,9 +391,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
             context.Policy.ShouldSkipAsync(
-                CreatePage(),
-                CreateVideoQuality(),
-                DownloadContentSelection.All,
+                CreateRequestedItem(DownloadContentSelection.All),
                 DownKyi.Core.Settings.RepeatDownloadStrategy.Ask,
                 cancellation.Token));
         Assert.Equal(0, context.Dialogs.ShowCount);
@@ -366,7 +480,11 @@ public sealed class DownloadAddOwnerTests : IDisposable
             item.Downloading.PlayStreamType);
         Assert.Equal(DownKyi.Models.DownloadStatus.NotStarted, item.Downloading.DownloadStatus);
         Assert.Equal(
-            content with { MediaKind = DownloadMediaKind.Dash },
+            content with
+            {
+                MediaKind = DownloadMediaKind.Dash,
+                DanmakuOutputFormat = DownloadDanmakuOutputFormat.Ass
+            },
             item.DownloadBase.NeedDownloadContent);
         Assert.StartsWith(_directory, item.DownloadBase.FilePath, StringComparison.Ordinal);
         Assert.Contains("section", item.DownloadBase.FilePath, StringComparison.Ordinal);
@@ -625,7 +743,9 @@ public sealed class DownloadAddOwnerTests : IDisposable
                 Avid = 42,
                 Bvid = "BV1test",
                 Cid = 84,
-                FilePath = "video",
+                FilePath = Path.Combine(
+                    Path.GetDirectoryName(typeof(DownloadAddOwnerTests).Assembly.Location)!,
+                    Path.GetFileNameWithoutExtension(typeof(DownloadAddOwnerTests).Assembly.Location)),
                 Name = "page",
                 Resolution = new DownKyi.Core.BiliApi.BiliUtils.Quality
                 {
@@ -640,6 +760,35 @@ public sealed class DownloadAddOwnerTests : IDisposable
                 PlayStreamType = DownKyi.Core.BiliApi.VideoStream.PlayStreamType.Video
             }
         };
+    }
+
+    private static DownloadingItem CreateRequestedItem(
+        DownloadContentSelection content,
+        VideoPage? page = null,
+        VideoQuality? videoQuality = null)
+    {
+        page ??= CreatePage();
+        videoQuality ??= page.VideoQuality;
+        var item = CreateDownloadingItem();
+        item.DownloadBase.Cid = page.Cid;
+        item.DownloadBase.NeedDownloadContent = content;
+        item.DownloadBase.Resolution = content.Video && videoQuality != null
+            ? new DownKyi.Core.BiliApi.BiliUtils.Quality
+            {
+                Id = videoQuality.Quality,
+                Name = videoQuality.QualityFormat
+            }
+            : new DownKyi.Core.BiliApi.BiliUtils.Quality();
+        item.DownloadBase.VideoCodecName = content.Video
+            ? videoQuality?.SelectedVideoCodec ?? string.Empty
+            : string.Empty;
+        item.DownloadBase.AudioCodec = content.Audio
+            ? new DownKyi.Core.BiliApi.BiliUtils.Quality
+            {
+                Name = page.AudioQualityFormat
+            }
+            : new DownKyi.Core.BiliApi.BiliUtils.Quality();
+        return item;
     }
 
     private sealed class DuplicatePolicyContext : IDisposable
@@ -665,7 +814,6 @@ public sealed class DownloadAddOwnerTests : IDisposable
             Policy = new DownloadDuplicatePolicy(
                 ListState,
                 _projectionStore,
-                Notifications,
                 Dialogs);
         }
 
@@ -709,7 +857,41 @@ public sealed class DownloadAddOwnerTests : IDisposable
             var queued = DownloadTaskProjectionMapper.CreateNewTask(
                 draft,
                 DateTimeOffset.UnixEpoch);
-            Assert.True(queued.Start(DateTimeOffset.UnixEpoch.AddSeconds(1))
+            var outputPath = typeof(DownloadAddOwnerTests).Assembly.Location;
+            var artifacts = new Dictionary<string, string>();
+            var finalizedContent = content ?? draft.DownloadBase.NeedDownloadContent;
+            if (finalizedContent.HasMedia)
+            {
+                artifacts["media"] = outputPath;
+            }
+
+            if (finalizedContent.Subtitle)
+            {
+                artifacts["subtitle:test"] = outputPath;
+            }
+
+            if (finalizedContent.DanmakuOutputFormat?.HasFlag(
+                    DownloadDanmakuOutputFormat.Ass) == true)
+            {
+                artifacts[DownloadArtifactWriter.DanmakuAssTransferKey] = outputPath;
+            }
+
+            if (finalizedContent.DanmakuOutputFormat?.HasFlag(
+                    DownloadDanmakuOutputFormat.Xml) == true)
+            {
+                artifacts[DownloadArtifactWriter.DanmakuXmlTransferKey] = outputPath;
+            }
+
+            if (finalizedContent.Cover)
+            {
+                artifacts["cover"] = outputPath;
+            }
+
+            Assert.True(queued.UpdateOutput(
+                    new DownloadOutput(queued.Output.BasePath, null, artifacts),
+                    DateTimeOffset.UnixEpoch.AddMilliseconds(500))
+                .TryGetValue(out var withOutput));
+            Assert.True(withOutput.Start(DateTimeOffset.UnixEpoch.AddSeconds(1))
                 .TryGetValue(out var started));
             Assert.True(started.Complete(
                 new DownloadCompletion(2, "finished", null),

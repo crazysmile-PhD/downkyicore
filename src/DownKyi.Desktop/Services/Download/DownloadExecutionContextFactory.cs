@@ -55,6 +55,7 @@ internal sealed class DownloadExecutionContextFactory
         var danmakuSettings = settings.Danmaku with
         {
             OutputFormat = ResolveDanmakuOutputFormat(
+                task.Plan.RequestedContent,
                 task.Plan.TransferFiles,
                 settings.Danmaku.OutputFormat)
         };
@@ -72,9 +73,23 @@ internal sealed class DownloadExecutionContextFactory
     }
 
     private static DanmakuOutputFormat ResolveDanmakuOutputFormat(
+        DownloadContentSelection requestedContent,
         ImmutableDictionary<string, string> transferFiles,
         DanmakuOutputFormat currentFormat)
     {
+        if (requestedContent.DanmakuOutputFormat is { } plannedFormat)
+        {
+            return plannedFormat switch
+            {
+                DownloadDanmakuOutputFormat.Ass => DanmakuOutputFormat.Ass,
+                DownloadDanmakuOutputFormat.Xml => DanmakuOutputFormat.Xml,
+                DownloadDanmakuOutputFormat.Ass | DownloadDanmakuOutputFormat.Xml =>
+                    DanmakuOutputFormat.AssAndXml,
+                _ => throw new InvalidOperationException(
+                    "The planned danmaku output format is invalid.")
+            };
+        }
+
         var hasAss = transferFiles.ContainsKey(DownloadArtifactWriter.DanmakuAssTransferKey);
         var hasXml = transferFiles.ContainsKey(DownloadArtifactWriter.DanmakuXmlTransferKey);
         return (hasAss, hasXml) switch

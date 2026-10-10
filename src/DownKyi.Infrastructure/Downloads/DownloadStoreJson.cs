@@ -10,6 +10,7 @@ internal static class DownloadStoreJson
     private const string SelectedSubtitleTrackIds = "selectedSubtitleTrackIds";
     private const string DefaultSubtitleTrackId = "defaultSubtitleTrackId";
     private const string MediaKind = "mediaKind";
+    private const string DanmakuOutputFormat = "danmakuOutputFormat";
 
     public static string WriteContentSelection(DownloadContentSelection value)
     {
@@ -29,6 +30,11 @@ internal static class DownloadStoreJson
         if (value.MediaKind is { } mediaKind)
         {
             payload[MediaKind] = WriteMediaKind(mediaKind);
+        }
+
+        if (value.DanmakuOutputFormat is { } danmakuOutputFormat)
+        {
+            payload[DanmakuOutputFormat] = (int)danmakuOutputFormat;
         }
 
         return JsonSerializer.Serialize(payload);
@@ -120,7 +126,8 @@ internal static class DownloadStoreJson
             {
                 if (property.NameEquals(SelectedSubtitleTrackIds) ||
                     property.NameEquals(DefaultSubtitleTrackId) ||
-                    property.NameEquals(MediaKind))
+                    property.NameEquals(MediaKind) ||
+                    property.NameEquals(DanmakuOutputFormat))
                 {
                     continue;
                 }
@@ -152,6 +159,11 @@ internal static class DownloadStoreJson
             var mediaKind = root.TryGetProperty(MediaKind, out var storedMediaKind)
                 ? ReadMediaKind(storedMediaKind, fieldName)
                 : (DownloadMediaKind?)null;
+            var danmakuOutputFormat = root.TryGetProperty(
+                DanmakuOutputFormat,
+                out var storedDanmakuOutputFormat)
+                ? ReadDanmakuOutputFormat(storedDanmakuOutputFormat, fieldName)
+                : (DownloadDanmakuOutputFormat?)null;
 
             if (defaultId is { } selectedDefault &&
                 (selectedIds is not { } ids || !ids.Contains(selectedDefault)))
@@ -163,9 +175,30 @@ internal static class DownloadStoreJson
             {
                 MediaKind = mediaKind,
                 SelectedSubtitleTrackIds = selectedIds,
-                DefaultSubtitleTrackId = defaultId
+                DefaultSubtitleTrackId = defaultId,
+                DanmakuOutputFormat = danmakuOutputFormat
             };
         });
+    }
+
+    private static DownloadDanmakuOutputFormat ReadDanmakuOutputFormat(
+        JsonElement value,
+        string fieldName)
+    {
+        if (value.ValueKind != JsonValueKind.Number || !value.TryGetInt32(out var storedValue))
+        {
+            throw Corrupt(fieldName, "Danmaku output format is not an integer.");
+        }
+
+        var format = (DownloadDanmakuOutputFormat)storedValue;
+        const DownloadDanmakuOutputFormat supported =
+            DownloadDanmakuOutputFormat.Ass | DownloadDanmakuOutputFormat.Xml;
+        if (format == DownloadDanmakuOutputFormat.None || (format & ~supported) != 0)
+        {
+            throw Corrupt(fieldName, "Danmaku output format is unsupported.");
+        }
+
+        return format;
     }
 
     private static string WriteMediaKind(DownloadMediaKind mediaKind)

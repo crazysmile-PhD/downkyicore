@@ -39,6 +39,8 @@ internal sealed class DownloadExecutionContext
 
     public Dictionary<string, string> PublishedArtifacts { get; } = new(StringComparer.Ordinal);
 
+    public DownloadActionExecutionSummary ActionResults { get; } = new();
+
     public bool HasPublished(string key) =>
         PublishedArtifacts.TryGetValue(key, out var path) && File.Exists(path);
 

@@ -10,6 +10,106 @@ namespace DownKyi.Tests;
 public sealed class DownloadContentConflictResolverTests
 {
     [Fact]
+    public async Task PlannerCoversEveryContentCombinationWithoutAPlaybackGate()
+    {
+        for (var mask = 0; mask < 32; mask++)
+        {
+            var dialogs = new RecordingDialogService();
+            var requested = new DownloadContentSelection(
+                Audio: (mask & 1) != 0,
+                Video: (mask & 2) != 0,
+                Danmaku: (mask & 4) != 0,
+                Subtitle: (mask & 8) != 0,
+                Cover: (mask & 16) != 0);
+
+            var finalized = await ResolveAsync(
+                dialogs,
+                requested,
+                CreatePreparedDownload(CreatePage(video: true, audio: true)));
+
+            if (mask == 0)
+            {
+                Assert.Equal(DownloadActionPlanOutcome.NoContentRequested, finalized.Outcome);
+                Assert.Empty(Assert.Single(finalized.Sections).Pages);
+            }
+            else
+            {
+                Assert.Equal(DownloadActionPlanOutcome.Ready, finalized.Outcome);
+                var page = Assert.Single(Assert.Single(finalized.Sections).Pages);
+                Assert.Equal(requested, page.RequestedContent);
+                Assert.Equal(requested, page.FinalizedContent);
+            }
+
+            Assert.Empty(dialogs.Requests);
+        }
+    }
+
+    [Fact]
+    public async Task MediaUnavailableCanContinueWithRequestedIndependentActions()
+    {
+        var dialogs = new RecordingDialogService(
+            new DownloadContentConflictDecision(
+                DownloadContentConflictAction.UseAvailableContent,
+                ApplyToAll: false));
+        var requested = DownloadContentSelection.None with
+        {
+            Video = true,
+            Subtitle = true,
+            Cover = true
+        };
+
+        var finalized = await ResolveAsync(
+            dialogs,
+            requested,
+            CreatePreparedDownload(CreatePage(video: false, audio: false)));
+
+        Assert.Equal(DownloadActionPlanOutcome.Ready, finalized.Outcome);
+        var page = Assert.Single(Assert.Single(finalized.Sections).Pages);
+        Assert.Equal(requested, page.RequestedContent);
+        Assert.Equal(
+            requested with { Video = false },
+            page.FinalizedContent);
+        Assert.Single(dialogs.Requests);
+    }
+
+    [Fact]
+    public async Task MediaUnavailableHonorsExplicitPageSkipWithIndependentActions()
+    {
+        var dialogs = new RecordingDialogService(
+            new DownloadContentConflictDecision(
+                DownloadContentConflictAction.SkipPage,
+                ApplyToAll: false));
+
+        var finalized = await ResolveAsync(
+            dialogs,
+            DownloadContentSelection.None with { Video = true, Danmaku = true },
+            CreatePreparedDownload(CreatePage(video: false, audio: false)));
+
+        Assert.Equal(DownloadActionPlanOutcome.SkippedByUser, finalized.Outcome);
+        Assert.Empty(Assert.Single(finalized.Sections).Pages);
+        Assert.Single(dialogs.Requests);
+    }
+
+    [Fact]
+    public async Task ExplicitlySelectingNoSubtitleTracksCannotCreateAnEmptyTask()
+    {
+        var requested = DownloadContentSelection.None with
+        {
+            Subtitle = true,
+            SelectedSubtitleTrackIds = []
+        };
+
+        var finalized = await ResolveAsync(
+            new RecordingDialogService(),
+            requested,
+            CreatePreparedDownload(CreatePage(video: false, audio: false)));
+
+        Assert.Equal(DownloadSubtitleTrackSelection.NoTracksSelected, requested.SubtitleTrackSelection);
+        Assert.Equal(DownloadActionPlanOutcome.NoContentRequested, finalized.Outcome);
+        Assert.Empty(Assert.Single(finalized.Sections).Pages);
+    }
+
+    [Fact]
     public async Task AvailableRequestPassesThroughWithoutDialog()
     {
         var dialogs = new RecordingDialogService();
@@ -26,6 +126,7 @@ public sealed class DownloadContentConflictResolverTests
 
         var page = Assert.Single(Assert.Single(finalized.Sections).Pages);
         Assert.Same(requested, page.RequestedContent);
+        Assert.Same(requested, page.FinalizedContent);
         Assert.Empty(dialogs.Requests);
     }
 
@@ -55,7 +156,7 @@ public sealed class DownloadContentConflictResolverTests
         Assert.False(Assert.Single(Assert.Single(prepared.Sections).Pages).AvailableMedia.HasAnyMedia);
         Assert.Same(
             requested,
-            Assert.Single(Assert.Single(finalized.Sections).Pages).RequestedContent);
+            Assert.Single(Assert.Single(finalized.Sections).Pages).FinalizedContent);
         Assert.Empty(dialogs.Requests);
     }
 
@@ -64,7 +165,7 @@ public sealed class DownloadContentConflictResolverTests
     {
         var dialogs = new RecordingDialogService(
             new DownloadContentConflictDecision(
-                DownloadContentConflictAction.UseAvailableMedia,
+                DownloadContentConflictAction.UseAvailableContent,
                 ApplyToAll: false));
         var requested = new DownloadContentSelection(
             Audio: true,
@@ -81,7 +182,8 @@ public sealed class DownloadContentConflictResolverTests
         var page = Assert.Single(Assert.Single(finalized.Sections).Pages);
         Assert.Equal(
             requested with { Audio = false, Video = true },
-            page.RequestedContent);
+            page.FinalizedContent);
+        Assert.Same(requested, page.RequestedContent);
         var prompt = Assert.IsType<DownloadContentConflictPrompt>(
             Assert.Single(dialogs.Requests).Parameters![DownloadContentConflictDialogContract.PromptParameter]);
         Assert.Equal(
@@ -114,7 +216,7 @@ public sealed class DownloadContentConflictResolverTests
         Assert.True(preparedPage.AvailableMedia.Supports(requested));
         Assert.Same(
             requested,
-            Assert.Single(Assert.Single(finalized.Sections).Pages).RequestedContent);
+            Assert.Single(Assert.Single(finalized.Sections).Pages).FinalizedContent);
         Assert.Empty(dialogs.Requests);
     }
 
@@ -152,7 +254,7 @@ public sealed class DownloadContentConflictResolverTests
         Assert.True(page.HasPlayback);
         var selected = Assert.Single(Assert.Single(finalized.Sections).Pages);
         Assert.Null(selected.VideoQuality);
-        Assert.Same(requested, selected.RequestedContent);
+        Assert.Same(requested, selected.FinalizedContent);
         Assert.Empty(dialogs.Requests);
     }
 
@@ -183,7 +285,7 @@ public sealed class DownloadContentConflictResolverTests
             requested,
             CreatePreparedDownload(page));
 
-        Assert.Same(requested, Assert.Single(Assert.Single(finalized.Sections).Pages).RequestedContent);
+        Assert.Same(requested, Assert.Single(Assert.Single(finalized.Sections).Pages).FinalizedContent);
         Assert.Empty(dialogs.Requests);
     }
 
@@ -209,26 +311,26 @@ public sealed class DownloadContentConflictResolverTests
     {
         var dialogs = new RecordingDialogService(
             new DownloadContentConflictDecision(
-                DownloadContentConflictAction.UseAvailableMedia,
+                DownloadContentConflictAction.UseAvailableContent,
                 ApplyToAll: true));
-        var resolver = new DownloadContentConflictResolver(dialogs);
+        var planner = new DownloadActionPlanner(new DownloadContentConflictResolver(dialogs));
         var choices = new DownloadContentConflictChoices();
 
-        var first = await resolver.ResolveAsync(
+        var first = await planner.PlanAsync(
             DownloadContentSelection.All,
             CreatePreparedDownload(CreatePage(video: true, audio: false)),
             isAll: false,
             choices,
             TestContext.Current.CancellationToken);
-        var second = await resolver.ResolveAsync(
+        var second = await planner.PlanAsync(
             DownloadContentSelection.All,
             CreatePreparedDownload(CreatePage(video: true, audio: false)),
             isAll: false,
             choices,
             TestContext.Current.CancellationToken);
 
-        Assert.False(Assert.Single(Assert.Single(first.Sections).Pages).RequestedContent.Audio);
-        Assert.False(Assert.Single(Assert.Single(second.Sections).Pages).RequestedContent.Audio);
+        Assert.False(Assert.Single(Assert.Single(first.Sections).Pages).FinalizedContent.Audio);
+        Assert.False(Assert.Single(Assert.Single(second.Sections).Pages).FinalizedContent.Audio);
         Assert.Single(dialogs.Requests);
     }
 
@@ -237,7 +339,7 @@ public sealed class DownloadContentConflictResolverTests
     {
         var dialogs = new RecordingDialogService(
             new DownloadContentConflictDecision(
-                DownloadContentConflictAction.UseAvailableMedia,
+                DownloadContentConflictAction.UseAvailableContent,
                 ApplyToAll: false));
         var requested = DownloadContentSelection.None with { Video = true };
 
@@ -248,7 +350,7 @@ public sealed class DownloadContentConflictResolverTests
 
         var selected = Assert.Single(Assert.Single(finalized.Sections).Pages);
         Assert.Equal(64, selected.VideoQuality!.Quality);
-        Assert.Same(requested, selected.RequestedContent);
+        Assert.Same(requested, selected.FinalizedContent);
         var prompt = Assert.IsType<DownloadContentConflictPrompt>(
             Assert.Single(dialogs.Requests).Parameters![DownloadContentConflictDialogContract.PromptParameter]);
         var substitution = Assert.IsType<DownloadQualitySubstitution>(
@@ -262,7 +364,7 @@ public sealed class DownloadContentConflictResolverTests
     {
         var dialogs = new RecordingDialogService(
             new DownloadContentConflictDecision(
-                DownloadContentConflictAction.UseAvailableMedia,
+                DownloadContentConflictAction.UseAvailableContent,
                 ApplyToAll: true));
         var requested = DownloadContentSelection.None with { Video = true };
         var prepared = CreatePreparedDownload(
@@ -309,7 +411,7 @@ public sealed class DownloadContentConflictResolverTests
                 DownloadContentConflictAction.SkipPage,
                 ApplyToAll: true),
             new DownloadContentConflictDecision(
-                DownloadContentConflictAction.UseAvailableMedia,
+                DownloadContentConflictAction.UseAvailableContent,
                 ApplyToAll: false));
         var requested = DownloadContentSelection.None with { Video = true };
         var prepared = CreatePreparedDownload(
@@ -329,7 +431,7 @@ public sealed class DownloadContentConflictResolverTests
     {
         var dialogs = new RecordingDialogService(
             new DownloadContentConflictDecision(
-                DownloadContentConflictAction.UseAvailableMedia,
+                DownloadContentConflictAction.UseAvailableContent,
                 ApplyToAll: false));
         var requested = DownloadContentSelection.None with { Video = true };
 
@@ -348,7 +450,7 @@ public sealed class DownloadContentConflictResolverTests
     {
         var dialogs = new RecordingDialogService(
             new DownloadContentConflictDecision(
-                DownloadContentConflictAction.UseAvailableMedia,
+                DownloadContentConflictAction.UseAvailableContent,
                 ApplyToAll: true));
         var requested = DownloadContentSelection.None with { Audio = true, Video = true };
         var prepared = CreatePreparedDownload(
@@ -376,8 +478,8 @@ public sealed class DownloadContentConflictResolverTests
                 includeAudio: true)));
 
         var selected = Assert.Single(Assert.Single(finalized.Sections).Pages);
-        Assert.True(selected.RequestedContent.Audio);
-        Assert.False(selected.RequestedContent.Video);
+        Assert.True(selected.FinalizedContent.Audio);
+        Assert.False(selected.FinalizedContent.Video);
         Assert.Empty(dialogs.Requests);
     }
 
@@ -386,22 +488,22 @@ public sealed class DownloadContentConflictResolverTests
     {
         var dialogs = new RecordingDialogService(
             new DownloadContentConflictDecision(
-                DownloadContentConflictAction.UseAvailableMedia,
+                DownloadContentConflictAction.UseAvailableContent,
                 ApplyToAll: true),
             new DownloadContentConflictDecision(
                 DownloadContentConflictAction.SkipPage,
                 ApplyToAll: false));
-        var resolver = new DownloadContentConflictResolver(dialogs);
+        var planner = new DownloadActionPlanner(new DownloadContentConflictResolver(dialogs));
         var choices = new DownloadContentConflictChoices();
 
-        await resolver.ResolveAsync(
+        await planner.PlanAsync(
             DownloadContentSelection.All,
             CreatePreparedDownload(CreatePage(video: true, audio: false)),
             isAll: false,
             choices,
             TestContext.Current.CancellationToken);
         var differentRequest = DownloadContentSelection.All with { Subtitle = false };
-        var differentlyRequested = await resolver.ResolveAsync(
+        var differentlyRequested = await planner.PlanAsync(
             differentRequest,
             CreatePreparedDownload(CreatePage(video: true, audio: false)),
             isAll: false,
@@ -419,7 +521,7 @@ public sealed class DownloadContentConflictResolverTests
 
         var finalized = await ResolveAsync(
             dialogs,
-            DownloadContentSelection.All,
+            DownloadContentSelection.None with { Audio = true, Video = true },
             CreatePreparedDownload(CreatePage(video: false, audio: false)));
 
         Assert.Empty(Assert.Single(finalized.Sections).Pages);
@@ -450,7 +552,8 @@ public sealed class DownloadContentConflictResolverTests
     private static Task<FinalizedDownload> ResolveAsync(
         RecordingDialogService dialogs,
         DownloadContentSelection requested,
-        PreparedDownload prepared) => new DownloadContentConflictResolver(dialogs).ResolveAsync(
+        PreparedDownload prepared) => new DownloadActionPlanner(
+            new DownloadContentConflictResolver(dialogs)).PlanAsync(
             requested,
             prepared,
             isAll: false,

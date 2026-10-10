@@ -276,7 +276,8 @@ internal sealed record PreparedDownload(
 internal sealed record FinalizedDownloadPage(
     VideoPage Page,
     VideoQuality? VideoQuality,
-    DownloadContentSelection RequestedContent);
+    DownloadContentSelection RequestedContent,
+    DownloadContentSelection FinalizedContent);
 
 internal sealed record FinalizedDownloadSection(
     VideoSection Section,
@@ -284,4 +285,7 @@ internal sealed record FinalizedDownloadSection(
 
 internal sealed record FinalizedDownload(
     VideoInfoView Video,
-    IReadOnlyList<FinalizedDownloadSection> Sections);
+    IReadOnlyList<FinalizedDownloadSection> Sections,
+    DownloadActionPlanOutcome Outcome,
+    int CandidateCount,
+    int SkippedCount);

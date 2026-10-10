@@ -9,6 +9,22 @@ public enum DownloadMediaKind
     Durl
 }
 
+[Flags]
+public enum DownloadDanmakuOutputFormat
+{
+    None = 0,
+    Ass = 1,
+    Xml = 2
+}
+
+public enum DownloadSubtitleTrackSelection
+{
+    NotRequested,
+    AllTracks,
+    SelectedTracks,
+    NoTracksSelected
+}
+
 public sealed record DownloadContentSelection(
     bool Audio,
     bool Video,
@@ -21,6 +37,27 @@ public sealed record DownloadContentSelection(
     public ImmutableArray<long>? SelectedSubtitleTrackIds { get; init; }
 
     public long? DefaultSubtitleTrackId { get; init; }
+
+    public DownloadDanmakuOutputFormat? DanmakuOutputFormat { get; init; }
+
+    public bool HasMedia => Audio || Video;
+
+    public bool HasSubtitleAction => SubtitleTrackSelection is
+        DownloadSubtitleTrackSelection.AllTracks or
+        DownloadSubtitleTrackSelection.SelectedTracks;
+
+    public bool HasIndependentContent => Danmaku || HasSubtitleAction || Cover;
+
+    public bool HasAnyRequestedAction => HasMedia || HasIndependentContent;
+
+    public DownloadSubtitleTrackSelection SubtitleTrackSelection =>
+        (Subtitle, SelectedSubtitleTrackIds) switch
+        {
+            (false, _) => DownloadSubtitleTrackSelection.NotRequested,
+            (true, null) => DownloadSubtitleTrackSelection.AllTracks,
+            (true, { Length: 0 }) => DownloadSubtitleTrackSelection.NoTracksSelected,
+            _ => DownloadSubtitleTrackSelection.SelectedTracks
+        };
 
     private const string AudioKey = "downloadAudio";
     private const string VideoKey = "downloadVideo";

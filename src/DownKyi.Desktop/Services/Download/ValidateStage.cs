@@ -27,6 +27,7 @@ internal sealed class ValidateStage : IDownloadPipelineStage
     {
         ArgumentNullException.ThrowIfNull(context);
         context.EnsureActive(cancellationToken);
+        DownloadActionResultEvaluator.Evaluate(context);
         if (context.NeedsMedia)
         {
             var hasPublishedMedia = context.PublishedArtifacts.TryGetValue(
@@ -55,6 +56,7 @@ internal sealed class ValidateStage : IDownloadPipelineStage
                     "download.validate.media",
                     "The finalized media file has a missing or undecodable required audio or video stream.");
             }
+
         }
 
         if (context.NeedsDanmaku &&
@@ -78,20 +80,19 @@ internal sealed class ValidateStage : IDownloadPipelineStage
                 "One or more requested subtitle files were not created.");
         }
 
-        if (context.NeedsCover &&
-            !context.HasPublished("cover") && !context.HasPublished("page-cover") &&
-            !File.Exists(context.CoverFile) && !File.Exists(context.PageCoverFile))
-        {
-            return DownloadStageResult.Failure(
-                "download.validate.cover",
-                "The requested cover files were not created.");
-        }
-
         if (context.PublishedArtifacts.Values.Any(path => !File.Exists(path)))
         {
             return DownloadStageResult.Failure(
                 "download.validate.published-missing",
                 "A recorded published artifact is missing.");
+        }
+
+        if (!context.ActionResults.HasSucceeded)
+        {
+            return DownloadStageResult.Failure(
+                "download.validate.no-resource",
+                "None of the requested download actions produced an output.",
+                OperationErrorKind.NotFound);
         }
 
         return DownloadStageResult.Success(Name);

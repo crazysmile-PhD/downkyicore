@@ -276,44 +276,33 @@ public sealed class DownloadManagerCoordinatorTests
         using var context = new CoordinatorContext();
         await context.CreateCompletedItemAsync(
             "redownload-after-delete", "media", "redownload-after-delete.mp4");
+        context.CreateFile("redownload-after-delete.mp4", "completed media");
         await context.Coordinator.LoadDownloadedHistoryAsync();
         var completed = Assert.Single(context.State.Downloaded);
         var desktop = new TestDesktopInteractionContext();
         var duplicatePolicy = new DownloadDuplicatePolicy(
             context.State,
             context.Storage,
-            desktop.Notifications,
             desktop.Dialogs);
-        var page = new DownKyi.Presentation.VideoPage
+        completed.DownloadBase.FilePath = Path.ChangeExtension(
+            completed.HistoryRecord!.PublishedArtifacts["media"],
+            null);
+        var requested = new DownloadingItem
         {
-            Cid = completed.DownloadBase.Cid,
-            AudioQualityFormat = completed.AudioCodec.Name,
-            PlaybackAvailability = PlayUrlAvailability.From(new PlayUrl
+            DownloadBase = completed.DownloadBase,
+            Downloading = new Downloading
             {
-                Dash = new PlayUrlDash
-                {
-                    Video =
-                    [
-                        new PlayUrlDashVideo
-                        {
-                            Id = completed.Resolution.Id,
-                            CodecId = 7,
-                            BaseAddress = "https://media.invalid/video"
-                        }
-                    ]
-                }
-            })
+                DownloadStatus = DownloadStatus.NotStarted,
+                PlayStreamType = DownKyi.Core.BiliApi.VideoStream.PlayStreamType.Video
+            }
         };
-        var quality = new DownKyi.Presentation.VideoQuality
+        requested.DownloadBase.NeedDownloadContent = DownloadContentSelection.None with
         {
-            Quality = completed.Resolution.Id,
-            SelectedVideoCodec = completed.VideoCodecName
+            Video = true
         };
 
         Assert.True(await duplicatePolicy.ShouldSkipAsync(
-            page,
-            quality,
-            DownloadContentSelection.All,
+            requested,
             DownKyi.Core.Settings.RepeatDownloadStrategy.JumpOver,
             TestContext.Current.CancellationToken));
 
@@ -325,9 +314,7 @@ public sealed class DownloadManagerCoordinatorTests
         Assert.Empty(await context.Storage.GetDownloadedAsync(
             TestContext.Current.CancellationToken));
         Assert.False(await duplicatePolicy.ShouldSkipAsync(
-            page,
-            quality,
-            DownloadContentSelection.All,
+            requested,
             DownKyi.Core.Settings.RepeatDownloadStrategy.JumpOver,
             TestContext.Current.CancellationToken));
     }
@@ -559,6 +546,13 @@ public sealed class DownloadManagerCoordinatorTests
         public async Task<DownloadedItem> CreateCompletedItemAsync(string id, string key, string fileName)
         {
             var downloading = CreateDownloadingItem(id, DownloadStatus.WaitForDownload);
+            downloading.DownloadBase.NeedDownloadContent = key switch
+            {
+                "media" => DownloadContentSelection.None with { Video = true },
+                var subtitle when subtitle.StartsWith("subtitle:", StringComparison.Ordinal) =>
+                    DownloadContentSelection.None with { Subtitle = true },
+                _ => downloading.DownloadBase.NeedDownloadContent
+            };
             await Storage.AddDownloadingAsync(downloading, TestContext.Current.CancellationToken)
                 .ConfigureAwait(true);
             var taskId = new DownloadTaskId(id);

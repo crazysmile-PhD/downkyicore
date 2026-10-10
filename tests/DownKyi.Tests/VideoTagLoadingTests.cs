@@ -177,7 +177,25 @@ public sealed class VideoTagLoadingTests : IDisposable
             TestContext.Current.CancellationToken).ConfigureAwait(true);
 
         Assert.Null(selection);
-        Assert.Single(context.Dialogs.Requests);
+        var request = Assert.Single(context.Dialogs.Requests);
+        Assert.Equal(
+            DownloadSettingsDialog.SubtitleTrackDiscoveryStatus.Failed,
+            DownloadSettingsDialog.ReadSubtitleDiscovery(request).Status);
+    }
+
+    [Fact]
+    public async Task MissingSubtitlePageIsTypedAsDiscoveryNotAttempted()
+    {
+        using var context = CreateContext(generateMetadata: false);
+
+        var selection = await context.Service.SelectDownloadAsync(
+            cancellationToken: TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.Null(selection);
+        Assert.Equal(
+            DownloadSettingsDialog.SubtitleTrackDiscoveryStatus.NotAttempted,
+            DownloadSettingsDialog.ReadSubtitleDiscovery(
+                Assert.Single(context.Dialogs.Requests)).Status);
     }
 
     [Theory]
@@ -199,6 +217,36 @@ public sealed class VideoTagLoadingTests : IDisposable
         Assert.Null(selection);
         var request = Assert.Single(context.Dialogs.Requests);
         Assert.Empty(DownloadSettingsDialog.ReadSubtitleTracks(request));
+        Assert.Equal(
+            DownloadSettingsDialog.SubtitleTrackDiscoveryStatus.NoResource,
+            DownloadSettingsDialog.ReadSubtitleDiscovery(request).Status);
+    }
+
+    [Fact]
+    public async Task SubtitleDiscoveryReturnsTypedAvailableTracksWithoutPlaybackDependency()
+    {
+        var client = new TestBilibiliApiClient
+        {
+            GetStringAsyncHandler = (_, _) => Task.FromResult(
+                """
+                {"code":0,"data":{"aid":1,"bvid":"BV1test","cid":2,"subtitle":{"subtitles":[{"id":11,"lan":"zh","lan_doc":"Chinese","subtitle_url":"//example.test/zh.json","type":0}]}}}
+                """)
+        };
+        using var context = CreateContext(generateMetadata: false, client: client);
+        var page = CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]));
+        page.PlaybackAvailability = null;
+
+        var selection = await context.Service.SelectDownloadAsync(
+            page,
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.Null(selection);
+        var discovery = DownloadSettingsDialog.ReadSubtitleDiscovery(
+            Assert.Single(context.Dialogs.Requests));
+        Assert.Equal(DownloadSettingsDialog.SubtitleTrackDiscoveryStatus.Available, discovery.Status);
+        var track = Assert.Single(discovery.Tracks);
+        Assert.Equal(11, track.TrackId);
+        Assert.Equal("zh", track.Language);
     }
 
     [Fact]
@@ -601,7 +649,7 @@ public sealed class VideoTagLoadingTests : IDisposable
         context.Dialogs.Result = new AppDialogResult(
             AppDialogOutcome.Accepted,
             DownloadContentConflictDialogContract.Encode(new DownloadContentConflictDecision(
-                DownloadContentConflictAction.UseAvailableMedia,
+                DownloadContentConflictAction.UseAvailableContent,
                 ApplyToAll: false)));
 
         var added = await context.AddToDownloadAsync(
@@ -614,7 +662,8 @@ public sealed class VideoTagLoadingTests : IDisposable
             DownloadContentSelection.All with
             {
                 Audio = false,
-                MediaKind = DownloadMediaKind.Dash
+                MediaKind = DownloadMediaKind.Dash,
+                DanmakuOutputFormat = DownloadDanmakuOutputFormat.Ass
             },
             Assert.Single(context.ListState.Downloading).DownloadBase.NeedDownloadContent);
     }
@@ -686,6 +735,7 @@ public sealed class VideoTagLoadingTests : IDisposable
 
         var preparedDownload = await context.Service.PrepareAsync(
             infoService,
+            DownloadContentSelection.All,
             TestContext.Current.CancellationToken);
 
         Assert.NotNull(preparedDownload);
@@ -697,6 +747,41 @@ public sealed class VideoTagLoadingTests : IDisposable
             preparedPage.AvailableMedia);
         Assert.True(page.IsSelected);
         Assert.Equal(1, infoService.StreamRequestCount);
+    }
+
+    [Theory]
+    [InlineData(false, true, false)]
+    [InlineData(true, false, false)]
+    [InlineData(false, false, true)]
+    [InlineData(true, true, true)]
+    public async Task IndependentContentPreparationDoesNotRequestPlayback(
+        bool subtitle,
+        bool danmaku,
+        bool cover)
+    {
+        using var context = CreateContext(generateMetadata: false);
+        var page = CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]));
+        page.PlaybackAvailability = null;
+        page.VideoQuality = null;
+        var infoService = new PreparationInfoService(
+            new VideoInfoView { Title = "sidecar-only" },
+            [new VideoSection { VideoPages = [page] }],
+            new PlayUrl());
+        var requested = DownloadContentSelection.None with
+        {
+            Subtitle = subtitle,
+            Danmaku = danmaku,
+            Cover = cover
+        };
+
+        var prepared = await context.Service.PrepareAsync(
+            infoService,
+            requested,
+            TestContext.Current.CancellationToken);
+
+        Assert.NotNull(prepared);
+        Assert.Equal(0, infoService.StreamRequestCount);
+        Assert.False(Assert.Single(Assert.Single(prepared.Sections).Pages).AvailableMedia.HasAnyMedia);
     }
 
     private DownloadTestContext CreateContext(
@@ -828,7 +913,6 @@ public sealed class VideoTagLoadingTests : IDisposable
             Queue = new RecordingDownloadTaskQueue();
             Logger = new RecordingLogger<DownloadMovieMetadataBuilder>();
             Dialogs = new RecordingDialogService();
-            var desktop = new TestDesktopInteractionContext();
             client ??= new TestBilibiliApiClient();
             _admission = new DownloadTaskAdmissionService(
                 ListState,
@@ -841,7 +925,6 @@ public sealed class VideoTagLoadingTests : IDisposable
             var duplicatePolicy = new DownloadDuplicatePolicy(
                 ListState,
                 _projectionStore,
-                desktop.Notifications,
                 Dialogs);
             Service = new AddToDownloadService(
                 DownKyi.Core.BiliApi.VideoStream.PlayStreamType.Video,
@@ -875,17 +958,19 @@ public sealed class VideoTagLoadingTests : IDisposable
             bool isAll = false,
             CancellationToken cancellationToken = default)
         {
-            var finalizedDownload = await new DownloadContentConflictResolver(Dialogs)
-                .ResolveAsync(
+            var finalizedDownload = await new DownloadActionPlanner(
+                    new DownloadContentConflictResolver(Dialogs))
+                .PlanAsync(
                     selection.RequestedContent,
                     preparedDownload,
                     isAll,
                     new DownloadContentConflictChoices(),
                     cancellationToken)
                 .ConfigureAwait(true);
-            return await Service
+            var result = await Service
                 .AddToDownload(selection.Directory, finalizedDownload, cancellationToken)
                 .ConfigureAwait(true);
+            return result.AddedCount;
         }
 
         public Task<PreparedDownload> PrepareAsync(params VideoPage[] pages)
@@ -906,6 +991,7 @@ public sealed class VideoTagLoadingTests : IDisposable
                         VideoPages = pages
                     }
                 ],
+                DownloadContentSelection.All,
                 isAll: false,
                 TestContext.Current.CancellationToken);
         }
@@ -926,6 +1012,7 @@ public sealed class VideoTagLoadingTests : IDisposable
                     Title = $"section-{index + 1}",
                     VideoPages = pages
                 }).ToArray(),
+                DownloadContentSelection.All,
                 isAll: true,
                 TestContext.Current.CancellationToken);
         }

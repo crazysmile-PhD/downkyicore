@@ -120,7 +120,14 @@ public sealed class DesktopInteractionArchitectureTests
         Assert.Contains("IAppNavigationService", pageItemSource, StringComparison.Ordinal);
         Assert.DoesNotContain("IEventAggregator", pageItemSource, StringComparison.Ordinal);
         Assert.DoesNotContain("NavigateToView", pageItemSource, StringComparison.Ordinal);
-        Assert.Contains("IUserNotificationService", downloadSource, StringComparison.Ordinal);
+        var videoDetailSource = ReadSource(
+            "src", "DownKyi.Desktop", "ViewModels", "ViewVideoDetailViewModel.cs");
+        Assert.DoesNotContain("IUserNotificationService", downloadSource, StringComparison.Ordinal);
+        Assert.Contains("PublishAddResult", videoDetailSource, StringComparison.Ordinal);
+        Assert.Contains(
+            "Notifications.Show(DownloadAddNotificationFormatter.Format(result))",
+            videoDetailSource,
+            StringComparison.Ordinal);
         Assert.DoesNotContain("IEventAggregator", downloadSource, StringComparison.Ordinal);
         Assert.DoesNotContain("MessageEvent", downloadSource, StringComparison.Ordinal);
         Assert.DoesNotContain("Avalonia.Threading", downloadSource, StringComparison.Ordinal);

@@ -92,6 +92,8 @@ public sealed class DownloadAdmissionArchitectureTests
             "src", "DownKyi.Desktop", "Services", "Download", "PreparedDownload.cs");
         var resolver = ReadSource(
             "src", "DownKyi.Desktop", "Services", "Download", "DownloadContentConflictResolver.cs");
+        var planner = ReadSource(
+            "src", "DownKyi.Desktop", "Services", "Download", "DownloadActionPlanner.cs");
         var content = ReadSource(
             "src", "DownKyi.Desktop", "Services", "Media", "ContentDownloadCoordinator.cs");
         var video = ReadSource(
@@ -108,10 +110,15 @@ public sealed class DownloadAdmissionArchitectureTests
         Assert.Contains("TryGetCompatibleContent(", prepared, StringComparison.Ordinal);
         Assert.DoesNotContain("DownloadMediaCapabilities(bool Video, bool Audio)", prepared, StringComparison.Ordinal);
         Assert.Contains("DownloadContentSelection RequestedContent", prepared, StringComparison.Ordinal);
+        Assert.Contains("DownloadContentSelection FinalizedContent", prepared, StringComparison.Ordinal);
         Assert.Contains("DownloadContentConflictChoices choices", resolver, StringComparison.Ordinal);
         Assert.Contains("DownloadContentConflictDialogContract.ShowAsync", resolver, StringComparison.Ordinal);
-        Assert.Contains("_contentConflictResolver", content, StringComparison.Ordinal);
-        Assert.Contains("_contentConflictResolver", video, StringComparison.Ordinal);
+        Assert.Contains("DownloadActionPlanOutcome", planner, StringComparison.Ordinal);
+        Assert.Contains("_conflictResolver", planner, StringComparison.Ordinal);
+        Assert.Contains(".ResolveAsync(", planner, StringComparison.Ordinal);
+        Assert.Contains("_actionPlanner", content, StringComparison.Ordinal);
+        Assert.Contains("_actionPlanner", video, StringComparison.Ordinal);
+        Assert.DoesNotContain("HasPlayback", planner, StringComparison.Ordinal);
         Assert.DoesNotContain("_downloadContent", service, StringComparison.Ordinal);
         Assert.DoesNotContain("DownloadContentConflict", service, StringComparison.Ordinal);
         Assert.DoesNotContain("SetVideoInfoService", contract, StringComparison.Ordinal);

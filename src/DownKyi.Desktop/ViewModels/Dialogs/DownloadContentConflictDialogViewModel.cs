@@ -21,7 +21,7 @@ internal sealed class DownloadContentConflictDialogViewModel : BaseDialogViewMod
     {
         Title = DictionaryResource.GetString("DownloadContentConflictTitle");
         UseAvailableContentCommand = new RelayCommand(() =>
-            Close(DownloadContentConflictAction.UseAvailableMedia));
+            Close(DownloadContentConflictAction.UseAvailableContent));
         SkipPageCommand = new RelayCommand(() =>
             Close(DownloadContentConflictAction.SkipPage));
     }
@@ -76,14 +76,14 @@ internal sealed class DownloadContentConflictDialogViewModel : BaseDialogViewMod
         var prompt = GetRequiredParameter<DownloadContentConflictPrompt>(
             request,
             DownloadContentConflictDialogContract.PromptParameter);
-        if (!prompt.Conflict.HasAvailableMedia)
+        if (!prompt.Conflict.HasAvailableContent)
         {
             throw new InvalidOperationException(
-                "A download content conflict prompt requires available media.");
+                "A download content conflict prompt requires available content.");
         }
 
         _conflict = prompt.Conflict;
-        var media = DescribeMedia(prompt.Conflict.AvailableContent);
+        var availableContent = DescribeContent(prompt.Conflict.AvailableContent);
         Message = DictionaryResource.GetString("DownloadContentConflictMessage")
             .Replace("{0}", prompt.PageName, StringComparison.Ordinal);
         HasQualitySubstitution = prompt.Conflict.QualitySubstitutions.HasAny;
@@ -93,7 +93,7 @@ internal sealed class DownloadContentConflictDialogViewModel : BaseDialogViewMod
         QualitySubstitution = DescribeQualitySubstitutions(
             prompt.Conflict.QualitySubstitutions);
         UseAvailableContent = DictionaryResource.GetString("UseAvailableDownloadContent")
-            .Replace("{0}", media, StringComparison.Ordinal);
+            .Replace("{0}", availableContent, StringComparison.Ordinal);
     }
 
     private void Close(DownloadContentConflictAction action)
@@ -109,15 +109,24 @@ internal sealed class DownloadContentConflictDialogViewModel : BaseDialogViewMod
                 new DownloadContentConflictDecision(action, ApplyToAll)));
     }
 
-    private static string DescribeMedia(DownKyi.Domain.Downloads.DownloadContentSelection content)
+    private static string DescribeContent(DownKyi.Domain.Downloads.DownloadContentSelection content)
     {
-        return (content.Audio, content.Video) switch
+        var descriptions = new[]
         {
-            (true, true) => DictionaryResource.GetString("DownloadAudioAndVideo"),
-            (true, false) => DictionaryResource.GetString("DownloadAudio"),
-            (false, true) => DictionaryResource.GetString("DownloadVideo"),
-            _ => throw new InvalidOperationException("Available media cannot be empty.")
-        };
+            content.Audio && content.Video
+                ? DictionaryResource.GetString("DownloadAudioAndVideo")
+                : content.Audio
+                    ? DictionaryResource.GetString("DownloadAudio")
+                    : content.Video
+                        ? DictionaryResource.GetString("DownloadVideo")
+                        : null,
+            content.Subtitle ? DictionaryResource.GetString("DownloadSubtitle") : null,
+            content.Danmaku ? DictionaryResource.GetString("DownloadDanmaku") : null,
+            content.Cover ? DictionaryResource.GetString("DownloadCover") : null
+        }.Where(static description => description != null);
+        return string.Join(
+            DictionaryResource.GetString("QualitySubstitutionSeparator"),
+            descriptions);
     }
 
     private static string DescribeQualitySubstitutions(

@@ -13,6 +13,7 @@ using DownKyi.Core.Settings;
 using DownKyi.Images;
 using DownKyi.Presentation;
 using DownKyi.Services;
+using DownKyi.Services.Download;
 using DownKyi.Services.Video;
 using DownKyi.Utils;
 using DownKyi.ViewModels.Dialogs;
@@ -236,11 +237,15 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
     {
         if (UiState.VideoInfoView == null)
         {
-            PublishAddedCount(0, false);
+            PublishAddResult(new Services.Download.DownloadAddResult(
+                Services.Download.DownloadAddOutcome.NoPagesSelected,
+                AddedCount: 0,
+                DuplicateCount: 0,
+                FailedCount: 0,
+                SkippedCount: 0));
             return;
         }
 
-        var hasDownloadCandidate = HasDownloadCandidate(isAll);
         var operation = _workflow.StartOperation();
         try
         {
@@ -250,9 +255,9 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
                 VideoSections.ToList(),
                 isAll,
                 operation.CancellationToken).ConfigureAwait(true);
-            if (addedCount is { } count && _workflow.IsCurrent(operation))
+            if (addedCount is { } result && _workflow.IsCurrent(operation))
             {
-                PublishAddedCount(count, hasDownloadCandidate);
+                PublishAddResult(result);
             }
         }
         catch (OperationCanceledException) when (operation.CancellationToken.IsCancellationRequested)
@@ -260,9 +265,6 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
             return;
         }
     }
-
-    private bool HasDownloadCandidate(bool isAll) => VideoSections.SelectMany(section => section.VideoPages)
-        .Any(page => (isAll || page.IsSelected) && page.HasPlayback);
 
     private void ResetView()
     {
@@ -301,12 +303,9 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
         }
     }
 
-    private void PublishAddedCount(int count, bool hasDownloadCandidate)
+    private void PublishAddResult(DownloadAddResult result)
     {
-        if (count <= 0 && hasDownloadCandidate) return;
-        Notifications.Show(count > 0
-            ? $"{DictionaryResource.GetString("TipAddDownloadingFinished1")}{count}{DictionaryResource.GetString("TipAddDownloadingFinished2")}"
-            : DictionaryResource.GetString("TipAddDownloadingZero"));
+        Notifications.Show(DownloadAddNotificationFormatter.Format(result));
     }
 
     private void HandleOperationError(

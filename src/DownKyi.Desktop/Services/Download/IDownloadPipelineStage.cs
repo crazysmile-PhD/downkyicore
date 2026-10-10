@@ -22,10 +22,11 @@ internal sealed record DownloadStageResult(string StageName)
 
     public static OperationResult<DownloadStageResult> Failure(
         string code,
-        string message)
+        string message,
+        OperationErrorKind kind = OperationErrorKind.Unexpected)
     {
         return OperationResult.Failure<DownloadStageResult>(
-            OperationError.Unexpected(code, message));
+            new OperationError(code, message, kind));
     }
 }
 

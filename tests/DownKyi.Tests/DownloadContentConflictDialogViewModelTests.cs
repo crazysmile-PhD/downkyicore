@@ -24,7 +24,7 @@ public sealed class DownloadContentConflictDialogViewModelTests
         Assert.Equal(AppDialogOutcome.Accepted, result.Outcome);
         var decision = Assert.IsType<DownloadContentConflictDecision>(
             result.Parameters[DownloadContentConflictDialogContract.DecisionParameter]);
-        Assert.Equal(DownloadContentConflictAction.UseAvailableMedia, decision.Action);
+        Assert.Equal(DownloadContentConflictAction.UseAvailableContent, decision.Action);
         Assert.True(decision.ApplyToAll);
     }
 

@@ -11,7 +11,7 @@ namespace DownKyi.Services.Video;
 
 internal interface IVideoDetailDownloadCoordinator
 {
-    Task<int?> AddAsync(
+    Task<DownloadAddResult?> AddAsync(
         string input,
         VideoInfoView videoInfoView,
         IList<VideoSection> videoSections,
@@ -22,18 +22,17 @@ internal interface IVideoDetailDownloadCoordinator
 internal sealed class VideoDetailDownloadCoordinator : IVideoDetailDownloadCoordinator
 {
     private readonly IAddToDownloadServiceFactory _serviceFactory;
-    private readonly DownloadContentConflictResolver _contentConflictResolver;
+    private readonly DownloadActionPlanner _actionPlanner;
 
     public VideoDetailDownloadCoordinator(
         IAddToDownloadServiceFactory serviceFactory,
-        DownloadContentConflictResolver contentConflictResolver)
+        DownloadActionPlanner actionPlanner)
     {
         _serviceFactory = serviceFactory ?? throw new ArgumentNullException(nameof(serviceFactory));
-        _contentConflictResolver = contentConflictResolver
-            ?? throw new ArgumentNullException(nameof(contentConflictResolver));
+        _actionPlanner = actionPlanner ?? throw new ArgumentNullException(nameof(actionPlanner));
     }
 
-    public Task<int?> AddAsync(
+    public Task<DownloadAddResult?> AddAsync(
         string input,
         VideoInfoView videoInfoView,
         IList<VideoSection> videoSections,
@@ -47,12 +46,12 @@ internal sealed class VideoDetailDownloadCoordinator : IVideoDetailDownloadCoord
         var streamType = PlayStreamTypeResolver.ResolvePlayStreamType(input);
         if (streamType == null)
         {
-            return Task.FromResult<int?>(null);
+            return Task.FromResult<DownloadAddResult?>(null);
         }
 
         var addService = _serviceFactory.Create(streamType.Value);
         var selectedPages = videoSections.SelectMany(section => section.VideoPages)
-            .Where(page => (isAll || page.IsSelected) && page.HasPlayback)
+            .Where(page => isAll || page.IsSelected)
             .Take(2)
             .ToArray();
         return DownloadAddCoordinator.AddToDownloadIfSelectionAcceptedAsync(
@@ -64,10 +63,15 @@ internal sealed class VideoDetailDownloadCoordinator : IVideoDetailDownloadCoord
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var preparedDownload = await addService
-                    .PrepareAsync(videoInfoView, videoSections, isAll, cancellationToken)
+                    .PrepareAsync(
+                        videoInfoView,
+                        videoSections,
+                        selection.RequestedContent,
+                        isAll,
+                        cancellationToken)
                     .ConfigureAwait(false);
-                var finalizedDownload = await _contentConflictResolver
-                    .ResolveAsync(
+                var finalizedDownload = await _actionPlanner
+                    .PlanAsync(
                         selection.RequestedContent,
                         preparedDownload,
                         isAll,

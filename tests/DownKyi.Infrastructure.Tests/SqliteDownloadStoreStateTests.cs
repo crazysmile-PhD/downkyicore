@@ -108,7 +108,9 @@ public sealed class SqliteDownloadStoreStateTests : IDisposable
         {
             MediaKind = DownloadMediaKind.Dash,
             SelectedSubtitleTrackIds = ImmutableArray.Create(11L, 22L),
-            DefaultSubtitleTrackId = 22
+            DefaultSubtitleTrackId = 22,
+            DanmakuOutputFormat = DownloadDanmakuOutputFormat.Ass |
+                                  DownloadDanmakuOutputFormat.Xml
         };
         using (var store = _fixture.CreateStore())
         {
@@ -134,14 +136,16 @@ public sealed class SqliteDownloadStoreStateTests : IDisposable
             expected.SelectedSubtitleTrackIds.GetValueOrDefault().ToArray(),
             actual.SelectedSubtitleTrackIds.GetValueOrDefault().ToArray());
         Assert.Equal(expected.DefaultSubtitleTrackId, actual.DefaultSubtitleTrackId);
+        Assert.Equal(expected.DanmakuOutputFormat, actual.DanmakuOutputFormat);
         using var connection = await _fixture.OpenReadOnlyConnectionAsync().ConfigureAwait(true);
         using var command = connection.CreateCommand();
         command.CommandText = "SELECT need_download_content FROM download_base WHERE id = 'typed-content'";
         var json = Assert.IsType<string>(
             await command.ExecuteScalarAsync(TestContext.Current.CancellationToken));
         using var payload = System.Text.Json.JsonDocument.Parse(json);
-        Assert.Equal(8, payload.RootElement.EnumerateObject().Count());
+        Assert.Equal(9, payload.RootElement.EnumerateObject().Count());
         Assert.Equal("dash", payload.RootElement.GetProperty("mediaKind").GetString());
+        Assert.Equal(3, payload.RootElement.GetProperty("danmakuOutputFormat").GetInt32());
         Assert.True(payload.RootElement.GetProperty("downloadAudio").GetBoolean());
         Assert.False(payload.RootElement.GetProperty("downloadVideo").GetBoolean());
         Assert.True(payload.RootElement.GetProperty("downloadDanmaku").GetBoolean());
