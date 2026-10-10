@@ -231,6 +231,51 @@ public sealed class SqliteDownloadStoreReservationRekeyTests : IDisposable
     }
 
     [Fact]
+    public async Task CorruptActiveRowIsQuarantinedDuringRekeyAndValidSiblingsRecover()
+    {
+        var firstPath = Path.Combine(_fixture.TempDirectory, "valid-rekey");
+        var secondPath = Path.Combine(_fixture.TempDirectory, "valid-current");
+        using (var first = _fixture.CreateStore())
+        {
+            Assert.True((await first.AddAsync(
+                _fixture.CreatePausedTask("valid-rekey", firstPath),
+                TestContext.Current.CancellationToken)).IsSuccess);
+            Assert.True((await first.AddAsync(
+                _fixture.CreatePausedTask("corrupt-rekey"),
+                TestContext.Current.CancellationToken)).IsSuccess);
+            Assert.True((await first.AddAsync(
+                _fixture.CreatePausedTask("valid-current", secondPath),
+                TestContext.Current.CancellationToken)).IsSuccess);
+        }
+
+        await _fixture.CorruptRequestedAssetsAsync("corrupt-rekey", "not-json");
+        await _fixture.SetReservationKeyAsync(
+            "valid-rekey",
+            DownloadOutputPathKey.Create(
+                firstPath,
+                !DownloadOutputPathKey.UsesCaseInsensitiveComparison));
+
+        using var reopened = _fixture.CreateStore();
+        await reopened.InitializeAsync(TestContext.Current.CancellationToken);
+
+        var quarantine = Assert.Single(
+            await reopened.GetQuarantinedRecordsAsync(TestContext.Current.CancellationToken));
+        Assert.Equal("corrupt-rekey", quarantine.RecordId);
+        Assert.Equal("need_download_content", quarantine.FieldName);
+        var restoredIds = (await reopened.GetUnfinishedAsync(TestContext.Current.CancellationToken))
+            .Select(static task => task.Id.Value)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        Assert.Equal(["valid-current", "valid-rekey"], restoredIds);
+        Assert.Equal(DownloadStoreSchema.CurrentVersion, await _fixture.ReadSchemaVersionAsync());
+        Assert.Equal(
+            DownloadOutputPathKey.Create(
+                firstPath,
+                DownloadOutputPathKey.UsesCaseInsensitiveComparison),
+            await _fixture.ReadReservationKeyAsync("valid-rekey"));
+    }
+
+    [Fact]
     public async Task CanonicalNfoClaimsBlockOtherwiseDisjointContentDuringRecovery()
     {
         var composed = Path.Combine(_fixture.TempDirectory, "caf\u00e9-nfo-conflict");

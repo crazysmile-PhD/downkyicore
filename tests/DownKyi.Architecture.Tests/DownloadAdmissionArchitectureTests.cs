@@ -185,8 +185,11 @@ public sealed class DownloadAdmissionArchitectureTests
         Assert.Contains("DownloadActionClaim.Nfo", outputResolver, StringComparison.Ordinal);
         Assert.Contains("existingClaims.Overlaps(requestedClaims)", reservations, StringComparison.Ordinal);
         Assert.Contains("db.nfo_request IS NOT NULL", reservations, StringComparison.Ordinal);
-        Assert.Contains("db.need_download_content", recovery, StringComparison.Ordinal);
-        Assert.Contains("db.nfo_request IS NOT NULL", recovery, StringComparison.Ordinal);
+        Assert.Contains("DownloadTaskSqlReader.SelectColumns", recovery, StringComparison.Ordinal);
+        Assert.Contains("DownloadTaskRecordMapper.Read", recovery, StringComparison.Ordinal);
+        Assert.Contains("SqliteDownloadStoreQuarantine.RecordAsync", recovery, StringComparison.Ordinal);
+        Assert.Contains("task.Plan.ActionClaims", recovery, StringComparison.Ordinal);
+        Assert.DoesNotContain("DownloadStoreJson.ReadContentSelection", recovery, StringComparison.Ordinal);
         Assert.Contains("claims.Overlaps(row.Claims)", recovery, StringComparison.Ordinal);
         Assert.DoesNotContain("DownloadOutputClaims", coverage, StringComparison.Ordinal);
         Assert.DoesNotContain("DownloadOutputClaims", reservations, StringComparison.Ordinal);

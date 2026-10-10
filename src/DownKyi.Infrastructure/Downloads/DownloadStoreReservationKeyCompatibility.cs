@@ -23,7 +23,11 @@ internal static class DownloadStoreReservationKeyCompatibility
         using var transaction = SqliteDownloadStoreDatabase.BeginImmediateTransaction(connection);
         try
         {
-            var rows = await ReadRowsAsync(connection, transaction, cancellationToken)
+            var rows = await ReadRowsAsync(
+                    connection,
+                    transaction,
+                    clock,
+                    cancellationToken)
                 .ConfigureAwait(false);
             var targetClaims = new Dictionary<string, List<DownloadActionClaims>>(
                 StringComparer.Ordinal);
@@ -84,34 +88,57 @@ internal static class DownloadStoreReservationKeyCompatibility
     private static async Task<IReadOnlyList<ReservationRow>> ReadRowsAsync(
         SqliteConnection connection,
         SqliteTransaction transaction,
+        IClock clock,
         CancellationToken cancellationToken)
     {
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = """
-            SELECT db.id, db.file_path, db.output_reservation_key,
-                   db.need_download_content, db.nfo_request IS NOT NULL
-            FROM download_base db
-            INNER JOIN downloading dl ON dl.id = db.id
+        command.CommandText = DownloadTaskSqlReader.SelectColumns + "\n" + """
             LEFT JOIN download_quarantine q
                    ON q.source_table = 'downloading' AND q.record_id = db.id
             WHERE q.record_id IS NULL
             ORDER BY db.id
             """;
-        using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         var rows = new List<ReservationRow>();
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        var corrupt = new List<(string RecordId, DownloadRecordCorruptException Error)>();
+        using (var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
         {
-            rows.Add(new ReservationRow(
-                reader.GetString(0),
-                reader.GetString(1),
-                await reader.IsDBNullAsync(2, cancellationToken).ConfigureAwait(false)
-                    ? null : reader.GetString(2),
-                DownloadActionClaims.From(
-                    DownloadStoreJson.ReadContentSelection(
-                        reader.GetString(3),
-                        "need_download_content"),
-                    includesNfo: reader.GetInt32(4) != 0)));
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                var recordId = reader.GetString(reader.GetOrdinal("id"));
+                try
+                {
+                    var task = DownloadTaskRecordMapper.Read(reader);
+                    var keyOrdinal = reader.GetOrdinal("output_reservation_key");
+                    rows.Add(new ReservationRow(
+                        recordId,
+                        task.Output.BasePath,
+                        await reader.IsDBNullAsync(keyOrdinal, cancellationToken).ConfigureAwait(false)
+                            ? null : reader.GetString(keyOrdinal),
+                        task.Plan.ActionClaims));
+                }
+                catch (DownloadRecordCorruptException exception)
+                {
+                    corrupt.Add((recordId, exception));
+                }
+            }
+        }
+
+        if (corrupt.Count > 0)
+        {
+            var quarantinedAtUtc = clock.UtcNow;
+            foreach (var item in corrupt)
+            {
+                await SqliteDownloadStoreQuarantine.RecordAsync(
+                        connection,
+                        "downloading",
+                        item.RecordId,
+                        item.Error,
+                        quarantinedAtUtc,
+                        cancellationToken,
+                        transaction)
+                    .ConfigureAwait(false);
+            }
         }
 
         return rows;
