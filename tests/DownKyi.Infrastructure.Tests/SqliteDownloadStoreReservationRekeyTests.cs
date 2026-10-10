@@ -231,6 +231,37 @@ public sealed class SqliteDownloadStoreReservationRekeyTests : IDisposable
     }
 
     [Fact]
+    public async Task CanonicalDisjointActionClaimsFromDifferentCidsBlockStoreReopen()
+    {
+        var composed = Path.Combine(_fixture.TempDirectory, "caf\u00e9-cross-cid");
+        var decomposed = Path.Combine(_fixture.TempDirectory, "cafe\u0301-cross-cid");
+        var cover = new DownloadContentSelection(false, false, false, false, true);
+        using (var first = _fixture.CreateStore())
+        {
+            Assert.True((await first.AddAsync(_fixture.CreatePausedTask(
+                "cross-cid-media",
+                composed,
+                cid: 1001), TestContext.Current.CancellationToken)).IsSuccess);
+            Assert.True((await first.AddAsync(_fixture.CreatePausedTask(
+                "cross-cid-cover",
+                requestedContent: cover,
+                cid: 2002), TestContext.Current.CancellationToken)).IsSuccess);
+        }
+
+        await _fixture.SetPathAndReservationKeyAsync(
+            "cross-cid-cover",
+            decomposed,
+            DownloadOutputPathKey.Create(
+                decomposed,
+                !DownloadOutputPathKey.UsesCaseInsensitiveComparison));
+
+        using var reopened = _fixture.CreateStore();
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            reopened.InitializeAsync(TestContext.Current.CancellationToken));
+        Assert.False(Directory.Exists(Path.Combine(_fixture.TempDirectory, "Backup")));
+    }
+
+    [Fact]
     public async Task CorruptActiveRowIsQuarantinedDuringRekeyAndValidSiblingsRecover()
     {
         var firstPath = Path.Combine(_fixture.TempDirectory, "valid-rekey");

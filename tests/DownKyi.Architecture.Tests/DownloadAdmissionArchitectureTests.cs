@@ -183,6 +183,7 @@ public sealed class DownloadAdmissionArchitectureTests
         Assert.DoesNotContain("OperatingSystem.IsMacOS", coverage, StringComparison.Ordinal);
         Assert.Contains("AllowExistingBasePath: hasMatchingOutputOwner", duplicatePolicy, StringComparison.Ordinal);
         Assert.Contains("DownloadActionClaim.Nfo", outputResolver, StringComparison.Ordinal);
+        Assert.Contains("reader.GetInt64(2) != requestedCid", reservations, StringComparison.Ordinal);
         Assert.Contains("existingClaims.Overlaps(requestedClaims)", reservations, StringComparison.Ordinal);
         Assert.Contains("db.nfo_request IS NOT NULL", reservations, StringComparison.Ordinal);
         Assert.Contains("DownloadTaskSqlReader.SelectColumns", recovery, StringComparison.Ordinal);
@@ -190,7 +191,8 @@ public sealed class DownloadAdmissionArchitectureTests
         Assert.Contains("SqliteDownloadStoreQuarantine.RecordAsync", recovery, StringComparison.Ordinal);
         Assert.Contains("task.Plan.ActionClaims", recovery, StringComparison.Ordinal);
         Assert.DoesNotContain("DownloadStoreJson.ReadContentSelection", recovery, StringComparison.Ordinal);
-        Assert.Contains("claims.Overlaps(row.Claims)", recovery, StringComparison.Ordinal);
+        Assert.Contains("reservation.Cid != row.Cid", recovery, StringComparison.Ordinal);
+        Assert.Contains("reservation.Claims.Overlaps(row.Claims)", recovery, StringComparison.Ordinal);
         Assert.DoesNotContain("DownloadOutputClaims", coverage, StringComparison.Ordinal);
         Assert.DoesNotContain("DownloadOutputClaims", reservations, StringComparison.Ordinal);
         Assert.DoesNotContain("DownloadOutputClaims", recovery, StringComparison.Ordinal);

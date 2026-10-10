@@ -53,6 +53,115 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task DifferentCidDisjointActionGetsNumberedBasePathBeforeAnyOutputExists()
+    {
+        Directory.CreateDirectory(_directory);
+        using var store = CreateStore();
+        var clock = new SystemClock();
+        var historyService = DownloadHistoryService.CreateForSharedStore(store);
+        using var tasks = new DownloadTaskApplicationService(store, historyService, clock);
+        using var projections = new DownloadTaskProjectionStore(tasks, historyService, clock);
+        var list = new DownloadListState();
+        var queue = new RecordingDownloadTaskQueue();
+        using var admission = CreateAdmission(list, tasks, projections, queue);
+        var basePath = Path.Combine(_directory, "cross-cid-auto");
+        var media = CreateItem("cross-cid-media", basePath, cid: 1001);
+        media.DownloadBase.NeedDownloadContent =
+            DownloadContentSelection.None with { Video = true };
+        await admission.AdmitAsync(media, true, TestContext.Current.CancellationToken);
+        var subtitle = CreateItem("cross-cid-subtitle", basePath, cid: 2002);
+        subtitle.DownloadBase.NeedDownloadContent = DownloadContentSelection.None with
+        {
+            Subtitle = true,
+            SelectedSubtitleTrackIds = [11]
+        };
+        Assert.DoesNotContain(
+            Directory.EnumerateFiles(_directory),
+            path => Path.GetFileName(path).StartsWith(
+                "cross-cid-auto",
+                StringComparison.OrdinalIgnoreCase));
+
+        await admission.AdmitAsync(
+            subtitle,
+            autoAddNumberSuffix: true,
+            cancellationToken: TestContext.Current.CancellationToken,
+            allowExistingBasePath: true);
+
+        Assert.Equal(basePath, media.DownloadBase.FilePath);
+        Assert.Equal(basePath + "(1)", subtitle.DownloadBase.FilePath);
+        Assert.Equal(2, list.Downloading.Count);
+        Assert.Equal(2, queue.Enqueued.Count);
+        Assert.Equal(2, (await tasks.GetUnfinishedAsync(
+            TestContext.Current.CancellationToken)).Count);
+    }
+
+    [Fact]
+    public async Task DifferentCidDisjointActionWithoutAutoSuffixHasNoAdmissionSideEffects()
+    {
+        Directory.CreateDirectory(_directory);
+        using var innerStore = CreateStore();
+        var store = new CountingDownloadTaskStore(innerStore);
+        var clock = new SystemClock();
+        var historyService = DownloadHistoryService.CreateForSharedStore(store);
+        using var tasks = new DownloadTaskApplicationService(store, historyService, clock);
+        using var projections = new DownloadTaskProjectionStore(tasks, historyService, clock);
+        var list = new DownloadListState();
+        var queue = new RecordingDownloadTaskQueue();
+        using var admission = CreateAdmission(list, tasks, projections, queue);
+        var basePath = Path.Combine(_directory, "cross-cid-reject");
+        var media = CreateItem("cross-cid-existing", basePath, cid: 1001);
+        media.DownloadBase.NeedDownloadContent =
+            DownloadContentSelection.None with { Video = true };
+        await admission.AdmitAsync(media, true, TestContext.Current.CancellationToken);
+        var subtitle = CreateItem("cross-cid-rejected", basePath, cid: 2002);
+        subtitle.DownloadBase.NeedDownloadContent = DownloadContentSelection.None with
+        {
+            Subtitle = true,
+            SelectedSubtitleTrackIds = [11]
+        };
+
+        await Assert.ThrowsAsync<IOException>(() => admission.AdmitAsync(
+            subtitle,
+            autoAddNumberSuffix: false,
+            cancellationToken: TestContext.Current.CancellationToken,
+            allowExistingBasePath: true));
+
+        Assert.Equal(basePath, subtitle.DownloadBase.FilePath);
+        Assert.Single(await tasks.GetUnfinishedAsync(TestContext.Current.CancellationToken));
+        Assert.Single(list.Downloading);
+        Assert.Single(queue.Enqueued);
+        Assert.Equal(1, store.AddCallCount);
+    }
+
+    [Fact]
+    public async Task SameCidOverlappingActionsKeepExistingCollisionBehavior()
+    {
+        Directory.CreateDirectory(_directory);
+        using var store = CreateStore();
+        var clock = new SystemClock();
+        var historyService = DownloadHistoryService.CreateForSharedStore(store);
+        using var tasks = new DownloadTaskApplicationService(store, historyService, clock);
+        using var projections = new DownloadTaskProjectionStore(tasks, historyService, clock);
+        using var admission = CreateAdmission(
+            new DownloadListState(),
+            tasks,
+            projections,
+            new RecordingDownloadTaskQueue());
+        var basePath = Path.Combine(_directory, "same-cid-overlap");
+        var first = CreateItem("same-cid-first", basePath, cid: 1001);
+        first.DownloadBase.NeedDownloadContent =
+            DownloadContentSelection.None with { Video = true };
+        var second = CreateItem("same-cid-second", basePath, cid: 1001);
+        second.DownloadBase.NeedDownloadContent =
+            DownloadContentSelection.None with { Video = true };
+
+        await admission.AdmitAsync(first, true, TestContext.Current.CancellationToken);
+        await admission.AdmitAsync(second, true, TestContext.Current.CancellationToken);
+
+        Assert.Equal(basePath + "(1)", second.DownloadBase.FilePath);
+    }
+
+    [Fact]
     public async Task FailedRetryableTaskRetainsItsOutputReservation()
     {
         Directory.CreateDirectory(_directory);
@@ -243,7 +352,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
             projections,
             new RecordingDownloadTaskQueue());
         var basePath = Path.Combine(_directory, "shared-residual-output");
-        var media = CreateItem("media", basePath);
+        var media = CreateItem("media", basePath, cid: 1001);
         media.DownloadBase.NeedDownloadContent =
             DownloadContentSelection.None with { Video = true };
         await admission.AdmitAsync(media, true, TestContext.Current.CancellationToken);
@@ -251,7 +360,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
             basePath + ".mp4",
             "owned-media",
             TestContext.Current.CancellationToken);
-        var subtitle = CreateItem("subtitle", basePath);
+        var subtitle = CreateItem("subtitle", basePath, cid: 1001);
         subtitle.DownloadBase.NeedDownloadContent = DownloadContentSelection.None with
         {
             Subtitle = true,
@@ -893,7 +1002,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
             resolver ?? new RecordingPhysicalOutputPathResolver(static path => path));
     }
 
-    private static DownloadingItem CreateItem(string id, string basePath)
+    private static DownloadingItem CreateItem(string id, string basePath, long cid = 0)
     {
         return new DownloadingItem
         {
@@ -901,6 +1010,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
             {
                 Id = id,
                 Bvid = $"BV-{id}",
+                Cid = cid,
                 MainTitle = id,
                 Name = id,
                 FilePath = basePath
@@ -1000,6 +1110,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
 
         public Task<bool> HasOutputClaimConflictAsync(
             string basePath,
+            long requestedCid,
             DownloadActionClaims requestedClaims,
             bool ignoreCase,
             CancellationToken cancellationToken)
@@ -1007,6 +1118,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
             ReservationProbeCount++;
             return inner.HasOutputClaimConflictAsync(
                 basePath,
+                requestedCid,
                 requestedClaims,
                 ignoreCase,
                 cancellationToken);

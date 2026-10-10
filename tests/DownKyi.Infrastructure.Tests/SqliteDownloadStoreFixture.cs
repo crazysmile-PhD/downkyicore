@@ -55,11 +55,12 @@ internal sealed partial class SqliteDownloadStoreFixture : IDisposable
         string id,
         string? outputPath = null,
         DownloadNfoRequest? nfoRequest = null,
-        DownloadContentSelection? requestedContent = null)
+        DownloadContentSelection? requestedContent = null,
+        long cid = 2)
     {
         var task = DownloadTask.Create(
             new DownloadTaskId(id),
-            CreateMetadata(id),
+            CreateMetadata(id, cid),
             CreatePlan(nfoRequest, requestedContent),
             new DownloadOutput(outputPath ?? Path.Combine(_directory, id), "1 GB"),
             _clock.UtcNow);
@@ -79,11 +80,12 @@ internal sealed partial class SqliteDownloadStoreFixture : IDisposable
         string id,
         string outputPath,
         DownloadContentSelection? requestedContent = null,
-        DownloadNfoRequest? nfoRequest = null)
+        DownloadNfoRequest? nfoRequest = null,
+        long cid = 2)
     {
         return DownloadTask.Create(
             new DownloadTaskId(id),
-            CreateMetadata(id),
+            CreateMetadata(id, cid),
             CreatePlan(nfoRequest, requestedContent),
             new DownloadOutput(outputPath, null),
             _clock.UtcNow);
@@ -106,10 +108,10 @@ internal sealed partial class SqliteDownloadStoreFixture : IDisposable
             _clock.UtcNow.AddSeconds(2)).RequireValue();
     }
 
-    internal static DownloadTaskMetadata CreateMetadata(string name)
+    internal static DownloadTaskMetadata CreateMetadata(string name, long cid = 2)
     {
         return new DownloadTaskMetadata(
-            new DownloadMediaIdentity("BV1TEST", 1, 2, 3, 1, 1),
+            new DownloadMediaIdentity("BV1TEST", 1, cid, 3, 1, 1),
             "Collection",
             name,
             "00:10",

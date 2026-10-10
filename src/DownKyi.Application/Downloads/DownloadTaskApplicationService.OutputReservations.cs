@@ -24,6 +24,7 @@ public sealed partial class DownloadTaskApplicationService
 
     public Task<bool> HasOutputClaimConflictAsync(
         string basePath,
+        long requestedCid,
         DownloadActionClaims requestedClaims,
         bool ignoreCase,
         CancellationToken cancellationToken)
@@ -32,6 +33,7 @@ public sealed partial class DownloadTaskApplicationService
         ObjectDisposedException.ThrowIf(_disposed, this);
         return _store.HasOutputClaimConflictAsync(
             basePath,
+            requestedCid,
             requestedClaims,
             ignoreCase,
             cancellationToken);

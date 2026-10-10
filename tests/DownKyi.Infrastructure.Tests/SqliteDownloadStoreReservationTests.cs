@@ -38,7 +38,8 @@ public sealed class SqliteDownloadStoreReservationTests : IDisposable
         var media = _fixture.CreateQueuedTask(
             "media-claim",
             outputPath,
-            DownloadContentSelection.None with { Video = true });
+            DownloadContentSelection.None with { Video = true },
+            cid: 1001);
         var subtitle = _fixture.CreateQueuedTask(
             "subtitle-claim",
             outputPath,
@@ -46,7 +47,8 @@ public sealed class SqliteDownloadStoreReservationTests : IDisposable
             {
                 Subtitle = true,
                 SelectedSubtitleTrackIds = [11]
-            });
+            },
+            cid: 1001);
         using var store = _fixture.CreateStore();
 
         Assert.True((await store.AddAsync(
@@ -59,6 +61,68 @@ public sealed class SqliteDownloadStoreReservationTests : IDisposable
         var unfinished = await store.GetUnfinishedAsync(TestContext.Current.CancellationToken);
         Assert.Equal(2, unfinished.Count);
         Assert.All(unfinished, task => Assert.Equal(outputPath, task.Output.BasePath));
+    }
+
+    [Fact]
+    public async Task DifferentCidsCannotShareOneOutputBasePathWithDisjointActions()
+    {
+        var outputPath = Path.Combine(_fixture.TempDirectory, "cross-cid-direct-add");
+        var media = _fixture.CreateQueuedTask(
+            "cross-cid-media",
+            outputPath,
+            DownloadContentSelection.None with { Video = true },
+            cid: 1001);
+        var subtitle = _fixture.CreateQueuedTask(
+            "cross-cid-subtitle",
+            outputPath,
+            DownloadContentSelection.None with
+            {
+                Subtitle = true,
+                SelectedSubtitleTrackIds = [11]
+            },
+            cid: 2002);
+        using var store = _fixture.CreateStore();
+
+        Assert.True((await store.AddAsync(
+            media,
+            TestContext.Current.CancellationToken)).IsSuccess);
+        var rejected = await store.AddAsync(
+            subtitle,
+            TestContext.Current.CancellationToken);
+
+        Assert.False(rejected.IsSuccess);
+        Assert.Equal("download.store.output_path_reserved", rejected.Error?.Code);
+        Assert.Single(await store.GetUnfinishedAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task ConcurrentDifferentCidsWithDisjointActionsAtomicallyClaimOneBasePath()
+    {
+        var outputPath = Path.Combine(_fixture.TempDirectory, "cross-cid-concurrent-add");
+        var media = _fixture.CreateQueuedTask(
+            "cross-cid-concurrent-media",
+            outputPath,
+            DownloadContentSelection.None with { Video = true },
+            cid: 1001);
+        var subtitle = _fixture.CreateQueuedTask(
+            "cross-cid-concurrent-subtitle",
+            outputPath,
+            DownloadContentSelection.None with
+            {
+                Subtitle = true,
+                SelectedSubtitleTrackIds = [11]
+            },
+            cid: 2002);
+        using var firstStore = _fixture.CreateStore();
+        using var secondStore = _fixture.CreateStore();
+
+        var results = await Task.WhenAll(
+            firstStore.AddAsync(media, TestContext.Current.CancellationToken),
+            secondStore.AddAsync(subtitle, TestContext.Current.CancellationToken));
+
+        Assert.Single(results, result => result.IsSuccess);
+        var rejected = Assert.Single(results, result => !result.IsSuccess);
+        Assert.Equal("download.store.output_path_reserved", rejected.Error?.Code);
     }
 
     [Fact]

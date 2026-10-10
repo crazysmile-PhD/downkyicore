@@ -61,6 +61,7 @@ internal sealed class DownloadTaskAdmissionService : IDisposable
                 autoAddNumberSuffix,
                 (path, token) => _tasks.HasOutputClaimConflictAsync(
                     path,
+                    item.DownloadBase.Cid,
                     requestedClaims,
                     DownloadOutputPathKey.UsesCaseInsensitiveComparison,
                     token),

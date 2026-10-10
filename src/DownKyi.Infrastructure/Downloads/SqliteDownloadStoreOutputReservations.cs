@@ -46,6 +46,7 @@ internal sealed class SqliteDownloadStoreOutputReservations(SqliteDownloadStoreD
                             connection,
                             transaction,
                             task.Output.BasePath,
+                            task.Metadata.Media.Cid,
                             task.Plan.ActionClaims,
                             DownloadOutputPathKey.UsesCaseInsensitiveComparison,
                             token).ConfigureAwait(false))
@@ -171,6 +172,7 @@ internal sealed class SqliteDownloadStoreOutputReservations(SqliteDownloadStoreD
 
     public async Task<bool> HasOutputClaimConflictAsync(
         string basePath,
+        long requestedCid,
         DownloadActionClaims requestedClaims,
         bool ignoreCase,
         CancellationToken cancellationToken)
@@ -182,6 +184,7 @@ internal sealed class SqliteDownloadStoreOutputReservations(SqliteDownloadStoreD
                 connection,
                 transaction: null,
                 basePath,
+                requestedCid,
                 requestedClaims,
                 ignoreCase,
                 cancellationToken)
@@ -192,6 +195,7 @@ internal sealed class SqliteDownloadStoreOutputReservations(SqliteDownloadStoreD
         SqliteConnection connection,
         SqliteTransaction? transaction,
         string basePath,
+        long requestedCid,
         DownloadActionClaims requestedClaims,
         bool ignoreCase,
         CancellationToken cancellationToken)
@@ -202,7 +206,7 @@ internal sealed class SqliteDownloadStoreOutputReservations(SqliteDownloadStoreD
         if (ignoreCase)
         {
             command.CommandText = """
-                SELECT 1, NULL, db.need_download_content, db.nfo_request IS NOT NULL
+                SELECT 1, NULL, db.cid, db.need_download_content, db.nfo_request IS NOT NULL
                 FROM download_base db
                 INNER JOIN downloading dl ON dl.id = db.id
                 WHERE (db.output_reservation_key = @key
@@ -211,7 +215,7 @@ internal sealed class SqliteDownloadStoreOutputReservations(SqliteDownloadStoreD
                       SELECT 1 FROM download_quarantine q
                       WHERE q.source_table = 'downloading' AND q.record_id = db.id)
                 UNION ALL
-                SELECT 0, db.file_path, db.need_download_content, db.nfo_request IS NOT NULL
+                SELECT 0, db.file_path, db.cid, db.need_download_content, db.nfo_request IS NOT NULL
                 FROM download_base db
                 INNER JOIN downloading dl ON dl.id = db.id
                 WHERE db.output_reservation_key IS NULL
@@ -223,7 +227,7 @@ internal sealed class SqliteDownloadStoreOutputReservations(SqliteDownloadStoreD
         else
         {
             command.CommandText = """
-                SELECT 1, NULL, db.need_download_content, db.nfo_request IS NOT NULL
+                SELECT 1, NULL, db.cid, db.need_download_content, db.nfo_request IS NOT NULL
                 FROM download_base db
                 INNER JOIN downloading dl ON dl.id = db.id
                 WHERE (db.output_reservation_key = @key OR db.file_path = @file_path)
@@ -231,7 +235,7 @@ internal sealed class SqliteDownloadStoreOutputReservations(SqliteDownloadStoreD
                       SELECT 1 FROM download_quarantine q
                       WHERE q.source_table = 'downloading' AND q.record_id = db.id)
                 UNION ALL
-                SELECT 0, db.file_path, db.need_download_content, db.nfo_request IS NOT NULL
+                SELECT 0, db.file_path, db.cid, db.need_download_content, db.nfo_request IS NOT NULL
                 FROM download_base db
                 INNER JOIN downloading dl ON dl.id = db.id
                 WHERE db.output_reservation_key IS NULL
@@ -254,12 +258,13 @@ internal sealed class SqliteDownloadStoreOutputReservations(SqliteDownloadStoreD
             }
 
             var existingContent = DownloadStoreJson.ReadContentSelection(
-                reader.GetString(2),
+                reader.GetString(3),
                 "need_download_content");
             var existingClaims = DownloadActionClaims.From(
                 existingContent,
-                includesNfo: reader.GetInt32(3) != 0);
-            if (existingClaims.Overlaps(requestedClaims))
+                includesNfo: reader.GetInt32(4) != 0);
+            if (reader.GetInt64(2) != requestedCid
+                || existingClaims.Overlaps(requestedClaims))
             {
                 return true;
             }
