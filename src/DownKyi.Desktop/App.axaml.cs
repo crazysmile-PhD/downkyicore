@@ -13,11 +13,14 @@ using DownKyi.Core.Settings;
 using DownKyi.Core.Storage;
 using DownKyi.Core.Utils;
 using DownKyi.CustomControl.AsyncImageLoader;
+using DownKyi.Desktop;
 using DownKyi.Desktop.Appearance;
 using DownKyi.Desktop.Composition;
 using DownKyi.Infrastructure.Logging;
 using DownKyi.Models;
 using DownKyi.Platform;
+using DownKyi.Utils;
+using DownKyi.ViewModels;
 using DownKyi.Views;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -30,30 +33,19 @@ internal partial class App : Avalonia.Application, IAsyncDisposable
     private readonly object _disposeSync = new();
     private Task? _disposeTask;
 
-#if !DEBUG
-    // Keep the admission identity alive until the process exits. Host shutdown can time out.
-    private static SingleInstanceGuard? _processInstanceGuard;
-#endif
-
     private IHost? _host;
     private AvaloniaApplicationLifecycle? _applicationLifecycle;
     private ApplicationLogProvider? _logProvider;
     private ILoggerFactory? _loggerFactory;
     private ILogger<App>? _logger;
+    private AvaloniaDesktopContext? _desktopContext;
+    private TrayIcon? _trayIcon;
+    private NativeMenuItem? _showMainWindowMenuItem;
+    private NativeMenuItem? _exitApplicationMenuItem;
     private bool _unhandledExceptionLoggingAttached;
 
     public override void Initialize()
     {
-#if !DEBUG
-        if (!SingleInstanceGuard.TryAcquire(
-                AppConstant.RepoOwner,
-                AppConstant.RepoName,
-                out _processInstanceGuard))
-        {
-            Environment.Exit(0);
-        }
-#endif
-
         AvaloniaXamlLoader.Load(this);
         CreateHost();
         AttachUnhandledExceptionLogging();
@@ -75,22 +67,28 @@ internal partial class App : Avalonia.Application, IAsyncDisposable
         }
 
         var host = _host ?? throw new InvalidOperationException("The application Host is not initialized.");
-        desktop.ShutdownMode = ShutdownMode.OnMainWindowClose;
+        desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
         _applicationLifecycle = host.Services.GetRequiredService<AvaloniaApplicationLifecycle>();
         _applicationLifecycle.AttachHost(host);
 
-        var desktopContext = host.Services.GetRequiredService<AvaloniaDesktopContext>();
-        desktopContext.AttachLifetime(desktop);
+        _desktopContext = host.Services.GetRequiredService<AvaloniaDesktopContext>();
+        _desktopContext.AttachLifetime(desktop);
         var imageLoader = host.Services.GetRequiredService<IAsyncImageLoader>();
         ImageLoader.AsyncImageLoader = imageLoader;
         ImageBrushLoader.AsyncImageLoader = imageLoader;
 
         var mainWindow = host.Services.GetRequiredService<MainWindow>();
-        desktopContext.AttachMainWindow(mainWindow);
+        _desktopContext.AttachMainWindow(
+            mainWindow,
+            mainWindow.ShowAndActivate,
+            mainWindow.PrepareForApplicationExit);
         desktop.MainWindow = mainWindow;
+        ConfigureTrayIcon();
+        DesktopApplication.ProcessInstanceGuard?.SetActivationHandler(ShowMainWindow);
 
         host.Services.GetRequiredService<DesktopThemeController>().ApplySavedMode();
+        host.Services.GetRequiredService<MainWindowViewModel>().PrepareForFirstShow();
         base.OnFrameworkInitializationCompleted();
 
         if (!Design.IsDesignMode)
@@ -120,6 +118,8 @@ internal partial class App : Avalonia.Application, IAsyncDisposable
         }
         finally
         {
+            DesktopApplication.ProcessInstanceGuard?.SetActivationHandler(null);
+            DetachTrayIcon();
             try
             {
                 if (_host is IAsyncDisposable asyncHost)
@@ -135,6 +135,7 @@ internal partial class App : Avalonia.Application, IAsyncDisposable
             {
                 _host = null;
                 _applicationLifecycle = null;
+                _desktopContext = null;
                 DetachUnhandledExceptionLogging();
                 try
                 {
@@ -216,9 +217,84 @@ internal partial class App : Avalonia.Application, IAsyncDisposable
 
     private void StartHost()
     {
+        var applicationLifecycle = _applicationLifecycle;
+        if (applicationLifecycle != null)
+        {
+            ObserveBackgroundTask(
+                Task.Run(applicationLifecycle.StartHostAsync),
+                "Application Host startup failed.");
+        }
+    }
+
+    private void ConfigureTrayIcon()
+    {
+        var trayIcons = TrayIcon.GetIcons(this);
+        if (trayIcons == null || trayIcons.Count == 0)
+        {
+            return;
+        }
+
+        _trayIcon = trayIcons[0];
+        _showMainWindowMenuItem = new NativeMenuItem(DictionaryResource.GetString("ShowMainWindow"));
+        _exitApplicationMenuItem = new NativeMenuItem(DictionaryResource.GetString("ExitApplication"));
+        _showMainWindowMenuItem.Click += OnShowMainWindowRequested;
+        _exitApplicationMenuItem.Click += OnExitApplicationRequested;
+        _trayIcon.Clicked += OnShowMainWindowRequested;
+        _trayIcon.Menu = new NativeMenu
+        {
+            Items =
+            {
+                _showMainWindowMenuItem,
+                new NativeMenuItemSeparator(),
+                _exitApplicationMenuItem
+            }
+        };
+    }
+
+    private void DetachTrayIcon()
+    {
+        if (_trayIcon != null)
+        {
+            _trayIcon.Clicked -= OnShowMainWindowRequested;
+        }
+
+        if (_showMainWindowMenuItem != null)
+        {
+            _showMainWindowMenuItem.Click -= OnShowMainWindowRequested;
+        }
+
+        if (_exitApplicationMenuItem != null)
+        {
+            _exitApplicationMenuItem.Click -= OnExitApplicationRequested;
+        }
+
+        _trayIcon = null;
+        _showMainWindowMenuItem = null;
+        _exitApplicationMenuItem = null;
+    }
+
+    private void OnShowMainWindowRequested(object? sender, EventArgs e)
+    {
+        ShowMainWindow();
+    }
+
+    private void ShowMainWindow()
+    {
+        if (_desktopContext != null)
+        {
+            ObserveBackgroundTask(
+                _desktopContext.ShowMainWindowAsync(),
+                "Showing the main window failed.");
+        }
+    }
+
+    private void OnExitApplicationRequested(object? sender, EventArgs e)
+    {
         if (_applicationLifecycle != null)
         {
-            ObserveBackgroundTask(_applicationLifecycle.StartHostAsync(), "Application Host startup failed.");
+            ObserveBackgroundTask(
+                _applicationLifecycle.ExitAsync(),
+                "Application exit failed.");
         }
     }
 

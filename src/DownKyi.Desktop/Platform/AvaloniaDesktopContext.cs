@@ -10,6 +10,8 @@ internal sealed class AvaloniaDesktopContext
 {
     private IClassicDesktopStyleApplicationLifetime? _lifetime;
     private Window? _mainWindow;
+    private Action? _showMainWindow;
+    private Action? _prepareForShutdown;
 
     public Window MainWindow => _mainWindow
         ?? throw new InvalidOperationException("The main window has not been attached.");
@@ -25,7 +27,10 @@ internal sealed class AvaloniaDesktopContext
         _lifetime = lifetime;
     }
 
-    public void AttachMainWindow(Window mainWindow)
+    public void AttachMainWindow(
+        Window mainWindow,
+        Action? showMainWindow = null,
+        Action? prepareForShutdown = null)
     {
         ArgumentNullException.ThrowIfNull(mainWindow);
         if (_mainWindow != null && !ReferenceEquals(_mainWindow, mainWindow))
@@ -34,12 +39,38 @@ internal sealed class AvaloniaDesktopContext
         }
 
         _mainWindow = mainWindow;
+        _showMainWindow = showMainWindow;
+        _prepareForShutdown = prepareForShutdown;
+    }
+
+    public async Task ShowMainWindowAsync()
+    {
+        var mainWindow = MainWindow;
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            if (_showMainWindow != null)
+            {
+                _showMainWindow();
+                return;
+            }
+
+            if (!mainWindow.IsVisible)
+            {
+                mainWindow.Show();
+            }
+
+            mainWindow.Activate();
+        });
     }
 
     public async Task ShutdownAsync()
     {
         var lifetime = _lifetime
             ?? throw new InvalidOperationException("The desktop lifetime has not been attached.");
-        await Dispatcher.UIThread.InvokeAsync(() => lifetime.Shutdown());
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            _prepareForShutdown?.Invoke();
+            lifetime.Shutdown();
+        });
     }
 }

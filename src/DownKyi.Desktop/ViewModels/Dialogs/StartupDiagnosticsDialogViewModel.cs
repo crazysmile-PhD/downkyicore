@@ -23,6 +23,7 @@ internal sealed class StartupDiagnosticsDialogViewModel : BaseDialogViewModel
 {
     internal const string DiagnosticsParameter = "diagnostics";
     internal const string RecoveryDiagnosticParameter = "recoveryDiagnostic";
+    internal const string BuiltInFallbackDiagnosticParameter = "builtInFallbackDiagnostic";
     private const string IssueTitle = "DownKyi startup diagnostics report";
     private const string IssueTemplate = "app_diagnostic_report.yml";
     private const string TruncatedDiagnosticSuffix =
@@ -162,7 +163,8 @@ internal sealed class StartupDiagnosticsDialogViewModel : BaseDialogViewModel
                 "StartupDiagnosticsImpactFormat",
                 DictionaryResource.GetString(impactResourceKey)),
             CreateItemDiagnosticText(diagnostic),
-            RequestRecovery);
+            RequestRecovery,
+            RequestBuiltInFallback);
     }
 
     private static (string Title, string Description, string Impact)
@@ -202,6 +204,21 @@ internal sealed class StartupDiagnosticsDialogViewModel : BaseDialogViewModel
             new Dictionary<string, object?>(StringComparer.Ordinal)
             {
                 [RecoveryDiagnosticParameter] = diagnostic
+            });
+    }
+
+    private void RequestBuiltInFallback(StartupDiagnostic diagnostic)
+    {
+        if (!diagnostic.AllowsBuiltInDownloaderFallback)
+        {
+            return;
+        }
+
+        CloseDialog(
+            AppDialogOutcome.Accepted,
+            new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                [BuiltInFallbackDiagnosticParameter] = diagnostic
             });
     }
 
@@ -293,7 +310,8 @@ internal sealed class StartupDiagnosticItemViewModel : ObservableObject
         string description,
         string impact,
         string diagnosticText,
-        Action<StartupDiagnostic> requestRecovery)
+        Action<StartupDiagnostic> requestRecovery,
+        Action<StartupDiagnostic> requestBuiltInFallback)
     {
         Diagnostic = diagnostic ?? throw new ArgumentNullException(nameof(diagnostic));
         Title = title ?? throw new ArgumentNullException(nameof(title));
@@ -301,7 +319,10 @@ internal sealed class StartupDiagnosticItemViewModel : ObservableObject
         Impact = impact ?? throw new ArgumentNullException(nameof(impact));
         DiagnosticText = diagnosticText ?? throw new ArgumentNullException(nameof(diagnosticText));
         ArgumentNullException.ThrowIfNull(requestRecovery);
+        ArgumentNullException.ThrowIfNull(requestBuiltInFallback);
         ResetDownloadStoreCommand = new RelayCommand(() => requestRecovery(diagnostic));
+        UseBuiltInDownloaderCommand = new RelayCommand(
+            () => requestBuiltInFallback(diagnostic));
         ToggleDetailsCommand = new RelayCommand(() => IsExpanded = !IsExpanded);
     }
 
@@ -324,7 +345,12 @@ internal sealed class StartupDiagnosticItemViewModel : ObservableObject
     public bool CanResetDownloadStore =>
         Diagnostic.AllowsDownloadStoreReset;
 
+    public bool CanUseBuiltInDownloader =>
+        Diagnostic.AllowsBuiltInDownloaderFallback;
+
     public RelayCommand ResetDownloadStoreCommand { get; }
+
+    public RelayCommand UseBuiltInDownloaderCommand { get; }
 
     public RelayCommand ToggleDetailsCommand { get; }
 }

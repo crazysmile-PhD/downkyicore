@@ -7,6 +7,8 @@ namespace DownKyi.Desktop;
 
 public static class DesktopApplication
 {
+    internal static SingleInstanceGuard? ProcessInstanceGuard { get; private set; }
+
     public static async Task RunAsync(string[] args)
     {
         ArgumentNullException.ThrowIfNull(args);
@@ -15,26 +17,50 @@ public static class DesktopApplication
             return;
         }
 
-        var appBuilder = BuildAvaloniaApp();
+#if !DEBUG
+        SingleInstanceGuard? processInstanceGuard = null;
+#endif
         try
         {
-            if (OperatingSystem.IsWindows())
+#if !DEBUG
+            if (!SingleInstanceGuard.TryAcquire(
+                    AppConstant.RepoOwner,
+                    AppConstant.RepoName,
+                    out processInstanceGuard))
             {
-                await RunOnWindowsStaThreadAsync(
-                        () => appBuilder.StartWithClassicDesktopLifetime(args))
-                    .ConfigureAwait(false);
+                return;
             }
-            else
+
+            ProcessInstanceGuard = processInstanceGuard;
+#endif
+            var appBuilder = BuildAvaloniaApp();
+            try
             {
-                appBuilder.StartWithClassicDesktopLifetime(args);
+                if (OperatingSystem.IsWindows())
+                {
+                    await RunOnWindowsStaThreadAsync(
+                            () => appBuilder.StartWithClassicDesktopLifetime(args))
+                        .ConfigureAwait(false);
+                }
+                else
+                {
+                    appBuilder.StartWithClassicDesktopLifetime(args);
+                }
+            }
+            finally
+            {
+                if (appBuilder.Instance is IAsyncDisposable application)
+                {
+                    await application.DisposeAsync().ConfigureAwait(false);
+                }
             }
         }
         finally
         {
-            if (appBuilder.Instance is IAsyncDisposable application)
-            {
-                await application.DisposeAsync().ConfigureAwait(false);
-            }
+#if !DEBUG
+            ProcessInstanceGuard = null;
+            processInstanceGuard?.Dispose();
+#endif
         }
     }
 

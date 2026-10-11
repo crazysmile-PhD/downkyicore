@@ -31,22 +31,46 @@ public sealed class AppLifecycleArchitectureTests
 
         Assert.DoesNotContain(".GetAwaiter().GetResult()", appSource, StringComparison.Ordinal);
         Assert.DoesNotContain(".Wait()", appSource, StringComparison.Ordinal);
-        Assert.DoesNotContain("Task.Run", appSource, StringComparison.Ordinal);
         Assert.DoesNotContain(".GetAwaiter().GetResult()", desktopSource, StringComparison.Ordinal);
         Assert.DoesNotContain(".Wait()", desktopSource, StringComparison.Ordinal);
         Assert.Contains("AvaloniaApplicationLifecycle", appSource, StringComparison.Ordinal);
         Assert.Contains("host.StopAsync(CancellationToken.None)", lifecycleSource, StringComparison.Ordinal);
         Assert.Contains("_settingsStore.FlushAsync", lifecycleSource, StringComparison.Ordinal);
+        var disposeStart = appSource.IndexOf("private async Task DisposeCoreAsync()", StringComparison.Ordinal);
+        var createHostStart = appSource.IndexOf("private void CreateHost()", StringComparison.Ordinal);
+        Assert.True(disposeStart >= 0 && createHostStart > disposeStart);
+        Assert.DoesNotContain("Task.Run", appSource[disposeStart..createHostStart], StringComparison.Ordinal);
     }
 
     [Fact]
-    public void MainWindowCompletesCleanupBeforeConfirmingClose()
+    public void MainWindowHidesImmediatelyAndExplicitExitOwnsCleanup()
     {
-        var source = ReadSource("src", "DownKyi.Desktop", "Views", "MainWindow.axaml.cs");
+        var windowSource = ReadSource("src", "DownKyi.Desktop", "Views", "MainWindow.axaml.cs");
+        var contextSource = ReadSource("src", "DownKyi.Desktop", "Platform", "AvaloniaDesktopContext.cs");
+        var lifecycleSource = ReadSource(
+            "src", "DownKyi.Desktop", "Platform", "AvaloniaApplicationLifecycle.cs");
 
-        Assert.Contains("await _applicationLifecycle.RequestShutdownAsync()", source, StringComparison.Ordinal);
-        Assert.Contains("_closeConfirmed = true", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("Application.Current", source, StringComparison.Ordinal);
+        Assert.Contains("e.Cancel = true", windowSource, StringComparison.Ordinal);
+        Assert.Contains("Hide();", windowSource, StringComparison.Ordinal);
+        Assert.Contains("PrepareForApplicationExit", windowSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("RequestShutdownAsync", windowSource, StringComparison.Ordinal);
+        Assert.Contains("_prepareForShutdown?.Invoke()", contextSource, StringComparison.Ordinal);
+        Assert.Contains("await RequestShutdownAsync(cancellationToken)", lifecycleSource, StringComparison.Ordinal);
+        Assert.Contains("await _desktopContext.ShutdownAsync()", lifecycleSource, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void FirstVisibleWindowDoesNotOwnHostOrIndexInitialization()
+    {
+        var appSource = ReadSource("src", "DownKyi.Desktop", "App.axaml.cs");
+        var prepareIndex = appSource.IndexOf("PrepareForFirstShow()", StringComparison.Ordinal);
+        var completeFrameworkInitialization = appSource.IndexOf(
+            "base.OnFrameworkInitializationCompleted()",
+            StringComparison.Ordinal);
+
+        Assert.True(prepareIndex >= 0 && prepareIndex < completeFrameworkInitialization);
+        Assert.Contains("Task.Run(applicationLifecycle.StartHostAsync)", appSource,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -93,6 +117,7 @@ public sealed class AppLifecycleArchitectureTests
     public void AppDelegatesHostShutdownRestartAndSingleInstanceOwnership()
     {
         var appSource = ReadSource("src", "DownKyi.Desktop", "App.axaml.cs");
+        var desktopSource = ReadSource("src", "DownKyi.Desktop", "DesktopApplication.cs");
         var lifecycleSource = ReadSource(
             "src", "DownKyi.Desktop",
             "Platform",
@@ -102,7 +127,8 @@ public sealed class AppLifecycleArchitectureTests
             "Platform",
             "ProcessRestartLauncher.cs");
 
-        Assert.Contains("SingleInstanceGuard.TryAcquire", appSource, StringComparison.Ordinal);
+        Assert.Contains("SingleInstanceGuard.TryAcquire", desktopSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("SingleInstanceGuard.TryAcquire", appSource, StringComparison.Ordinal);
         Assert.Contains("_applicationLifecycle.AttachHost", appSource, StringComparison.Ordinal);
         Assert.DoesNotContain("new Mutex", appSource, StringComparison.Ordinal);
         Assert.DoesNotContain("SHA256", appSource, StringComparison.Ordinal);
@@ -119,22 +145,21 @@ public sealed class AppLifecycleArchitectureTests
     [Fact]
     public void ProductionSingleInstanceGuardPrecedesHostAndStorageInitialization()
     {
-        var appSource = ReadSource("src", "DownKyi.Desktop", "App.axaml.cs");
-        var initializeStart = appSource.IndexOf("public override void Initialize()", StringComparison.Ordinal);
-        var initializeEnd = appSource.IndexOf(
-            "public override void OnFrameworkInitializationCompleted()", StringComparison.Ordinal);
-        Assert.True(initializeStart >= 0 && initializeEnd > initializeStart);
+        var desktopSource = ReadSource("src", "DownKyi.Desktop", "DesktopApplication.cs");
+        var runStart = desktopSource.IndexOf("public static async Task RunAsync", StringComparison.Ordinal);
+        var runEnd = desktopSource.IndexOf(
+            "internal static Task RunOnWindowsStaThreadAsync", StringComparison.Ordinal);
+        Assert.True(runStart >= 0 && runEnd > runStart);
 
-        var initialize = appSource[initializeStart..initializeEnd];
-        var productionGuard = initialize.IndexOf("#if !DEBUG", StringComparison.Ordinal);
-        var acquire = initialize.IndexOf("SingleInstanceGuard.TryAcquire", StringComparison.Ordinal);
-        var exit = initialize.IndexOf("Environment.Exit(0)", StringComparison.Ordinal);
-        var loadXaml = initialize.IndexOf("AvaloniaXamlLoader.Load", StringComparison.Ordinal);
-        var createHost = initialize.IndexOf("CreateHost()", StringComparison.Ordinal);
+        var run = desktopSource[runStart..runEnd];
+        var productionGuard = run.IndexOf("#if !DEBUG", StringComparison.Ordinal);
+        var acquire = run.IndexOf("SingleInstanceGuard.TryAcquire", StringComparison.Ordinal);
+        var rejectedReturn = run.IndexOf("return;", acquire, StringComparison.Ordinal);
+        var buildAvalonia = run.IndexOf("BuildAvaloniaApp()", StringComparison.Ordinal);
 
         Assert.True(productionGuard >= 0 && productionGuard < acquire);
-        Assert.True(acquire < exit && exit < loadXaml && loadXaml < createHost);
-        Assert.DoesNotContain("AppContext.BaseDirectory", initialize, StringComparison.Ordinal);
+        Assert.True(acquire < rejectedReturn && rejectedReturn < buildAvalonia);
+        Assert.DoesNotContain("AppContext.BaseDirectory", run, StringComparison.Ordinal);
     }
 
     [Fact]

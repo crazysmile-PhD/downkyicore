@@ -38,6 +38,9 @@ internal sealed record LegacyUpgradeResult(
 
 internal interface ILegacyUpgradeCoordinator
 {
+    Task<bool> HasMigrationSourceAsync(CancellationToken cancellationToken) =>
+        Task.FromResult(true);
+
     Task<LegacyUpgradeResult> UpgradeAsync(
         IProgress<LegacyUpgradeProgress> progress,
         CancellationToken cancellationToken);
@@ -67,6 +70,40 @@ internal sealed class LegacyUpgradeCoordinator : ILegacyUpgradeCoordinator
     {
         ArgumentNullException.ThrowIfNull(progress);
         return Task.Run(() => UpgradeCoreAsync(progress, cancellationToken), cancellationToken);
+    }
+
+    public Task<bool> HasMigrationSourceAsync(CancellationToken cancellationToken)
+    {
+        return Task.Run(() => HasMigrationSource(cancellationToken), cancellationToken);
+    }
+
+    private static bool HasMigrationSource(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (FindLegacyDatabase() != null)
+        {
+            return true;
+        }
+
+        var loginPath = ApplicationStorage.GetLogin();
+        if (!File.Exists(loginPath))
+        {
+            return false;
+        }
+
+        try
+        {
+            using Stream stream = File.Open(loginPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            return NrbfDecoder.StartsWithPayloadHeader(stream);
+        }
+        catch (IOException)
+        {
+            return true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return true;
+        }
     }
 
     private async Task<LegacyUpgradeResult> UpgradeCoreAsync(

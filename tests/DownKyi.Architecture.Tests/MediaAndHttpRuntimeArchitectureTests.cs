@@ -781,12 +781,15 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
 
         Assert.Contains("await CompleteViewModelLifecycleAsync(viewModel)", dialogServiceSource,
             StringComparison.Ordinal);
+        Assert.Contains("HasMigrationSourceAsync(cancellationToken)", dialogServiceSource,
+            StringComparison.Ordinal);
         Assert.Contains("await viewModel.OnDialogClosedAsync()", dialogServiceSource,
             StringComparison.Ordinal);
         Assert.Contains("await asyncDisposable.DisposeAsync()", dialogServiceSource,
             StringComparison.Ordinal);
 
         Assert.Contains("Task.Run", coordinatorSource, StringComparison.Ordinal);
+        Assert.Contains("HasMigrationSourceAsync", coordinatorSource, StringComparison.Ordinal);
         Assert.Contains("CancellationToken", coordinatorSource, StringComparison.Ordinal);
         Assert.Contains("using var database", coordinatorSource, StringComparison.Ordinal);
         Assert.Contains("LegacyDownloadHistoryTaskFactory.Create", coordinatorSource, StringComparison.Ordinal);

@@ -15,6 +15,7 @@ using DownKyi.Platform;
 using DownKyi.Services;
 using DownKyi.Services.Download;
 using DownKyi.Services.Migration;
+using DownKyi.Services.Settings;
 using DownKyi.Services.Startup;
 using DownKyi.ViewModels.Dialogs;
 using Microsoft.Extensions.Logging;
@@ -33,6 +34,7 @@ internal sealed class MainWindowViewModel : ObservableObject, IDisposable
     private readonly VersionCheckerService _versionChecker;
     private readonly IDownloadRuntimeAvailability _downloadRuntimeAvailability;
     private readonly DownloadStoreRecoveryPresenter _downloadStoreRecoveryPresenter;
+    private readonly INetworkSettingsCoordinator _networkSettingsCoordinator;
     private readonly ILogger<MainWindowViewModel> _logger;
     private readonly CancellationTokenSource _lifetimeCancellation = new();
     private readonly CancellationToken _lifetimeToken;
@@ -42,6 +44,8 @@ internal sealed class MainWindowViewModel : ObservableObject, IDisposable
     private CancellationTokenSource? _messageCancellation;
     private CancellationTokenSource? _clipboardDebounceCancellation;
     private Task? _startupDialogsTask;
+    private bool _hasPreparedFirstShow;
+    private bool _hasLoaded;
 
     private object? _mainContent;
 
@@ -67,19 +71,10 @@ internal sealed class MainWindowViewModel : ObservableObject, IDisposable
 
     public RelayCommand? LoadedCommand { get; }
 
-    private RelayCommand? _closingCommand;
-
-    public RelayCommand ClosingCommand => _closingCommand ??= new RelayCommand(ExecuteClosingCommand);
-
     private RelayCommand<PointerPressedEventArgs>? _pointerPressedCommand;
 
     public RelayCommand<PointerPressedEventArgs> PointerPressedCommand =>
         _pointerPressedCommand ??= RequiredParameterCommand.Create<PointerPressedEventArgs>(ExecutePointerPressed);
-
-    private void ExecuteClosingCommand()
-    {
-        Dispose();
-    }
 
     public void Dispose()
     {
@@ -139,6 +134,7 @@ internal sealed class MainWindowViewModel : ObservableObject, IDisposable
         VersionCheckerService versionChecker,
         IDownloadRuntimeAvailability downloadRuntimeAvailability,
         DownloadStoreRecoveryPresenter downloadStoreRecoveryPresenter,
+        INetworkSettingsCoordinator networkSettingsCoordinator,
         ILogger<MainWindowViewModel> logger)
     {
         _navigationService = navigationService ?? throw new ArgumentNullException(nameof(navigationService));
@@ -152,6 +148,8 @@ internal sealed class MainWindowViewModel : ObservableObject, IDisposable
             ?? throw new ArgumentNullException(nameof(downloadRuntimeAvailability));
         _downloadStoreRecoveryPresenter = downloadStoreRecoveryPresenter
             ?? throw new ArgumentNullException(nameof(downloadStoreRecoveryPresenter));
+        _networkSettingsCoordinator = networkSettingsCoordinator
+            ?? throw new ArgumentNullException(nameof(networkSettingsCoordinator));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _lifetimeToken = _lifetimeCancellation.Token;
 
@@ -167,17 +165,30 @@ internal sealed class MainWindowViewModel : ObservableObject, IDisposable
 
         LoadedCommand = new RelayCommand(() =>
         {
-            if (Design.IsDesignMode)
+            if (Design.IsDesignMode || _hasLoaded)
             {
                 return;
             }
+
+            _hasLoaded = true;
+            PrepareForFirstShow();
             StartStartupDialogs();
-            _clipboardMonitor.Changed -= ClipboardMonitorOnChanged;
-            _clipboardMonitor.Changed += ClipboardMonitorOnChanged;
-            _navigationService.Navigate(new AppNavigationRequest(
-                AppRoute.Index,
-                Parameter: "start"));
         });
+    }
+
+    internal void PrepareForFirstShow()
+    {
+        if (Design.IsDesignMode || _hasPreparedFirstShow)
+        {
+            return;
+        }
+
+        _hasPreparedFirstShow = true;
+        _clipboardMonitor.Changed -= ClipboardMonitorOnChanged;
+        _clipboardMonitor.Changed += ClipboardMonitorOnChanged;
+        _navigationService.Navigate(new AppNavigationRequest(
+            AppRoute.Index,
+            Parameter: "start"));
     }
 
     private void NotificationServiceOnNotificationRaised(object? sender, UserNotificationEventArgs e)
@@ -425,6 +436,23 @@ internal sealed class MainWindowViewModel : ObservableObject, IDisposable
                 await _downloadStoreRecoveryPresenter
                     .ConfirmResetAndRestartAsync(recoveryDiagnostic.Failure, _lifetimeToken)
                     .ConfigureAwait(true);
+                return;
+            }
+
+            if (result.Outcome == AppDialogOutcome.Accepted
+                && result.Parameters.TryGetValue(
+                    StartupDiagnosticsDialogViewModel.BuiltInFallbackDiagnosticParameter,
+                    out var fallbackValue)
+                && fallbackValue is StartupDiagnostic
+                {
+                    Kind: StartupDiagnosticKind.DownloadRuntimeMissing
+                })
+            {
+                await _networkSettingsCoordinator.ApplyWithRestartPromptAsync(
+                    network => network with { Downloader = Downloader.BuiltIn },
+                    network => network.Downloader == Downloader.BuiltIn,
+                    showFeedback: true,
+                    _lifetimeToken).ConfigureAwait(true);
             }
         }
         catch (OperationCanceledException) when (_lifetimeToken.IsCancellationRequested)

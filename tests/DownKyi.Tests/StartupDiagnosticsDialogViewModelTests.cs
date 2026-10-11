@@ -84,6 +84,43 @@ public sealed class StartupDiagnosticsDialogViewModelTests
     }
 
     [Fact]
+    public async Task BuiltInFallbackActionIsAvailableOnlyWhenPackagedAriaIsMissing()
+    {
+        var viewModel = new StartupDiagnosticsDialogViewModel(
+            new RedactingLogService(),
+            new RecordingClipboardService(),
+            new RecordingPlatformLauncher(),
+            new RecordingNotificationService(),
+            NullLogger<StartupDiagnosticsDialogViewModel>.Instance);
+        var missingRuntime = StartupDiagnostic.ForDownloadBootstrap(
+            new FileNotFoundException("aria2 executable missing"));
+        viewModel.OnDialogOpened(CreateRequest(missingRuntime));
+
+        var missingRuntimeItem = Assert.Single(viewModel.Items);
+        Assert.True(missingRuntimeItem.CanUseBuiltInDownloader);
+        Assert.False(missingRuntimeItem.CanResetDownloadStore);
+
+        var closeCompletion = new TaskCompletionSource<AppDialogResult>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        viewModel.CloseRequested += (_, closeResult) =>
+            closeCompletion.TrySetResult(closeResult);
+        missingRuntimeItem.UseBuiltInDownloaderCommand.Execute(null);
+
+        var result = await closeCompletion.Task.WaitAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(AppDialogOutcome.Accepted, result.Outcome);
+        Assert.Same(
+            missingRuntime,
+            result.Parameters[
+                StartupDiagnosticsDialogViewModel.BuiltInFallbackDiagnosticParameter]);
+
+        viewModel.OnDialogOpened(CreateRequest(
+            StartupDiagnostic.ForDownloadBootstrap(
+                new InvalidOperationException("aria2 startup failed"))));
+
+        Assert.False(Assert.Single(viewModel.Items).CanUseBuiltInDownloader);
+    }
+
+    [Fact]
     public async Task DialogCopiesRedactedDiagnosticAndPrefillsNewIssue()
     {
         var logs = new RedactingLogService();

@@ -7,6 +7,7 @@ using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Threading;
 using DownKyi.Application.Desktop;
+using DownKyi.Services.Migration;
 using DownKyi.ViewModels.Dialogs;
 
 namespace DownKyi.Platform;
@@ -18,13 +19,17 @@ internal sealed class AvaloniaDialogService : IAppDialogService
     private const double WorkAreaMargin = 32;
     private readonly DialogContentFactory _contentFactory;
     private readonly AvaloniaDesktopContext _desktopContext;
+    private readonly ILegacyUpgradeCoordinator _legacyUpgradeCoordinator;
 
     public AvaloniaDialogService(
         DialogContentFactory contentFactory,
-        AvaloniaDesktopContext desktopContext)
+        AvaloniaDesktopContext desktopContext,
+        ILegacyUpgradeCoordinator legacyUpgradeCoordinator)
     {
         _contentFactory = contentFactory ?? throw new ArgumentNullException(nameof(contentFactory));
         _desktopContext = desktopContext ?? throw new ArgumentNullException(nameof(desktopContext));
+        _legacyUpgradeCoordinator = legacyUpgradeCoordinator
+            ?? throw new ArgumentNullException(nameof(legacyUpgradeCoordinator));
     }
 
     public async Task<AppDialogResult> ShowAsync(
@@ -48,6 +53,16 @@ internal sealed class AvaloniaDialogService : IAppDialogService
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        if (request.Dialog == AppDialog.LegacyUpgrade
+            && !await _legacyUpgradeCoordinator
+                .HasMigrationSourceAsync(cancellationToken)
+                .ConfigureAwait(true))
+        {
+            return new AppDialogResult(
+                AppDialogOutcome.Canceled,
+                new Dictionary<string, object?>(StringComparer.Ordinal));
+        }
+
         var (content, viewModel) = _contentFactory.Create(request.Dialog);
         var window = new DialogWindow
         {

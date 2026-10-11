@@ -36,6 +36,9 @@ internal sealed record StartupDiagnostic(
     public bool AllowsDownloadStoreReset =>
         Kind == StartupDiagnosticKind.DownloadStoreSchemaMismatch;
 
+    public bool AllowsBuiltInDownloaderFallback =>
+        Kind == StartupDiagnosticKind.DownloadRuntimeMissing;
+
     public static StartupDiagnostic ForLegacyMigration(
         Exception failure,
         string? context = null)

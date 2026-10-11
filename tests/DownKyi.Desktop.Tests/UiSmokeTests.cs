@@ -768,7 +768,7 @@ public sealed class UiSmokeTests
     }
 
     [AvaloniaFact]
-    public async Task MainWindowStillClosesWhenShutdownRequestFaults()
+    public async Task MainWindowCloseHidesWithoutStartingApplicationShutdown()
     {
         await AvaloniaTestDispatcher.RunAsync(async () =>
         {
@@ -798,10 +798,16 @@ public sealed class UiSmokeTests
                 window.Show();
                 window.Close();
 
+                await Task.Yield();
+                Assert.False(window.IsVisible);
+                Assert.Equal(0, lifecycle.ShutdownRequestCount);
+                Assert.False(closed.Task.IsCompleted);
+
+                window.PrepareForApplicationExit();
+                window.Close();
                 await closed.Task
                     .WaitAsync(TestContext.Current.CancellationToken)
                     .ConfigureAwait(true);
-                Assert.Equal(1, lifecycle.ShutdownRequestCount);
                 Assert.False(window.IsVisible);
             }
             finally

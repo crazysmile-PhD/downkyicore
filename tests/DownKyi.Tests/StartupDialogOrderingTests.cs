@@ -7,6 +7,7 @@ using DownKyi.Platform;
 using DownKyi.Services;
 using DownKyi.Services.Download;
 using DownKyi.Services.Migration;
+using DownKyi.Services.Settings;
 using DownKyi.Services.Startup;
 using DownKyi.ViewModels;
 using DownKyi.ViewModels.Dialogs;
@@ -16,6 +17,38 @@ namespace DownKyi.Tests;
 
 public sealed class StartupDialogOrderingTests
 {
+    [Fact]
+    public void ReopeningTheWindowDoesNotRepeatLoadedInitialization()
+    {
+        using var settings = new TestSettingsStore();
+        var navigation = new NavigationStub();
+        var dialogs = new OrderedDialogService();
+        using var handler = new ReleaseHandler();
+        using var httpClient = new HttpClient(handler, disposeHandler: false)
+        {
+            BaseAddress = new Uri("https://api.github.test/")
+        };
+        using var clipboard = new ClipboardMonitorStub();
+        using var viewModel = new MainWindowViewModel(
+            navigation,
+            new NotificationStub(),
+            dialogs,
+            settings.Store,
+            clipboard,
+            new SearchService(settings.Store, navigation),
+            new VersionCheckerService(httpClient, "owner", "repo"),
+            new RuntimeAvailabilityStub(),
+            CreateRecoveryPresenter(dialogs),
+            CreateNetworkSettingsCoordinator(settings.Store, dialogs),
+            NullLogger<MainWindowViewModel>.Instance);
+
+        viewModel.PrepareForFirstShow();
+        viewModel.LoadedCommand!.Execute(null);
+        viewModel.LoadedCommand.Execute(null);
+
+        Assert.Equal(1, navigation.NavigateCallCount);
+    }
+
     [Fact]
     public async Task UpdateDialogWaitsForLegacyMigrationDialogToFinish()
     {
@@ -47,6 +80,7 @@ public sealed class StartupDialogOrderingTests
             new VersionCheckerService(httpClient, "owner", "repo"),
             new RuntimeAvailabilityStub(),
             CreateRecoveryPresenter(dialogs),
+            CreateNetworkSettingsCoordinator(settings.Store, dialogs),
             NullLogger<MainWindowViewModel>.Instance);
 
         var startup = viewModel.RunStartupDialogsAsync();
@@ -97,6 +131,7 @@ public sealed class StartupDialogOrderingTests
             new VersionCheckerService(httpClient, "owner", "repo"),
             new RuntimeAvailabilityStub(),
             CreateRecoveryPresenter(dialogs),
+            CreateNetworkSettingsCoordinator(settings.Store, dialogs),
             NullLogger<MainWindowViewModel>.Instance);
 
         var startup = viewModel.RunStartupDialogsAsync();
@@ -143,6 +178,7 @@ public sealed class StartupDialogOrderingTests
             new VersionCheckerService(httpClient, "owner", "repo"),
             new RuntimeAvailabilityStub(DownloadRuntimeStartupOutcome.Faulted(failure)),
             CreateRecoveryPresenter(dialogs),
+            CreateNetworkSettingsCoordinator(settings.Store, dialogs),
             NullLogger<MainWindowViewModel>.Instance);
 
         var startup = viewModel.RunStartupDialogsAsync();
@@ -200,6 +236,7 @@ public sealed class StartupDialogOrderingTests
             new VersionCheckerService(httpClient, "owner", "repo"),
             availability,
             CreateRecoveryPresenter(dialogs),
+            CreateNetworkSettingsCoordinator(settings.Store, dialogs),
             NullLogger<MainWindowViewModel>.Instance);
 
         var startup = viewModel.RunStartupDialogsAsync();
@@ -230,6 +267,56 @@ public sealed class StartupDialogOrderingTests
             });
     }
 
+    [Fact]
+    public async Task MissingAriaFallbackRoutesThroughNetworkSettingsOwner()
+    {
+        using var settings = new TestSettingsStore();
+        settings.Store.Update(current => current with
+        {
+            About = current.About with { AutoUpdateWhenLaunch = AllowStatus.No },
+            Network = current.Network with { Downloader = Downloader.Aria }
+        });
+        var navigation = new NavigationStub();
+        var dialogs = new OrderedDialogService
+        {
+            StartupDiagnosticsResultFactory = diagnostics => new AppDialogResult(
+                AppDialogOutcome.Accepted,
+                new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    [StartupDiagnosticsDialogViewModel.BuiltInFallbackDiagnosticParameter] =
+                        Assert.Single(diagnostics)
+                })
+        };
+        using var handler = new ReleaseHandler();
+        using var httpClient = new HttpClient(handler, disposeHandler: false)
+        {
+            BaseAddress = new Uri("https://api.github.test/")
+        };
+        using var clipboard = new ClipboardMonitorStub();
+        using var viewModel = new MainWindowViewModel(
+            navigation,
+            new NotificationStub(),
+            dialogs,
+            settings.Store,
+            clipboard,
+            new SearchService(settings.Store, navigation),
+            new VersionCheckerService(httpClient, "owner", "repo"),
+            new RuntimeAvailabilityStub(DownloadRuntimeStartupOutcome.Faulted(
+                new FileNotFoundException("aria2 executable missing"))),
+            CreateRecoveryPresenter(dialogs),
+            CreateNetworkSettingsCoordinator(settings.Store, dialogs),
+            NullLogger<MainWindowViewModel>.Instance);
+
+        var startup = viewModel.RunStartupDialogsAsync();
+        await dialogs.LegacyDialogStarted.Task
+            .WaitAsync(TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
+        dialogs.CompleteLegacyDialog();
+        await startup.ConfigureAwait(true);
+
+        Assert.Equal(Downloader.BuiltIn, settings.Store.Current.Network.Downloader);
+    }
+
     private static DownloadStoreRecoveryPresenter CreateRecoveryPresenter(
         IAppDialogService dialogs) =>
         new(
@@ -237,6 +324,15 @@ public sealed class StartupDialogOrderingTests
             new DownloadStoreRecoveryStub(),
             new ApplicationLifecycleStub(),
             NullLogger<DownloadStoreRecoveryPresenter>.Instance);
+
+    private static NetworkSettingsCoordinator CreateNetworkSettingsCoordinator(
+        ISettingsStore settingsStore,
+        IAppDialogService dialogs) =>
+        new NetworkSettingsCoordinator(
+            settingsStore,
+            new NotificationStub(),
+            dialogs,
+            new ApplicationLifecycleStub());
 
     private sealed class OrderedDialogService : IAppDialogService
     {
@@ -249,6 +345,10 @@ public sealed class StartupDialogOrderingTests
         public List<AppDialog> Requests { get; } = [];
 
         public IReadOnlyList<StartupDiagnostic>? StartupDiagnostics { get; private set; }
+
+        public Func<IReadOnlyList<StartupDiagnostic>, AppDialogResult>?
+            StartupDiagnosticsResultFactory
+        { get; init; }
 
         public Task<AppDialogResult> ShowAsync(
             AppDialogRequest request,
@@ -266,6 +366,11 @@ public sealed class StartupDialogOrderingTests
             {
                 StartupDiagnostics = Assert.IsAssignableFrom<IReadOnlyList<StartupDiagnostic>>(
                     request.Parameters?[StartupDiagnosticsDialogViewModel.DiagnosticsParameter]);
+                if (StartupDiagnosticsResultFactory != null)
+                {
+                    return Task.FromResult(
+                        StartupDiagnosticsResultFactory(StartupDiagnostics));
+                }
             }
 
             return Task.FromResult(new AppDialogResult(
@@ -394,6 +499,8 @@ public sealed class StartupDialogOrderingTests
 
     private sealed class NavigationStub : IAppNavigationService
     {
+        public int NavigateCallCount { get; private set; }
+
         public event EventHandler<AppNavigationChangedEventArgs>? NavigationChanged
         {
             add { }
@@ -402,6 +509,7 @@ public sealed class StartupDialogOrderingTests
 
         public void Navigate(AppNavigationRequest request)
         {
+            NavigateCallCount++;
         }
 
         public void NavigateRegion(

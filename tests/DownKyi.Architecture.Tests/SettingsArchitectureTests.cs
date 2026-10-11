@@ -84,7 +84,7 @@ public sealed class SettingsArchitectureTests
 
         Assert.Contains("MainWindowViewModel viewModel", source, StringComparison.Ordinal);
         Assert.Contains("ISettingsStore settingsStore", source, StringComparison.Ordinal);
-        Assert.Contains("IApplicationLifecycle applicationLifecycle", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("IApplicationLifecycle", source, StringComparison.Ordinal);
         Assert.DoesNotContain("public MainWindow()", source, StringComparison.Ordinal);
     }
 

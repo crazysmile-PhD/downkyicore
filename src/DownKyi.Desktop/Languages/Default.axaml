@@ -7,6 +7,8 @@
 
     <!--  系统  -->
     <system:String x:Key="Close">关闭</system:String>
+    <system:String x:Key="ShowMainWindow">显示主窗口</system:String>
+    <system:String x:Key="ExitApplication">退出 DownKyi</system:String>
 
     <!--  Index  -->
     <system:String x:Key="Login">登录</system:String>
@@ -400,7 +402,7 @@
     <system:String x:Key="StartupDiagnosticsMessage">以下问题已分别记录，部分功能可能无法正常使用。技术详情默认收起，可按需展开。</system:String>
     <system:String x:Key="StartupDiagnosticsImpactFormat">影响范围：{0}</system:String>
     <system:String x:Key="StartupDownloadFailureTitle">下载系统无法启动</system:String>
-    <system:String x:Key="StartupDownloadMissingDescription">缺少必要的 aria2 执行文件，或程序文件不完整。</system:String>
+    <system:String x:Key="StartupDownloadMissingDescription">缺少必要的 aria2 执行文件，或程序文件不完整。可以改用内建下载器继续使用下载功能。</system:String>
     <system:String x:Key="StartupDownloadFailureDescription">下载系统初始化时发生错误。</system:String>
     <system:String x:Key="StartupDownloadFailureImpact">下载功能无法使用，其他功能仍可继续使用。</system:String>
     <system:String x:Key="StartupDownloadStoreFailureTitle">下载资料库结构不兼容</system:String>
@@ -416,6 +418,7 @@
     <system:String x:Key="OpenGitHubIssueFailed">无法打开 GitHub，请手动前往项目议题页面。</system:String>
     <system:String x:Key="OpenDiagnosticFolderFailed">无法打开诊断包所在文件夹。</system:String>
     <system:String x:Key="ResetDownloadStore">重建下载资料库…</system:String>
+    <system:String x:Key="UseBuiltInDownloader">改用内建下载器</system:String>
     <system:String x:Key="DownloadStoreResetConfirmation">将备份并重建下载资料库，然后重新启动应用。下载队列、下载历史及续传状态会被清除；已经下载的媒体文件、登录信息和程序设置不会被删除。是否继续？</system:String>
     <system:String x:Key="DownloadStoreResetFailed">无法完成下载资料库的备份与重建。已有备份会保留，请复制错误信息并在 GitHub 建立议题。</system:String>
     <system:String x:Key="DownloadStoreResetRestartFailed">下载资料库已经备份并重建，但无法自动重新启动。请手动关闭并重新打开 DownKyi。</system:String>

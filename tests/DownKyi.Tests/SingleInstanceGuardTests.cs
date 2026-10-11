@@ -17,6 +17,16 @@ public sealed class SingleInstanceGuardTests
     }
 
     [Fact]
+    public void ActivationEventNameUsesStableApplicationIdentity()
+    {
+        var first = SingleInstanceGuard.BuildActivationEventName("owner", "repo");
+        var repeated = SingleInstanceGuard.BuildActivationEventName("owner", "repo");
+
+        Assert.Equal("DownKyi-Activate-owner-repo", first);
+        Assert.Equal(first, repeated);
+    }
+
+    [Fact]
     public void OnlyOneGuardCanOwnTheSameApplicationIdentity()
     {
         var owner = $"owner-{Guid.NewGuid():N}";

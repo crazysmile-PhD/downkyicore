@@ -14,6 +14,24 @@ namespace DownKyi.Desktop.Tests;
 public sealed class AvaloniaDialogServiceTests
 {
     [AvaloniaFact]
+    public async Task LegacyDialogIsNotConstructedWithoutMigrationInput()
+    {
+        var services = new ServiceCollection();
+        var provider = services.BuildServiceProvider();
+        await using var providerScope = provider.ConfigureAwait(true);
+        var dialogService = new AvaloniaDialogService(
+            new DialogContentFactory(provider),
+            new AvaloniaDesktopContext(),
+            new NoMigrationCoordinator());
+
+        var result = await dialogService.ShowAsync(
+            new AppDialogRequest(AppDialog.LegacyUpgrade),
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.Equal(AppDialogOutcome.Canceled, result.Outcome);
+    }
+
+    [AvaloniaFact]
     public async Task SynchronousCloseDuringOpenReturnsWithoutShowingAClosedWindow()
     {
         DesktopTestResources.EnsureDownloadProjectionResources();
@@ -34,7 +52,8 @@ public sealed class AvaloniaDialogServiceTests
         context.AttachMainWindow(owner);
         var dialogService = new AvaloniaDialogService(
             new DialogContentFactory(provider),
-            context);
+            context,
+            provider.GetRequiredService<ILegacyUpgradeCoordinator>());
 
         try
         {
@@ -68,6 +87,20 @@ public sealed class AvaloniaDialogServiceTests
                 "migration failed",
                 failure));
         }
+    }
+
+    private sealed class NoMigrationCoordinator : ILegacyUpgradeCoordinator
+    {
+        public Task<bool> HasMigrationSourceAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(false);
+        }
+
+        public Task<LegacyUpgradeResult> UpgradeAsync(
+            IProgress<LegacyUpgradeProgress> progress,
+            CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("Migration must not start without an input source.");
     }
 
     private sealed class ApplicationLifecycleStub : IApplicationLifecycle

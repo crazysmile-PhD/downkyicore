@@ -77,8 +77,15 @@
                                                 Content="{DynamicResource ViewFullErrorDetails}"
                                                 Command="{Binding ToggleDetailsCommand}" />
                                         <Button IsVisible="{Binding CanResetDownloadStore}"
+                                                 Margin="0,0,8,0"
                                                 Content="{DynamicResource ResetDownloadStore}"
                                                 Command="{Binding ResetDownloadStoreCommand}"
+                                                Background="{DynamicResource BrushWarning}"
+                                                BorderBrush="{DynamicResource BrushWarning}"
+                                                Foreground="White" />
+                                        <Button IsVisible="{Binding CanUseBuiltInDownloader}"
+                                                Content="{DynamicResource UseBuiltInDownloader}"
+                                                Command="{Binding UseBuiltInDownloaderCommand}"
                                                 Background="{DynamicResource BrushWarning}"
                                                 BorderBrush="{DynamicResource BrushWarning}"
                                                 Foreground="White" />

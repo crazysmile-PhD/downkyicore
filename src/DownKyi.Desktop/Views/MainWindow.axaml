@@ -10,9 +10,6 @@
         Icon="/Resources/favicon.ico">
 
     <Interaction.Behaviors>
-        <EventTriggerBehavior EventName="Closing">
-            <InvokeCommandAction Command="{Binding ClosingCommand}" />
-        </EventTriggerBehavior>
         <EventTriggerBehavior EventName="Opened">
             <InvokeCommandAction Command="{Binding LoadedCommand}" />
         </EventTriggerBehavior>
