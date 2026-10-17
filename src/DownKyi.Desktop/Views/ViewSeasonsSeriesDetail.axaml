@@ -7,6 +7,7 @@
              d:DesignWidth="840"
              d:DesignHeight="620"
              xmlns:custom="clr-namespace:DownKyi.CustomControl"
+             xmlns:behavior="clr-namespace:DownKyi.CustomAction"
              xmlns:vm="clr-namespace:DownKyi.ViewModels"
              xmlns:vmp="clr-namespace:DownKyi.Presentation"
              xmlns:asyncImageLoader="clr-namespace:DownKyi.CustomControl.AsyncImageLoader"
@@ -190,6 +191,7 @@
                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                 SelectionMode="Multiple">
                 <Interaction.Behaviors>
+                    <behavior:InfiniteScrollBehavior LoadMoreCommand="{Binding LoadMoreCommand}" />
                     <EventTriggerBehavior EventName="SelectionChanged">
                         <InvokeCommandAction Command="{Binding MediasCommand}"
                                              CommandParameter="{Binding ElementName=NameMedias, Path=SelectedItems}" />
@@ -260,17 +262,33 @@
                     Content="{DynamicResource SelectAll}"
                     Foreground="{DynamicResource BrushTextDark}"
                     IsChecked="{Binding IsSelectAll, Mode=TwoWay}" />
-                <Grid
+                <custom:Loading
+                    Grid.Column="1"
+                    Width="24"
+                    Height="24"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Foreground="Gray"
+                    IsActive="{Binding Loading}"
+                    IsVisible="{Binding LoadingMoreVisibility}" />
+                <StackPanel
                     Grid.Column="1"
                     HorizontalAlignment="Center"
                     VerticalAlignment="Center"
-                    IsVisible="{Binding !DownloadCommandGate.IsExecuting}">
-                    <custom:CustomPager DataContext="{Binding Pager}" />
-                </Grid>
-                <custom:DownloadPreparationStatus
-                    Grid.Column="1"
-                    CancelCommand="{Binding CancelDownloadPreparationCommand}"
-                    IsActive="{Binding DownloadCommandGate.IsExecuting}" />
+                    Orientation="Horizontal"
+                    Spacing="10"
+                    IsVisible="{Binding DownloadCommandGate.IsExecuting}">
+                    <custom:DownloadPreparationStatus
+                        CancelCommand="{Binding CancelDownloadPreparationCommand}"
+                        IsActive="{Binding DownloadCommandGate.IsExecuting}" />
+                    <TextBlock
+                        x:Name="DownloadPreparationProgressText"
+                        MaxWidth="220"
+                        VerticalAlignment="Center"
+                        Foreground="{DynamicResource BrushTextGrey}"
+                        Text="{Binding DownloadPreparationProgressText}"
+                        TextWrapping="Wrap" />
+                </StackPanel>
                 <Button
                     Grid.Column="2"
                     Margin="0,0,10,0"

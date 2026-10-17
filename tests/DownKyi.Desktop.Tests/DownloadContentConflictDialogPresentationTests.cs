@@ -107,6 +107,26 @@ public sealed class DownloadContentConflictDialogPresentationTests
     }
 
     [AvaloniaFact]
+    public Task IncrementalQualityBatchExplainsThatTheDecisionContinuesAcrossTheCollection()
+    {
+        return AvaloniaTestDispatcher.RunAsync(() =>
+        {
+            DesktopTestResources.EnsureDownloadProjectionResources();
+            var viewModel = new DownloadContentConflictDialogViewModel();
+            var prompt = DownloadContentConflictPrompt.QualitySubstitutionBatch(
+                CreateQualityBatchPrompt().Items,
+                appliesToRemainingItems: true);
+
+            viewModel.OnDialogOpened(DownloadContentConflictDialogContract.CreateRequest(prompt));
+
+            Assert.Contains("本次合集後續", viewModel.Message, StringComparison.Ordinal);
+            Assert.Contains("不會再次詢問", viewModel.SettingsHint, StringComparison.Ordinal);
+            Assert.Equal("依可用品質繼續整個合集", viewModel.UseAvailableContent);
+            Assert.Equal("略過合集中的品質替代項目", viewModel.SkipPageText);
+        });
+    }
+
+    [AvaloniaFact]
     public Task ManyDistinctQualityGroupsUseBoundedSummaryOutsideDecisionActions()
     {
         return AvaloniaTestDispatcher.RunAsync(() =>

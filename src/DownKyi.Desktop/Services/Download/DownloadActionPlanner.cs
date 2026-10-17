@@ -78,12 +78,19 @@ internal sealed class DownloadActionPlanner
             actionableContent,
             preparedDownloadSnapshot,
             isAll);
-        DownloadContentConflictAction? qualityAction = null;
-        if (qualityItems.Count > 0)
+        DownloadContentConflictAction? qualityAction = choices.TryGetQualitySubstitutionBatchAction(
+            out var rememberedQualityAction)
+            ? rememberedQualityAction
+            : null;
+        if (qualityItems.Count > 0 && qualityAction == null)
         {
-            qualityAction = await _conflictResolver
-                .ResolveQualitySubstitutionBatchAsync(qualityItems, cancellationToken)
-                .ConfigureAwait(true);
+            qualityAction = choices.RememberQualitySubstitutionBatchAction(
+                await _conflictResolver
+                    .ResolveQualitySubstitutionBatchAsync(
+                        qualityItems,
+                        choices.QualitySubstitutionDecisionAppliesToRemainingItems,
+                        cancellationToken)
+                    .ConfigureAwait(true));
         }
 
         var results = new List<FinalizedDownload>(preparedDownloadSnapshot.Length);

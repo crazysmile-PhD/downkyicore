@@ -1,7 +1,10 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Headless;
+using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Styling;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Avalonia.Xaml.Interactivity;
 using DownKyi.Application.Desktop;
@@ -111,9 +114,201 @@ public sealed class UiSmokeTests
             Assert.Equal(42, coordinator.LastMid);
             Assert.Equal(99, coordinator.LastId);
             Assert.Equal(SeasonsSeriesKind.Series, coordinator.LastKind);
+            Assert.Equal(1, coordinator.LastPage);
+            Assert.Equal(30, coordinator.LastPageSize);
             Assert.Equal("fixture series", series.Title);
-            Assert.Equal(3, series.Pager.Count);
             Assert.Equal("BV1seriesfixture", Assert.Single(series.Medias).Bvid);
+            Assert.True(series.LoadMoreCommand.CanExecute(null));
+        }).ConfigureAwait(true);
+    }
+
+    [AvaloniaFact]
+    public async Task SeriesContinuousLoadingAppendsPagesAndStopsAtTheReportedTotal()
+    {
+        await AvaloniaTestDispatcher.RunAsync(() =>
+        {
+            DesktopTestResources.EnsureProductThemeResources();
+            ViewSeasonsSeriesDetailViewModel? series = null;
+            using var navigation = new AvaloniaNavigationService(
+                route => route == AppRoute.SeasonsSeries
+                    ? series!
+                    : throw new InvalidOperationException($"Unexpected route {route}."),
+                static action => action());
+            var coordinator = new ContinuousSeriesPageCoordinatorStub(totalCount: 5, itemsPerPage: 2);
+            series = new ViewSeasonsSeriesDetailViewModel(
+                new DesktopInteractionContextStub(navigation),
+                coordinator,
+                NullLogger<ViewSeasonsSeriesDetailViewModel>.Instance);
+
+            navigation.Navigate(new AppNavigationRequest(
+                AppRoute.SeasonsSeries,
+                AppRoute.Index,
+                new SeriesNavigationPayload(42, 99)));
+
+            var firstMedia = series.Medias[0];
+            Assert.Equal([1], coordinator.RequestedPages);
+            Assert.Equal(2, series.Medias.Count);
+
+            series.LoadMoreCommand.Execute(null);
+
+            Assert.Equal([1, 2], coordinator.RequestedPages);
+            Assert.Equal(4, series.Medias.Count);
+            Assert.Same(firstMedia, series.Medias[0]);
+
+            series.LoadMoreCommand.Execute(null);
+
+            Assert.Equal([1, 2, 3], coordinator.RequestedPages);
+            Assert.Equal(5, series.Medias.Count);
+            Assert.False(series.LoadMoreCommand.CanExecute(null));
+
+            series.LoadMoreCommand.Execute(null);
+
+            Assert.Equal([1, 2, 3], coordinator.RequestedPages);
+        }).ConfigureAwait(true);
+    }
+
+    [AvaloniaFact]
+    public async Task DownloadAllDiscoversTheWholeSeriesIntoTheVisibleListBeforeSubmissionCompletes()
+    {
+        await AvaloniaTestDispatcher.RunAsync(async () =>
+        {
+            DesktopTestResources.EnsureProductThemeResources();
+            DesktopTestResources.EnsureDownloadProjectionResources();
+            ViewSeasonsSeriesDetailViewModel? series = null;
+            using var navigation = new AvaloniaNavigationService(
+                route => route == AppRoute.SeasonsSeries
+                    ? series!
+                    : throw new InvalidOperationException($"Unexpected route {route}."),
+                static action => action());
+            var coordinator = new StreamingSeriesDownloadCoordinatorStub(
+                totalCount: 5,
+                itemsPerPage: 2);
+            series = new ViewSeasonsSeriesDetailViewModel(
+                new DesktopInteractionContextStub(navigation),
+                coordinator,
+                NullLogger<ViewSeasonsSeriesDetailViewModel>.Instance);
+            navigation.Navigate(new AppNavigationRequest(
+                AppRoute.SeasonsSeries,
+                AppRoute.Index,
+                new SeriesNavigationPayload(42, 99)));
+
+            var view = new ViewSeasonsSeriesDetail { DataContext = series };
+            var list = Assert.IsType<ListBox>(view.FindControl<ListBox>("NameMedias"));
+            var behaviors = Interaction.GetBehaviors(list);
+            behaviors.Remove(Assert.Single(behaviors.OfType<InfiniteScrollBehavior>()));
+            var window = new Window
+            {
+                Width = 960,
+                Height = 720,
+                Content = view
+            };
+
+            try
+            {
+                window.Show();
+                window.UpdateLayout();
+                Assert.Equal(2, series.Medias.Count);
+
+                var released = ObserveGateReleased(series.DownloadCommandGate);
+                series.AddAllToDownloadCommand.Execute(null);
+                await coordinator.DownloadStarted.Task
+                    .WaitAsync(TestContext.Current.CancellationToken)
+                    .ConfigureAwait(true);
+                await Dispatcher.UIThread.InvokeAsync(
+                    static () => { },
+                    DispatcherPriority.Background);
+                window.UpdateLayout();
+
+                Assert.Equal([1, 2, 3], coordinator.RequestedPages);
+                Assert.Equal(5, series.Medias.Count);
+                Assert.Equal(
+                    ["BV1series1", "BV1series2", "BV1series3", "BV1series4", "BV1series5"],
+                    coordinator.SubmittedItems.Select(item => item.Bvid));
+                Assert.False(coordinator.OnlySelected);
+                Assert.True(series.DownloadCommandGate.IsExecuting);
+                Assert.Equal(
+                    "正在加入下载列表 5/5",
+                    series.DownloadPreparationProgressText);
+                var progress = Assert.IsType<TextBlock>(
+                    view.FindControl<TextBlock>("DownloadPreparationProgressText"));
+                Assert.Equal("正在加入下载列表 5/5", progress.Text);
+
+                coordinator.DownloadCompletion.TrySetResult(
+                    new ContentDownloadBatchResult(AddedCount: 5, SkippedCount: 0));
+                await released.WaitAsync(TestContext.Current.CancellationToken).ConfigureAwait(true);
+                Assert.False(series.DownloadCommandGate.IsExecuting);
+                Assert.Equal(string.Empty, series.DownloadPreparationProgressText);
+            }
+            finally
+            {
+                window.Close();
+                series.Dispose();
+            }
+        }).ConfigureAwait(true);
+    }
+
+    [AvaloniaFact]
+    public async Task ShiftClickSelectsAcrossSeriesPagesAppendedToTheContinuousList()
+    {
+        await AvaloniaTestDispatcher.RunAsync(() =>
+        {
+            DesktopTestResources.EnsureProductThemeResources();
+            ViewSeasonsSeriesDetailViewModel? series = null;
+            using var navigation = new AvaloniaNavigationService(
+                route => route == AppRoute.SeasonsSeries
+                    ? series!
+                    : throw new InvalidOperationException($"Unexpected route {route}."),
+                static action => action());
+            var coordinator = new ContinuousSeriesPageCoordinatorStub(totalCount: 4, itemsPerPage: 2);
+            series = new ViewSeasonsSeriesDetailViewModel(
+                new DesktopInteractionContextStub(navigation),
+                coordinator,
+                NullLogger<ViewSeasonsSeriesDetailViewModel>.Instance);
+            navigation.Navigate(new AppNavigationRequest(
+                AppRoute.SeasonsSeries,
+                AppRoute.Index,
+                new SeriesNavigationPayload(42, 99)));
+
+            var view = new ViewSeasonsSeriesDetail { DataContext = series };
+            var list = Assert.IsType<ListBox>(view.FindControl<ListBox>("NameMedias"));
+            var behaviors = Interaction.GetBehaviors(list);
+            var loadMoreBehavior = Assert.Single(behaviors.OfType<InfiniteScrollBehavior>());
+            Assert.Same(series.LoadMoreCommand, loadMoreBehavior.LoadMoreCommand);
+            behaviors.Remove(loadMoreBehavior);
+            var window = new Window
+            {
+                Width = 960,
+                Height = 720,
+                Content = view
+            };
+
+            try
+            {
+                window.Show();
+                window.UpdateLayout();
+
+                var firstContainer = list.GetVisualDescendants().OfType<ListBoxItem>().First();
+                Click(window, firstContainer, RawInputModifiers.None);
+                Assert.Equal(0, list.Selection.AnchorIndex);
+
+                series.LoadMoreCommand.Execute(null);
+                window.UpdateLayout();
+                Assert.Equal(0, list.Selection.AnchorIndex);
+
+                var containers = list.GetVisualDescendants().OfType<ListBoxItem>().ToArray();
+                Assert.Equal(4, containers.Length);
+                Assert.Equal(0, list.Selection.AnchorIndex);
+                Assert.Equal(1, list.SelectedItems?.Count);
+                Click(window, containers[3], RawInputModifiers.Shift);
+
+                Assert.Equal(4, list.SelectedItems?.Count);
+                Assert.All(series.Medias, media => Assert.True(media.IsSelected));
+            }
+            finally
+            {
+                window.Close();
+                series.Dispose();
+            }
         }).ConfigureAwait(true);
     }
 
@@ -996,6 +1191,20 @@ public sealed class UiSmokeTests
         }
     }
 
+    private static void Click(Window window, Control control, RawInputModifiers modifiers)
+    {
+        var point = control.TranslatePoint(
+            new Point(control.Bounds.Width / 2, control.Bounds.Height / 2),
+            window);
+        Assert.NotNull(point);
+        Assert.InRange(point.Value.X, 0, window.Bounds.Width);
+        Assert.InRange(point.Value.Y, 0, window.Bounds.Height);
+        window.MouseMove(point.Value, modifiers);
+        window.MouseDown(point.Value, MouseButton.Left, modifiers);
+        window.MouseUp(point.Value, MouseButton.Left, modifiers);
+        window.UpdateLayout();
+    }
+
     private static async ValueTask DisposeHostAsync(IHost host)
     {
         if (host is IAsyncDisposable asyncHost)
@@ -1202,6 +1411,10 @@ public sealed class UiSmokeTests
 
         public SeasonsSeriesKind LastKind { get; private set; }
 
+        public int LastPage { get; private set; }
+
+        public int LastPageSize { get; private set; }
+
         public Task<SeasonsSeriesPageSnapshot> LoadPageAsync(
             long mid,
             long id,
@@ -1214,6 +1427,8 @@ public sealed class UiSmokeTests
             LastMid = mid;
             LastId = id;
             LastKind = kind;
+            LastPage = page;
+            LastPageSize = pageSize;
             return Task.FromResult(new SeasonsSeriesPageSnapshot(
                 [new DownKyi.Core.BiliApi.Users.Models.SpaceSeasonsSeriesArchives
                 {
@@ -1229,6 +1444,122 @@ public sealed class UiSmokeTests
             IReadOnlyList<SeasonsSeriesDownloadItem> items,
             bool onlySelected,
             CancellationToken cancellationToken) => throw new NotSupportedException();
+    }
+
+    private sealed class ContinuousSeriesPageCoordinatorStub(
+        int totalCount,
+        int itemsPerPage) : ISeasonsSeriesCoordinator
+    {
+        public List<int> RequestedPages { get; } = [];
+
+        public Task<SeasonsSeriesPageSnapshot> LoadPageAsync(
+            long mid,
+            long id,
+            SeasonsSeriesKind kind,
+            int page,
+            int pageSize,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            RequestedPages.Add(page);
+            var firstIndex = ((page - 1) * itemsPerPage) + 1;
+            var count = Math.Min(itemsPerPage, Math.Max(0, totalCount - firstIndex + 1));
+            var archives = Enumerable.Range(firstIndex, count)
+                .Select(index => new DownKyi.Core.BiliApi.Users.Models.SpaceSeasonsSeriesArchives
+                {
+                    Aid = index,
+                    Bvid = $"BV1series{index}",
+                    Title = $"fixture video {index}"
+                })
+                .ToArray();
+            return Task.FromResult(new SeasonsSeriesPageSnapshot(
+                archives,
+                "fixture series",
+                totalCount));
+        }
+
+        public Task<ContentDownloadBatchResult?> AddToDownloadAsync(
+            IReadOnlyList<SeasonsSeriesDownloadItem> items,
+            bool onlySelected,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+    }
+
+    private sealed class StreamingSeriesDownloadCoordinatorStub(
+        int totalCount,
+        int itemsPerPage) : ISeasonsSeriesCoordinator
+    {
+        public List<int> RequestedPages { get; } = [];
+
+        public IReadOnlyList<SeasonsSeriesDownloadItem> SubmittedItems { get; private set; } = [];
+
+        public bool OnlySelected { get; private set; }
+
+        public TaskCompletionSource DownloadStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource<ContentDownloadBatchResult?> DownloadCompletion { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task<SeasonsSeriesPageSnapshot> LoadPageAsync(
+            long mid,
+            long id,
+            SeasonsSeriesKind kind,
+            int page,
+            int pageSize,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            RequestedPages.Add(page);
+            var firstIndex = ((page - 1) * itemsPerPage) + 1;
+            var count = Math.Min(itemsPerPage, Math.Max(0, totalCount - firstIndex + 1));
+            var archives = Enumerable.Range(firstIndex, count)
+                .Select(index => new DownKyi.Core.BiliApi.Users.Models.SpaceSeasonsSeriesArchives
+                {
+                    Aid = index,
+                    Bvid = $"BV1series{index}",
+                    Title = $"fixture video {index}"
+                })
+                .ToArray();
+            return Task.FromResult(new SeasonsSeriesPageSnapshot(
+                archives,
+                "fixture series",
+                totalCount));
+        }
+
+        public async Task<ContentDownloadBatchResult?> AddToDownloadAsync(
+            IReadOnlyList<SeasonsSeriesDownloadItem> items,
+            bool onlySelected,
+            CancellationToken cancellationToken) =>
+            await SubmitAsync(items, onlySelected, progress: null, cancellationToken)
+                .ConfigureAwait(true);
+
+        public async Task<ContentDownloadBatchResult?> AddAllToDownloadIncrementallyAsync(
+            IReadOnlyList<SeasonsSeriesDownloadItem> items,
+            IProgress<ContentDownloadBatchProgress>? progress,
+            CancellationToken cancellationToken) =>
+            await SubmitAsync(items, onlySelected: false, progress, cancellationToken)
+                .ConfigureAwait(true);
+
+        private async Task<ContentDownloadBatchResult?> SubmitAsync(
+            IReadOnlyList<SeasonsSeriesDownloadItem> items,
+            bool onlySelected,
+            IProgress<ContentDownloadBatchProgress>? progress,
+            CancellationToken cancellationToken)
+        {
+            SubmittedItems = items.ToArray();
+            OnlySelected = onlySelected;
+            progress?.Report(new ContentDownloadBatchProgress(
+                ProcessedCount: items.Count,
+                TotalCount: items.Count,
+                AddedCount: items.Count,
+                SkippedCount: 0,
+                DuplicateCount: 0,
+                FailedCount: 0));
+            DownloadStarted.TrySetResult();
+            return await DownloadCompletion.Task
+                .WaitAsync(cancellationToken)
+                .ConfigureAwait(true);
+        }
     }
 
     private sealed class FavoritesCoordinatorStub(

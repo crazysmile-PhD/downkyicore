@@ -152,7 +152,7 @@ internal sealed class DownloadContentConflictDialogViewModel : BaseDialogViewMod
         HasSingleQualitySubstitution = HasQualitySubstitution && !IsQualitySubstitutionBatch;
         if (IsQualitySubstitutionBatch)
         {
-            ConfigureQualitySubstitutionBatch(prompt.Items);
+            ConfigureQualitySubstitutionBatch(prompt);
             return;
         }
 
@@ -185,11 +185,13 @@ internal sealed class DownloadContentConflictDialogViewModel : BaseDialogViewMod
                     IsQualitySubstitutionBatch || ApplyToAll)));
     }
 
-    private void ConfigureQualitySubstitutionBatch(
-        IReadOnlyList<DownloadContentConflictPromptItem> items)
+    private void ConfigureQualitySubstitutionBatch(DownloadContentConflictPrompt prompt)
     {
+        var items = prompt.Items;
         Title = DictionaryResource.GetString("DownloadQualityBatchTitle");
-        Message = DictionaryResource.GetString("DownloadQualityBatchMessage")
+        Message = DictionaryResource.GetString(prompt.AppliesToRemainingItems
+                ? "DownloadQualityIncrementalBatchMessage"
+                : "DownloadQualityBatchMessage")
             .Replace("{0}", items.Count.ToString(CultureInfo.CurrentCulture), StringComparison.Ordinal);
         QualitySubstitutionItems = items.Select(item =>
                 new DownloadQualitySubstitutionItemViewModel(
@@ -207,11 +209,17 @@ internal sealed class DownloadContentConflictDialogViewModel : BaseDialogViewMod
             .ToArray();
         AffectedItemsHeader = DictionaryResource.GetString("DownloadQualityBatchAffectedItems")
             .Replace("{0}", items.Count.ToString(CultureInfo.CurrentCulture), StringComparison.Ordinal);
-        SettingsHint = DictionaryResource.GetString("DownloadQualityBatchSettingsHint");
-        UseAvailableContent = DictionaryResource.GetString("UseAvailableQualityBatch")
-            .Replace("{0}", items.Count.ToString(CultureInfo.CurrentCulture), StringComparison.Ordinal);
-        SkipPageText = DictionaryResource.GetString("SkipQualityBatch")
-            .Replace("{0}", items.Count.ToString(CultureInfo.CurrentCulture), StringComparison.Ordinal);
+        SettingsHint = DictionaryResource.GetString(prompt.AppliesToRemainingItems
+            ? "DownloadQualityIncrementalBatchSettingsHint"
+            : "DownloadQualityBatchSettingsHint");
+        UseAvailableContent = prompt.AppliesToRemainingItems
+            ? DictionaryResource.GetString("UseAvailableQualityIncrementalBatch")
+            : DictionaryResource.GetString("UseAvailableQualityBatch")
+                .Replace("{0}", items.Count.ToString(CultureInfo.CurrentCulture), StringComparison.Ordinal);
+        SkipPageText = prompt.AppliesToRemainingItems
+            ? DictionaryResource.GetString("SkipQualityIncrementalBatch")
+            : DictionaryResource.GetString("SkipQualityBatch")
+                .Replace("{0}", items.Count.ToString(CultureInfo.CurrentCulture), StringComparison.Ordinal);
     }
 
     private static string DescribeContent(DownKyi.Domain.Downloads.DownloadContentSelection content)

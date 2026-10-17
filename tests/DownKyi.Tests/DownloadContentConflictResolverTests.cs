@@ -449,6 +449,43 @@ public sealed class DownloadContentConflictResolverTests
     }
 
     [Fact]
+    public async Task QualitySubstitutionDecisionIsReusedAcrossIncrementalPlanningBatches()
+    {
+        var dialogs = new RecordingDialogService(
+            new DownloadContentConflictDecision(
+                DownloadContentConflictAction.UseAvailableContent,
+                ApplyToAll: true));
+        var planner = new DownloadActionPlanner(new DownloadContentConflictResolver(dialogs));
+        var requested = DownloadContentSelection.None with { Video = true };
+        var choices = new DownloadContentConflictChoices(
+            qualitySubstitutionDecisionAppliesToRemainingItems: true);
+        var first = CreatePreparedDownload(CreateLowerVideoQualityPage(64, "720P 高清"));
+        var second = CreatePreparedDownload(CreateLowerVideoQualityPage(32, "480P 清晰"));
+
+        var firstResult = await planner.PlanBatchAsync(
+            requested,
+            [first],
+            isAll: false,
+            choices,
+            TestContext.Current.CancellationToken);
+        var secondResult = await planner.PlanBatchAsync(
+            requested,
+            [second],
+            isAll: false,
+            choices,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(64, Assert.Single(Assert.Single(Assert.Single(firstResult).Sections).Pages)
+            .VideoQuality!.Quality);
+        Assert.Equal(32, Assert.Single(Assert.Single(Assert.Single(secondResult).Sections).Pages)
+            .VideoQuality!.Quality);
+        Assert.Single(dialogs.Requests);
+        var prompt = Assert.IsType<DownloadContentConflictPrompt>(
+            Assert.Single(dialogs.Requests).Parameters![DownloadContentConflictDialogContract.PromptParameter]);
+        Assert.True(prompt.AppliesToRemainingItems);
+    }
+
+    [Fact]
     public async Task BatchQualitySkipOnlyRemovesAffectedPages()
     {
         var dialogs = new RecordingDialogService(

@@ -94,6 +94,9 @@
     <system:String x:Key="CancelDownloadPreparation">取消准备</system:String>
     <system:String x:Key="TipDownloadPreparationAlreadyRunning">当前正在准备下载，请先取消准备，再重新选择加入方式。</system:String>
     <system:String x:Key="PublicationWait">请稍等，马上就好~</system:String>
+    <system:String x:Key="DiscoveringCollectionVideos">正在查找合集视频 {0}/{1}</system:String>
+    <system:String x:Key="PreparingCollectionDownloads">已找到 {0} 个视频，正在准备下载</system:String>
+    <system:String x:Key="AddingCollectionDownloads">正在加入下载列表 {0}/{1}</system:String>
     
     <!--  Friend  -->
     <system:String x:Key="Friend">好友</system:String>
@@ -451,8 +454,12 @@
     <system:String x:Key="DownloadQualityBatchGroup">{0}（{1} 部）</system:String>
     <system:String x:Key="DownloadQualityBatchAffectedItems">查看受影響的 {0} 部影片</system:String>
     <system:String x:Key="DownloadQualityBatchSettingsHint">若經常出現此提醒，可到「設定 → 影片」調整優先下載畫質與音質。</system:String>
+    <system:String x:Key="DownloadQualityIncrementalBatchMessage">目前處理的影片中有 {0} 部無法取得偏好品質。這個決定也會套用到本次合集後續遇到的品質替代。</system:String>
+    <system:String x:Key="DownloadQualityIncrementalBatchSettingsHint">後續相同情況不會再次詢問。若經常出現此提醒，可到「設定 → 影片」調整優先下載畫質與音質。</system:String>
     <system:String x:Key="UseAvailableQualityBatch">依清單品質下載（{0} 部）</system:String>
     <system:String x:Key="SkipQualityBatch">略過這 {0} 部</system:String>
+    <system:String x:Key="UseAvailableQualityIncrementalBatch">依可用品質繼續整個合集</system:String>
+    <system:String x:Key="SkipQualityIncrementalBatch">略過合集中的品質替代項目</system:String>
     
     
     <!-- CustomControl -->

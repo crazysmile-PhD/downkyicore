@@ -36,6 +36,12 @@ internal interface ISeasonsSeriesCoordinator
         IReadOnlyList<SeasonsSeriesDownloadItem> items,
         bool onlySelected,
         CancellationToken cancellationToken);
+
+    Task<ContentDownloadBatchResult?> AddAllToDownloadIncrementallyAsync(
+        IReadOnlyList<SeasonsSeriesDownloadItem> items,
+        IProgress<ContentDownloadBatchProgress>? progress,
+        CancellationToken cancellationToken) =>
+        AddToDownloadAsync(items, onlySelected: false, cancellationToken);
 }
 
 internal sealed class SeasonsSeriesCoordinator : ISeasonsSeriesCoordinator
@@ -121,6 +127,25 @@ internal sealed class SeasonsSeriesCoordinator : ISeasonsSeriesCoordinator
         return _downloadCoordinator.AddAsync(
             downloadItems,
             onlySelected,
+            cancellationToken);
+    }
+
+    public Task<ContentDownloadBatchResult?> AddAllToDownloadIncrementallyAsync(
+        IReadOnlyList<SeasonsSeriesDownloadItem> items,
+        IProgress<ContentDownloadBatchProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+        var downloadItems = new List<ContentDownloadItem>(items.Count);
+        foreach (var item in items)
+        {
+            downloadItems.Add(new ContentDownloadItem(item.Bvid, DownloadInfoKind.Video, item.IsSelected));
+        }
+
+        return _downloadCoordinator.AddIncrementallyAsync(
+            downloadItems,
+            onlySelected: false,
+            progress,
             cancellationToken);
     }
 

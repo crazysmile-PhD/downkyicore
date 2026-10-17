@@ -63,6 +63,31 @@ internal sealed class ContentDownloadBatchOwner : IContentDownloadCoordinator, I
     public async Task<ContentDownloadBatchResult?> AddAsync(
         IReadOnlyList<ContentDownloadItem> items,
         bool onlySelected,
+        CancellationToken cancellationToken) =>
+        await EnqueueAsync(
+            items,
+            onlySelected,
+            incremental: false,
+            progress: null,
+            cancellationToken).ConfigureAwait(false);
+
+    public async Task<ContentDownloadBatchResult?> AddIncrementallyAsync(
+        IReadOnlyList<ContentDownloadItem> items,
+        bool onlySelected,
+        IProgress<ContentDownloadBatchProgress>? progress,
+        CancellationToken cancellationToken) =>
+        await EnqueueAsync(
+            items,
+            onlySelected,
+            incremental: true,
+            progress,
+            cancellationToken).ConfigureAwait(false);
+
+    private async Task<ContentDownloadBatchResult?> EnqueueAsync(
+        IReadOnlyList<ContentDownloadItem> items,
+        bool onlySelected,
+        bool incremental,
+        IProgress<ContentDownloadBatchProgress>? progress,
         CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -75,7 +100,12 @@ internal sealed class ContentDownloadBatchOwner : IContentDownloadCoordinator, I
         }
 
         var operationScope = _applicationCancellation.CreateOperationScope(cancellationToken);
-        var request = new BatchRequest(items.ToArray(), onlySelected, operationScope);
+        var request = new BatchRequest(
+            items.ToArray(),
+            onlySelected,
+            incremental,
+            progress,
+            operationScope);
         if (!_requests.Writer.TryWrite(request))
         {
             request.ReleaseOperationScope();
@@ -120,10 +150,16 @@ internal sealed class ContentDownloadBatchOwner : IContentDownloadCoordinator, I
                     continue;
                 }
 
-                var result = await _coordinator.AddAsync(
-                    request.Items,
-                    request.OnlySelected,
-                    request.CancellationToken).ConfigureAwait(false);
+                var result = request.Incremental
+                    ? await _coordinator.AddIncrementallyAsync(
+                        request.Items,
+                        request.OnlySelected,
+                        request.Progress,
+                        request.CancellationToken).ConfigureAwait(false)
+                    : await _coordinator.AddAsync(
+                        request.Items,
+                        request.OnlySelected,
+                        request.CancellationToken).ConfigureAwait(false);
                 request.TrySetResult(result);
             }
             catch (OperationCanceledException) when (request.CancellationToken.IsCancellationRequested)
@@ -160,10 +196,14 @@ internal sealed class ContentDownloadBatchOwner : IContentDownloadCoordinator, I
         public BatchRequest(
             IReadOnlyList<ContentDownloadItem> items,
             bool onlySelected,
+            bool incremental,
+            IProgress<ContentDownloadBatchProgress>? progress,
             CancellationTokenSource operationScope)
         {
             Items = items;
             OnlySelected = onlySelected;
+            Incremental = incremental;
+            Progress = progress;
             _operationScope = operationScope;
             _cancellationRegistration = CancellationToken.Register(
                 static state => ((BatchRequest)state!).CancelIfQueued(),
@@ -173,6 +213,10 @@ internal sealed class ContentDownloadBatchOwner : IContentDownloadCoordinator, I
         public IReadOnlyList<ContentDownloadItem> Items { get; }
 
         public bool OnlySelected { get; }
+
+        public bool Incremental { get; }
+
+        public IProgress<ContentDownloadBatchProgress>? Progress { get; }
 
         public CancellationToken CancellationToken => _operationScope.Token;
 

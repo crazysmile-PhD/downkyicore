@@ -9,6 +9,34 @@ namespace DownKyi.Tests;
 public sealed class ContentDownloadBatchOwnerTests
 {
     [Fact]
+    public async Task IncrementalBatchUsesTheIncrementalCoordinatorEntryPoint()
+    {
+        using var applicationCancellation = new ApplicationCancellation();
+        var coordinator = new StubContentDownloadCoordinator(
+            static (_, _, _) => Task.FromResult<ContentDownloadBatchResult?>(
+                new ContentDownloadBatchResult(1, 0)));
+        using var owner = new ContentDownloadBatchOwner(coordinator, applicationCancellation);
+        await owner.StartAsync(TestContext.Current.CancellationToken);
+
+        try
+        {
+            var result = await owner.AddIncrementallyAsync(
+                [CreateItem("incremental")],
+                onlySelected: false,
+                progress: null,
+                TestContext.Current.CancellationToken);
+
+            Assert.Equal(new ContentDownloadBatchResult(1, 0), result);
+            Assert.Equal(0, coordinator.AddCallCount);
+            Assert.Equal(1, coordinator.IncrementalAddCallCount);
+        }
+        finally
+        {
+            await owner.StopAsync(TestContext.Current.CancellationToken);
+        }
+    }
+
+    [Fact]
     public async Task SubmittedBatchesRunInFifoOrderWithoutOverlap()
     {
         using var applicationCancellation = new ApplicationCancellation();
@@ -273,10 +301,27 @@ public sealed class ContentDownloadBatchOwnerTests
         Func<IReadOnlyList<ContentDownloadItem>, bool, CancellationToken, Task<ContentDownloadBatchResult?>> executeAsync)
         : IContentDownloadCoordinator
     {
+        public int AddCallCount { get; private set; }
+
+        public int IncrementalAddCallCount { get; private set; }
+
         public Task<ContentDownloadBatchResult?> AddAsync(
             IReadOnlyList<ContentDownloadItem> items,
             bool onlySelected,
-            CancellationToken cancellationToken) =>
-            executeAsync(items, onlySelected, cancellationToken);
+            CancellationToken cancellationToken)
+        {
+            AddCallCount++;
+            return executeAsync(items, onlySelected, cancellationToken);
+        }
+
+        public Task<ContentDownloadBatchResult?> AddIncrementallyAsync(
+            IReadOnlyList<ContentDownloadItem> items,
+            bool onlySelected,
+            IProgress<ContentDownloadBatchProgress>? progress,
+            CancellationToken cancellationToken)
+        {
+            IncrementalAddCallCount++;
+            return executeAsync(items, onlySelected, cancellationToken);
+        }
     }
 }
