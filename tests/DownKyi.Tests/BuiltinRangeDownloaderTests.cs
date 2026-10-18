@@ -260,6 +260,56 @@ public sealed class BuiltinRangeDownloaderTests
     }
 
     [Fact]
+    public async Task InterruptedRangeWithoutValidatorRejectsChangedSameLengthResource()
+    {
+        var previousPayload = CreatePayload(12);
+        var currentPayload = previousPayload
+            .Select(static value => checked((byte)(value + 32)))
+            .ToArray();
+        var directory = CreateTemporaryDirectory("range-interrupted-unvalidated");
+        var target = Path.Combine(directory, "media.bin");
+        try
+        {
+            using (var firstHandler = new RangePayloadHandler(
+                previousPayload,
+                failOnceAtStart: 0,
+                failureBytes: 2,
+                entityTag: null))
+            using (var firstAttempt = CreateDownloader(
+                firstHandler,
+                parallelCount: 1,
+                segmentSize: 4))
+            {
+                await Assert.ThrowsAsync<HttpIOException>(() => firstAttempt.DownloadAsync(
+                    target,
+                    previousPayload.Length,
+                    TestContext.Current.CancellationToken));
+
+                Assert.Equal([(0L, 11L)], firstHandler.ChunkRanges);
+            }
+
+            Assert.True(File.Exists($"{target}.download"));
+            using var secondHandler = new RangePayloadHandler(currentPayload, entityTag: null);
+            using var secondAttempt = CreateDownloader(
+                secondHandler,
+                parallelCount: 1,
+                segmentSize: 4);
+
+            await Assert.ThrowsAsync<BuiltinResumeRejectedException>(() => secondAttempt.DownloadAsync(
+                target,
+                currentPayload.Length,
+                TestContext.Current.CancellationToken));
+
+            Assert.Equal([(0L, 1L)], secondHandler.ChunkRanges);
+            Assert.False(File.Exists(target));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task ResumeWithMatchingStrongEntityTagRequestsOnlyMissingRangeBytes()
     {
         var payload = CreatePayload(12);
