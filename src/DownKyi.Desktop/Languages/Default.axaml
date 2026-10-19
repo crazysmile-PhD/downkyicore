@@ -406,7 +406,7 @@
     <system:String x:Key="SubtitleTypeStandard">普通</system:String>
     <system:String x:Key="SubtitleTypeAi">AI</system:String>
     <system:String x:Key="DefaultSubtitle">默认</system:String>
-    <system:String x:Key="SubtitleTrackSelectionTip">“普通”表示非 AI 字幕；左侧可勾选多条。“默认”会另存为与影片同名的 .srt，方便播放器自动载入。</system:String>
+    <system:String x:Key="SubtitleTrackSelectionTip">“普通”表示非 AI 字幕；左侧可勾选多条。“默认”轨道会保留轨道命名文件，并复制一份与影片同名的 .srt，供播放器自动识别。两份内容相同，并非重复下载；若要播放器自动载入，请保留同名 .srt。</system:String>
     <system:String x:Key="PreferredSubtitleLanguage">字幕语言</system:String>
     <system:String x:Key="PreferredSubtitleType">字幕类型</system:String>
     <system:String x:Key="SubtitleLanguageChineseSimplified">简体中文</system:String>

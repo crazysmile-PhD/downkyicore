@@ -17,7 +17,8 @@ public sealed class DownloadSettingsDialogLayoutTests
     [AvaloniaFact]
     public void AvailableSubtitleCheckboxRemainsClickableAndSectionsDoNotOverlap()
     {
-        var application = DesktopTestResources.EnsureProductThemeResources();
+        var application = DesktopTestResources.EnsureDownloadProjectionResources();
+        DesktopTestResources.EnsureProductThemeResources();
         var fluentTheme = new FluentTheme();
         application.Styles.Insert(0, fluentTheme);
         using var fixture = new ViewModelFixture(downloadSubtitle: false);
@@ -75,6 +76,8 @@ public sealed class DownloadSettingsDialogLayoutTests
                 0.5);
             Assert.True(subtitleTip.IsVisible);
             Assert.Equal(TextWrapping.Wrap, subtitleTip.TextWrapping);
+            Assert.Contains("并非重复下载", subtitleTip.Text, StringComparison.Ordinal);
+            Assert.Contains("请保留同名 .srt", subtitleTip.Text, StringComparison.Ordinal);
             Assert.True(subtitleScrollViewer.Bounds.Bottom <= subtitleTip.Bounds.Top);
 
             AssertAppearsBelow(view, "TransferIllustration", "DirectorySection");
