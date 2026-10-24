@@ -83,7 +83,6 @@
                                         Text="{Binding Name}"
                                         TextTrimming="CharacterEllipsis"
                                         ToolTip.Tip="{Binding Name}"
-                                        MaxLines="2"
                                         TextWrapping="Wrap"
                                         FontSize="16"
                                         FontWeight="SemiBold">

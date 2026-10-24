@@ -281,7 +281,6 @@
                                                     Text="{Binding Title}"
                                                     TextTrimming="CharacterEllipsis"
                                                     ToolTip.Tip="{Binding Title}"
-                                                    MaxLines="2"
                                                     TextWrapping="Wrap"
                                                     FontWeight="SemiBold">
                                                     <TextBlock.Styles>

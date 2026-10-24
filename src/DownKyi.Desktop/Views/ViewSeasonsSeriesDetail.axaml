@@ -114,7 +114,6 @@
                             Text="{Binding Title}"
                             FontSize="14"
                             Foreground="{DynamicResource SpaceMuted}"
-                            MaxLines="2"
                             TextTrimming="CharacterEllipsis" />
                     </StackPanel>
                 </Grid>

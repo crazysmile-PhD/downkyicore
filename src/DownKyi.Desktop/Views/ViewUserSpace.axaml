@@ -138,7 +138,7 @@
             IsVisible="{Binding ViewVisibility}">
             <Image Width="56" Height="56" VerticalAlignment="Top" asyncImageLoader:ImageLoader.Source="{Binding Header}" />
             <StackPanel Grid.Column="1" Spacing="6">
-                <TextBlock Text="{Binding UserName}" FontSize="30" FontWeight="Bold" MaxLines="2" TextTrimming="CharacterEllipsis" />
+                <TextBlock Text="{Binding UserName}" FontSize="30" FontWeight="Bold" TextTrimming="CharacterEllipsis" />
                 <WrapPanel Orientation="Horizontal">
                     <Image Width="18" Height="18" Source="{Binding Sex}" Margin="0,0,8,0" />
                     <Image Width="28" Height="16" Source="{Binding Level}" Margin="0,0,12,0" />
@@ -152,7 +152,6 @@
                 <TextBlock
                     Text="{Binding Sign}"
                     Foreground="{DynamicResource SpaceMuted}"
-                    MaxLines="2"
                     TextTrimming="CharacterEllipsis"
                     ToolTip.Tip="{Binding Sign}" />
             </StackPanel>

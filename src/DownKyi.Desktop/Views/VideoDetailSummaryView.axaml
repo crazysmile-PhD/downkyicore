@@ -35,7 +35,6 @@
                     Name="SummaryTitle"
                     FontSize="26"
                     FontWeight="Bold"
-                    MaxLines="2"
                     Text="{Binding UiState.VideoInfoView.Title}"
                     Foreground="{DynamicResource SpaceInk}"
                     TextWrapping="Wrap"

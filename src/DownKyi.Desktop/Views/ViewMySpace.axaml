@@ -148,7 +148,6 @@
                                 Text="{Binding Sign}"
                                 FontSize="13"
                                 TextWrapping="Wrap"
-                                MaxLines="2"
                                 TextTrimming="CharacterEllipsis"
                                 Foreground="{DynamicResource SpaceCarbon}"
                                 ToolTip.Tip="{Binding Sign}"

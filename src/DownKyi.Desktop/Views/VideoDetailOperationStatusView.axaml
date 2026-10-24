@@ -48,7 +48,6 @@
                 Foreground="{DynamicResource SpaceInk}"
                 Text="{Binding UiState.OperationStatusText}"
                 ToolTip.Tip="{Binding UiState.OperationStatusText}"
-                MaxLines="2"
                 TextTrimming="CharacterEllipsis"
                 TextWrapping="Wrap" />
         </Grid>
