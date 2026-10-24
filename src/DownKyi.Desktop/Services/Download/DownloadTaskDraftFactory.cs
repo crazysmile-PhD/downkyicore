@@ -107,7 +107,7 @@ internal static class DownloadTaskDraftFactory
             DownloadBase = downloadBase,
             Downloading = new Downloading
             {
-                PlayStreamType = ResolvePlayStreamType(video.TypeId),
+                PlayStreamType = page.PlaybackStreamType ?? ResolvePlayStreamType(video.TypeId),
                 DownloadStatus = DownloadStatus.NotStarted
             }
         };
@@ -196,7 +196,7 @@ internal static class DownloadTaskDraftFactory
         return codec.Contains("AV1", StringComparison.Ordinal) ? "AV1" : string.Empty;
     }
 
-    private static PlayStreamType ResolvePlayStreamType(int typeId)
+    internal static PlayStreamType ResolvePlayStreamType(int typeId)
     {
         return typeId switch
         {

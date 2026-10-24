@@ -99,7 +99,8 @@ internal class DownKyiAsyncDelegateCommand<T> : ICommand
         {
             _logger.LogErrorMessage("UI command was canceled unexpectedly.", e);
         }
-        catch (Exception e) when (e is InvalidOperationException or HttpRequestException or IOException)
+        catch (Exception e) when (e is InvalidOperationException or HttpRequestException
+                                 or IOException or TimeoutException)
         {
             _logger.LogErrorMessage("UI command execution failed.", e);
         }

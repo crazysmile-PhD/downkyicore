@@ -182,6 +182,60 @@ public sealed class DownloadManagerCoordinatorTests
     }
 
     [Fact]
+    public async Task DeleteAllRemovesSuccessfulItemsWhenAnotherCancellationTimesOut()
+    {
+        using var context = new CoordinatorContext(taskQueue: new FirstTimeoutTaskQueue());
+        var first = context.CreateDownloadingItem("timeout-first", DownloadStatus.WaitForDownload);
+        var second = context.CreateDownloadingItem("timeout-second", DownloadStatus.WaitForDownload);
+        context.State.AddDownloading(first);
+        context.State.AddDownloading(second);
+        await context.Storage.AddDownloadingAsync(first, TestContext.Current.CancellationToken);
+        await context.Storage.AddDownloadingAsync(second, TestContext.Current.CancellationToken);
+        await context.StateWriter.StartAsync(
+            new DownloadTaskId(first.DownloadBase.Id),
+            TestContext.Current.CancellationToken);
+
+        var exception = await Assert.ThrowsAsync<IOException>(() => context.Coordinator.DeleteAllAsync(
+            context.State.Downloading,
+            TestContext.Current.CancellationToken));
+
+        Assert.Same(first, Assert.Single(context.State.Downloading));
+        Assert.Equal(
+            DownloadPhase.Canceled,
+            (await context.GetTaskAsync(first)).Phase);
+        Assert.Null(await context.Store.FindAsync(
+            new DownloadTaskId(second.DownloadBase.Id),
+            TestContext.Current.CancellationToken));
+        Assert.IsType<TimeoutException>(exception.InnerException);
+    }
+
+    [Fact]
+    public async Task DeleteAllStartsEveryRuntimeCancellationBeforeWaitingForCompletion()
+    {
+        var taskQueue = new BlockingCancelTaskQueue(expectedCount: 2);
+        using var context = new CoordinatorContext(taskQueue: taskQueue);
+        var first = context.CreateDownloadingItem("concurrent-first", DownloadStatus.WaitForDownload);
+        var second = context.CreateDownloadingItem("concurrent-second", DownloadStatus.WaitForDownload);
+        context.State.AddDownloading(first);
+        context.State.AddDownloading(second);
+        await context.Storage.AddDownloadingAsync(first, TestContext.Current.CancellationToken);
+        await context.Storage.AddDownloadingAsync(second, TestContext.Current.CancellationToken);
+
+        var deletion = context.Coordinator.DeleteAllAsync(
+            context.State.Downloading,
+            TestContext.Current.CancellationToken);
+        await taskQueue.AllRequested.WaitAsync(TestContext.Current.CancellationToken);
+
+        Assert.False(deletion.IsCompleted);
+        Assert.Equal(2, taskQueue.Requested.Count);
+
+        taskQueue.Release();
+        await deletion.ConfigureAwait(true);
+
+        Assert.Empty(context.State.Downloading);
+    }
+
+    [Fact]
     public async Task DeleteAfterPublishCollisionRemovesOnlyStagingAndTask()
     {
         using var context = new CoordinatorContext(useStaging: true);
@@ -703,6 +757,67 @@ public sealed class DownloadManagerCoordinatorTests
         {
             return Task.FromResult(false);
         }
+    }
+
+    private sealed class FirstTimeoutTaskQueue : IDownloadTaskQueue
+    {
+        public Task EnqueueAsync(
+            DownloadTaskId taskId,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
+
+        public Task<bool> CancelAsync(DownloadTaskId taskId)
+        {
+            ArgumentNullException.ThrowIfNull(taskId);
+            return taskId.Value == "timeout-first"
+                ? Task.FromException<bool>(
+                    new TimeoutException("Synthetic active worker cancellation timeout."))
+                : Task.FromResult(false);
+        }
+    }
+
+    private sealed class BlockingCancelTaskQueue : IDownloadTaskQueue
+    {
+        private readonly int _expectedCount;
+        private readonly TaskCompletionSource<bool> _release =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _allRequested =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _requestCount;
+
+        public BlockingCancelTaskQueue(int expectedCount)
+        {
+            _expectedCount = expectedCount;
+        }
+
+        public List<DownloadTaskId> Requested { get; } = [];
+
+        public Task AllRequested => _allRequested.Task;
+
+        public Task EnqueueAsync(
+            DownloadTaskId taskId,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
+
+        public Task<bool> CancelAsync(DownloadTaskId taskId)
+        {
+            ArgumentNullException.ThrowIfNull(taskId);
+            Requested.Add(taskId);
+            if (Interlocked.Increment(ref _requestCount) == _expectedCount)
+            {
+                _allRequested.TrySetResult();
+            }
+
+            return _release.Task;
+        }
+
+        public void Release() => _release.TrySetResult(false);
     }
 
     private sealed class UnavailableDownloadRuntimeAvailability : IDownloadRuntimeAvailability

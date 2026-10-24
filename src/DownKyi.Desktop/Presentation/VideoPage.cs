@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.Models;
+using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.BiliApi.VideoStream.Models;
 using Newtonsoft.Json;
 
@@ -12,6 +13,10 @@ namespace DownKyi.Presentation;
 
 internal class VideoPage : ObservableObject
 {
+    public PlayStreamType? PlaybackStreamType { get; set; }
+
+    public string PlaybackAddress { get; set; } = string.Empty;
+
     public PlayUrlAvailability? PlaybackAvailability { get; internal set; }
 
     public bool HasPlayback => PlaybackAvailability?.HasPlayableMedia == true;

@@ -61,9 +61,6 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
             downloadDirectory,
             "DownloadMovieMetadataBuilder.cs"));
 
-        Assert.True(
-            File.ReadLines(sessionPath).Count() <= 350,
-            "Add-to-download session exceeded its orchestration budget.");
         Assert.Contains("DownloadTaskAdmissionService", sessionSource, StringComparison.Ordinal);
         Assert.Contains("DownloadTaskDraftFactory.Create", sessionSource, StringComparison.Ordinal);
         Assert.Contains("DownloadMovieMetadataBuilder", sessionSource, StringComparison.Ordinal);

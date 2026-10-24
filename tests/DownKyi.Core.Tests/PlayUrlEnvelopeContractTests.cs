@@ -1683,6 +1683,32 @@ public sealed class PlayUrlEnvelopeContractTests
     }
 
     [Fact]
+    public async Task BangumiNotFoundResponseIsNotRetried()
+    {
+        var requests = 0;
+        var client = new StubBilibiliApiClient((request, _) =>
+        {
+            requests++;
+            return Task.FromResult(request.RequestAddress.StartsWith(
+                "https://www.bilibili.com/bangumi/play/",
+                StringComparison.Ordinal)
+                ? "<html></html>"
+                : "{\"code\":-404,\"message\":\"not found\"}");
+        });
+
+        var exception = await Assert.ThrowsAsync<BilibiliApiResponseException>(() =>
+            client.GetBangumiPlayUrlAsync(
+                1,
+                "BV1fixture",
+                2,
+                3489,
+                cancellationToken: TestContext.Current.CancellationToken));
+
+        Assert.Equal(-404, exception.Code);
+        Assert.Equal(2, requests);
+    }
+
+    [Fact]
     public async Task BangumiV2IsPreviewFlagIsRejected()
     {
         var client = CreateClientFromBody(

@@ -1,10 +1,14 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Bilibili;
 using DownKyi.Application.Diagnostics;
+using DownKyi.Core.BiliApi;
 using DownKyi.Core.BiliApi.Sign;
+using DownKyi.Core.BiliApi.Video;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.Settings;
 using DownKyi.Domain.Downloads;
@@ -17,7 +21,11 @@ namespace DownKyi.Services.Download;
 internal sealed class DownloadPreparationService
 {
     private readonly IInfoService _playbackService;
+    private readonly PlayStreamType _defaultStreamType;
     private readonly ISettingsStore _settingsStore;
+    private readonly IVideoTagProvider _tagProvider;
+    private readonly IWbiKeyProvider _wbiKeyProvider;
+    private readonly IBilibiliApiClient _client;
     private readonly ILogger _logger;
 
     public DownloadPreparationService(
@@ -28,11 +36,12 @@ internal sealed class DownloadPreparationService
         IBilibiliApiClient client,
         ILogger logger)
     {
+        _defaultStreamType = streamType;
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        ArgumentNullException.ThrowIfNull(tagProvider);
-        ArgumentNullException.ThrowIfNull(wbiKeyProvider);
-        ArgumentNullException.ThrowIfNull(client);
+        _tagProvider = tagProvider ?? throw new ArgumentNullException(nameof(tagProvider));
+        _wbiKeyProvider = wbiKeyProvider ?? throw new ArgumentNullException(nameof(wbiKeyProvider));
+        _client = client ?? throw new ArgumentNullException(nameof(client));
         _playbackService = streamType switch
         {
             PlayStreamType.Video => new VideoInfoService(
@@ -61,13 +70,20 @@ internal sealed class DownloadPreparationService
             foreach (var page in section.VideoPages)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                if ((isAll || page.IsSelected) && requestedContent.HasMedia)
+                if (isAll || page.IsSelected)
                 {
-                    await PrepareMediaAsync(
+                    var playbackService = await ResolvePlaybackServiceAsync(
                         _playbackService,
                         page,
-                        requestedContent,
                         cancellationToken).ConfigureAwait(false);
+                    if (requestedContent.HasMedia)
+                    {
+                        await PrepareMediaAsync(
+                            playbackService,
+                            page,
+                            requestedContent,
+                            cancellationToken).ConfigureAwait(false);
+                    }
                 }
             }
         }
@@ -112,10 +128,14 @@ internal sealed class DownloadPreparationService
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 page.IsSelected = true;
+                var playbackService = await ResolvePlaybackServiceAsync(
+                    videoInfoService,
+                    page,
+                    cancellationToken).ConfigureAwait(false);
                 if (requestedContent.HasMedia)
                 {
                     await PrepareMediaAsync(
-                        videoInfoService,
+                        playbackService,
                         page,
                         requestedContent,
                         cancellationToken).ConfigureAwait(false);
@@ -124,6 +144,78 @@ internal sealed class DownloadPreparationService
         }
 
         return PreparedDownload.Create(videoInfoView, videoSections);
+    }
+
+    private async Task<IInfoService> ResolvePlaybackServiceAsync(
+        IInfoService defaultService,
+        VideoPage page,
+        CancellationToken cancellationToken)
+    {
+        var streamType = page.PlaybackStreamType ?? _defaultStreamType;
+        if (streamType == _defaultStreamType)
+        {
+            return defaultService;
+        }
+
+        if (streamType != PlayStreamType.Video)
+        {
+            throw new InvalidOperationException(
+                $"Playback stream type '{streamType}' cannot be prepared by this session.");
+        }
+
+        var videoService = await VideoInfoService.CreateAsync(
+            page.PlaybackAddress,
+            _settingsStore,
+            _tagProvider,
+            _wbiKeyProvider,
+            _client,
+            cancellationToken).ConfigureAwait(false);
+        var resolvedPages = videoService.GetVideoPages(cancellationToken) ?? [];
+        var requestedPage = GetRequestedPage(page.PlaybackAddress);
+        var resolvedPage = requestedPage.HasValue
+            ? resolvedPages.FirstOrDefault(candidate => candidate.Page == requestedPage.Value)
+            : resolvedPages.FirstOrDefault();
+        if (resolvedPage == null)
+        {
+            throw new BilibiliApiResponseException(
+                nameof(VideoInfo.VideoViewInfoAsync),
+                "Ordinary video metadata did not contain the requested page.");
+        }
+
+        page.Avid = resolvedPage.Avid;
+        page.Bvid = resolvedPage.Bvid;
+        page.Cid = resolvedPage.Cid;
+        page.EpisodeId = resolvedPage.EpisodeId;
+        page.Page = resolvedPage.Page;
+        page.LoadTagsAsync = resolvedPage.LoadTagsAsync;
+        if (string.IsNullOrWhiteSpace(page.FirstFrame))
+        {
+            page.FirstFrame = resolvedPage.FirstFrame;
+        }
+
+        return videoService;
+    }
+
+    private static int? GetRequestedPage(string address)
+    {
+        if (!Uri.TryCreate(address, UriKind.Absolute, out var uri))
+        {
+            return null;
+        }
+
+        foreach (var pair in uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var parts = pair.Split('=', 2);
+            if (parts.Length == 2
+                && string.Equals(parts[0], "p", StringComparison.OrdinalIgnoreCase)
+                && int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out var page)
+                && page > 0)
+            {
+                return page;
+            }
+        }
+
+        return null;
     }
 
     private async Task PrepareMediaAsync(

@@ -691,7 +691,7 @@ public static partial class VideoStreamApi
         CancellationToken cancellationToken) =>
         (attempt, cancellationToken.IsCancellationRequested, exception) switch
         {
-            (0, false, BilibiliApiResponseException { Code: not -403 }) => true,
+            (0, false, BilibiliApiResponseException { Code: not (-403 or -404) }) => true,
             (0, false, BilibiliHttpRequestException) => false,
             (0, false, HttpRequestException) => true,
             (0, false, OperationCanceledException) => true,

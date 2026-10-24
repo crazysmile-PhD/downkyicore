@@ -163,6 +163,7 @@ internal class VideoInfoService : IInfoService
 
             var videoPage = new VideoPage
             {
+                PlaybackStreamType = PlayStreamType.Video,
                 Avid = _videoView.Aid,
                 Bvid = _videoView.Bvid,
                 Cid = page.Cid,
@@ -285,6 +286,7 @@ internal class VideoInfoService : IInfoService
             var dateTime = startTime.AddSeconds(episode.Arc.Ctime);
             videoSection.VideoPages.Add(new VideoPage
             {
+                PlaybackStreamType = PlayStreamType.Video,
                 Avid = episode.Aid,
                 Bvid = episode.Bvid,
                 Cid = p.Cid,
@@ -309,6 +311,7 @@ internal class VideoInfoService : IInfoService
     {
         var page = new VideoPage
         {
+            PlaybackStreamType = PlayStreamType.Video,
             Avid = episode.Aid,
             Bvid = episode.Bvid,
             Cid = episode.Cid,

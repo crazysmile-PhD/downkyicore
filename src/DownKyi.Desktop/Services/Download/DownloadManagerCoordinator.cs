@@ -157,6 +157,12 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator, 
 
         await _taskQueue.CancelAsync(taskId).ConfigureAwait(true);
 
+        await DeleteCanceledAsync(item, taskId).ConfigureAwait(true);
+    }
+
+    private async Task DeleteCanceledAsync(DownloadingItem item, DownloadTaskId taskId)
+    {
+
         // Once physical deletion starts, finish the database/list transaction even if app shutdown is requested.
         var deletion = await _fileService
             .DeleteGeneratedFilesAsync(item, _storage.GetRequiredSnapshot(taskId), CancellationToken.None)
@@ -175,12 +181,65 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator, 
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(items);
+        var prepared = new List<(DownloadingItem Item, DownloadTaskId TaskId)>();
+        var failures = new List<Exception>();
         foreach (var item in items.ToArray())
         {
             cancellationToken.ThrowIfCancellationRequested();
-            await DeleteAsync(item, cancellationToken).ConfigureAwait(true);
+            var taskId = GetTaskId(item);
+            try
+            {
+                if (_storage.GetRequiredSnapshot(taskId).Phase != DownloadPhase.Canceled)
+                {
+                    await _stateWriter.CancelAsync(taskId, cancellationToken).ConfigureAwait(true);
+                }
+
+                prepared.Add((item, taskId));
+            }
+            catch (Exception exception) when (IsDeleteFailure(exception))
+            {
+                failures.Add(exception);
+            }
+        }
+
+        var pending = prepared
+            .Select(deletion => new PendingDeletion(
+                deletion.Item,
+                deletion.TaskId,
+                CancelRuntimeAsync(deletion.TaskId)))
+            .ToList();
+        while (pending.Count > 0)
+        {
+            var completed = await Task.WhenAny(pending.Select(deletion => deletion.Cancellation))
+                .ConfigureAwait(true);
+            var deletion = pending.First(candidate => ReferenceEquals(candidate.Cancellation, completed));
+            pending.Remove(deletion);
+            try
+            {
+                await deletion.Cancellation.ConfigureAwait(true);
+                await DeleteCanceledAsync(deletion.Item, deletion.TaskId).ConfigureAwait(true);
+            }
+            catch (Exception exception) when (IsDeleteFailure(exception))
+            {
+                failures.Add(exception);
+            }
+        }
+
+        if (failures.Count > 0)
+        {
+            throw new IOException(
+                $"{failures.Count} download task(s) could not be deleted.",
+                failures.Count == 1 ? failures[0] : new AggregateException(failures));
         }
     }
+
+    private async Task CancelRuntimeAsync(DownloadTaskId taskId)
+    {
+        await _taskQueue.CancelAsync(taskId).ConfigureAwait(true);
+    }
+
+    private static bool IsDeleteFailure(Exception exception) =>
+        exception is InvalidOperationException or IOException or TimeoutException;
 
     public async Task ClearDownloadedAsync(CancellationToken cancellationToken = default)
     {
@@ -367,4 +426,9 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator, 
     {
         return new DownloadTaskId(item.DownloadBase.Id);
     }
+
+    private sealed record PendingDeletion(
+        DownloadingItem Item,
+        DownloadTaskId TaskId,
+        Task Cancellation);
 }

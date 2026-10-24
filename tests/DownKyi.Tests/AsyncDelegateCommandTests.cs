@@ -26,6 +26,25 @@ public sealed class AsyncDelegateCommandTests
     }
 
     [Fact]
+    public async Task TimeoutFailureIsLoggedAndCommandBecomesExecutableAgain()
+    {
+        var logger = new RecordingLogger();
+        var command = new DownKyiAsyncDelegateCommand(
+            () => Task.FromException(new TimeoutException("command timed out")),
+            logger);
+        var completion = ObserveCompletion(command);
+
+        command.Execute(null);
+        await completion.WaitAsync(TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.True(command.CanExecute(null));
+        var entry = Assert.Single(logger.Entries);
+        Assert.Equal(LogLevel.Error, entry.Level);
+        Assert.Equal("UI command execution failed.", entry.Message);
+        Assert.IsType<TimeoutException>(entry.Exception);
+    }
+
+    [Fact]
     public async Task CancellationIsNotLoggedAsAnOperationalFailure()
     {
         var logger = new RecordingLogger();
