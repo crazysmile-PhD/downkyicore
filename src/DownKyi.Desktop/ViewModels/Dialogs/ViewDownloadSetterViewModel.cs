@@ -99,7 +99,8 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
             {
                 DriveNameFreeSpace = Format.FormatFileSize(new DriveInfo(_directory).TotalFreeSpace);
             }
-            catch (Exception e) when (e is DriveNotFoundException or IOException or UnauthorizedAccessException)
+            catch (Exception e) when (e is ArgumentException or DriveNotFoundException
+                                      or IOException or UnauthorizedAccessException)
             {
                 DriveNameFreeSpace = Format.FormatFileSize(0);
                 _logger.LogErrorMessage("Available download disk space could not be read.", e);
