@@ -81,6 +81,10 @@ public sealed class DownloadAddressResolver : IDisposable
                     request,
                     cancellationToken).ConfigureAwait(false);
             }
+            catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
+            {
+                throw new TimeoutException("The download address probe timed out.", exception);
+            }
             catch (HttpRequestException exception) when (
                 TlsFailureClassifier.TryClassify(exception, out var tlsErrorCode))
             {

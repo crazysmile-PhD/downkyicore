@@ -738,6 +738,22 @@ public sealed class DownloadRetryPolicyTests
     }
 
     [Fact]
+    public void BuiltinBackendRetriesAddressProbeTimeout()
+    {
+        var result = BuiltinTransferBackend.ClassifyFailure(
+            new TimeoutException("The download address probe timed out.",
+                new TaskCanceledException("fixture connect timeout")),
+            reportedCanceled: false);
+
+        Assert.Equal(DownloadTransferFailureKind.TransientNetwork, result.FailureKind);
+        Assert.Equal("download.transfer.timeout", result.ErrorCode);
+        var policy = new DownloadRetryPolicy();
+        var decision = policy.Decide(result, attemptsForAddress: 1,
+            hasNextAddress: true, canRefreshAddresses: true);
+        Assert.Equal(DownloadRetryAction.RetrySameAddress, decision.Action);
+    }
+
+    [Fact]
     public void BuiltinBackendClassifiesTransportFailureWithoutStatusAsTransient()
     {
         var result = BuiltinTransferBackend.ClassifyFailure(

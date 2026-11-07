@@ -158,6 +158,24 @@ public sealed class DownloadAddressResolverTests
         Assert.Equal(1, handler.Calls);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task TransportCancellationWithoutCallerCancellationIsATimeout(bool wrapped)
+    {
+        OperationCanceledException transportError = wrapped
+            ? new TaskCanceledException("fixture timeout", new TimeoutException("ConnectTimeout"))
+            : new OperationCanceledException("fixture transport cancellation");
+        using var handler = new ProbeHandler((_, _) => throw transportError);
+        using var resolver = new DownloadAddressResolver(handler);
+
+        var error = await Assert.ThrowsAsync<TimeoutException>(() => resolver.ResolveAsync(
+            "https://cdn.example/media", UserAgent, null, TestContext.Current.CancellationToken));
+
+        Assert.Same(transportError, error.InnerException);
+        Assert.Equal(1, handler.Calls);
+    }
+
     [Fact]
     public async Task CancellationRemainsCancellationAndResolverOwnsItsHandler()
     {
