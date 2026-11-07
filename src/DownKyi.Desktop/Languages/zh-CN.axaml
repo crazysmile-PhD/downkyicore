@@ -8,6 +8,10 @@
     <system:String x:Key="RestartToApplyLanguage">语言设置已保存，请重新启动程序以应用。</system:String>
     <system:String x:Key="LanguageRestartHint">重新启动程序后会应用所选语言。</system:String>
 
+    <system:String x:Key="CollectionVideoCount">共 {0} 个视频</system:String>
+    <system:String x:Key="CollectionCountUnknown">视频数未知</system:String>
+    <system:String x:Key="CollectionDurationUnknown">总时长未知</system:String>
+
     <!--  系统  -->
     <system:String x:Key="Close">关闭</system:String>
 

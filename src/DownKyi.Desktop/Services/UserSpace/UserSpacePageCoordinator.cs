@@ -87,7 +87,7 @@ internal interface IUserSpacePageCoordinator
         CancellationToken cancellationToken);
 }
 
-internal sealed class UserSpacePageCoordinator : IUserSpacePageCoordinator
+internal sealed partial class UserSpacePageCoordinator : IUserSpacePageCoordinator
 {
     private readonly ISettingsStore _settingsStore;
     private readonly IWbiKeyProvider _wbiKeyProvider;
@@ -131,11 +131,13 @@ internal sealed class UserSpacePageCoordinator : IUserSpacePageCoordinator
                 cancellationToken: cancellationToken),
             TimeProvider.System,
             cancellationToken).ConfigureAwait(false);
+        var summaries = await LoadPublicationSeasonDurationsAsync(
+            publication?.List.Vlist ?? [], cancellationToken).ConfigureAwait(false);
         return await Task.Run(() => MapPublicationPage(
             publication,
             _navigationService,
             _logger,
-            cancellationToken), cancellationToken).ConfigureAwait(false);
+            cancellationToken, summaries), cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<DynamicVideoPageSnapshot> LoadDynamicVideoPageAsync(
@@ -156,7 +158,8 @@ internal sealed class UserSpacePageCoordinator : IUserSpacePageCoordinator
         SpacePublication? publication,
         IAppNavigationService navigationService,
         ILogger logger,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyDictionary<(long Mid, long SeasonId), (int VideoCount, long Duration)>? summaries = null)
     {
         ArgumentNullException.ThrowIfNull(navigationService);
         ArgumentNullException.ThrowIfNull(logger);
@@ -177,9 +180,9 @@ internal sealed class UserSpacePageCoordinator : IUserSpacePageCoordinator
         foreach (var video in videos)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var isSeason = video.IsAvoided != 0
-                && video.SeasonId > 0
-                && video.Mid > 0;
+            var isSeason = IsPublicationSeason(video);
+            (int VideoCount, long Duration)? summary = isSeason && summaries != null
+                && summaries.TryGetValue((video.Mid, video.SeasonId), out var loaded) ? loaded : null;
             var seasonMeta = isSeason ? video.Meta : null;
             var publishTime = seasonMeta is { PublishTime: > 0 }
                 ? seasonMeta.PublishTime
@@ -191,9 +194,12 @@ internal sealed class UserSpacePageCoordinator : IUserSpacePageCoordinator
             {
                 Avid = video.Aid,
                 Bvid = video.Bvid,
-                Duration = seasonMeta is { EpisodeCount: > 0 }
-                    ? seasonMeta.EpisodeCount.ToString(CultureInfo.CurrentCulture)
+                Duration = isSeason
+                    ? summary.HasValue ? Format.FormatDuration3(summary.Value.Duration)
+                        : DictionaryResource.GetString("CollectionDurationUnknown", "总时长未知")
                     : video.Length,
+                CollectionVideoCount = summary?.VideoCount
+                    ?? (seasonMeta is { EpisodeCount: > 0 } ? seasonMeta.EpisodeCount : null),
                 Title = !string.IsNullOrWhiteSpace(seasonMeta?.Title)
                     ? seasonMeta.Title
                     : video.Title,

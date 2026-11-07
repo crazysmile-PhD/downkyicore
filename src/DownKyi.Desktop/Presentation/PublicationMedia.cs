@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Core.BiliApi.BiliUtils;
+using DownKyi.Utils;
 
 namespace DownKyi.Presentation;
 
@@ -24,6 +25,13 @@ internal class PublicationMedia : ObservableObject
     }
 
     public bool IsDirectVideo => _season == null;
+    public bool IsCollection => _season != null;
+
+    public int? CollectionVideoCount { get; init; }
+
+    public string CollectionCountText => CollectionVideoCount.HasValue
+        ? DictionaryResource.Format("CollectionVideoCount", "共 {0} 个视频", CollectionVideoCount.Value)
+        : DictionaryResource.GetString("CollectionCountUnknown", "视频数未知");
 
     private string _coverUrl = string.Empty;
 

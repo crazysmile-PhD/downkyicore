@@ -8,6 +8,10 @@
     <system:String x:Key="RestartToApplyLanguage">語言設定已儲存，請重新啟動 DownKyi 以套用。</system:String>
     <system:String x:Key="LanguageRestartHint">重新啟動程式後會套用所選語言。</system:String>
 
+    <system:String x:Key="CollectionVideoCount">共 {0} 個影片</system:String>
+    <system:String x:Key="CollectionCountUnknown">影片數未知</system:String>
+    <system:String x:Key="CollectionDurationUnknown">總時長未知</system:String>
+
     <!--  系统  -->
     <system:String x:Key="Close">關閉</system:String>
 

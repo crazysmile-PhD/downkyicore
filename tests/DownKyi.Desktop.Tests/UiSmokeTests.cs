@@ -44,6 +44,42 @@ namespace DownKyi.Desktop.Tests;
 public sealed class UiSmokeTests
 {
     [AvaloniaFact]
+    public Task CollectionCountAndTotalDurationFitOnThePublicationCard() => AvaloniaTestDispatcher.RunAsync(() =>
+    {
+        DesktopTestResources.EnsureProductThemeResources();
+        using var navigation = new AvaloniaNavigationService(route => new NavigationProbe(route), static action => action());
+        using var viewModel = new ViewPublicationViewModel(new DesktopInteractionContextStub(navigation),
+            new ContentDownloadCoordinatorStub(), new PublicationPageCoordinatorStub(navigation),
+            NullLogger<ViewPublicationViewModel>.Instance);
+        viewModel.Medias.Add(new PublicationMedia(navigation, AppRoute.Publication, new SeasonNavigationPayload(42, 7))
+        {
+            Title = "合集示例",
+            CollectionVideoCount = 56,
+            Duration = "01:28:23"
+        });
+        var view = new ViewPublication { DataContext = viewModel };
+        var window = new Window { Width = 1000, Height = 700, Content = view };
+        try
+        {
+            window.Show();
+            window.UpdateLayout();
+            var blocks = view.GetVisualDescendants().OfType<TextBlock>().ToArray();
+            var count = Assert.Single(blocks, block => block.Name == "nameCollectionCount");
+            var duration = Assert.Single(blocks, block => block.Name == "nameDuration");
+            Assert.Equal("共 56 个视频", count.Text);
+            Assert.Equal("01:28:23", duration.Text);
+            Assert.True(count.IsEffectivelyVisible);
+            Assert.True(duration.IsEffectivelyVisible);
+            Assert.True(count.Bounds.Width > 0 && count.Bounds.Width < 150);
+            Assert.True(duration.Bounds.Width > 0 && duration.Bounds.Width < 150);
+        }
+        finally
+        {
+            window.Close();
+        }
+    });
+
+    [AvaloniaFact]
     public void AvaloniaFactRunsOnOwnedDispatcher()
     {
         Assert.True(Avalonia.Threading.Dispatcher.UIThread.CheckAccess());

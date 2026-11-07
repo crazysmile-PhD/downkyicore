@@ -107,7 +107,8 @@ public sealed class UserSpacePageCoordinatorTests
         Assert.False(media.IsDirectVideo);
         Assert.Equal("fixture collection", media.Title);
         Assert.Equal("collection cover", media.CoverUrl);
-        Assert.Equal("26", media.Duration);
+        Assert.Equal("总时长未知", media.Duration);
+        Assert.Equal("共 26 个视频", media.CollectionCountText);
         media.IsSelected = true;
         Assert.False(media.IsSelected);
 

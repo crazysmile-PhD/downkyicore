@@ -41,6 +41,9 @@
                                         Margin="0,10,10,0"
                                         HorizontalAlignment="Right"
                                         VerticalAlignment="Top" />
+                                    <Border IsVisible="{Binding IsCollection}" HorizontalAlignment="Left" VerticalAlignment="Top" Background="{DynamicResource SpaceCarbon}" CornerRadius="0">
+                                        <TextBlock Name="nameCollectionCount" Padding="6,0" Foreground="{DynamicResource SpaceCream}" Text="{Binding CollectionCountText}" />
+                                    </Border>
                                     <Border HorizontalAlignment="Right" VerticalAlignment="Bottom" Background="{DynamicResource SpaceCarbon}" CornerRadius="0">
                                         <TextBlock Name="nameDuration" Padding="6,0" Foreground="{DynamicResource SpaceCream}" Text="{Binding Duration}" />
                                     </Border>

@@ -8,6 +8,10 @@
     <system:String x:Key="RestartToApplyLanguage">言語設定を保存しました。反映するには DownKyi を再起動してください。</system:String>
     <system:String x:Key="LanguageRestartHint">選択した言語は再起動後に反映されます。</system:String>
 
+    <system:String x:Key="CollectionVideoCount">動画 {0} 本</system:String>
+    <system:String x:Key="CollectionCountUnknown">動画数不明</system:String>
+    <system:String x:Key="CollectionDurationUnknown">合計時間不明</system:String>
+
     <!--  系统  -->
     <system:String x:Key="Close">閉じる</system:String>
 

@@ -8,6 +8,10 @@
     <system:String x:Key="RestartToApplyLanguage">Language saved. Restart DownKyi to apply it.</system:String>
     <system:String x:Key="LanguageRestartHint">The selected language takes effect after a restart.</system:String>
 
+    <system:String x:Key="CollectionVideoCount">{0} videos</system:String>
+    <system:String x:Key="CollectionCountUnknown">Video count unknown</system:String>
+    <system:String x:Key="CollectionDurationUnknown">Total duration unknown</system:String>
+
     <!--  系统  -->
     <system:String x:Key="Close">Close</system:String>
 
