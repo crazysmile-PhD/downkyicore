@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
 using System.Security.Authentication;
+using DownKyi.Infrastructure.Downloads;
 using DownKyi.Services.Download;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -351,6 +352,51 @@ public sealed class DownloadRetryPolicyTests
             Assert.Equal(DownloadTransferOutcome.Failed, result.Outcome);
             Assert.Equal(DownloadTransferFailureKind.CandidateRejected, result.FailureKind);
             Assert.Equal("download.transfer.insecure-address", result.ErrorCode);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CoordinatorRetriesTypedAddressProbeTimeoutBeforeMovingToBackup()
+    {
+        var directory = CreateTemporaryDirectory("address-probe-timeout");
+        using var settings = new TestSettingsStore();
+        var probedAddresses = new List<string>();
+        var backend = new BuiltinTransferBackend(
+            settings.Store,
+            new DownloadDiagnosticLogger(
+                NullLogger<DownloadDiagnosticLogger>.Instance),
+            NullLogger<BuiltinTransferBackend>.Instance,
+            _ => new StubAddressResolver(
+                new DownloadAddressTimedOut(),
+                probedAddresses));
+        var coordinator = CreateCoordinator(backend, maximumAttempts: 5);
+
+        try
+        {
+            var result = await coordinator.TransferAsync(
+                CreateRequestAt(
+                    directory,
+                    "media.tmp",
+                    "https://primary.invalid/media",
+                    "https://backup.invalid/media"),
+                static _ => Task.FromResult<IReadOnlyList<string>>([]),
+                TestContext.Current.CancellationToken);
+
+            Assert.Equal(DownloadTransferOutcome.Failed, result.Outcome);
+            Assert.Equal(DownloadTransferFailureKind.TransientNetwork, result.FailureKind);
+            Assert.Equal("download.transfer.timeout", result.ErrorCode);
+            Assert.Equal(
+                [
+                    "https://primary.invalid/media",
+                    "https://primary.invalid/media",
+                    "https://backup.invalid/media",
+                    "https://backup.invalid/media"
+                ],
+                probedAddresses);
         }
         finally
         {
@@ -993,6 +1039,26 @@ public sealed class DownloadRetryPolicyTests
                     : results[^1]);
         }
 
+    }
+
+    private sealed class StubAddressResolver(
+        DownloadAddressResolution result,
+        ICollection<string> probedAddresses) : IDownloadAddressResolver
+    {
+        public Task<DownloadAddressResolution> ResolveAsync(
+            string address,
+            string userAgent,
+            string? credentials,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            probedAddresses.Add(address);
+            return Task.FromResult(result);
+        }
+
+        public void Dispose()
+        {
+        }
     }
 
     private sealed class CancelingBackend : ITransferBackend
