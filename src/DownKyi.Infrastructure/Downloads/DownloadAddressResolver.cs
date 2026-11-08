@@ -3,15 +3,37 @@ using System.Net.Http.Headers;
 
 namespace DownKyi.Infrastructure.Downloads;
 
-public sealed class DownloadAddressResolver : IDisposable
+public interface IDownloadAddressResolver : IDisposable
+{
+    Task<DownloadAddressResolution> ResolveAsync(
+        string address,
+        string userAgent,
+        string? credentials,
+        CancellationToken cancellationToken);
+}
+
+public sealed class DownloadAddressResolver : IDownloadAddressResolver
 {
     private const string BilibiliHost = "bilibili.com";
     private const int MaximumRedirects = 5;
+    internal static readonly TimeSpan DefaultProbeTimeout = TimeSpan.FromSeconds(30);
     private readonly HttpMessageInvoker _http;
+    private readonly TimeSpan _probeTimeout;
 
-    internal DownloadAddressResolver(HttpMessageHandler handler)
+    internal DownloadAddressResolver(
+        HttpMessageHandler handler,
+        TimeSpan? probeTimeout = null)
     {
         ArgumentNullException.ThrowIfNull(handler);
+        _probeTimeout = probeTimeout ?? DefaultProbeTimeout;
+        if (_probeTimeout <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(probeTimeout),
+                _probeTimeout,
+                "The download address probe timeout must be positive.");
+        }
+
         _http = new HttpMessageInvoker(handler, disposeHandler: true);
     }
 
@@ -59,13 +81,17 @@ public sealed class DownloadAddressResolver : IDisposable
         string? credentials,
         CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (!Uri.TryCreate(address, UriKind.Absolute, out var current)
             || !string.Equals(current.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
         {
-            return DownloadAddressResolution.Rejected(
+            return new DownloadAddressCandidateRejected(
                 "download.transfer.insecure-address");
         }
 
+        using var probeCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken);
+        probeCancellation.CancelAfter(_probeTimeout);
         for (var redirectCount = 0; ; redirectCount++)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -79,33 +105,51 @@ public sealed class DownloadAddressResolver : IDisposable
             {
                 response = await _http.SendAsync(
                     request,
-                    cancellationToken).ConfigureAwait(false);
+                    probeCancellation.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                return new DownloadAddressTimedOut();
+            }
+            catch (TimeoutException)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                return new DownloadAddressTimedOut();
             }
             catch (HttpRequestException exception) when (
                 TlsFailureClassifier.TryClassify(exception, out var tlsErrorCode))
             {
-                return DownloadAddressResolution.Rejected(tlsErrorCode);
+                return new DownloadAddressCandidateRejected(tlsErrorCode);
+            }
+            catch (HttpRequestException)
+            {
+                return new DownloadAddressTransportFailure();
+            }
+            catch (IOException)
+            {
+                return new DownloadAddressTransportFailure();
             }
 
             using (response)
             {
                 if (!IsRedirect(response.StatusCode))
                 {
-                    return DownloadAddressResolution.Accepted(
-                        current.AbsoluteUri,
+                    return new DownloadAddressAccepted(
+                        current,
                         taskHeaders);
                 }
 
                 if (redirectCount >= MaximumRedirects)
                 {
-                    return DownloadAddressResolution.Rejected(
+                    return new DownloadAddressCandidateRejected(
                         "download.transfer.redirect-limit");
                 }
 
                 var redirect = ResolveRedirect(current, response.Headers.Location);
                 if (redirect.ErrorCode != null)
                 {
-                    return redirect;
+                    return new DownloadAddressCandidateRejected(
+                        redirect.ErrorCode);
                 }
 
                 var next = redirect.Address
@@ -113,7 +157,7 @@ public sealed class DownloadAddressResolver : IDisposable
                         "The accepted download redirect address is missing.");
                 if (taskHeaders.CarriesCredentials && !IsSameOrigin(current, next))
                 {
-                    return DownloadAddressResolution.Rejected(
+                    return new DownloadAddressCandidateRejected(
                         "download.transfer.credentialed-redirect");
                 }
 
@@ -186,24 +230,26 @@ public sealed class DownloadAddressResolver : IDisposable
         return request;
     }
 
-    private static DownloadAddressResolution ResolveRedirect(
+    private static RedirectResolution ResolveRedirect(
         Uri current,
         Uri? location)
     {
         if (location == null)
         {
-            return DownloadAddressResolution.Rejected(
-                "download.transfer.redirect-location-missing");
+            return new RedirectResolution(
+                Address: null,
+                ErrorCode: "download.transfer.redirect-location-missing");
         }
 
         var next = location.IsAbsoluteUri ? location : new Uri(current, location);
         if (!string.Equals(next.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
         {
-            return DownloadAddressResolution.Rejected(
-                "download.transfer.insecure-redirect");
+            return new RedirectResolution(
+                Address: null,
+                ErrorCode: "download.transfer.insecure-redirect");
         }
 
-        return DownloadAddressResolution.Redirect(next);
+        return new RedirectResolution(next, ErrorCode: null);
     }
 
     private static bool IsRedirect(HttpStatusCode statusCode)
@@ -232,24 +278,27 @@ public sealed class DownloadAddressResolver : IDisposable
     {
         _http.Dispose();
     }
+
+    private sealed record RedirectResolution(Uri? Address, string? ErrorCode);
 }
 
-public sealed record DownloadAddressResolution(
-    Uri? Address,
-    DownloadRequestHeaders? Headers,
-    string? ErrorCode)
+public abstract record DownloadAddressResolution
 {
-    public static DownloadAddressResolution Accepted(
-        string address,
-        DownloadRequestHeaders headers) =>
-        new(new Uri(address, UriKind.Absolute), headers, ErrorCode: null);
-
-    public static DownloadAddressResolution Redirect(Uri address) =>
-        new(address, Headers: null, ErrorCode: null);
-
-    public static DownloadAddressResolution Rejected(string errorCode) =>
-        new(Address: null, Headers: null, errorCode);
+    private protected DownloadAddressResolution()
+    {
+    }
 }
+
+public sealed record DownloadAddressAccepted(
+    Uri Address,
+    DownloadRequestHeaders Headers) : DownloadAddressResolution;
+
+public sealed record DownloadAddressCandidateRejected(
+    string ErrorCode) : DownloadAddressResolution;
+
+public sealed record DownloadAddressTimedOut : DownloadAddressResolution;
+
+public sealed record DownloadAddressTransportFailure : DownloadAddressResolution;
 
 public sealed record DownloadRequestHeaders(
     IReadOnlyList<string> Headers,

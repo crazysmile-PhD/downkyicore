@@ -34,11 +34,10 @@ public sealed class DownloadAddressResolverTests
 
         var result = await resolver.ResolveAsync(address, UserAgent, Credentials, TestContext.Current.CancellationToken);
 
-        Assert.Null(result.ErrorCode);
-        Assert.Equal(new Uri(address), result.Address);
-        Assert.NotNull(result.Headers);
-        Assert.Equal(carriesCredentials, result.Headers.CarriesCredentials);
-        Assert.Equal(carriesCredentials, result.Headers.Headers.Contains($"Cookie: {Credentials}"));
+        var accepted = Assert.IsType<DownloadAddressAccepted>(result);
+        Assert.Equal(new Uri(address), accepted.Address);
+        Assert.Equal(carriesCredentials, accepted.Headers.CarriesCredentials);
+        Assert.Equal(carriesCredentials, accepted.Headers.Headers.Contains($"Cookie: {Credentials}"));
         Assert.Equal(1, handler.Calls);
     }
 
@@ -58,8 +57,8 @@ public sealed class DownloadAddressResolverTests
         var result = await resolver.ResolveAsync(
             "https://www.bilibili.com/media", UserAgent, Credentials, TestContext.Current.CancellationToken);
 
-        Assert.Null(result.ErrorCode);
-        Assert.Equal(new Uri("https://www.bilibili.com/resolved"), result.Address);
+        var accepted = Assert.IsType<DownloadAddressAccepted>(result);
+        Assert.Equal(new Uri("https://www.bilibili.com/resolved"), accepted.Address);
         Assert.Equal(2, handler.Calls);
     }
 
@@ -76,9 +75,8 @@ public sealed class DownloadAddressResolverTests
         var result = await resolver.ResolveAsync(
             "https://www.bilibili.com/media", UserAgent, Credentials, TestContext.Current.CancellationToken);
 
-        Assert.Equal(errorCode, result.ErrorCode);
-        Assert.Null(result.Address);
-        Assert.Null(result.Headers);
+        var rejected = Assert.IsType<DownloadAddressCandidateRejected>(result);
+        Assert.Equal(errorCode, rejected.ErrorCode);
         Assert.Equal(1, handler.Calls);
     }
 
@@ -98,9 +96,9 @@ public sealed class DownloadAddressResolverTests
         var result = await resolver.ResolveAsync(
             "https://cdn.example/media", UserAgent, Credentials, TestContext.Current.CancellationToken);
 
-        Assert.Null(result.ErrorCode);
-        Assert.True(result.Headers?.CarriesCredentials);
-        Assert.Equal(new Uri("https://www.bilibili.com/resolved"), result.Address);
+        var accepted = Assert.IsType<DownloadAddressAccepted>(result);
+        Assert.True(accepted.Headers.CarriesCredentials);
+        Assert.Equal(new Uri("https://www.bilibili.com/resolved"), accepted.Address);
         Assert.Equal(2, handler.Calls);
     }
 
@@ -113,7 +111,8 @@ public sealed class DownloadAddressResolverTests
         var result = await resolver.ResolveAsync(
             "https://cdn.example/media", UserAgent, null, TestContext.Current.CancellationToken);
 
-        Assert.Equal("download.transfer.redirect-limit", result.ErrorCode);
+        var rejected = Assert.IsType<DownloadAddressCandidateRejected>(result);
+        Assert.Equal("download.transfer.redirect-limit", rejected.ErrorCode);
         Assert.Equal(6, handler.Calls);
     }
 
@@ -127,7 +126,8 @@ public sealed class DownloadAddressResolverTests
 
         var result = await resolver.ResolveAsync(address, UserAgent, null, TestContext.Current.CancellationToken);
 
-        Assert.Equal("download.transfer.insecure-address", result.ErrorCode);
+        var rejected = Assert.IsType<DownloadAddressCandidateRejected>(result);
+        Assert.Equal("download.transfer.insecure-address", rejected.ErrorCode);
         Assert.Equal(0, handler.Calls);
     }
 
@@ -154,7 +154,59 @@ public sealed class DownloadAddressResolverTests
         var result = await resolver.ResolveAsync(
             "https://cdn.example/media", UserAgent, null, TestContext.Current.CancellationToken);
 
-        Assert.Equal("download.transfer.tls.expired", result.ErrorCode);
+        var rejected = Assert.IsType<DownloadAddressCandidateRejected>(result);
+        Assert.Equal("download.transfer.tls.expired", rejected.ErrorCode);
+        Assert.Equal(1, handler.Calls);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task TransportCancellationWithoutCallerCancellationIsTypedTimeout(bool wrapped)
+    {
+        OperationCanceledException transportError = wrapped
+            ? new TaskCanceledException("fixture timeout", new TimeoutException("ConnectTimeout"))
+            : new OperationCanceledException("fixture transport cancellation");
+        using var handler = new ProbeHandler((_, _) => throw transportError);
+        using var resolver = new DownloadAddressResolver(handler);
+
+        var result = await resolver.ResolveAsync(
+            "https://cdn.example/media", UserAgent, null, TestContext.Current.CancellationToken);
+
+        Assert.IsType<DownloadAddressTimedOut>(result);
+        Assert.Equal(1, handler.Calls);
+    }
+
+    [Fact]
+    public async Task ProbeDeadlineBoundsResponseHeaderWait()
+    {
+        using var handler = new AsyncProbeHandler(async (_, token) =>
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, token).ConfigureAwait(false);
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        });
+        using var resolver = new DownloadAddressResolver(
+            handler,
+            TimeSpan.FromMilliseconds(50));
+
+        var result = await resolver.ResolveAsync(
+            "https://cdn.example/media", UserAgent, null, TestContext.Current.CancellationToken);
+
+        Assert.IsType<DownloadAddressTimedOut>(result);
+        Assert.Equal(1, handler.Calls);
+    }
+
+    [Fact]
+    public async Task TransportFailureIsReturnedAsTypedOutcome()
+    {
+        using var handler = new ProbeHandler((_, _) =>
+            throw new HttpRequestException("fixture connection reset"));
+        using var resolver = new DownloadAddressResolver(handler);
+
+        var result = await resolver.ResolveAsync(
+            "https://cdn.example/media", UserAgent, null, TestContext.Current.CancellationToken);
+
+        Assert.IsType<DownloadAddressTransportFailure>(result);
         Assert.Equal(1, handler.Calls);
     }
 
@@ -202,6 +254,21 @@ public sealed class DownloadAddressResolverTests
         {
             IsDisposed |= disposing;
             base.Dispose(disposing);
+        }
+    }
+
+    private sealed class AsyncProbeHandler(
+        Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send)
+        : HttpMessageHandler
+    {
+        public int Calls { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            Calls++;
+            return send(request, cancellationToken);
         }
     }
 }

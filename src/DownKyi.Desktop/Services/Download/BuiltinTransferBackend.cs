@@ -22,15 +22,31 @@ internal sealed class BuiltinTransferBackend : ITransferBackend
     private readonly DownloadDiagnosticLogger _diagnosticLogger;
     private readonly ILogger<BuiltinTransferBackend> _logger;
     private readonly DownloadBandwidthLimiter _bandwidthLimiter;
+    private readonly Func<Uri?, IDownloadAddressResolver> _addressResolverFactory;
 
     public BuiltinTransferBackend(
         ISettingsStore settingsStore,
         DownloadDiagnosticLogger diagnosticLogger,
         ILogger<BuiltinTransferBackend> logger)
+        : this(
+            settingsStore,
+            diagnosticLogger,
+            logger,
+            static proxyAddress => DownloadAddressResolver.Create(proxyAddress))
+    {
+    }
+
+    internal BuiltinTransferBackend(
+        ISettingsStore settingsStore,
+        DownloadDiagnosticLogger diagnosticLogger,
+        ILogger<BuiltinTransferBackend> logger,
+        Func<Uri?, IDownloadAddressResolver> addressResolverFactory)
     {
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         _diagnosticLogger = diagnosticLogger ?? throw new ArgumentNullException(nameof(diagnosticLogger));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _addressResolverFactory = addressResolverFactory
+            ?? throw new ArgumentNullException(nameof(addressResolverFactory));
         _bandwidthLimiter = new DownloadBandwidthLimiter(
             () =>
             {
@@ -102,25 +118,39 @@ internal sealed class BuiltinTransferBackend : ITransferBackend
             }
 
             var proxyAddress = ResolveProxyAddress(network);
-            using var resolver = DownloadAddressResolver.Create(proxyAddress);
+            using var resolver = _addressResolverFactory(proxyAddress)
+                ?? throw new InvalidOperationException(
+                    "The download address resolver factory returned no resolver.");
             var resolution = await resolver.ResolveAsync(
                 request.Urls[0],
                 network.UserAgent,
                 LoginHelper.GetLoginInfoCookiesString(),
                 request.CancellationToken).ConfigureAwait(true);
-            if (resolution.ErrorCode != null)
+            DownloadAddressAccepted accepted;
+            switch (resolution)
             {
-                return DownloadTransferResult.Failed(
-                    DownloadTransferFailureKind.CandidateRejected,
-                    resolution.ErrorCode);
+                case DownloadAddressAccepted value:
+                    accepted = value;
+                    break;
+                case DownloadAddressCandidateRejected rejected:
+                    return DownloadTransferResult.Failed(
+                        DownloadTransferFailureKind.CandidateRejected,
+                        rejected.ErrorCode);
+                case DownloadAddressTimedOut:
+                    return DownloadTransferResult.Failed(
+                        DownloadTransferFailureKind.TransientNetwork,
+                        "download.transfer.timeout");
+                case DownloadAddressTransportFailure:
+                    return DownloadTransferResult.Failed(
+                        DownloadTransferFailureKind.TransientNetwork,
+                        "download.transfer.network");
+                default:
+                    throw new InvalidOperationException(
+                        "The download address resolver returned an unknown outcome.");
             }
 
-            var resolvedAddress = resolution.Address
-                ?? throw new InvalidOperationException(
-                    "The accepted built-in download address is missing.");
-            var headers = resolution.Headers
-                ?? throw new InvalidOperationException(
-                    "The accepted built-in download headers are missing.");
+            var resolvedAddress = accepted.Address;
+            var headers = accepted.Headers;
             using var handler = CreateHttpHandler(network, proxyAddress);
             var bandwidthLease = _bandwidthLimiter.CreateTransferLease();
             using var downloader = new BuiltinRangeDownloader(
