@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using DownKyi.Application.Media;
 using DownKyi.CustomControl;
 using DownKyi.Presentation;
 using DownKyi.Services.Video;
@@ -45,7 +46,9 @@ public sealed class VideoSelectionStateTests
         var page = new VideoPage { Cid = 42, Bvid = "BV17x411w7KC" };
         var section = new VideoSection { Id = 1, VideoPages = [page] };
 
-        var selected = VideoSelectionState.SelectInputPage([section], "BV17x411w7KC");
+        var selected = VideoSelectionState.SelectInputPage(
+            [section],
+            new BilibiliBvidInput("BV17x411w7KC"));
 
         Assert.Same(page, selected);
         Assert.True(section.IsSelected);

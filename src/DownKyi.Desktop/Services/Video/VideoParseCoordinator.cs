@@ -13,7 +13,7 @@ namespace DownKyi.Services.Video;
 
 internal sealed class VideoParseCoordinator
 {
-    private readonly Func<string, CancellationToken, Task<IInfoService?>> _serviceFactory;
+    private readonly Func<BilibiliMediaInput, CancellationToken, Task<IInfoService?>> _serviceFactory;
 
     public VideoParseCoordinator(
         ISettingsStore settingsStore,
@@ -31,19 +31,19 @@ internal sealed class VideoParseCoordinator
     {
     }
 
-    internal VideoParseCoordinator(Func<string, CancellationToken, IInfoService?> serviceFactory)
+    internal VideoParseCoordinator(Func<BilibiliMediaInput, CancellationToken, IInfoService?> serviceFactory)
         : this((input, cancellationToken) =>
             Task.FromResult(serviceFactory(input, cancellationToken)))
     {
     }
 
-    internal VideoParseCoordinator(Func<string, CancellationToken, Task<IInfoService?>> serviceFactory)
+    internal VideoParseCoordinator(Func<BilibiliMediaInput, CancellationToken, Task<IInfoService?>> serviceFactory)
     {
         _serviceFactory = serviceFactory ?? throw new ArgumentNullException(nameof(serviceFactory));
     }
 
     public async Task<VideoDetailParseResult> LoadDetailAsync(
-        string input,
+        BilibiliMediaInput input,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -83,7 +83,7 @@ internal sealed class VideoParseCoordinator
     }
 
     internal static async Task<IInfoService?> CreateInfoServiceAsync(
-        string input,
+        BilibiliMediaInput input,
         ISettingsStore settingsStore,
         IVideoTagProvider tagProvider,
         IWbiKeyProvider wbiKeyProvider,
@@ -94,8 +94,7 @@ internal sealed class VideoParseCoordinator
         ArgumentNullException.ThrowIfNull(tagProvider);
         ArgumentNullException.ThrowIfNull(wbiKeyProvider);
         ArgumentNullException.ThrowIfNull(client);
-        var kind = VideoInputResolver.Resolve(input);
-        if (kind == VideoInputKind.Video)
+        if (input is BilibiliBvidInput or BilibiliAvidInput)
         {
             return await VideoInfoService.CreateAsync(
                 input,
@@ -106,14 +105,16 @@ internal sealed class VideoParseCoordinator
                 cancellationToken).ConfigureAwait(false);
         }
 
-        return kind switch
+        return input switch
         {
-            VideoInputKind.Bangumi => await BangumiInfoService.CreateAsync(
+            BilibiliBangumiSeasonInput or BilibiliBangumiEpisodeInput or BilibiliBangumiMediaInput
+                => await BangumiInfoService.CreateAsync(
                 input,
                 settingsStore,
                 client,
                 cancellationToken).ConfigureAwait(false),
-            VideoInputKind.Cheese => await CheeseInfoService.CreateAsync(
+            BilibiliCheeseSeasonInput or BilibiliCheeseEpisodeInput
+                => await CheeseInfoService.CreateAsync(
                 input,
                 settingsStore,
                 client,

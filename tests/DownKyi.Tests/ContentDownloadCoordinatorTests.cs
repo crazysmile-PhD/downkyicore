@@ -1,5 +1,6 @@
 using DownKyi.Application.Bilibili;
 using DownKyi.Application.Downloads;
+using DownKyi.Application.Media;
 using DownKyi.Core.BiliApi;
 using DownKyi.Core.BiliApi.Video;
 using DownKyi.Core.BiliApi.VideoStream;
@@ -24,7 +25,7 @@ public sealed class ContentDownloadCoordinatorTests
         await cancellation.CancelAsync();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => coordinator.AddAsync(
-            [new ContentDownloadItem("BV17x411w7KC", DownloadInfoKind.Video, true)],
+            [Item("BV17x411w7KC")],
             onlySelected: true,
             cancellation.Token));
 
@@ -39,7 +40,7 @@ public sealed class ContentDownloadCoordinatorTests
         var coordinator = CreateCoordinator(factory, new RecordingInfoServiceFactory());
 
         var result = await coordinator.AddAsync(
-            [new ContentDownloadItem("BV17x411w7KC", DownloadInfoKind.Video, false)],
+            [Item("BV17x411w7KC", isSelected: false)],
             onlySelected: true,
             TestContext.Current.CancellationToken);
 
@@ -56,7 +57,7 @@ public sealed class ContentDownloadCoordinatorTests
         var coordinator = CreateCoordinator(factory, new RecordingInfoServiceFactory());
 
         var result = await coordinator.AddAsync(
-            [new ContentDownloadItem("BV17x411w7KC", DownloadInfoKind.Video, true)],
+            [Item("BV17x411w7KC")],
             onlySelected: true,
             TestContext.Current.CancellationToken);
 
@@ -77,8 +78,8 @@ public sealed class ContentDownloadCoordinatorTests
 
         var result = await coordinator.AddAsync(
             [
-                new ContentDownloadItem("BV17x411w7KC", DownloadInfoKind.Video, true),
-                new ContentDownloadItem("https://www.bilibili.com/bangumi/media/md28223074", DownloadInfoKind.Bangumi, false)
+                Item("BV17x411w7KC"),
+                Item("https://www.bilibili.com/bangumi/media/md28223074", isSelected: false)
             ],
             onlySelected: false,
             TestContext.Current.CancellationToken);
@@ -91,8 +92,8 @@ public sealed class ContentDownloadCoordinatorTests
         Assert.Equal(2, session.AddCount);
         Assert.Equal(2, session.PrepareCountWhenFirstAdded);
         Assert.Equal(
-            [DownloadInfoKind.Video, DownloadInfoKind.Bangumi],
-            infoServiceFactory.CreatedKinds);
+            [typeof(BilibiliBvidInput), typeof(BilibiliBangumiMediaInput)],
+            infoServiceFactory.CreatedInputTypes);
     }
 
     [Fact]
@@ -106,8 +107,7 @@ public sealed class ContentDownloadCoordinatorTests
         var progress = new InlineProgress<ContentDownloadBatchProgress>(value => latestProgress = value);
         var items = Enumerable.Range(1, 6)
             .Select(index => new ContentDownloadItem(
-                $"BV1incremental{index}",
-                DownloadInfoKind.Video,
+                new BilibiliAvidInput(index),
                 IsSelected: true))
             .ToArray();
 
@@ -130,10 +130,10 @@ public sealed class ContentDownloadCoordinatorTests
     [Fact]
     public async Task UnavailableVideoIsSkippedWithoutStoppingFollowingItems()
     {
-        const string unavailableSource = "BV1unavailable";
+        const string unavailableSource = "BV1xx411c7mD";
         var session = new RecordingSession(@"D:\Downloads");
         var infoServiceFactory = new RecordingInfoServiceFactory(item =>
-            item.Source == unavailableSource
+            SourceOf(item) == unavailableSource
                 ? new BilibiliApiResponseException(
                     nameof(VideoInfo.VideoViewInfoAsync),
                     "Video is unavailable.",
@@ -143,9 +143,9 @@ public sealed class ContentDownloadCoordinatorTests
 
         var result = await coordinator.AddAsync(
             [
-                new ContentDownloadItem("BV17x411w7KC", DownloadInfoKind.Video, true),
-                new ContentDownloadItem(unavailableSource, DownloadInfoKind.Video, true),
-                new ContentDownloadItem("BV1xx411c7mD", DownloadInfoKind.Video, true)
+                Item("BV17x411w7KC"),
+                Item(unavailableSource),
+                Item("BV1G1421D7mL")
             ],
             onlySelected: true,
             TestContext.Current.CancellationToken);
@@ -154,14 +154,14 @@ public sealed class ContentDownloadCoordinatorTests
         Assert.Equal(2, session.PrepareCount);
         Assert.Equal(2, session.AddCount);
         Assert.Equal(
-            ["BV17x411w7KC", unavailableSource, "BV1xx411c7mD"],
+            ["BV17x411w7KC", unavailableSource, "BV1G1421D7mL"],
             infoServiceFactory.CreatedSources);
     }
 
     [Fact]
     public async Task CancellationWinsWhenFinalUnavailableVideoResponseArrives()
     {
-        const string unavailableSource = "BV1unavailable";
+        const string unavailableSource = "BV1xx411c7mD";
         using var cancellation = new CancellationTokenSource();
         var session = new RecordingSession(@"D:\Downloads");
         var infoServiceFactory = new RecordingInfoServiceFactory(_ =>
@@ -175,7 +175,7 @@ public sealed class ContentDownloadCoordinatorTests
         var coordinator = CreateCoordinator(new RecordingFactory(session), infoServiceFactory);
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => coordinator.AddAsync(
-            [new ContentDownloadItem(unavailableSource, DownloadInfoKind.Video, true)],
+            [Item(unavailableSource)],
             onlySelected: true,
             cancellation.Token));
 
@@ -189,10 +189,10 @@ public sealed class ContentDownloadCoordinatorTests
     [InlineData("OtherOperation", 62002)]
     public async Task OtherBilibiliApiFailuresStopTheBatchBeforeQueueMutation(string operation, int code)
     {
-        const string failingSource = "BV1failure";
+        const string failingSource = "BV1Q541167Qg";
         var session = new RecordingSession(@"D:\Downloads");
         var infoServiceFactory = new RecordingInfoServiceFactory(item =>
-            item.Source == failingSource
+            SourceOf(item) == failingSource
                 ? new BilibiliApiResponseException(
                     operation,
                     "Authentication failed.",
@@ -202,9 +202,9 @@ public sealed class ContentDownloadCoordinatorTests
 
         var exception = await Assert.ThrowsAsync<BilibiliApiResponseException>(() => coordinator.AddAsync(
             [
-                new ContentDownloadItem("BV17x411w7KC", DownloadInfoKind.Video, true),
-                new ContentDownloadItem(failingSource, DownloadInfoKind.Video, true),
-                new ContentDownloadItem("BV1xx411c7mD", DownloadInfoKind.Video, true)
+                Item("BV17x411w7KC"),
+                Item(failingSource),
+                Item("BV1xx411c7mD")
             ],
             onlySelected: true,
             TestContext.Current.CancellationToken));
@@ -229,9 +229,9 @@ public sealed class ContentDownloadCoordinatorTests
 
         var result = await coordinator.AddAsync(
             [
-                new ContentDownloadItem("BV17x411w7KC", DownloadInfoKind.Video, true),
-                new ContentDownloadItem("BV1unprepared", DownloadInfoKind.Video, true),
-                new ContentDownloadItem("BV1xx411c7mD", DownloadInfoKind.Video, true)
+                Item("BV17x411w7KC"),
+                Item("BV1G1421D7mL"),
+                Item("BV1xx411c7mD")
             ],
             onlySelected: true,
             TestContext.Current.CancellationToken);
@@ -251,7 +251,7 @@ public sealed class ContentDownloadCoordinatorTests
             new CancelingInfoServiceFactory(cancellation));
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => coordinator.AddAsync(
-            [new ContentDownloadItem("BV17x411w7KC", DownloadInfoKind.Video, true)],
+            [Item("BV17x411w7KC")],
             onlySelected: true,
             cancellation.Token));
 
@@ -279,8 +279,8 @@ public sealed class ContentDownloadCoordinatorTests
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => coordinator.AddAsync(
             [
-                new ContentDownloadItem("BV17x411w7KC", DownloadInfoKind.Video, true),
-                new ContentDownloadItem("BV1xx411c7mD", DownloadInfoKind.Video, true)
+                Item("BV17x411w7KC"),
+                Item("BV1xx411c7mD")
             ],
             onlySelected: true,
             cancellation.Token));
@@ -417,7 +417,7 @@ public sealed class ContentDownloadCoordinatorTests
     private sealed class RecordingInfoServiceFactory(
         Func<ContentDownloadItem, Exception?>? failure = null) : IContentInfoServiceFactory
     {
-        public List<DownloadInfoKind> CreatedKinds { get; } = [];
+        public List<Type> CreatedInputTypes { get; } = [];
 
         public List<string> CreatedSources { get; } = [];
 
@@ -426,8 +426,8 @@ public sealed class ContentDownloadCoordinatorTests
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            CreatedKinds.Add(item.Kind);
-            CreatedSources.Add(item.Source);
+            CreatedInputTypes.Add(item.Input.GetType());
+            CreatedSources.Add(SourceOf(item));
             if (failure?.Invoke(item) is { } exception)
             {
                 return Task.FromException<IInfoService>(exception);
@@ -435,6 +435,22 @@ public sealed class ContentDownloadCoordinatorTests
 
             return Task.FromResult<IInfoService>(new RecordingInfoService());
         }
+    }
+
+    private static ContentDownloadItem Item(string source, bool isSelected = true)
+    {
+        return ContentDownloadItem.TryCreate(source, isSelected)
+            ?? throw new InvalidOperationException($"Invalid test input: {source}");
+    }
+
+    private static string SourceOf(ContentDownloadItem item)
+    {
+        return item.Input switch
+        {
+            BilibiliBvidInput bvid => bvid.Bvid,
+            BilibiliAvidInput avid => $"av{avid.Avid}",
+            _ => item.Input.CanonicalUri.AbsoluteUri
+        };
     }
 
     private sealed class RecordingInfoService : IInfoService

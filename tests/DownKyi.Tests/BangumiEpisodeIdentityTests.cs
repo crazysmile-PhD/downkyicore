@@ -1,4 +1,5 @@
 using DownKyi.Application.Bilibili;
+using DownKyi.Application.Media;
 using DownKyi.Application.Settings;
 using DownKyi.Core.BiliApi;
 using DownKyi.Core.BiliApi.VideoStream;
@@ -154,7 +155,7 @@ public sealed class BangumiEpisodeIdentityTests
             }
         };
         var service = await BangumiInfoService.CreateAsync(
-            "ss1",
+            new BilibiliBangumiSeasonInput(1),
             settings.Store,
             client,
             TestContext.Current.CancellationToken);
@@ -242,7 +243,7 @@ public sealed class BangumiEpisodeIdentityTests
             }
         };
         var service = await BangumiInfoService.CreateAsync(
-            "ss28747",
+            new BilibiliBangumiSeasonInput(28747),
             settings.Store,
             client,
             TestContext.Current.CancellationToken);
@@ -348,7 +349,7 @@ public sealed class BangumiEpisodeIdentityTests
             }
         };
         var videoService = await VideoInfoService.CreateAsync(
-            "BV18CEY6oEyH",
+            new BilibiliBvidInput("BV18CEY6oEyH"),
             settings.Store,
             new VideoTagProvider(client),
             new TestWbiKeyProvider(),
@@ -393,7 +394,7 @@ public sealed class BangumiEpisodeIdentityTests
             }
         };
         var bangumiService = await BangumiInfoService.CreateAsync(
-            "ss1",
+            new BilibiliBangumiSeasonInput(1),
             settings.Store,
             client,
             TestContext.Current.CancellationToken);

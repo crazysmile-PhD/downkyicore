@@ -1,4 +1,5 @@
 using DownKyi.Application.Lifetime;
+using DownKyi.Application.Media;
 using DownKyi.Desktop.Composition;
 using DownKyi.Services.Media;
 using Microsoft.Extensions.DependencyInjection;
@@ -53,7 +54,7 @@ public sealed class ContentDownloadBatchOwnerTests
             {
                 var currentActiveCount = Interlocked.Increment(ref activeCount);
                 maximumActiveCount = Math.Max(maximumActiveCount, currentActiveCount);
-                var source = Assert.Single(items).Source;
+                var source = LabelOf(Assert.Single(items));
                 executionOrder.Add(source);
                 try
                 {
@@ -115,7 +116,7 @@ public sealed class ContentDownloadBatchOwnerTests
             applicationCancellation,
             async (items, _, cancellationToken) =>
             {
-                var source = Assert.Single(items).Source;
+                var source = LabelOf(Assert.Single(items));
                 executedSources.Add(source);
                 if (source == "first")
                 {
@@ -296,7 +297,26 @@ public sealed class ContentDownloadBatchOwnerTests
         new(new StubContentDownloadCoordinator(executeAsync), applicationCancellation);
 
     private static ContentDownloadItem CreateItem(string source) =>
-        new(source, DownloadInfoKind.Video, IsSelected: true);
+        new(new BilibiliAvidInput(source switch
+        {
+            "first" => 1,
+            "second" => 2,
+            "queued" => 3,
+            "running" => 4,
+            "incremental" => 5,
+            _ => throw new ArgumentOutOfRangeException(nameof(source), source, null)
+        }), IsSelected: true);
+
+    private static string LabelOf(ContentDownloadItem item) =>
+        Assert.IsType<BilibiliAvidInput>(item.Input).Avid switch
+        {
+            1 => "first",
+            2 => "second",
+            3 => "queued",
+            4 => "running",
+            5 => "incremental",
+            _ => throw new InvalidOperationException("Unexpected test input.")
+        };
 
     private sealed class StubContentDownloadCoordinator(
         Func<IReadOnlyList<ContentDownloadItem>, bool, CancellationToken, Task<ContentDownloadBatchResult?>> executeAsync)

@@ -7,6 +7,7 @@ using Avalonia.Themes.Fluent;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using DownKyi.Application.Desktop;
+using DownKyi.Application.Media;
 using DownKyi.Commands;
 using DownKyi.Infrastructure.Settings;
 using DownKyi.Platform;
@@ -501,7 +502,7 @@ public sealed class VideoDetailCommandStateTests
             AppNavigationRegion.Main,
             AppRoute.VideoDetail,
             AppRoute.Index,
-            "https://www.bilibili.com/video/BV1G1421D7mL",
+            new VideoNavigationPayload(new BilibiliBvidInput("BV1G1421D7mL")),
             new AppNavigationParameters()));
         await completion.WaitAsync(TestContext.Current.CancellationToken).ConfigureAwait(true);
 
@@ -672,7 +673,8 @@ public sealed class VideoDetailCommandStateTests
         private readonly CancellationTokenSource _operationCancellation = new();
         private int _version;
 
-        public string CurrentInput { get; private set; } = string.Empty;
+        public BilibiliMediaInput? CurrentInput { get; private set; } =
+            new BilibiliBvidInput("BV17x411w7KC");
 
         public VideoDetailParseResult DetailResult { get; init; } = VideoDetailParseResult.Empty;
 
@@ -703,10 +705,9 @@ public sealed class VideoDetailCommandStateTests
         {
         }
 
-        public string SetInput(string requestedInput)
+        public void SetInput(BilibiliMediaInput input)
         {
-            CurrentInput = requestedInput;
-            return CurrentInput;
+            CurrentInput = input;
         }
 
         public void ApplySearch(string? searchText)
@@ -762,7 +763,7 @@ public sealed class VideoDetailCommandStateTests
         public Action? BeforeReturn { get; init; }
 
         public async Task<DownloadAddResult> AddAsync(
-            string input,
+            BilibiliMediaInput input,
             DownKyi.Presentation.VideoInfoView videoInfoView,
             IList<DownKyi.Presentation.VideoSection> videoSections,
             bool isAll,

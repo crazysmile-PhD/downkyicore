@@ -1,3 +1,4 @@
+using DownKyi.Application.Media;
 using DownKyi.Services;
 
 namespace DownKyi.Tests;
@@ -26,7 +27,7 @@ public sealed class CheeseInfoServiceTests
             GetStringAsyncHandler = (_, _) => Task.FromResult(response)
         };
         var service = await CheeseInfoService.CreateAsync(
-            "https://www.bilibili.com/cheese/play/ss13244",
+            new BilibiliCheeseSeasonInput(13244),
             settings.Store,
             client,
             TestContext.Current.CancellationToken);

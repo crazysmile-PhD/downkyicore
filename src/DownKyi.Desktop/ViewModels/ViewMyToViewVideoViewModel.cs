@@ -258,7 +258,8 @@ internal class ViewMyToViewVideoViewModel : ViewModelBase
     {
         var cancellationToken = ReplaceCancellationSource(ref _downloadCancellation);
         var items = Medias
-            .Select(media => new ContentDownloadItem(media.Bvid, DownloadInfoKind.Video, media.IsSelected))
+            .Select(media => ContentDownloadItem.TryCreate(media.Bvid, media.IsSelected))
+            .OfType<ContentDownloadItem>()
             .ToArray();
         try
         {

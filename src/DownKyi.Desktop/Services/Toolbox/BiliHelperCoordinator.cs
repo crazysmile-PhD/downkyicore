@@ -1,5 +1,6 @@
 using System.Threading;
 using System.Threading.Tasks;
+using DownKyi.Application.Media;
 using DownKyi.Core.BiliApi.BiliUtils;
 
 namespace DownKyi.Services.Toolbox;
@@ -17,23 +18,22 @@ internal sealed class BiliHelperCoordinator : IBiliHelperCoordinator
 {
     public string? ConvertAvidToBvid(string? input)
     {
-        if (string.IsNullOrEmpty(input) || !ParseEntrance.IsAvId(input))
+        if (BilibiliInputParser.Parse(input) is not BilibiliAvidInput avid)
         {
             return null;
         }
 
-        var avid = ParseEntrance.GetAvId(input);
-        return avid == -1 ? null : BvId.Av2Bv(avid);
+        return BvId.Av2Bv(avid.Avid);
     }
 
     public string? ConvertBvidToAvid(string? input)
     {
-        if (string.IsNullOrEmpty(input) || !ParseEntrance.IsBvId(input))
+        if (BilibiliInputParser.Parse(input) is not BilibiliBvidInput bvid)
         {
             return null;
         }
 
-        return $"av{BvId.Bv2Av(input)}";
+        return $"av{BvId.Bv2Av(bvid.Bvid)}";
     }
 
     public Task<string?> FindDanmakuSenderAsync(string? userId, CancellationToken cancellationToken)

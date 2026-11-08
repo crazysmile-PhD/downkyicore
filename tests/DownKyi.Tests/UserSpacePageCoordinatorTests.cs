@@ -122,12 +122,14 @@ public sealed class UserSpacePageCoordinatorTests
 
         var directVideo = new PublicationMedia(navigation, AppRoute.Publication)
         {
-            Bvid = "BV1direct001",
+            Bvid = "BV17x411w7KC",
             IsSelected = true
         };
         var downloadItem = Assert.Single(ViewPublicationViewModel.CreateDownloadItems(
             [media, directVideo]));
-        Assert.Equal("BV1direct001", downloadItem.Source);
+        Assert.Equal(
+            "BV17x411w7KC",
+            Assert.IsType<DownKyi.Application.Media.BilibiliBvidInput>(downloadItem.Input).Bvid);
         Assert.True(downloadItem.IsSelected);
     }
 

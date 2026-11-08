@@ -3,6 +3,7 @@ using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
+using DownKyi.Application.Media;
 using DownKyi.Application.Settings;
 using DownKyi.Images;
 
@@ -169,7 +170,15 @@ internal class HistoryMedia : ObservableObject
     /// </summary>
     private void ExecuteTitleCommand()
     {
-        _navigationService.Navigate(new AppNavigationRequest(AppRoute.VideoDetail, _parentRoute, Url));
+        if (BilibiliInputParser.Parse(Url) is not BilibiliMediaInput input)
+        {
+            return;
+        }
+
+        _navigationService.Navigate(new AppNavigationRequest(
+            AppRoute.VideoDetail,
+            _parentRoute,
+            new VideoNavigationPayload(input)));
     }
 
     // UP主头像点击事件

@@ -10,6 +10,7 @@ using Avalonia.Xaml.Interactivity;
 using DownKyi.Application.Desktop;
 using DownKyi.Application.Diagnostics;
 using DownKyi.Application.Lifetime;
+using DownKyi.Application.Media;
 using DownKyi.Application.Settings;
 using DownKyi.Composition;
 using DownKyi.Core.BiliApi.Users.Models;
@@ -78,7 +79,10 @@ public sealed class UiSmokeTests
             publication.Pager.Current = 2;
             var originalMedia = Assert.Single(publication.Medias);
 
-            navigation.Navigate(new AppNavigationRequest(AppRoute.VideoDetail, AppRoute.Publication, "video"));
+            navigation.Navigate(new AppNavigationRequest(
+                AppRoute.VideoDetail,
+                AppRoute.Publication,
+                new VideoNavigationPayload(new BilibiliBvidInput("BV17x411w7KC"))));
             navigation.GoBack(AppNavigationRegion.Main);
 
             Assert.Same(publication, navigation.GetActiveView(AppNavigationRegion.Main));
@@ -523,7 +527,10 @@ public sealed class UiSmokeTests
                 favorites.Pager.Current = 2;
                 var originalMedia = Assert.Single(favorites.Medias);
 
-                navigation.Navigate(new AppNavigationRequest(AppRoute.VideoDetail, AppRoute.MyFavorites, "video"));
+                navigation.Navigate(new AppNavigationRequest(
+                    AppRoute.VideoDetail,
+                    AppRoute.MyFavorites,
+                    new VideoNavigationPayload(new BilibiliBvidInput("BV17x411w7KC"))));
                 navigation.GoBack(AppNavigationRegion.Main);
 
                 Assert.Same(favorites, navigation.GetActiveView(AppNavigationRegion.Main));

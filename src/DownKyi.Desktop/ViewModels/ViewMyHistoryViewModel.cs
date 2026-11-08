@@ -291,10 +291,8 @@ internal class ViewMyHistoryViewModel : ViewModelBase
         var cancellationToken = ReplaceCancellationSource(ref _downloadCancellation);
         var items = Medias
             .Where(media => media.Business is "archive" or "pgc")
-            .Select(media => new ContentDownloadItem(
-                media.Url,
-                media.Business == "archive" ? DownloadInfoKind.Video : DownloadInfoKind.Bangumi,
-                media.IsSelected))
+            .Select(media => ContentDownloadItem.TryCreate(media.Url, media.IsSelected))
+            .OfType<ContentDownloadItem>()
             .ToArray();
         try
         {

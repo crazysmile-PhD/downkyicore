@@ -3,8 +3,8 @@ using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
+using DownKyi.Application.Media;
 using DownKyi.Application.Settings;
-using DownKyi.Core.BiliApi.BiliUtils;
 
 namespace DownKyi.Presentation;
 
@@ -154,7 +154,8 @@ internal class FavoritesMedia : ObservableObject
     /// </summary>
     private void ExecuteTitleCommand()
     {
-        if (IsUnavailable)
+        if (IsUnavailable
+            || BilibiliInputParser.Parse(Bvid) is not BilibiliBvidInput input)
         {
             return;
         }
@@ -162,7 +163,7 @@ internal class FavoritesMedia : ObservableObject
         _navigationService.Navigate(new AppNavigationRequest(
             AppRoute.VideoDetail,
             _parentRoute,
-            $"{ParseEntrance.VideoUrl}{Bvid}"));
+            new VideoNavigationPayload(input)));
     }
 
     // 视频的UP主点击事件

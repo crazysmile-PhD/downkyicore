@@ -124,9 +124,7 @@ internal sealed class SeasonsSeriesCoordinator : ISeasonsSeriesCoordinator
 
     private static ContentDownloadItem[] CreateDownloadItems(
         IEnumerable<SeasonsSeriesDownloadItem> items) =>
-        items.Select(static item => new ContentDownloadItem(
-                item.Bvid,
-                DownloadInfoKind.Video,
-                item.IsSelected))
+        items.Select(static item => ContentDownloadItem.TryCreate(item.Bvid, item.IsSelected))
+            .OfType<ContentDownloadItem>()
             .ToArray();
 }

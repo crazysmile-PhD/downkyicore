@@ -1,6 +1,7 @@
 using System.Net;
 using DownKyi.Application.Desktop;
 using DownKyi.Application.Downloads;
+using DownKyi.Application.Media;
 using DownKyi.Application.Settings;
 using DownKyi.Infrastructure.Versioning;
 using DownKyi.Platform;
@@ -54,8 +55,11 @@ public sealed class StartupDialogOrderingTests
             request =>
             {
                 Assert.Equal(AppRoute.VideoDetail, request.Route);
-                var parameter = Assert.IsType<string>(request.Parameter);
-                Assert.EndsWith(AppConstant.ClipboardId, parameter, StringComparison.Ordinal);
+                var payload = Assert.IsType<VideoNavigationPayload>(request.Parameter);
+                Assert.True(payload.SuppressDuplicate);
+                Assert.Equal(
+                    "BV17x411w7KC",
+                    Assert.IsType<BilibiliBvidInput>(payload.Input).Bvid);
             });
     }
 

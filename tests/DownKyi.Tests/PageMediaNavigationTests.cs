@@ -1,4 +1,5 @@
 using DownKyi.Application.Desktop;
+using DownKyi.Application.Media;
 using DownKyi.Presentation;
 
 namespace DownKyi.Tests;
@@ -12,7 +13,7 @@ public sealed class PageMediaNavigationTests
         var navigation = new TestNavigationService();
         var media = new FavoritesMedia(navigation, AppRoute.MyFavorites, settings.Store)
         {
-            Bvid = "BV1typed"
+            Bvid = "BV17x411w7KC"
         };
 
         media.TitleCommand.Execute(null);
@@ -20,7 +21,8 @@ public sealed class PageMediaNavigationTests
         var request = Assert.Single(navigation.Requests);
         Assert.Equal(AppRoute.VideoDetail, request.Route);
         Assert.Equal(AppRoute.MyFavorites, request.Parent);
-        Assert.Equal("https://www.bilibili.com/video/BV1typed", request.Parameter);
+        var payload = Assert.IsType<VideoNavigationPayload>(request.Parameter);
+        Assert.Equal("BV17x411w7KC", Assert.IsType<BilibiliBvidInput>(payload.Input).Bvid);
     }
 
     [Fact]

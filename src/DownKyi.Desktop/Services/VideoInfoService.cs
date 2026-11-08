@@ -5,8 +5,8 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Bilibili;
+using DownKyi.Application.Media;
 using DownKyi.Application.Settings;
-using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.Models;
 using DownKyi.Core.BiliApi.Sign;
 using DownKyi.Core.BiliApi.Video;
@@ -56,37 +56,35 @@ internal class VideoInfoService : IInfoService
     }
 
     public static async Task<VideoInfoService> CreateAsync(
-        string input,
+        BilibiliMediaInput input,
         ISettingsStore settingsStore,
         IVideoTagProvider tagProvider,
         IWbiKeyProvider wbiKeyProvider,
         IBilibiliApiClient client,
         CancellationToken cancellationToken)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(input);
+        ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(settingsStore);
         ArgumentNullException.ThrowIfNull(tagProvider);
         ArgumentNullException.ThrowIfNull(wbiKeyProvider);
         ArgumentNullException.ThrowIfNull(client);
 
         VideoView? videoView = null;
-        if (ParseEntrance.IsAvId(input) || ParseEntrance.IsAvUrl(input))
+        if (input is BilibiliAvidInput avid)
         {
-            var avid = ParseEntrance.GetAvId(input);
             videoView = await LoadVideoViewAsync(
                 wbiKeyProvider,
                 client,
                 bvid: null,
-                avid,
+                avid.Avid,
                 cancellationToken).ConfigureAwait(false);
         }
-        else if (ParseEntrance.IsBvId(input) || ParseEntrance.IsBvUrl(input))
+        else if (input is BilibiliBvidInput bvid)
         {
-            var bvid = ParseEntrance.GetBvId(input);
             videoView = await LoadVideoViewAsync(
                 wbiKeyProvider,
                 client,
-                bvid,
+                bvid.Bvid,
                 avid: -1,
                 cancellationToken).ConfigureAwait(false);
         }

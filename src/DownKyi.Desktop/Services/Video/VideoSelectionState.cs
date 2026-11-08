@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using DownKyi.Core.BiliApi.BiliUtils;
+using DownKyi.Application.Media;
 using DownKyi.Presentation;
 
 namespace DownKyi.Services.Video;
@@ -26,15 +26,22 @@ internal static class VideoSelectionState
         }
     }
 
-    public static VideoPage? SelectInputPage(IEnumerable<VideoSection> sections, string input)
+    public static VideoPage? SelectInputPage(
+        IEnumerable<VideoSection> sections,
+        BilibiliMediaInput input)
     {
         ArgumentNullException.ThrowIfNull(sections);
-        var avid = ParseEntrance.GetAvId(input);
-        var bvid = ParseEntrance.GetBvId(input);
         foreach (var section in sections)
         {
             section.IsSelected = true;
-            var page = section.VideoPages.FirstOrDefault(item => item.Avid == avid || item.Bvid == bvid);
+            var page = input switch
+            {
+                BilibiliAvidInput avid => section.VideoPages.FirstOrDefault(
+                    item => item.Avid == avid.Avid),
+                BilibiliBvidInput bvid => section.VideoPages.FirstOrDefault(
+                    item => string.Equals(item.Bvid, bvid.Bvid, StringComparison.Ordinal)),
+                _ => null
+            };
             if (page == null)
             {
                 continue;

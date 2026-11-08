@@ -207,13 +207,13 @@ public sealed class MediaListInteractionTests
 
         public IEnumerable<Entry> Entries()
         {
-            yield return new(new ViewMyFavorites(), new FavoritesMedia(_navigation, AppRoute.MyFavorites, _settings) { Title = "Video", Cover = CoverUrl, Duration = "03:12", UpName = "Creator", UpMid = 42 });
-            yield return new(new ViewMyToViewVideo(), new ToViewMedia(_navigation, AppRoute.MyToViewVideo, _settings) { Title = "Video", Cover = CoverUrl, UpName = "Creator", UpMid = 42 }, Row: true);
-            yield return new(new ViewMyHistory(), new HistoryMedia(_navigation, AppRoute.MyHistory, _settings) { Title = "Video", Cover = CoverUrl, UpName = "Creator", UpMid = 42, UpAndTagVisibility = true, Platform = NormalIcon.Current.Favorite }, Row: true);
-            yield return new(new ViewMyBangumiFollow(), new BangumiFollowMedia(_navigation, AppRoute.MyBangumiFollow) { Title = "Video", Cover = CoverUrl }, Row: true);
-            yield return new(new ViewPublication(), new PublicationMedia(_navigation, AppRoute.Publication) { Title = "Video", CoverUrl = CoverUrl, Duration = "03:12" });
-            yield return new(new ViewSeasonsSeriesDetail(), new ChannelMedia(_navigation, AppRoute.SeasonsSeries) { Title = "Video", Cover = CoverUrl, Duration = "03:12" });
-            yield return new(new ViewPublicFavorites(), new FavoritesMedia(_navigation, AppRoute.PublicFavorites, _settings) { Title = "Video", Cover = CoverUrl, Duration = "03:12", UpName = "Creator", UpMid = 42 }, "NameFavoritesMedias", Row: true);
+            yield return new(new ViewMyFavorites(), new FavoritesMedia(_navigation, AppRoute.MyFavorites, _settings) { Title = "Video", Bvid = "BV17x411w7KC", Cover = CoverUrl, Duration = "03:12", UpName = "Creator", UpMid = 42 });
+            yield return new(new ViewMyToViewVideo(), new ToViewMedia(_navigation, AppRoute.MyToViewVideo, _settings) { Title = "Video", Bvid = "BV17x411w7KC", Cover = CoverUrl, UpName = "Creator", UpMid = 42 }, Row: true);
+            yield return new(new ViewMyHistory(), new HistoryMedia(_navigation, AppRoute.MyHistory, _settings) { Title = "Video", Url = "https://www.bilibili.com/video/BV17x411w7KC", Cover = CoverUrl, UpName = "Creator", UpMid = 42, UpAndTagVisibility = true, Platform = NormalIcon.Current.Favorite }, Row: true);
+            yield return new(new ViewMyBangumiFollow(), new BangumiFollowMedia(_navigation, AppRoute.MyBangumiFollow) { Title = "Video", MediaId = 1, Cover = CoverUrl }, Row: true);
+            yield return new(new ViewPublication(), new PublicationMedia(_navigation, AppRoute.Publication) { Title = "Video", Bvid = "BV17x411w7KC", CoverUrl = CoverUrl, Duration = "03:12" });
+            yield return new(new ViewSeasonsSeriesDetail(), new ChannelMedia(_navigation, AppRoute.SeasonsSeries) { Title = "Video", Bvid = "BV17x411w7KC", Cover = CoverUrl, Duration = "03:12" });
+            yield return new(new ViewPublicFavorites(), new FavoritesMedia(_navigation, AppRoute.PublicFavorites, _settings) { Title = "Video", Bvid = "BV17x411w7KC", Cover = CoverUrl, Duration = "03:12", UpName = "Creator", UpMid = 42 }, "NameFavoritesMedias", Row: true);
             yield return new(new ViewFavorites(), new FavoriteFolder(1, CoverUrl, NormalIcon.Current.Favorite, "Folder", 1, "2026-10-23"), "NameFavorites", Video: false);
             yield return new(new ViewUserSpaceSeasonsSeries(), new SeasonsSeries { Name = "Series", Cover = CoverUrl, Count = 1, TypeImage = NormalIcon.Current.Favorite }, "NameSeasonsSeries", Video: false);
         }

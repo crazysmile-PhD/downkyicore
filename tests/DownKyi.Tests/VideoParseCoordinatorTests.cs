@@ -1,3 +1,4 @@
+using DownKyi.Application.Media;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.BiliApi.VideoStream.Models;
 using DownKyi.Presentation;
@@ -21,7 +22,7 @@ public sealed class VideoParseCoordinatorTests
         var coordinator = new VideoParseCoordinator((_, _) => service);
 
         var result = await coordinator.LoadDetailAsync(
-            "BV1test",
+            new BilibiliBvidInput("BV17x411w7KC"),
             CancellationToken.None);
 
         Assert.Same(info, result.VideoInfoView);
@@ -43,7 +44,7 @@ public sealed class VideoParseCoordinatorTests
         var coordinator = new VideoParseCoordinator((_, _) => service);
 
         var result = await coordinator.LoadDetailAsync(
-            "unrecognized",
+            new BilibiliBvidInput("BV17x411w7KC"),
             CancellationToken.None);
 
         Assert.Equal(VideoDetailParseOutcome.NoContent, result.Outcome);
@@ -74,14 +75,14 @@ public sealed class VideoParseCoordinatorTests
             Interlocked.Increment(ref factoryCallCount) == 1 ? service : replacementService);
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => coordinator.LoadDetailAsync(
-            "BV1test",
+            new BilibiliBvidInput("BV17x411w7KC"),
             cancellation.Token));
 
         Assert.Equal(0, service.VideoSectionReadCount);
         Assert.Equal(0, service.VideoPageReadCount);
 
         var replacement = await coordinator.LoadDetailAsync(
-            "BV1test",
+            new BilibiliBvidInput("BV17x411w7KC"),
             CancellationToken.None);
 
         Assert.Equal(2, factoryCallCount);

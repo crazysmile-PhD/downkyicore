@@ -3,8 +3,8 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Threading.Tasks;
 using DownKyi.Application.Bilibili;
+using DownKyi.Application.Media;
 using DownKyi.Application.Settings;
-using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.Cheese;
 using DownKyi.Core.BiliApi.Cheese.Models;
 using DownKyi.Core.BiliApi.Models;
@@ -41,33 +41,28 @@ internal class CheeseInfoService : IInfoService
     }
 
     public static async Task<CheeseInfoService> CreateAsync(
-        string? input,
+        BilibiliMediaInput input,
         ISettingsStore settingsStore,
         IBilibiliApiClient client,
         System.Threading.CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(settingsStore);
         ArgumentNullException.ThrowIfNull(client);
-        if (input == null)
-        {
-            return new CheeseInfoService(settingsStore, client);
-        }
+        ArgumentNullException.ThrowIfNull(input);
 
         CheeseView? cheeseView = null;
-        if (ParseEntrance.IsCheeseSeasonUrl(input))
+        if (input is BilibiliCheeseSeasonInput season)
         {
-            var seasonId = ParseEntrance.GetCheeseSeasonId(input);
             cheeseView = await client.CheeseViewInfoAsync(
-                seasonId,
+                season.SeasonId,
                 cancellationToken: cancellationToken).ConfigureAwait(false);
         }
 
-        if (ParseEntrance.IsCheeseEpisodeUrl(input))
+        if (input is BilibiliCheeseEpisodeInput episode)
         {
-            var episodeId = ParseEntrance.GetCheeseEpisodeId(input);
             cheeseView = await client.CheeseViewInfoAsync(
                 -1,
-                episodeId,
+                episode.EpisodeId,
                 cancellationToken).ConfigureAwait(false);
         }
 

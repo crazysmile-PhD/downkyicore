@@ -9,6 +9,7 @@ using System.Windows.Input;
 using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Application.Diagnostics;
+using DownKyi.Application.Media;
 using DownKyi.Application.Settings;
 using DownKyi.Commands;
 using DownKyi.Images;
@@ -119,7 +120,14 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
 
         await RunOperationAsync(operation, async () =>
         {
-            UiState.InputText = _workflow.SetInput(requestedInput);
+            if (BilibiliInputParser.Parse(requestedInput) is not BilibiliMediaInput input)
+            {
+                ApplyVideoDetailResult(VideoDetailParseResult.Empty, operation.CancellationToken);
+                return;
+            }
+
+            _workflow.SetInput(input);
+            UiState.InputText = input.CanonicalUri.AbsoluteUri;
             _logger.LogDebugMessage("Processing captured video input.");
             var result = await _workflow.LoadDetailAsync(operation).ConfigureAwait(true);
             await UiDispatcher.InvokeAsync(() => ApplyVideoDetailResult(result, operation.CancellationToken));
@@ -173,8 +181,17 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
         var operation = _workflow.StartOperation();
         await RunOperationAsync(operation, async () =>
         {
+            var input = _workflow.CurrentInput;
+            if (input == null)
+            {
+                PublishAddResult(DownloadAddResult.Stopped(
+                    DownloadAddOutcome.Rejected,
+                    DownloadAddStopReason.UnsupportedInput));
+                return;
+            }
+
             var result = await _downloadCoordinator.AddAsync(
-                _workflow.CurrentInput,
+                input,
                 UiState.VideoInfoView,
                 VideoSections.ToList(),
                 isAll: false,
@@ -215,7 +232,9 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
 
         UiState.VideoInfoView = result.VideoInfoView;
         VideoSections.ReplaceRange(result.VideoSections);
-        UiState.SelectedVideoPage = VideoSelectionState.SelectInputPage(VideoSections, _workflow.CurrentInput);
+        UiState.SelectedVideoPage = _workflow.CurrentInput is { } input
+            ? VideoSelectionState.SelectInputPage(VideoSections, input)
+            : null;
         SetDisplayState(VideoDetailDisplayState.Content);
         SetOperationStatus(
             VideoDetailOperationStatus.Success,
@@ -407,10 +426,10 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
     {
         ArgumentNullException.ThrowIfNull(navigationContext);
         UiState.DownloadManage = CreateDownloadManageIcon();
-        if (navigationContext.Parameter is string parameter)
+        if (navigationContext.Parameter is VideoNavigationPayload payload)
         {
-            var input = parameter.Replace(AppConstant.ClipboardId, string.Empty, StringComparison.Ordinal);
-            if (UiState.InputText != input || !parameter.EndsWith(AppConstant.ClipboardId, StringComparison.Ordinal))
+            var input = payload.Input.CanonicalUri.AbsoluteUri;
+            if (UiState.InputText != input || !payload.SuppressDuplicate)
             {
                 if (InputCommand.CanExecute(null))
                 {

@@ -1,5 +1,6 @@
 using DownKyi.Application.Bilibili;
 using DownKyi.Application.Downloads;
+using DownKyi.Application.Media;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Domain.Downloads;
 using DownKyi.Presentation;
@@ -20,30 +21,12 @@ public sealed class VideoDetailDownloadCoordinatorTests
         await cancellation.CancelAsync();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => coordinator.AddAsync(
-            "BV17x411w7KC",
+            new BilibiliBvidInput("BV17x411w7KC"),
             new VideoInfoView(),
             [],
             isAll: false,
             cancellation.Token));
 
-        Assert.Equal(0, factory.CreateCount);
-    }
-
-    [Fact]
-    public async Task UnsupportedInputDoesNotCreateDownloadService()
-    {
-        var factory = new RecordingFactory();
-        var coordinator = CreateCoordinator(factory);
-
-        var result = await coordinator.AddAsync(
-            "not-a-video",
-            new VideoInfoView(),
-            [],
-            isAll: false,
-            CancellationToken.None);
-
-        Assert.Equal(DownloadAddOutcome.Rejected, result.Outcome);
-        Assert.Equal(DownloadAddStopReason.UnsupportedInput, result.StopReason);
         Assert.Equal(0, factory.CreateCount);
     }
 
@@ -54,7 +37,7 @@ public sealed class VideoDetailDownloadCoordinatorTests
         var coordinator = CreateCoordinator(new RecordingFactory(session));
 
         var result = await coordinator.AddAsync(
-            "BV17x411w7KC",
+            new BilibiliBvidInput("BV17x411w7KC"),
             new VideoInfoView(),
             [],
             isAll: false,
@@ -80,7 +63,7 @@ public sealed class VideoDetailDownloadCoordinatorTests
         IList<VideoSection> sections = [new VideoSection { VideoPages = [page] }];
 
         var result = await coordinator.AddAsync(
-            "BV17x411w7KC",
+            new BilibiliBvidInput("BV17x411w7KC"),
             video,
             sections,
             isAll: false,
