@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using DownKyi.Application.Diagnostics;
 using DownKyi.Application.Settings;
 using Newtonsoft.Json;
 
@@ -35,6 +36,25 @@ public partial class SettingsManager
     internal ApplicationSettings CreateInitialSnapshot()
     {
         return CreateSnapshot(_persistInitialDefaults);
+    }
+
+    internal void UpdateSnapshot(Func<ApplicationSettings, ApplicationSettings> update)
+    {
+        ArgumentNullException.ThrowIfNull(update);
+        ApplicationSettings candidate;
+        ImmutableArray<string> corrections;
+        lock (_settingsLock)
+        {
+            candidate = update(CreateSnapshotCore())
+                ?? throw new InvalidOperationException("A settings update cannot return null.");
+            var validation = ApplicationSettingsValidator.Validate(candidate);
+            candidate = validation.Settings;
+            corrections = validation.Corrections;
+            ReplaceSnapshotUnsafe(candidate);
+        }
+
+        LogCorrections(corrections);
+        Changed?.Invoke();
     }
 
     private ApplicationSettings CreateSnapshotCore()
@@ -123,18 +143,32 @@ public partial class SettingsManager
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         var validated = ApplicationSettingsValidator.Validate(snapshot).Settings;
-        var replacement = SettingsSnapshotModelMapper.ToModel(validated);
-        var replacementJson = JsonConvert.SerializeObject(replacement);
         lock (_settingsLock)
         {
-            var currentJson = JsonConvert.SerializeObject(_appSettings);
-            if (!string.Equals(currentJson, replacementJson, StringComparison.Ordinal))
-            {
-                _appSettings = replacement;
-                MarkDirtyUnsafe();
-            }
+            ReplaceSnapshotUnsafe(validated);
         }
 
         Changed?.Invoke();
+    }
+
+    private void ReplaceSnapshotUnsafe(ApplicationSettings snapshot)
+    {
+        var replacement = SettingsSnapshotModelMapper.ToModel(snapshot);
+        var replacementJson = JsonConvert.SerializeObject(replacement);
+        var currentJson = JsonConvert.SerializeObject(_appSettings);
+        if (!string.Equals(currentJson, replacementJson, StringComparison.Ordinal))
+        {
+            _appSettings = replacement;
+            MarkDirtyUnsafe();
+        }
+    }
+
+    private void LogCorrections(ImmutableArray<string> corrections)
+    {
+        if (corrections.Length > 0)
+        {
+            _logger.LogInformationMessage(
+                $"Invalid settings were restored to safe defaults: {string.Join(", ", corrections)}");
+        }
     }
 }

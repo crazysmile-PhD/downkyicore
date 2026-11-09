@@ -10,12 +10,10 @@ namespace DownKyi.Infrastructure.Settings;
 public sealed class SettingsStore : ISettingsStore
 {
     private readonly object _updateLock = new();
-    private readonly SemaphoreSlim _commitGate = new(1, 1);
     private readonly ILogger<SettingsStore> _logger;
     private readonly SettingsManager _settings;
     private ApplicationSettings _current;
     private bool _isNormalizing;
-    private long _updateRevision;
     private int _disposeState;
 
     public SettingsStore(ILoggerFactory loggerFactory)
@@ -55,20 +53,10 @@ public sealed class SettingsStore : ISettingsStore
 
     public ApplicationSettings Update(Func<ApplicationSettings, ApplicationSettings> update)
     {
-        ArgumentNullException.ThrowIfNull(update);
         lock (_updateLock)
         {
-            var candidate = update(Current)
-                ?? throw new InvalidOperationException("A settings update cannot return null.");
-            var validation = ApplicationSettingsValidator.Validate(candidate);
-            if (validation.Corrections.Length > 0)
-            {
-                LogCorrections(validation.Corrections);
-            }
-
-            _settings.ApplySnapshot(validation.Settings);
-            Volatile.Write(ref _current, validation.Settings);
-            return validation.Settings;
+            _settings.UpdateSnapshot(update);
+            return Current;
         }
     }
 
@@ -82,76 +70,23 @@ public sealed class SettingsStore : ISettingsStore
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(update);
-        await _commitGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        SettingsCommitFailure failure;
         try
         {
-            while (true)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                ApplicationSettings candidate;
-                long persistenceVersion;
-                long revision;
-                lock (_updateLock)
-                {
-                    candidate = update(Current)
-                        ?? throw new InvalidOperationException("A settings update cannot return null.");
-                    var validation = ApplicationSettingsValidator.Validate(candidate);
-                    if (validation.Corrections.Length > 0)
-                    {
-                        LogCorrections(validation.Corrections);
-                    }
-
-                    candidate = validation.Settings;
-                    persistenceVersion = _settings.CapturePersistenceVersion();
-                    revision = _updateRevision;
-                }
-
-                SettingsSnapshotPersistenceStatus persistenceStatus;
-                try
-                {
-                    persistenceStatus = await _settings
-                        .PersistSnapshotAsync(candidate, persistenceVersion, cancellationToken)
-                        .ConfigureAwait(false);
-                }
-                catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
-                {
-                    _logger.LogErrorMessage("Durable settings commit failed.", e);
-                    return Failed(SettingsCommitFailure.WriteFailed);
-                }
-
-                if (persistenceStatus == SettingsSnapshotPersistenceStatus.Disabled)
-                {
-                    _logger.LogErrorMessage("Durable settings commit is unavailable because persistence is disabled.");
-                    return Failed(SettingsCommitFailure.PersistenceDisabled);
-                }
-
-                if (persistenceStatus == SettingsSnapshotPersistenceStatus.Superseded)
-                {
-                    continue;
-                }
-
-                lock (_updateLock)
-                {
-                    if (_updateRevision != revision)
-                    {
-                        continue;
-                    }
-
-                    Volatile.Write(ref _current, candidate);
-                    _updateRevision = checked(_updateRevision + 1);
-                    return new SettingsCommitResult(candidate, SettingsCommitFailure.None);
-                }
-            }
+            failure = await _settings.CommitAsync(update, cancellationToken).ConfigureAwait(false);
         }
-        finally
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
         {
-            _commitGate.Release();
+            _logger.LogErrorMessage("Durable settings commit failed.", e);
+            return new SettingsCommitResult(Current, SettingsCommitFailure.WriteFailed);
         }
 
-        SettingsCommitResult Failed(SettingsCommitFailure failure)
+        if (failure == SettingsCommitFailure.PersistenceDisabled)
         {
-            return new SettingsCommitResult(Current, failure);
+            _logger.LogErrorMessage("Durable settings commit is unavailable because persistence is disabled.");
         }
+
+        return new SettingsCommitResult(Current, failure);
     }
 
     public void Dispose()
@@ -163,7 +98,6 @@ public sealed class SettingsStore : ISettingsStore
 
         _settings.Changed -= RefreshSnapshot;
         _settings.Dispose();
-        _commitGate.Dispose();
     }
 
     public async ValueTask DisposeAsync()
@@ -180,14 +114,7 @@ public sealed class SettingsStore : ISettingsStore
         }
         finally
         {
-            try
-            {
-                await _settings.DisposeAsync().ConfigureAwait(false);
-            }
-            finally
-            {
-                _commitGate.Dispose();
-            }
+            await _settings.DisposeAsync().ConfigureAwait(false);
         }
     }
 
@@ -214,7 +141,6 @@ public sealed class SettingsStore : ISettingsStore
             }
 
             Volatile.Write(ref _current, validation.Settings);
-            _updateRevision = checked(_updateRevision + 1);
         }
     }
 

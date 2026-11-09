@@ -770,7 +770,7 @@ public sealed class SettingsStoreTests
     }
 
     [Fact]
-    public async Task CommitAsyncRejectsSupersededCandidateBeforeWriting()
+    public async Task CommitAsyncBuildsCandidateAfterQueuedWriterCompletes()
     {
         const string source =
             "{\"SchemaVersion\":1,\"Video\":{\"Quality\":100,\"AudioQuality\":30280,\"SaveVideoRootPath\":\"D:/DownKyi/Original\"}}";
@@ -781,9 +781,9 @@ public sealed class SettingsStoreTests
             TaskCreationOptions.RunContinuationsAsynchronously);
         var releaseFirstWrite = new TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously);
-        var commitCandidateCreated = new TaskCompletionSource(
-            TaskCreationOptions.RunContinuationsAsynchronously);
         var replacementAttempt = 0;
+        var transformInvocationCount = 0;
+        var observedQuality = 0;
 
         try
         {
@@ -801,8 +801,6 @@ public sealed class SettingsStoreTests
                             firstWriteReached.TrySetResult();
                             await releaseFirstWrite.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
                             break;
-                        case 4:
-                            throw new IOException("Simulated retry failure after a stale write.");
                     }
                 });
             using var store = new SettingsStore(manager);
@@ -816,14 +814,15 @@ public sealed class SettingsStoreTests
             var commitTask = store.CommitAsync(
                 settings =>
                 {
-                    commitCandidateCreated.TrySetResult();
+                    Interlocked.Increment(ref transformInvocationCount);
+                    Volatile.Write(ref observedQuality, settings.Video.Quality);
                     return settings with
                     {
                         Video = settings.Video with { SaveVideoRootPath = selectedDirectory }
                     };
                 },
                 TestContext.Current.CancellationToken);
-            await commitCandidateCreated.Task.WaitAsync(TestContext.Current.CancellationToken);
+            Assert.Equal(0, Volatile.Read(ref transformInvocationCount));
             store.Update(settings => settings with
             {
                 Video = settings.Video with { Quality = 80 }
@@ -840,11 +839,150 @@ public sealed class SettingsStoreTests
             Assert.Equal(selectedDirectory, store.Current.Video.SaveVideoRootPath);
             Assert.Equal(80, reopened.Current.Video.Quality);
             Assert.Equal(selectedDirectory, reopened.Current.Video.SaveVideoRootPath);
+            Assert.Equal(1, Volatile.Read(ref transformInvocationCount));
+            Assert.Equal(80, Volatile.Read(ref observedQuality));
             Assert.Equal(3, Volatile.Read(ref replacementAttempt));
         }
         finally
         {
             releaseFirstWrite.TrySetResult();
+            DeleteDirectory(directory);
+        }
+    }
+
+    [Fact]
+    public async Task CommitAsyncDoesNotReplaceFileWhenPreparedCandidateIsSuperseded()
+    {
+        const string source =
+            "{\"SchemaVersion\":1,\"Video\":{\"Quality\":100,\"AudioQuality\":30280,\"SaveVideoRootPath\":\"D:/DownKyi/Original\"}}";
+        var directory = CreateTestDirectory();
+        var settingsPath = Path.Combine(directory, "settings.json");
+        var firstCandidatePrepared = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFirstCandidate = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var replacementAttempt = 0;
+
+        try
+        {
+            await File.WriteAllTextAsync(settingsPath, source, TestContext.Current.CancellationToken);
+            using var manager = new SettingsManager(
+                settingsPath,
+                NullLogger<SettingsManager>.Instance,
+                TimeSpan.FromDays(1),
+                static (delay, cancellationToken) => Task.Delay(delay, cancellationToken),
+                async cancellationToken =>
+                {
+                    switch (Interlocked.Increment(ref replacementAttempt))
+                    {
+                        case 1:
+                            firstCandidatePrepared.TrySetResult();
+                            await releaseFirstCandidate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+                            break;
+                        case 2:
+                            throw new IOException("Simulated retry failure after supersession.");
+                    }
+                });
+            using var store = new SettingsStore(manager);
+            var commitTask = store.CommitAsync(
+                settings => settings with
+                {
+                    Video = settings.Video with { SaveVideoRootPath = "D:/DownKyi/Rejected" }
+                },
+                TestContext.Current.CancellationToken);
+            await firstCandidatePrepared.Task.WaitAsync(TestContext.Current.CancellationToken);
+            store.Update(settings => settings with
+            {
+                Video = settings.Video with { Quality = 80 }
+            });
+            releaseFirstCandidate.TrySetResult();
+
+            var result = await commitTask.ConfigureAwait(true);
+
+            Assert.False(result.Succeeded);
+            Assert.Equal(SettingsCommitFailure.WriteFailed, result.Failure);
+            Assert.Equal(80, store.Current.Video.Quality);
+            Assert.Equal("D:/DownKyi/Original", store.Current.Video.SaveVideoRootPath);
+            Assert.Equal(
+                source,
+                await File.ReadAllTextAsync(settingsPath, TestContext.Current.CancellationToken));
+            Assert.Empty(Directory.GetFiles(directory, "*.tmp"));
+
+            await store.FlushAsync(TestContext.Current.CancellationToken);
+            using var reopened = new SettingsStore(settingsPath);
+            Assert.Equal(80, reopened.Current.Video.Quality);
+            Assert.Equal("D:/DownKyi/Original", reopened.Current.Video.SaveVideoRootPath);
+            Assert.Equal(3, Volatile.Read(ref replacementAttempt));
+        }
+        finally
+        {
+            releaseFirstCandidate.TrySetResult();
+            DeleteDirectory(directory);
+        }
+    }
+
+    [Fact]
+    public async Task UpdateAfterDurableReplaceBuildsFromCommittedManagerState()
+    {
+        const string source =
+            "{\"SchemaVersion\":1,\"Video\":{\"Quality\":100,\"SaveVideoRootPath\":\"D:/DownKyi/Original\"}}";
+        const string selectedDirectory = "D:/DownKyi/Committed";
+        var directory = CreateTestDirectory();
+        var settingsPath = Path.Combine(directory, "settings.json");
+        using var commitNotificationReached = new ManualResetEventSlim();
+        using var releaseCommitNotification = new ManualResetEventSlim();
+        var blockNotifications = 0;
+        var blockedNotification = 0;
+        var cancellationToken = TestContext.Current.CancellationToken;
+
+        try
+        {
+            await File.WriteAllTextAsync(settingsPath, source, TestContext.Current.CancellationToken);
+            using var manager = new SettingsManager(settingsPath);
+            manager.Changed += () =>
+            {
+                if (Volatile.Read(ref blockNotifications) == 0
+                    || Interlocked.CompareExchange(ref blockedNotification, 1, 0) != 0)
+                {
+                    return;
+                }
+
+                commitNotificationReached.Set();
+                Assert.True(
+                    releaseCommitNotification.Wait(TimeSpan.FromSeconds(5), cancellationToken),
+                    "The durable commit notification was not released.");
+            };
+            using var store = new SettingsStore(manager);
+            Volatile.Write(ref blockNotifications, 1);
+
+            var commitTask = store.CommitAsync(
+                settings => settings with
+                {
+                    Video = settings.Video with { SaveVideoRootPath = selectedDirectory }
+                },
+                cancellationToken);
+            Assert.True(
+                commitNotificationReached.Wait(TimeSpan.FromSeconds(5), cancellationToken),
+                "The durable replacement did not reach its publication boundary.");
+
+            store.Update(settings => settings with
+            {
+                Video = settings.Video with { Quality = 80 }
+            });
+            releaseCommitNotification.Set();
+            var result = await commitTask.ConfigureAwait(true);
+            await store.FlushAsync(cancellationToken);
+            using var reopened = new SettingsStore(settingsPath);
+
+            Assert.True(result.Succeeded);
+            Assert.Equal(80, store.Current.Video.Quality);
+            Assert.Equal(selectedDirectory, store.Current.Video.SaveVideoRootPath);
+            Assert.Equal(80, reopened.Current.Video.Quality);
+            Assert.Equal(selectedDirectory, reopened.Current.Video.SaveVideoRootPath);
+        }
+        finally
+        {
+            releaseCommitNotification.Set();
             DeleteDirectory(directory);
         }
     }

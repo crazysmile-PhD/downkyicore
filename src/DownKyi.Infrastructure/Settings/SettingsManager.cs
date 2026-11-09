@@ -9,13 +9,6 @@ using Newtonsoft.Json;
 
 namespace DownKyi.Infrastructure.Settings;
 
-internal enum SettingsSnapshotPersistenceStatus
-{
-    Persisted,
-    Superseded,
-    Disabled
-}
-
 public sealed partial class SettingsManager : IDisposable, IAsyncDisposable
 {
     private static readonly TimeSpan FlushDelay = TimeSpan.FromMilliseconds(750);
@@ -321,53 +314,56 @@ public sealed partial class SettingsManager : IDisposable, IAsyncDisposable
         await FlushCoreAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    internal long CapturePersistenceVersion()
-    {
-        lock (_settingsLock)
-        {
-            return _changeVersion;
-        }
-    }
-
-    internal async Task<SettingsSnapshotPersistenceStatus> PersistSnapshotAsync(
-        ApplicationSettings snapshot,
-        long expectedVersion,
+    internal async Task<SettingsCommitFailure> CommitAsync(
+        Func<ApplicationSettings, ApplicationSettings> update,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(snapshot);
+        ArgumentNullException.ThrowIfNull(update);
         cancellationToken.ThrowIfCancellationRequested();
-        var validated = ApplicationSettingsValidator.Validate(snapshot).Settings;
-        var persisted = SettingsSnapshotModelMapper.ToModel(validated);
-        var json = JsonConvert.SerializeObject(persisted);
-
         await _writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            lock (_settingsLock)
+            while (true)
             {
-                if (_persistenceDisabled)
+                ApplicationSettings candidate;
+                AppSettings persisted;
+                string json;
+                long version;
+                lock (_settingsLock)
                 {
-                    return SettingsSnapshotPersistenceStatus.Disabled;
+                    var current = CreateSnapshotCore();
+                    if (_persistenceDisabled)
+                    {
+                        return SettingsCommitFailure.PersistenceDisabled;
+                    }
+
+                    candidate = update(current)
+                        ?? throw new InvalidOperationException("A settings update cannot return null.");
+                    var validation = ApplicationSettingsValidator.Validate(candidate);
+                    candidate = validation.Settings;
+                    LogCorrections(validation.Corrections);
+                    persisted = SettingsSnapshotModelMapper.ToModel(candidate);
+                    json = JsonConvert.SerializeObject(persisted);
+                    version = _changeVersion;
                 }
 
-                if (_changeVersion != expectedVersion)
+                if (!await TryCommitSettingsFileAsync(
+                        json,
+                        version,
+                        () =>
+                        {
+                            _appSettings = persisted;
+                            _dirty = false;
+                            _changeVersion = checked(_changeVersion + 1);
+                        },
+                        cancellationToken)
+                    .ConfigureAwait(false))
                 {
-                    return SettingsSnapshotPersistenceStatus.Superseded;
-                }
-            }
-
-            await WriteSettingsFileAsync(json, cancellationToken).ConfigureAwait(false);
-            lock (_settingsLock)
-            {
-                if (_changeVersion != expectedVersion)
-                {
-                    return SettingsSnapshotPersistenceStatus.Superseded;
+                    continue;
                 }
 
-                _appSettings = persisted;
-                _dirty = false;
-                _changeVersion = checked(_changeVersion + 1);
-                return SettingsSnapshotPersistenceStatus.Persisted;
+                Changed?.Invoke();
+                return SettingsCommitFailure.None;
             }
         }
         finally
@@ -396,14 +392,14 @@ public sealed partial class SettingsManager : IDisposable, IAsyncDisposable
                     version = _changeVersion;
                 }
 
-                await WriteSettingsFileAsync(json, cancellationToken).ConfigureAwait(false);
-                lock (_settingsLock)
+                if (await TryCommitSettingsFileAsync(
+                        json,
+                        version,
+                        () => _dirty = false,
+                        cancellationToken)
+                    .ConfigureAwait(false))
                 {
-                    if (_changeVersion == version)
-                    {
-                        _dirty = false;
-                        return;
-                    }
+                    return;
                 }
             }
         }
@@ -413,7 +409,37 @@ public sealed partial class SettingsManager : IDisposable, IAsyncDisposable
         }
     }
 
-    private async Task WriteSettingsFileAsync(string json, CancellationToken cancellationToken)
+    private async Task<bool> TryCommitSettingsFileAsync(
+        string json,
+        long expectedVersion,
+        Action commitState,
+        CancellationToken cancellationToken)
+    {
+        var tempFile = await WriteTemporarySettingsFileAsync(json, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            lock (_settingsLock)
+            {
+                if (_changeVersion != expectedVersion)
+                {
+                    return false;
+                }
+
+                ReplaceSettingsFile(tempFile);
+                commitState();
+                return true;
+            }
+        }
+        finally
+        {
+            DeleteTemporarySettingsFile(tempFile);
+        }
+    }
+
+    private async Task<string> WriteTemporarySettingsFileAsync(
+        string json,
+        CancellationToken cancellationToken)
     {
         var directory = Path.GetDirectoryName(_settingsName);
         if (!string.IsNullOrEmpty(directory))
@@ -453,30 +479,40 @@ public sealed partial class SettingsManager : IDisposable, IAsyncDisposable
                 await _beforeReplaceAsync(cancellationToken).ConfigureAwait(false);
             }
 
-            cancellationToken.ThrowIfCancellationRequested();
-            if (File.Exists(_settingsName))
-            {
-                File.Replace(tempFile, _settingsName, null, ignoreMetadataErrors: true);
-            }
-            else
-            {
-                File.Move(tempFile, _settingsName);
-            }
+            return tempFile;
         }
-        finally
+        catch
         {
-            try
-            {
-                File.Delete(tempFile);
-            }
-            catch (IOException e)
-            {
-                _logger.LogErrorMessage("Temporary settings file cleanup failed.", e);
-            }
-            catch (UnauthorizedAccessException e)
-            {
-                _logger.LogErrorMessage("Temporary settings file cleanup was denied.", e);
-            }
+            DeleteTemporarySettingsFile(tempFile);
+            throw;
+        }
+    }
+
+    private void ReplaceSettingsFile(string tempFile)
+    {
+        if (File.Exists(_settingsName))
+        {
+            File.Replace(tempFile, _settingsName, null, ignoreMetadataErrors: true);
+        }
+        else
+        {
+            File.Move(tempFile, _settingsName);
+        }
+    }
+
+    private void DeleteTemporarySettingsFile(string tempFile)
+    {
+        try
+        {
+            File.Delete(tempFile);
+        }
+        catch (IOException e)
+        {
+            _logger.LogErrorMessage("Temporary settings file cleanup failed.", e);
+        }
+        catch (UnauthorizedAccessException e)
+        {
+            _logger.LogErrorMessage("Temporary settings file cleanup was denied.", e);
         }
     }
 
