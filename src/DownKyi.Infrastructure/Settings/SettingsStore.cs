@@ -89,6 +89,7 @@ public sealed class SettingsStore : ISettingsStore
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 ApplicationSettings candidate;
+                long persistenceVersion;
                 long revision;
                 lock (_updateLock)
                 {
@@ -101,6 +102,7 @@ public sealed class SettingsStore : ISettingsStore
                     }
 
                     candidate = validation.Settings;
+                    persistenceVersion = _settings.CapturePersistenceVersion();
                     revision = _updateRevision;
                 }
 
@@ -108,7 +110,7 @@ public sealed class SettingsStore : ISettingsStore
                 try
                 {
                     persistenceStatus = await _settings
-                        .PersistSnapshotAsync(candidate, cancellationToken)
+                        .PersistSnapshotAsync(candidate, persistenceVersion, cancellationToken)
                         .ConfigureAwait(false);
                 }
                 catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)

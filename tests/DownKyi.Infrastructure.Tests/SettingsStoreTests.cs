@@ -769,6 +769,86 @@ public sealed class SettingsStoreTests
         }
     }
 
+    [Fact]
+    public async Task CommitAsyncRejectsSupersededCandidateBeforeWriting()
+    {
+        const string source =
+            "{\"SchemaVersion\":1,\"Video\":{\"Quality\":100,\"AudioQuality\":30280,\"SaveVideoRootPath\":\"D:/DownKyi/Original\"}}";
+        const string selectedDirectory = "D:/DownKyi/Committed";
+        var directory = CreateTestDirectory();
+        var settingsPath = Path.Combine(directory, "settings.json");
+        var firstWriteReached = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFirstWrite = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var commitCandidateCreated = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var replacementAttempt = 0;
+
+        try
+        {
+            await File.WriteAllTextAsync(settingsPath, source, TestContext.Current.CancellationToken);
+            using var manager = new SettingsManager(
+                settingsPath,
+                NullLogger<SettingsManager>.Instance,
+                TimeSpan.FromDays(1),
+                static (delay, cancellationToken) => Task.Delay(delay, cancellationToken),
+                async cancellationToken =>
+                {
+                    switch (Interlocked.Increment(ref replacementAttempt))
+                    {
+                        case 1:
+                            firstWriteReached.TrySetResult();
+                            await releaseFirstWrite.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+                            break;
+                        case 4:
+                            throw new IOException("Simulated retry failure after a stale write.");
+                    }
+                });
+            using var store = new SettingsStore(manager);
+            store.Update(settings => settings with
+            {
+                Video = settings.Video with { AudioQuality = 30232 }
+            });
+            var flushTask = store.FlushAsync(TestContext.Current.CancellationToken);
+            await firstWriteReached.Task.WaitAsync(TestContext.Current.CancellationToken);
+
+            var commitTask = store.CommitAsync(
+                settings =>
+                {
+                    commitCandidateCreated.TrySetResult();
+                    return settings with
+                    {
+                        Video = settings.Video with { SaveVideoRootPath = selectedDirectory }
+                    };
+                },
+                TestContext.Current.CancellationToken);
+            await commitCandidateCreated.Task.WaitAsync(TestContext.Current.CancellationToken);
+            store.Update(settings => settings with
+            {
+                Video = settings.Video with { Quality = 80 }
+            });
+            releaseFirstWrite.TrySetResult();
+
+            await flushTask.ConfigureAwait(true);
+            var result = await commitTask.ConfigureAwait(true);
+            await store.FlushAsync(TestContext.Current.CancellationToken);
+            using var reopened = new SettingsStore(settingsPath);
+
+            Assert.True(result.Succeeded);
+            Assert.Equal(80, store.Current.Video.Quality);
+            Assert.Equal(selectedDirectory, store.Current.Video.SaveVideoRootPath);
+            Assert.Equal(80, reopened.Current.Video.Quality);
+            Assert.Equal(selectedDirectory, reopened.Current.Video.SaveVideoRootPath);
+            Assert.Equal(3, Volatile.Read(ref replacementAttempt));
+        }
+        finally
+        {
+            releaseFirstWrite.TrySetResult();
+            DeleteDirectory(directory);
+        }
+    }
+
     private static string CreateTestDirectory()
     {
         var directory = Path.Combine(Path.GetTempPath(), $"downkyi-settings-{Guid.NewGuid():N}");

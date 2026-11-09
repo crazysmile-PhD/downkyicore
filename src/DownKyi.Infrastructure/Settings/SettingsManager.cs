@@ -321,8 +321,17 @@ public sealed partial class SettingsManager : IDisposable, IAsyncDisposable
         await FlushCoreAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    internal long CapturePersistenceVersion()
+    {
+        lock (_settingsLock)
+        {
+            return _changeVersion;
+        }
+    }
+
     internal async Task<SettingsSnapshotPersistenceStatus> PersistSnapshotAsync(
         ApplicationSettings snapshot,
+        long expectedVersion,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
@@ -334,7 +343,6 @@ public sealed partial class SettingsManager : IDisposable, IAsyncDisposable
         await _writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            long version;
             lock (_settingsLock)
             {
                 if (_persistenceDisabled)
@@ -342,13 +350,16 @@ public sealed partial class SettingsManager : IDisposable, IAsyncDisposable
                     return SettingsSnapshotPersistenceStatus.Disabled;
                 }
 
-                version = _changeVersion;
+                if (_changeVersion != expectedVersion)
+                {
+                    return SettingsSnapshotPersistenceStatus.Superseded;
+                }
             }
 
             await WriteSettingsFileAsync(json, cancellationToken).ConfigureAwait(false);
             lock (_settingsLock)
             {
-                if (_changeVersion != version)
+                if (_changeVersion != expectedVersion)
                 {
                     return SettingsSnapshotPersistenceStatus.Superseded;
                 }
