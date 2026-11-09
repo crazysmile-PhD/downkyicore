@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using DownKyi.Application.Bilibili;
 using DownKyi.Application.Desktop;
 using DownKyi.Application.Diagnostics;
+using DownKyi.Application.Media;
 using DownKyi.Application.Settings;
 using DownKyi.Core.BiliApi;
 using DownKyi.Core.BiliApi.BiliUtils;
@@ -233,7 +234,7 @@ internal sealed class UserSpacePageCoordinator : IUserSpacePageCoordinator
                 || author?.Mid != mid
                 || !string.Equals(major?.Type, "MAJOR_TYPE_ARCHIVE", StringComparison.Ordinal)
                 || archive == null
-                || !ParseEntrance.IsBvId(archive.Bvid))
+                || BilibiliInputParser.Parse(archive.Bvid) is not BilibiliBvidInput)
             {
                 continue;
             }

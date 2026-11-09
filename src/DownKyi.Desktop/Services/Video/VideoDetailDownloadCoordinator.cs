@@ -4,6 +4,8 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Downloads;
+using DownKyi.Application.Media;
+using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Presentation;
 using DownKyi.Services.Download;
 
@@ -12,7 +14,7 @@ namespace DownKyi.Services.Video;
 internal interface IVideoDetailDownloadCoordinator
 {
     Task<DownloadAddResult> AddAsync(
-        string input,
+        BilibiliMediaInput input,
         VideoInfoView videoInfoView,
         IList<VideoSection> videoSections,
         bool isAll,
@@ -33,7 +35,7 @@ internal sealed class VideoDetailDownloadCoordinator : IVideoDetailDownloadCoord
     }
 
     public async Task<DownloadAddResult> AddAsync(
-        string input,
+        BilibiliMediaInput input,
         VideoInfoView videoInfoView,
         IList<VideoSection> videoSections,
         bool isAll,
@@ -43,15 +45,16 @@ internal sealed class VideoDetailDownloadCoordinator : IVideoDetailDownloadCoord
         ArgumentNullException.ThrowIfNull(videoSections);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var streamType = PlayStreamTypeResolver.ResolvePlayStreamType(input);
-        if (streamType == null)
+        var streamType = input switch
         {
-            return DownloadAddResult.Stopped(
-                DownloadAddOutcome.Rejected,
-                DownloadAddStopReason.UnsupportedInput);
-        }
+            BilibiliBvidInput or BilibiliAvidInput => PlayStreamType.Video,
+            BilibiliBangumiSeasonInput or BilibiliBangumiEpisodeInput or BilibiliBangumiMediaInput
+                => PlayStreamType.Bangumi,
+            BilibiliCheeseSeasonInput or BilibiliCheeseEpisodeInput => PlayStreamType.Cheese,
+            _ => throw new ArgumentOutOfRangeException(nameof(input))
+        };
 
-        var addService = _serviceFactory.Create(streamType.Value);
+        var addService = _serviceFactory.Create(streamType);
         var selectedPages = videoSections.SelectMany(section => section.VideoPages)
             .Where(page => isAll || page.IsSelected)
             .Take(2)

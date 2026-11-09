@@ -3,8 +3,8 @@ using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
+using DownKyi.Application.Media;
 using DownKyi.Application.Settings;
-using DownKyi.Core.BiliApi.BiliUtils;
 
 namespace DownKyi.Presentation;
 
@@ -94,10 +94,15 @@ internal class ToViewMedia : ObservableObject
     /// </summary>
     private void ExecuteTitleCommand()
     {
+        if (BilibiliInputParser.Parse(Bvid) is not BilibiliBvidInput input)
+        {
+            return;
+        }
+
         _navigationService.Navigate(new AppNavigationRequest(
             AppRoute.VideoDetail,
             _parentRoute,
-            $"{ParseEntrance.VideoUrl}{Bvid}"));
+            new VideoNavigationPayload(input)));
     }
 
     // UP主头像点击事件

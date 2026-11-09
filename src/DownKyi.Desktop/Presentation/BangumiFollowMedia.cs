@@ -3,7 +3,7 @@ using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
-using DownKyi.Core.BiliApi.BiliUtils;
+using DownKyi.Application.Media;
 
 namespace DownKyi.Presentation;
 
@@ -122,10 +122,15 @@ internal class BangumiFollowMedia : ObservableObject
     /// </summary>
     private void ExecuteTitleCommand()
     {
+        if (MediaId <= 0)
+        {
+            return;
+        }
+
         _navigationService.Navigate(new AppNavigationRequest(
             AppRoute.VideoDetail,
             _parentRoute,
-            $"{ParseEntrance.BangumiMediaUrl}md{MediaId}"));
+            new VideoNavigationPayload(new BilibiliBangumiMediaInput(MediaId))));
     }
 
     #endregion

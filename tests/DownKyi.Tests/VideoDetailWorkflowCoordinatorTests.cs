@@ -1,3 +1,4 @@
+using DownKyi.Application.Media;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.BiliApi.VideoStream.Models;
 using DownKyi.Presentation;
@@ -46,7 +47,7 @@ public sealed class VideoDetailWorkflowCoordinatorTests
         using var coordinator = new VideoDetailWorkflowCoordinator(parseCoordinator, new VideoSearchState());
         var operation = coordinator.StartOperation();
         coordinator.Reset();
-        coordinator.SetInput("BV17x411w7KC");
+        coordinator.SetInput(new BilibiliBvidInput("BV17x411w7KC"));
 
         var result = await coordinator.LoadDetailAsync(operation);
         coordinator.ApplySearch("Beta");

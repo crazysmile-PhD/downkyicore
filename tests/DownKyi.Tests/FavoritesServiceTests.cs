@@ -67,7 +67,7 @@ public sealed class FavoritesServiceTests
             AppRoute.MyFavorites,
             settings.Store)
         {
-            Bvid = "BV-available"
+            Bvid = "BV17x411w7KC"
         };
         var unavailable = new FavoritesMedia(
             new TestNavigationService(),
@@ -84,6 +84,8 @@ public sealed class FavoritesServiceTests
         Assert.True(available.IsSelected);
         Assert.False(unavailable.IsSelected);
         Assert.True(FavoritesSelectionPolicy.AreAllAvailableSelected([available, unavailable]));
-        Assert.Equal("BV-available", download.Source);
+        Assert.Equal(
+            "BV17x411w7KC",
+            Assert.IsType<DownKyi.Application.Media.BilibiliBvidInput>(download.Input).Bvid);
     }
 }

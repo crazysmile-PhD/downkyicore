@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using DownKyi.Application.Bilibili;
 using DownKyi.Application.Diagnostics;
 using DownKyi.Application.Downloads;
+using DownKyi.Application.Media;
 using DownKyi.Application.Settings;
 using DownKyi.Core.BiliApi;
 using DownKyi.Core.BiliApi.Sign;
@@ -17,13 +18,15 @@ using Microsoft.Extensions.Logging;
 
 namespace DownKyi.Services.Media;
 
-internal enum DownloadInfoKind
+internal sealed record ContentDownloadItem(BilibiliMediaInput Input, bool IsSelected)
 {
-    Video,
-    Bangumi
+    public static ContentDownloadItem? TryCreate(string? source, bool isSelected)
+    {
+        return BilibiliInputParser.Parse(source) is BilibiliMediaInput input
+            ? new ContentDownloadItem(input, isSelected)
+            : null;
+    }
 }
-
-internal sealed record ContentDownloadItem(string Source, DownloadInfoKind Kind, bool IsSelected);
 
 internal readonly record struct ContentDownloadBatchResult(
     int AddedCount,
@@ -65,10 +68,10 @@ internal sealed class ContentInfoServiceFactory : IContentInfoServiceFactory
     {
         ArgumentNullException.ThrowIfNull(item);
         cancellationToken.ThrowIfCancellationRequested();
-        if (item.Kind == DownloadInfoKind.Video)
+        if (item.Input is BilibiliBvidInput or BilibiliAvidInput)
         {
             return await VideoInfoService.CreateAsync(
-                item.Source,
+                item.Input,
                 _settingsStore,
                 _tagProvider,
                 _wbiKeyProvider,
@@ -76,14 +79,21 @@ internal sealed class ContentInfoServiceFactory : IContentInfoServiceFactory
                 cancellationToken).ConfigureAwait(false);
         }
 
-        return item.Kind switch
+        return item.Input switch
         {
-            DownloadInfoKind.Bangumi => await BangumiInfoService.CreateAsync(
-                item.Source,
+            BilibiliBangumiSeasonInput or BilibiliBangumiEpisodeInput or BilibiliBangumiMediaInput
+                => await BangumiInfoService.CreateAsync(
+                item.Input,
                 _settingsStore,
                 _client,
                 cancellationToken).ConfigureAwait(false),
-            _ => throw new ArgumentOutOfRangeException(nameof(item), item.Kind, null)
+            BilibiliCheeseSeasonInput or BilibiliCheeseEpisodeInput
+                => await CheeseInfoService.CreateAsync(
+                item.Input,
+                _settingsStore,
+                _client,
+                cancellationToken).ConfigureAwait(false),
+            _ => throw new ArgumentOutOfRangeException(nameof(item))
         };
     }
 }
@@ -136,7 +146,7 @@ internal sealed class ContentDownloadCoordinator : IContentDownloadCoordinator
         progress?.Report(new ContentDownloadBatchProgress(
             ProcessedCount: 0,
             TotalCount: selectedItems.Length));
-        var addToDownloadSession = _serviceFactory.Create(ToPlayStreamType(selectedItems[0].Kind));
+        var addToDownloadSession = _serviceFactory.Create(ToPlayStreamType(selectedItems[0].Input));
         var flow = await DownloadAddCoordinator.AddToDownloadIfSelectionAcceptedAsync(
             () => addToDownloadSession.SelectDownloadAsync(cancellationToken: cancellationToken),
             selection => AddItemsAsync(
@@ -236,13 +246,15 @@ internal sealed class ContentDownloadCoordinator : IContentDownloadCoordinator
             nameof(VideoInfo.VideoViewInfoAsync),
             StringComparison.Ordinal);
 
-    private static PlayStreamType ToPlayStreamType(DownloadInfoKind kind)
+    private static PlayStreamType ToPlayStreamType(BilibiliMediaInput input)
     {
-        return kind switch
+        return input switch
         {
-            DownloadInfoKind.Video => PlayStreamType.Video,
-            DownloadInfoKind.Bangumi => PlayStreamType.Bangumi,
-            _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null)
+            BilibiliBvidInput or BilibiliAvidInput => PlayStreamType.Video,
+            BilibiliBangumiSeasonInput or BilibiliBangumiEpisodeInput or BilibiliBangumiMediaInput
+                => PlayStreamType.Bangumi,
+            BilibiliCheeseSeasonInput or BilibiliCheeseEpisodeInput => PlayStreamType.Cheese,
+            _ => throw new ArgumentOutOfRangeException(nameof(input))
         };
     }
 }

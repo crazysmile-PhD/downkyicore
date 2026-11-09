@@ -186,10 +186,9 @@ internal sealed class MainWindowViewModel : ObservableObject, IDisposable
         if (!string.IsNullOrWhiteSpace(pendingStartupInput))
         {
             _searchService.BiliInput(
-                pendingStartupInput + (pendingStartupInputFromClipboard
-                    ? AppConstant.ClipboardId
-                    : string.Empty),
-                AppRoute.Index);
+                pendingStartupInput,
+                AppRoute.Index,
+                pendingStartupInputFromClipboard);
         }
         Dispatcher.UIThread.Post(StartStartupDialogs, DispatcherPriority.Background);
     }
@@ -267,7 +266,10 @@ internal sealed class MainWindowViewModel : ObservableObject, IDisposable
         {
             if (!cancellationToken.IsCancellationRequested)
             {
-                _searchService.BiliInput(text + AppConstant.ClipboardId, AppRoute.Index);
+                _searchService.BiliInput(
+                    text,
+                    AppRoute.Index,
+                    suppressDuplicateVideoNavigation: true);
             }
         });
     }

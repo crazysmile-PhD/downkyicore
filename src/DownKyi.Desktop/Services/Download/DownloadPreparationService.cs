@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Bilibili;
 using DownKyi.Application.Diagnostics;
+using DownKyi.Application.Media;
 using DownKyi.Application.Settings;
 using DownKyi.Core.BiliApi;
 using DownKyi.Core.BiliApi.Sign;
@@ -154,8 +155,15 @@ internal sealed class DownloadPreparationService
             return defaultService;
         }
 
+        if (BilibiliInputParser.Parse(page.PlaybackAddress) is not BilibiliMediaInput input)
+        {
+            throw new BilibiliApiResponseException(
+                nameof(VideoInfo.VideoViewInfoAsync),
+                "The playback address was not a supported Bilibili video input.");
+        }
+
         var videoService = await VideoInfoService.CreateAsync(
-            page.PlaybackAddress,
+            input,
             _settingsStore,
             _tagProvider,
             _wbiKeyProvider,

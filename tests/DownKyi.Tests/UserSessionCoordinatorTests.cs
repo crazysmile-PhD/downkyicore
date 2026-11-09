@@ -1,4 +1,5 @@
 using DownKyi.Application.Desktop;
+using DownKyi.Application.Media;
 using DownKyi.Core.BiliApi.Users.Models;
 using DownKyi.Services;
 using DownKyi.Services.Account;
@@ -49,9 +50,8 @@ public sealed class UserSessionCoordinatorTests
         var request = Assert.Single(navigation.Requests);
         Assert.Equal(AppRoute.VideoDetail, request.Route);
         Assert.Equal(AppRoute.Index, request.Parent);
-        Assert.Equal(
-            "https://www.bilibili.com/video/BV1G1421D7mL",
-            request.Parameter);
+        var payload = Assert.IsType<VideoNavigationPayload>(request.Parameter);
+        Assert.Equal("BV1G1421D7mL", Assert.IsType<BilibiliBvidInput>(payload.Input).Bvid);
         Assert.Equal(string.Empty, viewModel.InputText);
     }
 

@@ -1,8 +1,7 @@
 using System;
-using System.Globalization;
 using DownKyi.Application.Desktop;
+using DownKyi.Application.Media;
 using DownKyi.Application.Settings;
-using DownKyi.Core.BiliApi.BiliUtils;
 
 namespace DownKyi.Services;
 
@@ -34,115 +33,54 @@ internal class SearchService
     /// <param name="input"></param>
     /// <param name="parentRoute"></param>
     /// <returns></returns>
-    public bool BiliInput(string input, AppRoute parentRoute)
+    public bool BiliInput(
+        string input,
+        AppRoute parentRoute,
+        bool suppressDuplicateVideoNavigation = false)
     {
         ArgumentNullException.ThrowIfNull(input);
-
-        // 移除剪贴板id
-        var justId = input.Replace(AppConstant.ClipboardId, "", StringComparison.Ordinal);
-
-        // 视频
-        if (ParseEntrance.IsAvId(justId))
+        switch (BilibiliInputParser.Parse(input))
         {
-            var avid = ParseEntrance.GetAvId(justId).ToString(CultureInfo.InvariantCulture);
-            NavigateToVideo(parentRoute, $"{ParseEntrance.VideoUrl}av{avid}");
-        }
-        else if (ParseEntrance.IsAvUrl(justId))
-        {
-            NavigateToVideo(parentRoute, input);
-        }
-        else if (ParseEntrance.IsBvId(justId))
-        {
-            NavigateToVideo(parentRoute, $"{ParseEntrance.VideoUrl}{input}");
-        }
-        else if (ParseEntrance.IsBvUrl(justId))
-        {
-            NavigateToVideo(parentRoute, input);
-        }
-        // 番剧（电影、电视剧）
-        else if (ParseEntrance.IsBangumiSeasonId(justId))
-        {
-            var seasonId = ParseEntrance.GetBangumiSeasonId(justId).ToString(CultureInfo.InvariantCulture);
-            NavigateToVideo(parentRoute, $"{ParseEntrance.BangumiUrl}ss{seasonId}");
-        }
-        else if (ParseEntrance.IsBangumiSeasonUrl(justId))
-        {
-            NavigateToVideo(parentRoute, input);
-        }
-        else if (ParseEntrance.IsBangumiEpisodeId(justId))
-        {
-            var episodeId = ParseEntrance.GetBangumiEpisodeId(justId).ToString(CultureInfo.InvariantCulture);
-            NavigateToVideo(parentRoute, $"{ParseEntrance.BangumiUrl}ep{episodeId}");
-        }
-        else if (ParseEntrance.IsBangumiEpisodeUrl(justId))
-        {
-            NavigateToVideo(parentRoute, input);
-        }
-        else if (ParseEntrance.IsBangumiMediaId(justId))
-        {
-            var mediaId = ParseEntrance.GetBangumiMediaId(justId).ToString(CultureInfo.InvariantCulture);
-            NavigateToVideo(parentRoute, $"{ParseEntrance.BangumiMediaUrl}md{mediaId}");
-        }
-        else if (ParseEntrance.IsBangumiMediaUrl(justId))
-        {
-            NavigateToVideo(parentRoute, input);
-        }
-        // 课程
-        else if (ParseEntrance.IsCheeseSeasonUrl(justId) || ParseEntrance.IsCheeseEpisodeUrl(justId))
-        {
-            NavigateToVideo(parentRoute, input);
-        }
-        // UP主指定系列
-        else if (ParseEntrance.GetUserSeriesListUrl(justId) is { } series)
-        {
-            _navigationService.Navigate(new AppNavigationRequest(
-                AppRoute.SeasonsSeries,
-                parentRoute,
-                new SeriesNavigationPayload(series.Mid, series.SeriesId)));
-        }
-        // UP主全部投稿列表
-        else if (ParseEntrance.IsUserVideoListUrl(justId))
-        {
-            _navigationService.Navigate(new AppNavigationRequest(
-                AppRoute.Publication,
-                parentRoute,
-                PublicationNavigationPayload.All(ParseEntrance.GetUserVideoListId(justId))));
-        }
-        // 用户（参数传入mid）
-        else if (ParseEntrance.IsUserId(justId))
-        {
-            NavigateToUserSpace(ParseEntrance.GetUserId(justId));
-        }
-        else if (ParseEntrance.IsUserUrl(justId))
-        {
-            NavigateToUserSpace(ParseEntrance.GetUserId(justId));
-        }
-        // 收藏夹
-        else if (ParseEntrance.IsFavoritesId(justId))
-        {
-            _navigationService.Navigate(new AppNavigationRequest(
-                AppRoute.PublicFavorites,
-                parentRoute,
-                ParseEntrance.GetFavoritesId(justId)));
-        }
-        else if (ParseEntrance.IsFavoritesUrl(justId))
-        {
-            _navigationService.Navigate(new AppNavigationRequest(
-                AppRoute.PublicFavorites,
-                parentRoute,
-                ParseEntrance.GetFavoritesId(justId)));
-        }
-        else
-        {
-            return false;
+            case BilibiliMediaInput media:
+                NavigateToVideo(parentRoute, media, suppressDuplicateVideoNavigation);
+                break;
+            case BilibiliSeriesInput series:
+                _navigationService.Navigate(new AppNavigationRequest(
+                    AppRoute.SeasonsSeries,
+                    parentRoute,
+                    new SeriesNavigationPayload(series.Mid, series.SeriesId)));
+                break;
+            case BilibiliPublicationInput publication:
+                _navigationService.Navigate(new AppNavigationRequest(
+                    AppRoute.Publication,
+                    parentRoute,
+                    PublicationNavigationPayload.All(publication.Mid)));
+                break;
+            case BilibiliUserSpaceInput user:
+                NavigateToUserSpace(user.Mid);
+                break;
+            case BilibiliFavoritesInput favorites:
+                _navigationService.Navigate(new AppNavigationRequest(
+                    AppRoute.PublicFavorites,
+                    parentRoute,
+                    favorites.MediaId));
+                break;
+            default:
+                return false;
         }
 
         return true;
     }
 
-    private void NavigateToVideo(AppRoute parentRoute, string input)
+    private void NavigateToVideo(
+        AppRoute parentRoute,
+        BilibiliMediaInput input,
+        bool suppressDuplicate)
     {
-        _navigationService.Navigate(new AppNavigationRequest(AppRoute.VideoDetail, parentRoute, input));
+        _navigationService.Navigate(new AppNavigationRequest(
+            AppRoute.VideoDetail,
+            parentRoute,
+            new VideoNavigationPayload(input, suppressDuplicate)));
     }
 
     private void NavigateToUserSpace(long mid)

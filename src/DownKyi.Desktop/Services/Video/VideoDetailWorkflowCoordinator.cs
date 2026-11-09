@@ -1,8 +1,8 @@
 using System;
-using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Bilibili;
+using DownKyi.Application.Media;
 using DownKyi.Application.Settings;
 using DownKyi.Core.BiliApi.Sign;
 using DownKyi.Presentation;
@@ -13,7 +13,7 @@ internal readonly record struct VideoDetailOperation(int Version, CancellationTo
 
 internal interface IVideoDetailWorkflowCoordinator : IDisposable
 {
-    string CurrentInput { get; }
+    BilibiliMediaInput? CurrentInput { get; }
 
     VideoDetailOperation StartOperation();
 
@@ -23,7 +23,7 @@ internal interface IVideoDetailWorkflowCoordinator : IDisposable
 
     void Reset();
 
-    string SetInput(string requestedInput);
+    void SetInput(BilibiliMediaInput input);
 
     void ApplySearch(string? searchText);
 
@@ -57,7 +57,7 @@ internal sealed class VideoDetailWorkflowCoordinator : IVideoDetailWorkflowCoord
         _searchState = searchState ?? throw new ArgumentNullException(nameof(searchState));
     }
 
-    public string CurrentInput { get; private set; } = string.Empty;
+    public BilibiliMediaInput? CurrentInput { get; private set; }
 
     public VideoDetailOperation StartOperation()
     {
@@ -82,15 +82,13 @@ internal sealed class VideoDetailWorkflowCoordinator : IVideoDetailWorkflowCoord
 
     public void Reset()
     {
-        CurrentInput = string.Empty;
+        CurrentInput = null;
         _searchState.Clear();
     }
 
-    public string SetInput(string requestedInput)
+    public void SetInput(BilibiliMediaInput input)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(requestedInput);
-        CurrentInput = Regex.Replace(requestedInput, @"[【]*[^【]*[^】]*[】 ]", string.Empty);
-        return CurrentInput;
+        CurrentInput = input ?? throw new ArgumentNullException(nameof(input));
     }
 
     public void ApplySearch(string? searchText)
@@ -101,8 +99,10 @@ internal sealed class VideoDetailWorkflowCoordinator : IVideoDetailWorkflowCoord
     public async Task<VideoDetailParseResult> LoadDetailAsync(VideoDetailOperation operation)
     {
         EnsureCurrent(operation);
+        var input = CurrentInput
+            ?? throw new InvalidOperationException("A parsed media input is required before loading details.");
         var result = await _parseCoordinator.LoadDetailAsync(
-            CurrentInput,
+            input,
             operation.CancellationToken).ConfigureAwait(false);
         EnsureCurrent(operation);
         _searchState.Reset(result.VideoSections);

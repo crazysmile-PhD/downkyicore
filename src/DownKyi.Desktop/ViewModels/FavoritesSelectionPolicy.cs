@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 using System.Linq;
-using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Presentation;
 using DownKyi.Services.Media;
 
@@ -29,10 +28,8 @@ internal static class FavoritesSelectionPolicy
     {
         return medias
             .Where(media => !media.IsUnavailable)
-            .Select(media => new ContentDownloadItem(
-                media.Bvid,
-                DownloadInfoKind.Video,
-                media.IsSelected))
+            .Select(media => ContentDownloadItem.TryCreate(media.Bvid, media.IsSelected))
+            .OfType<ContentDownloadItem>()
             .ToArray();
     }
 }

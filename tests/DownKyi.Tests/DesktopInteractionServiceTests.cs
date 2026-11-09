@@ -1,4 +1,5 @@
 using DownKyi.Application.Desktop;
+using DownKyi.Application.Media;
 using DownKyi.Platform;
 using DownKyi.Services;
 
@@ -82,6 +83,26 @@ public sealed class DesktopInteractionServiceTests
 
         Assert.False(search.BiliInput("not-a-supported-input", AppRoute.Index));
         Assert.Empty(navigation.Requests);
+    }
+
+    [Fact]
+    public void LocalizedVideoUrlUsesTypedVideoPayload()
+    {
+        using var settings = new TestSettingsStore();
+        var navigation = new RecordingNavigationService();
+        var search = new SearchService(settings.Store, navigation);
+
+        Assert.True(search.BiliInput(
+            "https://www.bilibili.com/zh-Hans/video/BV1smxM6YEXN/" +
+            "?spm_id_from=333.788.recommend_more_video.0",
+            AppRoute.Index));
+
+        var request = Assert.Single(navigation.Requests);
+        Assert.Equal(AppRoute.VideoDetail, request.Route);
+        Assert.Equal(AppRoute.Index, request.Parent);
+        var payload = Assert.IsType<VideoNavigationPayload>(request.Parameter);
+        Assert.False(payload.SuppressDuplicate);
+        Assert.Equal("BV1smxM6YEXN", Assert.IsType<BilibiliBvidInput>(payload.Input).Bvid);
     }
 
     [Fact]

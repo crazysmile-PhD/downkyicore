@@ -6,10 +6,10 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Bilibili;
+using DownKyi.Application.Media;
 using DownKyi.Application.Settings;
 using DownKyi.Core.BiliApi.Bangumi;
 using DownKyi.Core.BiliApi.Bangumi.Models;
-using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.Models;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.BiliApi.VideoStream.Models;
@@ -44,40 +44,34 @@ internal class BangumiInfoService : IInfoService
     }
 
     public static async Task<BangumiInfoService> CreateAsync(
-        string? input,
+        BilibiliMediaInput input,
         ISettingsStore settingsStore,
         IBilibiliApiClient client,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(settingsStore);
         ArgumentNullException.ThrowIfNull(client);
-        if (input == null)
-        {
-            return new BangumiInfoService(settingsStore, client);
-        }
+        ArgumentNullException.ThrowIfNull(input);
 
         BangumiSeason? bangumiSeason = null;
-        if (ParseEntrance.IsBangumiSeasonId(input) || ParseEntrance.IsBangumiSeasonUrl(input))
+        if (input is BilibiliBangumiSeasonInput season)
         {
-            var seasonId = ParseEntrance.GetBangumiSeasonId(input);
             bangumiSeason = await client.BangumiSeasonInfoAsync(
-                seasonId,
+                season.SeasonId,
                 cancellationToken: cancellationToken).ConfigureAwait(false);
         }
 
-        if (ParseEntrance.IsBangumiEpisodeId(input) || ParseEntrance.IsBangumiEpisodeUrl(input))
+        if (input is BilibiliBangumiEpisodeInput episode)
         {
-            var episodeId = ParseEntrance.GetBangumiEpisodeId(input);
             bangumiSeason = await client.BangumiSeasonInfoAsync(
                 -1,
-                episodeId,
+                episode.EpisodeId,
                 cancellationToken).ConfigureAwait(false);
         }
 
-        if (ParseEntrance.IsBangumiMediaId(input) || ParseEntrance.IsBangumiMediaUrl(input))
+        if (input is BilibiliBangumiMediaInput media)
         {
-            var mediaId = ParseEntrance.GetBangumiMediaId(input);
-            var bangumiMedia = await client.BangumiMediaInfoAsync(mediaId, cancellationToken)
+            var bangumiMedia = await client.BangumiMediaInfoAsync(media.MediaId, cancellationToken)
                 .ConfigureAwait(false);
             if (bangumiMedia != null)
             {
@@ -227,15 +221,18 @@ internal class BangumiInfoService : IInfoService
 
                 // 标题
                 var name = !string.IsNullOrEmpty(episode.LongTitle) ? $"{episode.Title} {episode.LongTitle}" : episode.Title;
-                var isOrdinaryVideo = PlayStreamTypeResolver.ResolvePlayStreamType(episode.Link)
-                    is PlayStreamType.Video;
+                var ordinaryVideo = BilibiliInputParser.Parse(episode.Link);
+                var isOrdinaryVideo = ordinaryVideo is BilibiliBvidInput or BilibiliAvidInput;
                 var page = new VideoPage
                 {
                     PlaybackAddress = isOrdinaryVideo ? episode.Link : string.Empty,
                     Avid = episode.Aid,
-                    Bvid = isOrdinaryVideo
-                        ? ParseEntrance.GetBvId(episode.Link)
-                        : episode.Bvid,
+                    Bvid = ordinaryVideo switch
+                    {
+                        BilibiliBvidInput bvid => bvid.Bvid,
+                        BilibiliAvidInput => string.Empty,
+                        _ => episode.Bvid
+                    },
                     Cid = episode.Cid,
                     EpisodeId = isOrdinaryVideo
                         ? -1
