@@ -221,13 +221,18 @@ internal class BangumiInfoService : IInfoService
 
                 // 标题
                 var name = !string.IsNullOrEmpty(episode.LongTitle) ? $"{episode.Title} {episode.LongTitle}" : episode.Title;
-                var ordinaryVideo = BilibiliInputParser.Parse(episode.Link) as BilibiliBvidInput;
-                var isOrdinaryVideo = ordinaryVideo != null;
+                var ordinaryVideo = BilibiliInputParser.Parse(episode.Link);
+                var isOrdinaryVideo = ordinaryVideo is BilibiliBvidInput or BilibiliAvidInput;
                 var page = new VideoPage
                 {
                     PlaybackAddress = isOrdinaryVideo ? episode.Link : string.Empty,
                     Avid = episode.Aid,
-                    Bvid = ordinaryVideo?.Bvid ?? episode.Bvid,
+                    Bvid = ordinaryVideo switch
+                    {
+                        BilibiliBvidInput bvid => bvid.Bvid,
+                        BilibiliAvidInput => string.Empty,
+                        _ => episode.Bvid
+                    },
                     Cid = episode.Cid,
                     EpisodeId = isOrdinaryVideo
                         ? -1

@@ -318,6 +318,38 @@ public sealed class BangumiEpisodeIdentityTests
             request.AbsolutePath == "/pgc/player/web/v2/playurl");
     }
 
+    [Theory]
+    [InlineData("https://www.bilibili.com/video/BV18CEY6oEyH", "BV18CEY6oEyH")]
+    [InlineData("https://www.bilibili.com/video/av116729191601860", "")]
+    public async Task BangumiSectionRecognizesBvidAndAvidLinksAsOrdinaryVideos(
+        string link,
+        string expectedBvid)
+    {
+        using var settings = new TestSettingsStore();
+        var response = Issue668SeasonResponse.Replace(
+            "https://www.bilibili.com/video/BV18CEY6oEyH",
+            link,
+            StringComparison.Ordinal);
+        var client = new TestBilibiliApiClient
+        {
+            GetStringAsyncHandler = (_, _) => Task.FromResult(response)
+        };
+        var service = await BangumiInfoService.CreateAsync(
+            new BilibiliBangumiSeasonInput(28747),
+            settings.Store,
+            client,
+            TestContext.Current.CancellationToken);
+
+        var sections = Assert.IsAssignableFrom<IList<VideoSection>>(
+            service.GetVideoSections(cancellationToken: TestContext.Current.CancellationToken));
+        var page = Assert.Single(sections[1].VideoPages);
+
+        Assert.Equal(link, page.PlaybackAddress);
+        Assert.Equal(116729191601860, page.Avid);
+        Assert.Equal(expectedBvid, page.Bvid);
+        Assert.Equal(-1, page.EpisodeId);
+    }
+
     [Fact]
     public async Task BangumiSessionUsesSuppliedOrdinaryVideoService()
     {
