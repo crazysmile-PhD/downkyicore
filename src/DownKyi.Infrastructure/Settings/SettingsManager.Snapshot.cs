@@ -1,6 +1,6 @@
 using System.Collections.Immutable;
 using DownKyi.Application.Settings;
-using DownKyi.Infrastructure.Settings.Models;
+using Newtonsoft.Json;
 
 namespace DownKyi.Infrastructure.Settings;
 
@@ -123,101 +123,15 @@ public partial class SettingsManager
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         var validated = ApplicationSettingsValidator.Validate(snapshot).Settings;
+        var replacement = SettingsSnapshotModelMapper.ToModel(validated);
+        var replacementJson = JsonConvert.SerializeObject(replacement);
         lock (_settingsLock)
         {
-            _suppressChangeNotifications++;
-            try
+            var currentJson = JsonConvert.SerializeObject(_appSettings);
+            if (!string.Equals(currentJson, replacementJson, StringComparison.Ordinal))
             {
-                SetProperty(_appSettings.SchemaVersion, validated.SchemaVersion, value => _appSettings.SchemaVersion = value);
-                SetThemeMode(validated.Basic.ThemeMode);
-                SetUiLanguage(validated.Basic.UiLanguage);
-                SetAfterDownloadOperation(validated.Basic.AfterDownload);
-                SetIsListenClipboard(validated.Basic.IsListenClipboard);
-                SetDownloadFinishedSort(validated.Basic.DownloadFinishedSort);
-                IsRepeatFileAutoAddNumberSuffix(validated.Basic.RepeatFileAutoAddNumberSuffix);
-
-                SetIsLiftingOfRegion(validated.Network.IsLiftingOfRegion);
-                SetUserAgent(validated.Network.UserAgent);
-                SetHighSpeedDownloadMode(validated.Network.HighSpeedDownloadMode);
-                SetNetworkProxy(validated.Network.NetworkProxy);
-                SetProperty(
-                    _appSettings.Network.CustomNetworkProxy,
-                    validated.Network.CustomNetworkProxy,
-                    value => _appSettings.Network.CustomNetworkProxy = value);
-                SetMaxCurrentDownloads(validated.Network.MaxCurrentDownloads);
-                SetSplit(validated.Network.Split);
-                SetMaxOverallDownloadLimit(validated.Network.MaxOverallDownloadLimit);
-                SetMaxDownloadLimit(validated.Network.MaxDownloadLimit);
-                SetIsHttpProxy(validated.Network.IsHttpProxy);
-                SetHttpProxy(validated.Network.HttpProxy);
-                SetHttpProxyListenPort(validated.Network.HttpProxyListenPort);
-
-                SetVideoCodecs(validated.Video.VideoCodecs);
-                SetQuality(validated.Video.Quality);
-                SetAudioQuality(validated.Video.AudioQuality);
-                SetIsTranscodingFlvToMp4(validated.Video.IsTranscodingFlvToMp4);
-                SetIsTranscodingAacToMp3(validated.Video.IsTranscodingAacToMp3);
-                SetFfmpegHardwareAcceleration(validated.Video.FfmpegHardwareAcceleration);
-                SetFfmpegMaxParallelJobs(validated.Video.FfmpegMaxParallelJobs);
-                SetSaveVideoRootPath(validated.Video.SaveVideoRootPath);
-                SetHistoryVideoRootPaths(validated.Video.HistoryVideoRootPaths);
-                SetIsUseSaveVideoRootPath(validated.Video.IsUseSaveVideoRootPath);
-                SetVideoContent(new VideoContentSettings
-                {
-                    DownloadAudio = validated.Video.Content.DownloadAudio,
-                    DownloadVideo = validated.Video.Content.DownloadVideo,
-                    DownloadDanmaku = validated.Video.Content.DownloadDanmaku,
-                    DownloadSubtitle = validated.Video.Content.DownloadSubtitle,
-                    DownloadCover = validated.Video.Content.DownloadCover,
-                    GenerateMovieMetadata = validated.Video.Content.GenerateMovieMetadata,
-                    PreferredSubtitleLanguage = validated.Video.Content.PreferredSubtitleLanguage,
-                    PreferredSubtitleType = validated.Video.Content.PreferredSubtitleType
-                });
-                SetFileNameParts(validated.Video.FileNameParts);
-                SetFileNamePartTimeFormat(validated.Video.FileNamePartTimeFormat);
-                SetOrderFormat(validated.Video.OrderFormat);
-
-                SetDanmakuOutputFormat(validated.Danmaku.OutputFormat);
-                SetDanmakuTopFilter(validated.Danmaku.TopFilter);
-                SetDanmakuBottomFilter(validated.Danmaku.BottomFilter);
-                SetDanmakuScrollFilter(validated.Danmaku.ScrollFilter);
-                SetDanmakuRemoveEmojiAndSpecialCharacters(validated.Danmaku.RemoveEmojiAndSpecialCharacters);
-                SetDanmakuBlockedKeywords(validated.Danmaku.BlockedKeywords);
-                SetDanmakuBlockedSenderUids(validated.Danmaku.BlockedSenderUids);
-                SetIsCustomDanmakuResolution(validated.Danmaku.IsCustomResolution);
-                SetDanmakuScreenWidth(validated.Danmaku.ScreenWidth);
-                SetDanmakuScreenHeight(validated.Danmaku.ScreenHeight);
-                SetDanmakuFontName(validated.Danmaku.FontName);
-                SetDanmakuFontSize(validated.Danmaku.FontSize);
-                SetDanmakuLineCount(validated.Danmaku.LineCount);
-                SetDanmakuLayoutAlgorithm(validated.Danmaku.LayoutAlgorithm);
-
-                SetIsReceiveBetaVersion(validated.About.IsReceiveBetaVersion);
-                SetAutoUpdateWhenLaunch(validated.About.AutoUpdateWhenLaunch);
-                SetProperty(
-                    _appSettings.About.SkipVersionOnLaunch,
-                    validated.About.SkipVersionOnLaunch,
-                    value => _appSettings.About.SkipVersionOnLaunch = value);
-                SetUserInfo(new UserInfoSettings
-                {
-                    Mid = validated.User.Mid,
-                    Name = validated.User.Name,
-                    IsLogin = validated.User.IsLogin,
-                    IsVip = validated.User.IsVip,
-                    ImgKey = validated.User.ImgKey,
-                    SubKey = validated.User.SubKey
-                });
-                SettingWindowSettings(new WindowSettings
-                {
-                    Width = validated.Window.Width,
-                    Height = validated.Window.Height,
-                    X = validated.Window.X,
-                    Y = validated.Window.Y
-                });
-            }
-            finally
-            {
-                _suppressChangeNotifications--;
+                _appSettings = replacement;
+                MarkDirtyUnsafe();
             }
         }
 

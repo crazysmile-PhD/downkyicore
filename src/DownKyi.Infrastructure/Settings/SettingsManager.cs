@@ -1,12 +1,20 @@
 using System.Security.Cryptography;
 using System.Text;
 using DownKyi.Application.Diagnostics;
+using DownKyi.Application.Settings;
 using DownKyi.Infrastructure.Settings.Models;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Newtonsoft.Json;
 
 namespace DownKyi.Infrastructure.Settings;
+
+internal enum SettingsSnapshotPersistenceStatus
+{
+    Persisted,
+    Superseded,
+    Disabled
+}
 
 public sealed partial class SettingsManager : IDisposable, IAsyncDisposable
 {
@@ -18,6 +26,7 @@ public sealed partial class SettingsManager : IDisposable, IAsyncDisposable
     private readonly string _settingsName;
     private readonly bool _persistInitialDefaults;
     private readonly ILogger<SettingsManager> _logger;
+    private readonly Func<CancellationToken, Task>? _beforeReplaceAsync;
     private readonly string password = "YO1J$4#p";
     private AppSettings _appSettings;
     private CancellationTokenSource? _flushDelayCancellation;
@@ -49,13 +58,15 @@ public sealed partial class SettingsManager : IDisposable, IAsyncDisposable
         string settingsName,
         ILogger<SettingsManager> logger,
         TimeSpan flushDelay,
-        Func<TimeSpan, CancellationToken, Task> delayAsync)
+        Func<TimeSpan, CancellationToken, Task> delayAsync,
+        Func<CancellationToken, Task>? beforeReplaceAsync = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(settingsName);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(flushDelay, TimeSpan.Zero);
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _flushDelay = flushDelay;
         _delayAsync = delayAsync ?? throw new ArgumentNullException(nameof(delayAsync));
+        _beforeReplaceAsync = beforeReplaceAsync;
         _settingsName = settingsName;
         var loadResult = LoadFromFile();
         _appSettings = loadResult.Settings;
@@ -310,6 +321,50 @@ public sealed partial class SettingsManager : IDisposable, IAsyncDisposable
         await FlushCoreAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    internal async Task<SettingsSnapshotPersistenceStatus> PersistSnapshotAsync(
+        ApplicationSettings snapshot,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        cancellationToken.ThrowIfCancellationRequested();
+        var validated = ApplicationSettingsValidator.Validate(snapshot).Settings;
+        var persisted = SettingsSnapshotModelMapper.ToModel(validated);
+        var json = JsonConvert.SerializeObject(persisted);
+
+        await _writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            long version;
+            lock (_settingsLock)
+            {
+                if (_persistenceDisabled)
+                {
+                    return SettingsSnapshotPersistenceStatus.Disabled;
+                }
+
+                version = _changeVersion;
+            }
+
+            await WriteSettingsFileAsync(json, cancellationToken).ConfigureAwait(false);
+            lock (_settingsLock)
+            {
+                if (_changeVersion != version)
+                {
+                    return SettingsSnapshotPersistenceStatus.Superseded;
+                }
+
+                _appSettings = persisted;
+                _dirty = false;
+                _changeVersion = checked(_changeVersion + 1);
+                return SettingsSnapshotPersistenceStatus.Persisted;
+            }
+        }
+        finally
+        {
+            _writeGate.Release();
+        }
+    }
+
     private async Task FlushCoreAsync(CancellationToken cancellationToken)
     {
         await _writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -382,6 +437,11 @@ public sealed partial class SettingsManager : IDisposable, IAsyncDisposable
             }
 
             await ValidateTemporarySettingsFileAsync(tempFile, cancellationToken).ConfigureAwait(false);
+            if (_beforeReplaceAsync != null)
+            {
+                await _beforeReplaceAsync(cancellationToken).ConfigureAwait(false);
+            }
+
             cancellationToken.ThrowIfCancellationRequested();
             if (File.Exists(_settingsName))
             {

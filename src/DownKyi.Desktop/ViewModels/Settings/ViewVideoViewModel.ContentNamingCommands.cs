@@ -29,15 +29,17 @@ internal partial class ViewVideoViewModel
             return;
         }
 
-        var isSucceed = UpdateVideo(settings => settings with
+        var commit = await _settingsStore.CommitAsync(settings => settings with
         {
-            SaveVideoRootPath = directory
-        }).SaveVideoRootPath == directory;
+            Video = settings.Video with { SaveVideoRootPath = directory }
+        }).ConfigureAwait(true);
+        var isSucceed = commit.Succeeded
+                        && commit.Settings.Video.SaveVideoRootPath == directory;
         PublishTip(isSucceed);
 
         if (isSucceed)
         {
-            SaveVideoDirectory = directory;
+            SaveVideoDirectory = commit.Settings.Video.SaveVideoRootPath;
         }
     }
 

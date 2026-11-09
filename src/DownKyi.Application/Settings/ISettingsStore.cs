@@ -6,5 +6,9 @@ public interface ISettingsStore : IDisposable, IAsyncDisposable
 
     ApplicationSettings Update(Func<ApplicationSettings, ApplicationSettings> update);
 
+    Task<SettingsCommitResult> CommitAsync(
+        Func<ApplicationSettings, ApplicationSettings> update,
+        CancellationToken cancellationToken = default);
+
     Task FlushAsync(CancellationToken cancellationToken = default);
 }

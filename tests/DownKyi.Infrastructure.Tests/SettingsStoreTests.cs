@@ -622,6 +622,153 @@ public sealed class SettingsStoreTests
         }
     }
 
+    [Fact]
+    public async Task CommitAsyncCanBeReopenedImmediatelyWithoutAnAdditionalFlush()
+    {
+        var directory = CreateTestDirectory();
+        var settingsPath = Path.Combine(directory, "settings.json");
+        const string selectedDirectory = "D:/DownKyi/Committed";
+
+        try
+        {
+            using var store = new SettingsStore(settingsPath);
+
+            var result = await store.CommitAsync(
+                settings => settings with
+                {
+                    Video = settings.Video with { SaveVideoRootPath = selectedDirectory }
+                },
+                TestContext.Current.CancellationToken);
+
+            Assert.True(result.Succeeded);
+            Assert.Equal(selectedDirectory, store.Current.Video.SaveVideoRootPath);
+            using var reopened = new SettingsStore(settingsPath);
+            Assert.Equal(selectedDirectory, reopened.Current.Video.SaveVideoRootPath);
+        }
+        finally
+        {
+            DeleteDirectory(directory);
+        }
+    }
+
+    [Fact]
+    public async Task CommitAsyncAccessDeniedKeepsThePublishedAndPersistedSettings()
+    {
+        const string source = """
+            {"SchemaVersion":1,"Video":{"SaveVideoRootPath":"D:/DownKyi/Original"}}
+            """;
+        var directory = CreateTestDirectory();
+        var settingsPath = Path.Combine(directory, "settings.json");
+
+        try
+        {
+            await File.WriteAllTextAsync(settingsPath, source, TestContext.Current.CancellationToken);
+            using var manager = new SettingsManager(
+                settingsPath,
+                NullLogger<SettingsManager>.Instance,
+                TimeSpan.FromDays(1),
+                static (delay, cancellationToken) => Task.Delay(delay, cancellationToken),
+                static _ => throw new UnauthorizedAccessException("Simulated settings write denial."));
+            using var store = new SettingsStore(manager);
+
+            var result = await store.CommitAsync(
+                settings => settings with
+                {
+                    Video = settings.Video with { SaveVideoRootPath = "D:/DownKyi/Denied" }
+                },
+                TestContext.Current.CancellationToken);
+
+            Assert.False(result.Succeeded);
+            Assert.Equal(SettingsCommitFailure.WriteFailed, result.Failure);
+            Assert.Equal("D:/DownKyi/Original", result.Settings.Video.SaveVideoRootPath);
+            Assert.Equal("D:/DownKyi/Original", store.Current.Video.SaveVideoRootPath);
+            Assert.Equal(
+                source,
+                await File.ReadAllTextAsync(settingsPath, TestContext.Current.CancellationToken));
+        }
+        finally
+        {
+            DeleteDirectory(directory);
+        }
+    }
+
+    [Fact]
+    public async Task CommitAsyncReportsDisabledPersistenceWithoutOverwritingFutureSettings()
+    {
+        const string futureSettings =
+            "{\"SchemaVersion\":99,\"Video\":{\"SaveVideoRootPath\":\"D:/DownKyi/Future\"}}";
+        var directory = CreateTestDirectory();
+        var settingsPath = Path.Combine(directory, "settings.json");
+
+        try
+        {
+            await File.WriteAllTextAsync(
+                settingsPath,
+                futureSettings,
+                TestContext.Current.CancellationToken);
+            using var store = new SettingsStore(settingsPath);
+
+            var result = await store.CommitAsync(
+                settings => settings with
+                {
+                    Video = settings.Video with { SaveVideoRootPath = "D:/DownKyi/Rejected" }
+                },
+                TestContext.Current.CancellationToken);
+
+            Assert.False(result.Succeeded);
+            Assert.Equal(SettingsCommitFailure.PersistenceDisabled, result.Failure);
+            Assert.Equal("D:/DownKyi/Future", store.Current.Video.SaveVideoRootPath);
+            Assert.Equal(
+                futureSettings,
+                await File.ReadAllTextAsync(settingsPath, TestContext.Current.CancellationToken));
+        }
+        finally
+        {
+            DeleteDirectory(directory);
+        }
+    }
+
+    [Fact]
+    public async Task CommitAsyncFailureBeforeAtomicReplaceLeavesOnlyTheCompletePreviousFile()
+    {
+        const string source = """
+            {"SchemaVersion":1,"Video":{"SaveVideoRootPath":"D:/DownKyi/Stable"}}
+            """;
+        var directory = CreateTestDirectory();
+        var settingsPath = Path.Combine(directory, "settings.json");
+
+        try
+        {
+            await File.WriteAllTextAsync(settingsPath, source, TestContext.Current.CancellationToken);
+            using var manager = new SettingsManager(
+                settingsPath,
+                NullLogger<SettingsManager>.Instance,
+                TimeSpan.FromDays(1),
+                static (delay, cancellationToken) => Task.Delay(delay, cancellationToken),
+                static _ => throw new IOException("Simulated failure before atomic replacement."));
+            using var store = new SettingsStore(manager);
+
+            var result = await store.CommitAsync(
+                settings => settings with
+                {
+                    Video = settings.Video with { SaveVideoRootPath = "D:/DownKyi/Incomplete" }
+                },
+                TestContext.Current.CancellationToken);
+
+            Assert.False(result.Succeeded);
+            Assert.Equal(SettingsCommitFailure.WriteFailed, result.Failure);
+            Assert.Equal("D:/DownKyi/Stable", store.Current.Video.SaveVideoRootPath);
+            Assert.Equal(
+                source,
+                await File.ReadAllTextAsync(settingsPath, TestContext.Current.CancellationToken));
+            Assert.Empty(Directory.GetFiles(directory, "*.tmp"));
+        }
+        finally
+        {
+            DeleteDirectory(directory);
+        }
+    }
+
     private static string CreateTestDirectory()
     {
         var directory = Path.Combine(Path.GetTempPath(), $"downkyi-settings-{Guid.NewGuid():N}");
