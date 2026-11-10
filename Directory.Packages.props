@@ -1,6 +1,6 @@
 <Project ToolsVersion="15.0">
   <PropertyGroup>
-    <AvaloniaRuntimeVersion>12.1.5</AvaloniaRuntimeVersion>
+    <AvaloniaRuntimeVersion>12.1.6</AvaloniaRuntimeVersion>
   </PropertyGroup>
 
   <ItemGroup>
