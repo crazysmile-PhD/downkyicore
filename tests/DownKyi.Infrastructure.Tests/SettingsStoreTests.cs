@@ -9,6 +9,31 @@ namespace DownKyi.Infrastructure.Tests;
 public sealed class SettingsStoreTests
 {
     [Fact]
+    public void NewStoreInitializesSentinelDefaultsWithoutBehaviorGetters()
+    {
+        var directory = CreateTestDirectory();
+        var settingsPath = Path.Combine(directory, "settings.json");
+
+        try
+        {
+            using var store = new SettingsStore(settingsPath);
+
+            Assert.Equal(AfterDownloadOperation.None, store.Current.Basic.AfterDownload);
+            Assert.Equal(DownloadFinishedSort.DownloadAsc, store.Current.Basic.DownloadFinishedSort);
+            Assert.Equal(
+                FfmpegHardwareAcceleration.Auto,
+                store.Current.Video.FfmpegHardwareAcceleration);
+            Assert.Equal(OrderFormat.Natural, store.Current.Video.OrderFormat);
+            Assert.Equal(DanmakuLayoutAlgorithm.Sync, store.Current.Danmaku.LayoutAlgorithm);
+            Assert.False(File.Exists(settingsPath));
+        }
+        finally
+        {
+            DeleteDirectory(directory);
+        }
+    }
+
+    [Fact]
     public async Task RemovedParsingSettingsAreIgnoredWhenLegacyJsonIsSaved()
     {
         var directory = CreateTestDirectory();
@@ -409,6 +434,55 @@ public sealed class SettingsStoreTests
             Assert.Same(updated, store.Current);
 
             await store.FlushAsync(TestContext.Current.CancellationToken);
+        }
+        finally
+        {
+            DeleteDirectory(directory);
+        }
+    }
+
+    [Fact]
+    public async Task InactiveCustomProxySurvivesUnrelatedUpdatesAndModeRoundtrip()
+    {
+        const string customProxy = "http://127.0.0.1:18080";
+        var directory = CreateTestDirectory();
+        var settingsPath = Path.Combine(directory, "settings.json");
+
+        try
+        {
+            using (var store = new SettingsStore(settingsPath))
+            {
+                store.Update(settings => settings with
+                {
+                    Network = settings.Network with
+                    {
+                        NetworkProxy = NetworkProxy.Custom,
+                        CustomNetworkProxy = customProxy
+                    }
+                });
+                var inactive = store.Update(settings => settings with
+                {
+                    Network = settings.Network with { NetworkProxy = NetworkProxy.None }
+                });
+                Assert.Equal(customProxy, inactive.Network.CustomNetworkProxy);
+
+                var unrelated = store.Update(settings => settings with
+                {
+                    Basic = settings.Basic with { ThemeMode = ThemeMode.Dark }
+                });
+                Assert.Equal(customProxy, unrelated.Network.CustomNetworkProxy);
+                await store.FlushAsync(TestContext.Current.CancellationToken);
+            }
+
+            using var reopened = new SettingsStore(settingsPath);
+            Assert.Equal(NetworkProxy.None, reopened.Current.Network.NetworkProxy);
+            Assert.Equal(customProxy, reopened.Current.Network.CustomNetworkProxy);
+
+            var reactivated = reopened.Update(settings => settings with
+            {
+                Network = settings.Network with { NetworkProxy = NetworkProxy.Custom }
+            });
+            Assert.Equal(customProxy, reactivated.Network.CustomNetworkProxy);
         }
         finally
         {

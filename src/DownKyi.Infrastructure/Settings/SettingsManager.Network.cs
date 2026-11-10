@@ -12,7 +12,6 @@ namespace DownKyi.Infrastructure.Settings
         private const string UserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
         private const NetworkProxy NetworkProxy = DownKyi.Application.Settings.NetworkProxy.None;
-        private readonly string _customNetworkProxy = string.Empty;
 
         // 最大同时下载数(任务数)
         private const int MaxCurrentDownloads = 3;
@@ -109,11 +108,12 @@ namespace DownKyi.Infrastructure.Settings
 
         public string GetCustomProxy()
         {
-            if (_appSettings.Network.NetworkProxy == NetworkProxy.Custom && !string.IsNullOrEmpty(_appSettings.Network.CustomNetworkProxy))
-                return _appSettings.Network.CustomNetworkProxy;
-            // 第一次获取，先设置默认值
-            SetCustomProxy(_customNetworkProxy);
-            return _customNetworkProxy;
+            if (_appSettings.Network.CustomNetworkProxy is null)
+            {
+                SetCustomProxy(string.Empty);
+            }
+
+            return _appSettings.Network.CustomNetworkProxy ?? string.Empty;
         }
 
         public bool SetCustomProxy(string proxyAddress)

@@ -23,9 +23,19 @@ internal static class ApplicationSettingsValidator
         {
             ThemeMode = EnumValue(settings.Basic.ThemeMode, ThemeMode.Default, "Basic.ThemeMode", corrections),
             UiLanguage = EnumValue(settings.Basic.UiLanguage, UiLanguage.ChineseSimplified, "Basic.UiLanguage", corrections),
-            AfterDownload = EnumValue(settings.Basic.AfterDownload, AfterDownloadOperation.None, "Basic.AfterDownload", corrections),
+            AfterDownload = EnumValueExcept(
+                settings.Basic.AfterDownload,
+                AfterDownloadOperation.NotSet,
+                AfterDownloadOperation.None,
+                "Basic.AfterDownload",
+                corrections),
             IsListenClipboard = AllowValue(settings.Basic.IsListenClipboard, AllowStatus.Yes, "Basic.IsListenClipboard", corrections),
-            DownloadFinishedSort = EnumValue(settings.Basic.DownloadFinishedSort, DownloadFinishedSort.DownloadAsc, "Basic.DownloadFinishedSort", corrections)
+            DownloadFinishedSort = EnumValueExcept(
+                settings.Basic.DownloadFinishedSort,
+                DownloadFinishedSort.NotSet,
+                DownloadFinishedSort.DownloadAsc,
+                "Basic.DownloadFinishedSort",
+                corrections)
         };
         var networkProxy = EnumValue(settings.Network.NetworkProxy, NetworkProxy.None, "Network.NetworkProxy", corrections);
         var customProxy = settings.Network.CustomNetworkProxy;
@@ -73,13 +83,23 @@ internal static class ApplicationSettingsValidator
             AudioQuality = settings.Video.AudioQuality <= 0 ? Corrected("Video.AudioQuality", 30280, corrections) : settings.Video.AudioQuality,
             IsTranscodingFlvToMp4 = AllowValue(settings.Video.IsTranscodingFlvToMp4, AllowStatus.Yes, "Video.IsTranscodingFlvToMp4", corrections),
             IsTranscodingAacToMp3 = AllowValue(settings.Video.IsTranscodingAacToMp3, AllowStatus.Yes, "Video.IsTranscodingAacToMp3", corrections),
-            FfmpegHardwareAcceleration = EnumValue(settings.Video.FfmpegHardwareAcceleration, FfmpegHardwareAcceleration.Auto, "Video.FfmpegHardwareAcceleration", corrections),
+            FfmpegHardwareAcceleration = EnumValueExcept(
+                settings.Video.FfmpegHardwareAcceleration,
+                FfmpegHardwareAcceleration.NotSet,
+                FfmpegHardwareAcceleration.Auto,
+                "Video.FfmpegHardwareAcceleration",
+                corrections),
             FfmpegMaxParallelJobs = Range(settings.Video.FfmpegMaxParallelJobs, 1, 4, 1, "Video.FfmpegMaxParallelJobs", corrections),
             FileNameParts = settings.Video.FileNameParts.IsDefaultOrEmpty
                 ? Corrected("Video.FileNameParts", ApplicationSettingsDefaults.FileNameParts, corrections)
                 : settings.Video.FileNameParts,
             FileNamePartTimeFormat = TextValue(settings.Video.FileNamePartTimeFormat, "yyyy-MM-dd", "Video.FileNamePartTimeFormat", corrections),
-            OrderFormat = EnumValue(settings.Video.OrderFormat, OrderFormat.Natural, "Video.OrderFormat", corrections),
+            OrderFormat = EnumValueExcept(
+                settings.Video.OrderFormat,
+                OrderFormat.NotSet,
+                OrderFormat.Natural,
+                "Video.OrderFormat",
+                corrections),
             Content = videoContent
         };
         var danmaku = settings.Danmaku with
@@ -107,7 +127,12 @@ internal static class ApplicationSettingsValidator
             FontName = TextValue(settings.Danmaku.FontName, "黑体", "Danmaku.FontName", corrections),
             FontSize = Range(settings.Danmaku.FontSize, 1, 500, 50, "Danmaku.FontSize", corrections),
             LineCount = Range(settings.Danmaku.LineCount, 0, 1000, 0, "Danmaku.LineCount", corrections),
-            LayoutAlgorithm = EnumValue(settings.Danmaku.LayoutAlgorithm, DanmakuLayoutAlgorithm.Sync, "Danmaku.LayoutAlgorithm", corrections)
+            LayoutAlgorithm = EnumValueExcept(
+                settings.Danmaku.LayoutAlgorithm,
+                DanmakuLayoutAlgorithm.None,
+                DanmakuLayoutAlgorithm.Sync,
+                "Danmaku.LayoutAlgorithm",
+                corrections)
         };
         var about = settings.About with
         {
@@ -171,6 +196,19 @@ internal static class ApplicationSettingsValidator
         where T : struct, Enum
     {
         return Enum.IsDefined(value) ? value : Corrected(field, fallback, corrections);
+    }
+
+    private static T EnumValueExcept<T>(
+        T value,
+        T unsetValue,
+        T fallback,
+        string field,
+        ImmutableArray<string>.Builder corrections)
+        where T : struct, Enum
+    {
+        return Enum.IsDefined(value) && !EqualityComparer<T>.Default.Equals(value, unsetValue)
+            ? value
+            : Corrected(field, fallback, corrections);
     }
 
     private static int Range(

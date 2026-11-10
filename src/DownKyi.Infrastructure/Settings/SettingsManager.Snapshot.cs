@@ -7,35 +7,28 @@ namespace DownKyi.Infrastructure.Settings;
 
 public partial class SettingsManager
 {
-    internal ApplicationSettings CreateSnapshot(bool persistDefaultValues = true)
+    internal ApplicationSettings CreateSnapshot()
     {
         lock (_settingsLock)
         {
-            _suppressChangeNotifications++;
-            if (!persistDefaultValues)
-            {
-                _suppressPersistence++;
-            }
-
-            try
-            {
-                return CreateSnapshotCore();
-            }
-            finally
-            {
-                if (!persistDefaultValues)
-                {
-                    _suppressPersistence--;
-                }
-
-                _suppressChangeNotifications--;
-            }
+            return CreateSnapshotCore();
         }
     }
 
     internal ApplicationSettings CreateInitialSnapshot()
     {
-        return CreateSnapshot(_persistInitialDefaults);
+        ApplicationSettings snapshot;
+        ImmutableArray<string> corrections;
+        lock (_settingsLock)
+        {
+            var validation = ApplicationSettingsValidator.Validate(CreateSnapshotCore());
+            snapshot = validation.Settings;
+            corrections = validation.Corrections;
+            ReplaceSnapshotUnsafe(snapshot, _persistInitialDefaults);
+        }
+
+        LogCorrections(corrections);
+        return snapshot;
     }
 
     internal void UpdateSnapshot(Func<ApplicationSettings, ApplicationSettings> update)
@@ -59,84 +52,7 @@ public partial class SettingsManager
 
     private ApplicationSettings CreateSnapshotCore()
     {
-        var content = GetVideoContent();
-        var user = GetUserInfo();
-        var window = GetWindowSettings();
-        return new ApplicationSettings(
-            _appSettings.SchemaVersion,
-            new BasicApplicationSettings(
-                GetThemeMode(),
-                GetAfterDownloadOperation(),
-                GetIsListenClipboard(),
-                GetDownloadFinishedSort(),
-                IsRepeatFileAutoAddNumberSuffix())
-            {
-                UiLanguage = UiLanguage
-            },
-            new NetworkApplicationSettings(
-                GetIsLiftingOfRegion(),
-                GetUserAgent(),
-                GetHighSpeedDownloadMode(),
-                GetNetworkProxy(),
-                GetCustomProxy(),
-                GetMaxCurrentDownloads(),
-                GetSplit(),
-                GetMaxOverallDownloadLimit(),
-                GetMaxDownloadLimit(),
-                GetIsHttpProxy(),
-                GetHttpProxy(),
-                GetHttpProxyListenPort()),
-            new VideoApplicationSettings(
-                GetVideoCodecs(),
-                GetQuality(),
-                GetAudioQuality(),
-                GetIsTranscodingFlvToMp4(),
-                GetIsTranscodingAacToMp3(),
-                GetFfmpegHardwareAcceleration(),
-                GetFfmpegMaxParallelJobs(),
-                GetSaveVideoRootPath(),
-                GetHistoryVideoRootPaths().ToImmutableArray(),
-                GetIsUseSaveVideoRootPath(),
-                new VideoContentApplicationSettings(
-                    content.DownloadAudio,
-                    content.DownloadVideo,
-                    content.DownloadDanmaku,
-                    content.DownloadSubtitle,
-                    content.DownloadCover,
-                    content.GenerateMovieMetadata,
-                    content.PreferredSubtitleLanguage,
-                    content.PreferredSubtitleType),
-                GetFileNameParts().ToImmutableArray(),
-                GetFileNamePartTimeFormat(),
-                GetOrderFormat()),
-            new DanmakuApplicationSettings(
-                GetDanmakuOutputFormat(),
-                GetDanmakuTopFilter(),
-                GetDanmakuBottomFilter(),
-                GetDanmakuScrollFilter(),
-                GetDanmakuRemoveEmojiAndSpecialCharacters(),
-                GetDanmakuBlockedKeywords().ToImmutableArray(),
-                GetDanmakuBlockedSenderUids().ToImmutableArray(),
-                GetIsCustomDanmakuResolution(),
-                GetDanmakuScreenWidth(),
-                GetDanmakuScreenHeight(),
-                GetDanmakuFontName(),
-                GetDanmakuFontSize(),
-                GetDanmakuLineCount(),
-                GetDanmakuLayoutAlgorithm()),
-            new AboutApplicationSettings(
-                GetIsReceiveBetaVersion(),
-                GetAutoUpdateWhenLaunch(),
-                GetSkipVersionOnLaunch()),
-            new UserApplicationSettings(
-                user.Mid,
-                user.Name,
-                user.IsLogin,
-                user.IsVip,
-                user.ImgKey,
-                user.SubKey),
-            new WindowApplicationSettings(window.Width, window.Height, window.X, window.Y));
-
+        return SettingsSnapshotModelMapper.ToSnapshot(_appSettings, _saveVideoRootPath);
     }
 
     internal void ApplySnapshot(ApplicationSettings snapshot)
@@ -151,7 +67,7 @@ public partial class SettingsManager
         Changed?.Invoke();
     }
 
-    private void ReplaceSnapshotUnsafe(ApplicationSettings snapshot)
+    private void ReplaceSnapshotUnsafe(ApplicationSettings snapshot, bool markDirty = true)
     {
         var replacement = SettingsSnapshotModelMapper.ToModel(snapshot);
         var replacementJson = JsonConvert.SerializeObject(replacement);
@@ -159,7 +75,10 @@ public partial class SettingsManager
         if (!string.Equals(currentJson, replacementJson, StringComparison.Ordinal))
         {
             _appSettings = replacement;
-            MarkDirtyUnsafe();
+            if (markDirty)
+            {
+                MarkDirtyUnsafe();
+            }
         }
     }
 

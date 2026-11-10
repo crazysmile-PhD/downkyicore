@@ -27,8 +27,6 @@ public sealed partial class SettingsManager : IDisposable, IAsyncDisposable
     private bool _dirty;
     private bool _persistenceDisabled;
     private long _changeVersion;
-    private int _suppressChangeNotifications;
-    private int _suppressPersistence;
     private int _disposeState;
 
     internal event Action? Changed;
@@ -94,15 +92,12 @@ public sealed partial class SettingsManager : IDisposable, IAsyncDisposable
             if (!EqualityComparer<T>.Default.Equals(currentValue, newValue))
             {
                 setter(newValue);
-                if (_suppressPersistence == 0)
-                {
-                    MarkDirtyUnsafe();
-                }
+                MarkDirtyUnsafe();
                 changed = true;
             }
         }
 
-        if (changed && _suppressChangeNotifications == 0)
+        if (changed)
         {
             Changed?.Invoke();
         }

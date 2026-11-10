@@ -194,6 +194,8 @@ public sealed class SettingsArchitectureTests
     {
         var storeSource = ReadSource("src", "DownKyi.Infrastructure", "Settings", "SettingsStore.cs");
         var managerSource = ReadSource("src", "DownKyi.Infrastructure", "Settings", "SettingsManager.cs");
+        var snapshotSource = ReadSource("src", "DownKyi.Infrastructure", "Settings", "SettingsManager.Snapshot.cs");
+        var mapperSource = ReadSource("src", "DownKyi.Infrastructure", "Settings", "SettingsSnapshotModelMapper.cs");
         var migratorSource = ReadSource("src", "DownKyi.Infrastructure", "Settings", "SettingsSchemaMigrator.cs");
 
         Assert.Contains("ApplicationSettings Current", storeSource, StringComparison.Ordinal);
@@ -214,6 +216,9 @@ public sealed class SettingsArchitectureTests
         Assert.DoesNotContain("new Timer", managerSource, StringComparison.Ordinal);
         Assert.Contains("_scheduledFlushTask", managerSource, StringComparison.Ordinal);
         Assert.Contains("FlushAsync(CancellationToken", managerSource, StringComparison.Ordinal);
+        Assert.Contains("SettingsSnapshotModelMapper.ToSnapshot(_appSettings", snapshotSource, StringComparison.Ordinal);
+        Assert.DoesNotMatch(@"\bGet[A-Z]\w*\(\)", snapshotSource);
+        Assert.Contains("CustomNetworkProxy = settings.Network.CustomNetworkProxy", mapperSource, StringComparison.Ordinal);
         Assert.Contains("switch (settings.SchemaVersion)", migratorSource, StringComparison.Ordinal);
     }
 
