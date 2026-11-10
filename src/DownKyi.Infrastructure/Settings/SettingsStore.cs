@@ -39,14 +39,8 @@ public sealed class SettingsStore : ISettingsStore
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        var validation = ApplicationSettingsValidator.Validate(settings.CreateInitialSnapshot());
-        _current = validation.Settings;
+        _current = settings.CreateInitialSnapshot();
         _settings.Changed += RefreshSnapshot;
-        if (validation.Corrections.Length > 0)
-        {
-            LogCorrections(validation.Corrections);
-            _settings.ApplySnapshot(validation.Settings);
-        }
     }
 
     public ApplicationSettings Current => Volatile.Read(ref _current);
