@@ -65,7 +65,7 @@ public sealed class SettingsRoundtripCompletenessTests
                 {
                     Assert.Equal(
                         ApplicationSettingsValidator.CurrentSchemaVersion + 1,
-                        manager.CreateSnapshot(persistDefaultValues: false).SchemaVersion);
+                        manager.CreateSnapshot().SchemaVersion);
                 }
 
                 using (var store = new SettingsStore(manager))
@@ -74,7 +74,7 @@ public sealed class SettingsRoundtripCompletenessTests
                     {
                         Assert.Equal(
                             ApplicationSettingsValidator.CurrentSchemaVersion,
-                            manager.CreateSnapshot(persistDefaultValues: false).SchemaVersion);
+                            manager.CreateSnapshot().SchemaVersion);
                     }
 
                     foreach (var candidate in candidates)
@@ -161,13 +161,6 @@ public sealed class SettingsRoundtripCompletenessTests
         var root = JsonSerializer.SerializeToNode(baseline, SnapshotJsonOptions)
             ?? throw new InvalidOperationException("ApplicationSettings could not be serialized.");
         SetJsonValue(root, leaf.Path, leaf.ValueType, replacement);
-
-        if (leaf.Path == "Network.CustomNetworkProxy"
-            && !string.IsNullOrEmpty((string)replacement))
-        {
-            // The custom address is intentionally cleared unless the custom mode owns it.
-            SetJsonValue(root, "Network.NetworkProxy", typeof(NetworkProxy), NetworkProxy.Custom);
-        }
 
         var candidate = root.Deserialize<ApplicationSettings>(SnapshotJsonOptions)
             ?? throw new InvalidOperationException($"Candidate for '{leaf.Path}' could not be deserialized.");

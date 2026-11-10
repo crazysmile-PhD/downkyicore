@@ -3,6 +3,7 @@ using DownKyi.Application.Settings;
 using DownKyi.Infrastructure.Storage;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Newtonsoft.Json;
 
 namespace DownKyi.Infrastructure.Settings;
 
@@ -38,40 +39,48 @@ public sealed class SettingsStore : ISettingsStore
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        var validation = ApplicationSettingsValidator.Validate(settings.CreateInitialSnapshot());
-        _current = validation.Settings;
+        _current = settings.CreateInitialSnapshot();
         _settings.Changed += RefreshSnapshot;
-        if (validation.Corrections.Length > 0)
-        {
-            LogCorrections(validation.Corrections);
-            _settings.ApplySnapshot(validation.Settings);
-        }
     }
 
     public ApplicationSettings Current => Volatile.Read(ref _current);
 
     public ApplicationSettings Update(Func<ApplicationSettings, ApplicationSettings> update)
     {
-        ArgumentNullException.ThrowIfNull(update);
         lock (_updateLock)
         {
-            var candidate = update(Current)
-                ?? throw new InvalidOperationException("A settings update cannot return null.");
-            var validation = ApplicationSettingsValidator.Validate(candidate);
-            if (validation.Corrections.Length > 0)
-            {
-                LogCorrections(validation.Corrections);
-            }
-
-            _settings.ApplySnapshot(validation.Settings);
-            Volatile.Write(ref _current, validation.Settings);
-            return validation.Settings;
+            _settings.UpdateSnapshot(update);
+            return Current;
         }
     }
 
     public Task FlushAsync(CancellationToken cancellationToken = default)
     {
         return _settings.FlushAsync(cancellationToken);
+    }
+
+    public async Task<SettingsCommitResult> CommitAsync(
+        Func<ApplicationSettings, ApplicationSettings> update,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(update);
+        SettingsCommitFailure failure;
+        try
+        {
+            failure = await _settings.CommitAsync(update, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
+        {
+            _logger.LogErrorMessage("Durable settings commit failed.", e);
+            return new SettingsCommitResult(Current, SettingsCommitFailure.WriteFailed);
+        }
+
+        if (failure == SettingsCommitFailure.PersistenceDisabled)
+        {
+            _logger.LogErrorMessage("Durable settings commit is unavailable because persistence is disabled.");
+        }
+
+        return new SettingsCommitResult(Current, failure);
     }
 
     public void Dispose()
