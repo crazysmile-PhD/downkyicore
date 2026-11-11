@@ -50,6 +50,61 @@ public sealed class BilibiliDanmakuXmlWriterTests
     }
 
     [Fact]
+    public void SkipsOnlyDanmakusThatXml10CannotRepresent()
+    {
+        var output = BilibiliDanmakuXmlWriter.CreateDocument(
+            [
+                new BiliDanmaku
+                {
+                    Id = 41,
+                    Progress = 1_234,
+                    Mode = 7,
+                    Fontsize = 25,
+                    Color = 0xFFFFFF,
+                    Ctime = 1_700_000_000,
+                    Pool = 0,
+                    MidHash = "before",
+                    Content = "保留\t\n😂<>&"
+                },
+                new BiliDanmaku
+                {
+                    Id = 42,
+                    MidHash = "invalid-content",
+                    Content = "前\0中\v後\uFFFF"
+                },
+                new BiliDanmaku
+                {
+                    Id = 43,
+                    MidHash = "invalid\0sender",
+                    Content = "metadata cannot be serialized"
+                },
+                new BiliDanmaku
+                {
+                    Id = 44,
+                    Progress = 5_678,
+                    Mode = 5,
+                    Fontsize = 30,
+                    Color = 0xFF0000,
+                    Ctime = 1_700_000_001,
+                    Pool = 1,
+                    MidHash = "after",
+                    Content = "後一條仍保留"
+                }
+            ],
+            TestContext.Current.CancellationToken);
+
+        var document = XDocument.Parse(
+            output.ToString(SaveOptions.DisableFormatting),
+            LoadOptions.PreserveWhitespace);
+        var elements = document.Root!.Elements("d").ToArray();
+        Assert.Equal(2, elements.Length);
+        Assert.Equal("保留\t\n😂<>&", elements[0].Value);
+        Assert.Equal("1.234,7,25,16777215,1700000000,0,before,41", elements[0].Attribute("p")?.Value);
+        Assert.Equal("後一條仍保留", elements[1].Value);
+        Assert.Equal("5.678,5,30,16711680,1700000001,1,after,44", elements[1].Attribute("p")?.Value);
+    }
+
+    [Fact]
     public async Task CancellationIsVisibleBeforeXmlGeneration()
     {
         using var cancellation = new CancellationTokenSource();
