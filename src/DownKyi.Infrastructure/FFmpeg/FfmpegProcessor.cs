@@ -47,6 +47,7 @@ public sealed class FfmpegProcessor : IFfmpegMediaMuxer
         bool overwriteDestination,
         Action<string>? action = null,
         FfmpegEmbeddedAudioMode embeddedAudioMode = FfmpegEmbeddedAudioMode.Optional,
+        string? cover = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(videoSettings);
@@ -62,6 +63,7 @@ public sealed class FfmpegProcessor : IFfmpegMediaMuxer
                 overwriteDestination,
                 action,
                 embeddedAudioMode,
+                coverFile: NormalizeOptionalInput(cover),
                 cancellationToken)
             .ConfigureAwait(false);
     }
@@ -73,11 +75,13 @@ public sealed class FfmpegProcessor : IFfmpegMediaMuxer
         string destination,
         bool overwriteDestination,
         FfmpegEmbeddedAudioMode embeddedAudioMode = FfmpegEmbeddedAudioMode.Optional,
+        string? cover = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(videoSettings);
         var audioPath = !string.IsNullOrWhiteSpace(audio) ? audio : null;
         var videoPath = !string.IsNullOrWhiteSpace(video) ? video : null;
+        var coverPath = videoPath != null ? NormalizeOptionalInput(cover) : null;
         if (audioPath == null && videoPath == null)
         {
             return FfmpegOperationResult.Failure(
@@ -91,7 +95,8 @@ public sealed class FfmpegProcessor : IFfmpegMediaMuxer
                 videoPath,
                 temporaryOutput,
                 videoSettings.IsTranscodingAacToMp3 == AllowStatus.Yes,
-                embeddedAudioMode),
+                embeddedAudioMode,
+                coverFile: coverPath),
             destination,
             overwriteDestination,
             action: null,
@@ -109,6 +114,9 @@ public sealed class FfmpegProcessor : IFfmpegMediaMuxer
             "FFmpeg output could not be finalized.",
             outputResult.FailureKind);
     }
+
+    private static string? NormalizeOptionalInput(string? path) =>
+        !string.IsNullOrWhiteSpace(path) ? path : null;
 
     public Task<bool> DelogoAsync(
         string video,

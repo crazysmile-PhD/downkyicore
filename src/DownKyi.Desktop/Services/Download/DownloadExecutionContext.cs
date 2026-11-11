@@ -121,6 +121,18 @@ internal sealed class DownloadExecutionContext
 
     public string? PageCoverFile { get; set; }
 
+    public string? GetPreferredUsableCoverFile()
+    {
+        var (preferred, fallback) = Input.StreamType is PlayStreamType.Bangumi or PlayStreamType.Cheese
+            ? (PageCoverFile, CoverFile)
+            : (CoverFile, PageCoverFile);
+        return DownloadFileIntegrity.Check(preferred).IsUsable
+            ? preferred
+            : DownloadFileIntegrity.Check(fallback).IsUsable
+                ? fallback
+                : null;
+    }
+
     public bool NeedsAudio => Input.RequestedContent.Audio;
 
     public bool NeedsVideo => Input.RequestedContent.Video;

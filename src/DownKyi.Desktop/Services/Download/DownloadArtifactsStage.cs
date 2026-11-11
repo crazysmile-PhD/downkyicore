@@ -202,6 +202,13 @@ internal sealed class DownloadArtifactsStage : IDownloadPipelineStage
             }
 
             var file = cover.Files.SingleOrDefault();
+            if (file == null
+                && context.PublishedArtifacts.TryGetValue(candidate.Key, out var publishedFile)
+                && DownloadFileIntegrity.Check(publishedFile).IsUsable)
+            {
+                file = publishedFile;
+            }
+
             if (candidate.Key == DownloadArtifactWriter.MainCoverTransferKey)
             {
                 context.CoverFile = file;

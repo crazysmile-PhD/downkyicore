@@ -820,7 +820,9 @@ public sealed class DownloadArtifactStageTests
         var task = await context.GetTaskAsync().ConfigureAwait(true);
         Assert.Equal(expectedAddress, Assert.Single(requestedAddresses));
         Assert.Equal(expectedKey, Assert.Single(task.Plan.TransferFiles).Key);
-        Assert.Single(context.GetPhysicalArtifactFiles());
+        Assert.Equal(
+            Assert.Single(context.GetPhysicalArtifactFiles()),
+            context.Execution.GetPreferredUsableCoverFile());
         AssertPhysicalArtifactsAreDurablyOwned(context, task);
     }
 
@@ -852,6 +854,9 @@ public sealed class DownloadArtifactStageTests
         Assert.Equal(
             ["https://example.test/page.jpg", "https://example.test/main.png"],
             requestedAddresses);
+        Assert.Equal(
+            context.Downloading.DownloadBase.FilePath + ".jpg",
+            context.Execution.GetPreferredUsableCoverFile());
         var task = await context.GetTaskAsync().ConfigureAwait(true);
         Assert.Equal(
             [DownloadArtifactWriter.MainCoverTransferKey, DownloadArtifactWriter.PageCoverTransferKey],
@@ -1019,6 +1024,7 @@ public sealed class DownloadArtifactStageTests
         Assert.True(result.IsSuccess, result.Error?.Message);
         Assert.Equal("existing", await File.ReadAllTextAsync(
             existing, TestContext.Current.CancellationToken).ConfigureAwait(true));
+        Assert.Equal(existing, context.Execution.GetPreferredUsableCoverFile());
         Assert.Single(context.GetPhysicalArtifactFiles());
     }
 

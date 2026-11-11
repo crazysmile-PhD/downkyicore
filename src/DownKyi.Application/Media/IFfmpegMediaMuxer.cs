@@ -18,6 +18,7 @@ public interface IFfmpegMediaMuxer
         bool overwriteDestination,
         Action<string>? action = null,
         FfmpegEmbeddedAudioMode embeddedAudioMode = FfmpegEmbeddedAudioMode.Optional,
+        string? cover = null,
         CancellationToken cancellationToken = default);
 
     Task<FfmpegOperationResult> MergeMediaAsync(
@@ -27,5 +28,6 @@ public interface IFfmpegMediaMuxer
         string destination,
         bool overwriteDestination,
         FfmpegEmbeddedAudioMode embeddedAudioMode = FfmpegEmbeddedAudioMode.Optional,
+        string? cover = null,
         CancellationToken cancellationToken = default);
 }

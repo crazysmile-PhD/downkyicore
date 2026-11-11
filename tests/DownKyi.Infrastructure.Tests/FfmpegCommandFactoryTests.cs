@@ -130,4 +130,105 @@ public sealed class FfmpegCommandFactoryTests
         Assert.DoesNotContain("-an", command.Arguments);
     }
 
+    [Fact]
+    public void MergeTranscodesWebpCoverToMjpegAttachedPicture()
+    {
+        var command = FfmpegCommandFactory.BuildMerge(
+            audioFile: "audio.m4s",
+            videoFile: "video.m4s",
+            outputFile: "output.mp4",
+            transcodeAudioToMp3: false,
+            embeddedAudioMode: FfmpegEmbeddedAudioMode.Required,
+            coverFile: "cover.webp");
+
+        AssertInput(command, "cover.webp", expectedInputIndex: 2);
+        AssertEmbeddedCover(command, expectedInputIndex: 2, expectedCodec: "mjpeg");
+        AssertOption(command, "-q:v:1", "2");
+    }
+
+    [Fact]
+    public void ConcatTranscodesAvifCoverToMjpegAttachedPicture()
+    {
+        var command = FfmpegCommandFactory.BuildConcat(
+            "segments.txt",
+            "output.mp4",
+            FfmpegConcatStrategy.CpuEncoder,
+            hardwareEncoder: null,
+            embeddedAudioMode: FfmpegEmbeddedAudioMode.Required,
+            coverFile: "cover.avif");
+
+        AssertInput(command, "cover.avif", expectedInputIndex: 1);
+        AssertEmbeddedCover(command, expectedInputIndex: 1, expectedCodec: "mjpeg");
+        AssertOption(command, "-q:v:1", "2");
+        AssertOption(command, "-pix_fmt:v:0", "yuv420p");
+        Assert.DoesNotContain("-pix_fmt", command.Arguments);
+    }
+
+    [Theory]
+    [InlineData("cover.jpg")]
+    [InlineData("cover.JPEG")]
+    [InlineData("cover.png")]
+    public void MergeCopiesMp4CompatibleCoverWithoutReencoding(string coverFile)
+    {
+        var command = FfmpegCommandFactory.BuildMerge(
+            audioFile: null,
+            videoFile: "video.mp4",
+            outputFile: "output.mp4",
+            transcodeAudioToMp3: false,
+            embeddedAudioMode: FfmpegEmbeddedAudioMode.Excluded,
+            coverFile);
+
+        AssertEmbeddedCover(command, expectedInputIndex: 1, expectedCodec: "copy");
+        Assert.DoesNotContain("-q:v:1", command.Arguments);
+    }
+
+    [Fact]
+    public void AudioOnlyMergeDoesNotMapCover()
+    {
+        var command = FfmpegCommandFactory.BuildMerge(
+            audioFile: "audio.m4s",
+            videoFile: null,
+            outputFile: "output.aac",
+            transcodeAudioToMp3: false,
+            embeddedAudioMode: FfmpegEmbeddedAudioMode.Excluded,
+            coverFile: "cover.jpg");
+
+        Assert.DoesNotContain("cover.jpg", command.Arguments);
+        Assert.DoesNotContain("attached_pic", command.Arguments);
+    }
+
+    private static void AssertInput(
+        FfmpegCommand command,
+        string expectedInput,
+        int expectedInputIndex)
+    {
+        var inputs = command.Arguments
+            .Select((argument, index) => (argument, index))
+            .Where(item => item.argument == "-i")
+            .Select(item => command.Arguments[item.index + 1])
+            .ToArray();
+
+        Assert.Equal(expectedInput, inputs[expectedInputIndex]);
+    }
+
+    private static void AssertEmbeddedCover(
+        FfmpegCommand command,
+        int expectedInputIndex,
+        string expectedCodec)
+    {
+        AssertOption(command, "-map", $"{expectedInputIndex}:v:0");
+        AssertOption(command, "-c:v:1", expectedCodec);
+        AssertOption(command, "-frames:v:1", "1");
+        AssertOption(command, "-disposition:v:1", "attached_pic");
+    }
+
+    private static void AssertOption(FfmpegCommand command, string option, string value)
+    {
+        Assert.Contains(
+            command.Arguments.Select((argument, index) => (argument, index)),
+            item => item.argument == option
+                    && item.index + 1 < command.Arguments.Count
+                    && command.Arguments[item.index + 1] == value);
+    }
+
 }

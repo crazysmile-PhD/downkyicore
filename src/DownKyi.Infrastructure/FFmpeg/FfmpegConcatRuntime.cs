@@ -29,6 +29,7 @@ internal sealed class FfmpegConcatRuntime
         bool overwriteDestination,
         Action<string>? progress = null,
         FfmpegEmbeddedAudioMode embeddedAudioMode = FfmpegEmbeddedAudioMode.Optional,
+        string? coverFile = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(segments);
@@ -70,7 +71,8 @@ internal sealed class FfmpegConcatRuntime
                             temporaryOutput,
                             strategy,
                             hardwareEncoder,
-                            embeddedAudioMode);
+                            embeddedAudioMode,
+                            coverFile);
                         var processResult = await _processRunner
                             .RunAsync(command, ConcatTimeout, cancellationToken)
                             .ConfigureAwait(false);

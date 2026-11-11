@@ -2,6 +2,7 @@ using DownKyi.Application.Downloads;
 using DownKyi.Application.Media;
 using DownKyi.Application.Settings;
 using DownKyi.Application.Time;
+using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.BiliApi.VideoStream.Models;
 using DownKyi.Domain.Downloads;
 using DownKyi.Domain.Results;
@@ -48,6 +49,7 @@ public sealed class MuxFailureRecoveryTests
                 GetExpectedEmbeddedAudioMode(needsAudio),
                 test.Muxer?.MergeEmbeddedAudioMode);
             Assert.Null(test.Muxer?.ConcatEmbeddedAudioMode);
+            Assert.Null(test.Muxer?.MergeCover);
         }
         else
         {
@@ -55,7 +57,93 @@ public sealed class MuxFailureRecoveryTests
                 GetExpectedEmbeddedAudioMode(needsAudio),
                 test.Muxer?.ConcatEmbeddedAudioMode);
             Assert.Null(test.Muxer?.MergeEmbeddedAudioMode);
+            Assert.Null(test.Muxer?.ConcatCover);
         }
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(3)]
+    public async Task RequestedCoverIsPassedToEveryVideoMuxPath(int durlSegmentCount)
+    {
+        var mediaKind = durlSegmentCount == 0
+            ? DownloadMediaKind.Dash
+            : DownloadMediaKind.Durl;
+        var requestedContent = DownloadContentSelection.None with
+        {
+            Audio = true,
+            Video = true,
+            Cover = true,
+            MediaKind = mediaKind
+        };
+        var test = await MuxTestContext.CreateAsync(requestedContent).ConfigureAwait(true);
+        await using var testLifetime = test.ConfigureAwait(true);
+        if (durlSegmentCount > 0)
+        {
+            await test.AddDurlSourcesAsync(durlSegmentCount).ConfigureAwait(true);
+        }
+
+        var cover = test.Execution.WorkingBasePath + ".jpg";
+        await File.WriteAllBytesAsync(
+            cover,
+            [1, 2, 3],
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+        test.Execution.CoverFile = cover;
+        var stage = test.CreateStage(new FfmpegOperationResult(
+            succeeded: true,
+            outputPath: test.Execution.WorkingBasePath + ".mp4",
+            failureReason: null));
+
+        var result = await stage.ExecuteAsync(
+            test.Execution,
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.True(result.IsSuccess, result.Error?.Message);
+        if (durlSegmentCount <= 1)
+        {
+            Assert.Equal(cover, test.Muxer?.MergeCover);
+            Assert.Null(test.Muxer?.ConcatCover);
+        }
+        else
+        {
+            Assert.Equal(cover, test.Muxer?.ConcatCover);
+            Assert.Null(test.Muxer?.MergeCover);
+        }
+    }
+
+    [Fact]
+    public async Task RequestedCoverFallsBackWhenPreferredEpisodeCoverIsUnavailable()
+    {
+        var requestedContent = DownloadContentSelection.None with
+        {
+            Audio = true,
+            Video = true,
+            Cover = true,
+            MediaKind = DownloadMediaKind.Dash
+        };
+        var test = await MuxTestContext.CreateAsync(
+            requestedContent,
+            PlayStreamType.Bangumi).ConfigureAwait(true);
+        await using var testLifetime = test.ConfigureAwait(true);
+        test.Execution.PageCoverFile = test.Execution.WorkingBasePath + ".missing.jpg";
+        var fallbackCover = test.Execution.WorkingBasePath + ".Cover.jpg";
+        await File.WriteAllBytesAsync(
+            fallbackCover,
+            [1, 2, 3],
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+        test.Execution.CoverFile = fallbackCover;
+        var stage = test.CreateStage(new FfmpegOperationResult(
+            succeeded: true,
+            outputPath: test.Execution.WorkingBasePath + ".mp4",
+            failureReason: null));
+
+        var result = await stage.ExecuteAsync(
+            test.Execution,
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.True(result.IsSuccess, result.Error?.Message);
+        Assert.Equal(fallbackCover, test.Muxer?.MergeCover);
     }
 
     private static FfmpegEmbeddedAudioMode GetExpectedEmbeddedAudioMode(bool needsAudio) =>
@@ -130,7 +218,8 @@ public sealed class MuxFailureRecoveryTests
         public StubMuxer? Muxer { get; private set; }
 
         public static async Task<MuxTestContext> CreateAsync(
-            DownloadContentSelection? requestedContent = null)
+            DownloadContentSelection? requestedContent = null,
+            PlayStreamType streamType = PlayStreamType.Video)
         {
             var directory = Path.Combine(
                 Path.GetTempPath(),
@@ -163,7 +252,8 @@ public sealed class MuxFailureRecoveryTests
                 {
                     Id = taskId.Value,
                     DownloadBase = downloadBase,
-                    DownloadStatus = DownloadStatus.WaitForDownload
+                    DownloadStatus = DownloadStatus.WaitForDownload,
+                    PlayStreamType = streamType
                 }
             };
             await projectionStore.AddDownloadingAsync(
@@ -306,6 +396,10 @@ public sealed class MuxFailureRecoveryTests
 
         public FfmpegEmbeddedAudioMode? MergeEmbeddedAudioMode { get; private set; }
 
+        public string? ConcatCover { get; private set; }
+
+        public string? MergeCover { get; private set; }
+
         public Task<FfmpegOperationResult> ConcatDurlVideosAsync(
             VideoApplicationSettings videoSettings,
             IReadOnlyList<FfmpegConcatSegment> segments,
@@ -313,9 +407,11 @@ public sealed class MuxFailureRecoveryTests
             bool overwriteDestination,
             Action<string>? action = null,
             FfmpegEmbeddedAudioMode embeddedAudioMode = FfmpegEmbeddedAudioMode.Optional,
+            string? cover = null,
             CancellationToken cancellationToken = default)
         {
             ConcatEmbeddedAudioMode = embeddedAudioMode;
+            ConcatCover = cover;
             return Task.FromResult(result);
         }
 
@@ -326,9 +422,11 @@ public sealed class MuxFailureRecoveryTests
             string destination,
             bool overwriteDestination,
             FfmpegEmbeddedAudioMode embeddedAudioMode = FfmpegEmbeddedAudioMode.Optional,
+            string? cover = null,
             CancellationToken cancellationToken = default)
         {
             MergeEmbeddedAudioMode = embeddedAudioMode;
+            MergeCover = cover;
             return Task.FromResult(result);
         }
     }
