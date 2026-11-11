@@ -1,4 +1,5 @@
 using DownKyi.Application.Bilibili;
+using DownKyi.Application.Desktop;
 using DownKyi.Application.Downloads;
 using DownKyi.Application.Media;
 using DownKyi.Core.BiliApi;
@@ -128,10 +129,12 @@ public sealed class ContentDownloadCoordinatorTests
     }
 
     [Fact]
-    public async Task UnavailableVideoIsSkippedWithoutStoppingFollowingItems()
+    public async Task UnavailableVideoCanBeSkippedWithoutStoppingFollowingItems()
     {
         const string unavailableSource = "BV1xx411c7mD";
         var session = new RecordingSession(@"D:\Downloads");
+        var dialogService = new RecordingUnavailableDialogService(
+            DownloadUnavailableBatchAction.SkipUnavailable);
         var infoServiceFactory = new RecordingInfoServiceFactory(item =>
             SourceOf(item) == unavailableSource
                 ? new BilibiliApiResponseException(
@@ -139,12 +142,15 @@ public sealed class ContentDownloadCoordinatorTests
                     "Video is unavailable.",
                     code: 62002)
                 : null);
-        var coordinator = CreateCoordinator(new RecordingFactory(session), infoServiceFactory);
+        var coordinator = CreateCoordinator(
+            new RecordingFactory(session),
+            infoServiceFactory,
+            dialogService);
 
         var result = await coordinator.AddAsync(
             [
                 Item("BV17x411w7KC"),
-                Item(unavailableSource),
+                Item(unavailableSource, displayName: "没有试看内容的充电影片"),
                 Item("BV1G1421D7mL")
             ],
             onlySelected: true,
@@ -156,6 +162,11 @@ public sealed class ContentDownloadCoordinatorTests
         Assert.Equal(
             ["BV17x411w7KC", unavailableSource, "BV1G1421D7mL"],
             infoServiceFactory.CreatedSources);
+        var promptItem = Assert.Single(Assert.Single(dialogService.Prompts).Items);
+        Assert.Equal("没有试看内容的充电影片", promptItem.DisplayName);
+        Assert.Equal(unavailableSource, promptItem.Source);
+        Assert.Equal(DownloadUnavailableReason.VideoUnavailable, promptItem.Reason);
+        Assert.Equal(62002, promptItem.ApiCode);
     }
 
     [Fact]
@@ -184,37 +195,120 @@ public sealed class ContentDownloadCoordinatorTests
         Assert.Equal(0, session.AddCount);
     }
 
-    [Theory]
-    [InlineData(nameof(VideoInfo.VideoViewInfoAsync), -101)]
-    [InlineData("OtherOperation", 62002)]
-    public async Task OtherBilibiliApiFailuresStopTheBatchBeforeQueueMutation(string operation, int code)
+    [Fact]
+    public async Task MultiplePreparationFailuresAreCollectedBeforeOneSkipDecision()
     {
-        const string failingSource = "BV1Q541167Qg";
+        const string accountSource = "BV1Q541167Qg";
+        const string restrictedSource = "BV1xx411c7mD";
+        const string unavailableSource = "BV1G1421D7mL";
+        const string unknownSource = "BV17x411w7KC";
+        const string successfulSource = "BV1mK4y1C7Bz";
         var session = new RecordingSession(@"D:\Downloads");
+        var dialogService = new RecordingUnavailableDialogService(
+            DownloadUnavailableBatchAction.SkipUnavailable);
+        var infoServiceFactory = new RecordingInfoServiceFactory(item => SourceOf(item) switch
+        {
+            accountSource => new BilibiliApiResponseException(
+                nameof(VideoInfo.VideoViewInfoAsync),
+                "Authentication failed.",
+                code: -101),
+            restrictedSource => new BilibiliApiResponseException(
+                nameof(VideoInfo.VideoViewInfoAsync),
+                "Nothing here.",
+                code: -404),
+            unavailableSource => new BilibiliApiResponseException(
+                nameof(VideoInfo.VideoViewInfoAsync),
+                "Video is unavailable.",
+                code: 62002),
+            unknownSource => new BilibiliApiResponseException(
+                nameof(VideoInfo.VideoViewInfoAsync),
+                "Unexpected response shape."),
+            _ => null
+        });
+        var coordinator = CreateCoordinator(
+            new RecordingFactory(session),
+            infoServiceFactory,
+            dialogService);
+
+        var result = await coordinator.AddAsync(
+            [
+                Item(accountSource, displayName: "需要登录"),
+                Item(restrictedSource, displayName: "无权访问"),
+                Item(unavailableSource, displayName: "稿件不可见"),
+                Item(unknownSource, displayName: "未知失败"),
+                Item(successfulSource, displayName: "可下载影片")
+            ],
+            onlySelected: true,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(new ContentDownloadBatchResult(1, 4), result);
+        Assert.Equal(1, session.PrepareCount);
+        Assert.Equal(1, session.AddCount);
+        Assert.Equal(
+            [accountSource, restrictedSource, unavailableSource, unknownSource, successfulSource],
+            infoServiceFactory.CreatedSources);
+        var prompt = Assert.Single(dialogService.Prompts);
+        Assert.Collection(
+            prompt.Items,
+            item =>
+            {
+                Assert.Equal("需要登录", item.DisplayName);
+                Assert.Equal(DownloadUnavailableReason.AccountRequired, item.Reason);
+                Assert.Equal(-101, item.ApiCode);
+            },
+            item =>
+            {
+                Assert.Equal("无权访问", item.DisplayName);
+                Assert.Equal(DownloadUnavailableReason.AccessRestrictedOrUnavailable, item.Reason);
+                Assert.Equal(-404, item.ApiCode);
+            },
+            item =>
+            {
+                Assert.Equal("稿件不可见", item.DisplayName);
+                Assert.Equal(DownloadUnavailableReason.VideoUnavailable, item.Reason);
+                Assert.Equal(62002, item.ApiCode);
+            },
+            item =>
+            {
+                Assert.Equal("未知失败", item.DisplayName);
+                Assert.Equal(DownloadUnavailableReason.Unknown, item.Reason);
+                Assert.Null(item.ApiCode);
+            });
+    }
+
+    [Fact]
+    public async Task CancelingUnavailableBatchDoesNotQueuePreparedItems()
+    {
+        const string failingSource = "BV1xx411c7mD";
+        var session = new RecordingSession(@"D:\Downloads");
+        var dialogService = new RecordingUnavailableDialogService(
+            DownloadUnavailableBatchAction.CancelBatch);
         var infoServiceFactory = new RecordingInfoServiceFactory(item =>
             SourceOf(item) == failingSource
                 ? new BilibiliApiResponseException(
-                    operation,
-                    "Authentication failed.",
-                    code: code)
+                    nameof(VideoInfo.VideoViewInfoAsync),
+                    "Nothing here.",
+                    code: -404)
                 : null);
-        var coordinator = CreateCoordinator(new RecordingFactory(session), infoServiceFactory);
+        var coordinator = CreateCoordinator(
+            new RecordingFactory(session),
+            infoServiceFactory,
+            dialogService);
 
-        var exception = await Assert.ThrowsAsync<BilibiliApiResponseException>(() => coordinator.AddAsync(
+        var result = await coordinator.AddAsync(
             [
                 Item("BV17x411w7KC"),
                 Item(failingSource),
-                Item("BV1xx411c7mD")
+                Item("BV1G1421D7mL")
             ],
             onlySelected: true,
-            TestContext.Current.CancellationToken));
+            TestContext.Current.CancellationToken);
 
-        Assert.Equal(code, exception.Code);
-        Assert.Equal(1, session.PrepareCount);
+        Assert.Null(result);
+        Assert.Equal(2, session.PrepareCount);
+        Assert.Equal(0, session.BatchAddCount);
         Assert.Equal(0, session.AddCount);
-        Assert.Equal(
-            ["BV17x411w7KC", failingSource],
-            infoServiceFactory.CreatedSources);
+        Assert.Single(dialogService.Prompts);
     }
 
     [Fact]
@@ -223,9 +317,12 @@ public sealed class ContentDownloadCoordinatorTests
         var session = new RecordingSession(
             @"D:\Downloads",
             skippedPreparationCalls: new HashSet<int> { 2 });
+        var dialogService = new RecordingUnavailableDialogService(
+            DownloadUnavailableBatchAction.SkipUnavailable);
         var coordinator = CreateCoordinator(
             new RecordingFactory(session),
-            new RecordingInfoServiceFactory());
+            new RecordingInfoServiceFactory(),
+            dialogService);
 
         var result = await coordinator.AddAsync(
             [
@@ -239,6 +336,55 @@ public sealed class ContentDownloadCoordinatorTests
         Assert.Equal(new ContentDownloadBatchResult(2, 1), result);
         Assert.Equal(3, session.PrepareCount);
         Assert.Equal(2, session.AddCount);
+        var promptItem = Assert.Single(Assert.Single(dialogService.Prompts).Items);
+        Assert.Equal(DownloadUnavailableReason.NoDownloadData, promptItem.Reason);
+    }
+
+    [Fact]
+    public async Task SkippingWhenEveryItemIsUnavailableDoesNotRunEmptyAdmission()
+    {
+        var session = new RecordingSession(@"D:\Downloads");
+        var dialogService = new RecordingUnavailableDialogService(
+            DownloadUnavailableBatchAction.SkipUnavailable);
+        var coordinator = CreateCoordinator(
+            new RecordingFactory(session),
+            new RecordingInfoServiceFactory(_ => new BilibiliApiResponseException(
+                nameof(VideoInfo.VideoViewInfoAsync),
+                "Nothing here.",
+                code: -404)),
+            dialogService);
+
+        var result = await coordinator.AddAsync(
+            [Item("BV17x411w7KC"), Item("BV1G1421D7mL")],
+            onlySelected: true,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(new ContentDownloadBatchResult(0, 2), result);
+        Assert.Equal(0, session.PrepareCount);
+        Assert.Equal(0, session.BatchAddCount);
+        Assert.Equal(0, session.AddCount);
+        Assert.Single(dialogService.Prompts);
+    }
+
+    [Fact]
+    public async Task ProgrammerFailureIsNotHiddenBehindUnavailableDialog()
+    {
+        var session = new RecordingSession(@"D:\Downloads");
+        var coordinator = CreateCoordinator(
+            new RecordingFactory(session),
+            new RecordingInfoServiceFactory(_ =>
+                new InvalidOperationException("Implementation defect.")));
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            coordinator.AddAsync(
+                [Item("BV17x411w7KC")],
+                onlySelected: true,
+                TestContext.Current.CancellationToken));
+
+        Assert.Equal("Implementation defect.", exception.Message);
+        Assert.Equal(0, session.PrepareCount);
+        Assert.Equal(0, session.BatchAddCount);
+        Assert.Equal(0, session.AddCount);
     }
 
     [Fact]
@@ -396,22 +542,44 @@ public sealed class ContentDownloadCoordinatorTests
 
     private static ContentDownloadCoordinator CreateCoordinator(
         IAddToDownloadServiceFactory factory,
-        IContentInfoServiceFactory infoServiceFactory)
+        IContentInfoServiceFactory infoServiceFactory,
+        IAppDialogService? dialogService = null)
     {
         var resolver = new DownloadContentConflictResolver(new UnexpectedDialogService());
         return new ContentDownloadCoordinator(
             factory,
             infoServiceFactory,
             new DownloadActionPlanner(resolver),
+            dialogService ?? new UnexpectedDialogService(),
             NullLogger<ContentDownloadCoordinator>.Instance);
     }
 
-    private sealed class UnexpectedDialogService : DownKyi.Application.Desktop.IAppDialogService
+    private sealed class UnexpectedDialogService : IAppDialogService
     {
-        public Task<DownKyi.Application.Desktop.AppDialogResult> ShowAsync(
-            DownKyi.Application.Desktop.AppDialogRequest request,
+        public Task<AppDialogResult> ShowAsync(
+            AppDialogRequest request,
             CancellationToken cancellationToken = default) => throw new InvalidOperationException(
                 $"Unexpected dialog: {request.Dialog}.");
+    }
+
+    private sealed class RecordingUnavailableDialogService(
+        DownloadUnavailableBatchAction action) : IAppDialogService
+    {
+        public List<DownloadUnavailableBatchPrompt> Prompts { get; } = [];
+
+        public Task<AppDialogResult> ShowAsync(
+            AppDialogRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Assert.Equal(AppDialog.DownloadUnavailableBatch, request.Dialog);
+            var prompt = Assert.IsType<DownloadUnavailableBatchPrompt>(
+                request.Parameters![DownloadUnavailableBatchDialogContract.PromptParameter]);
+            Prompts.Add(prompt);
+            return Task.FromResult(new AppDialogResult(
+                AppDialogOutcome.Accepted,
+                DownloadUnavailableBatchDialogContract.Encode(action)));
+        }
     }
 
     private sealed class RecordingInfoServiceFactory(
@@ -437,9 +605,12 @@ public sealed class ContentDownloadCoordinatorTests
         }
     }
 
-    private static ContentDownloadItem Item(string source, bool isSelected = true)
+    private static ContentDownloadItem Item(
+        string source,
+        bool isSelected = true,
+        string? displayName = null)
     {
-        return ContentDownloadItem.TryCreate(source, isSelected)
+        return ContentDownloadItem.TryCreate(source, isSelected, displayName)
             ?? throw new InvalidOperationException($"Invalid test input: {source}");
     }
 

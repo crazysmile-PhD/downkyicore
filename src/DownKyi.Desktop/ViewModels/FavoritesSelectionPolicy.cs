@@ -28,7 +28,10 @@ internal static class FavoritesSelectionPolicy
     {
         return medias
             .Where(media => !media.IsUnavailable)
-            .Select(media => ContentDownloadItem.TryCreate(media.Bvid, media.IsSelected))
+            .Select(media => ContentDownloadItem.TryCreate(
+                media.Bvid,
+                media.IsSelected,
+                media.Title))
             .OfType<ContentDownloadItem>()
             .ToArray();
     }

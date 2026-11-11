@@ -16,7 +16,10 @@ internal enum SeasonsSeriesKind
     Series = 2
 }
 
-internal sealed record SeasonsSeriesDownloadItem(string Bvid, bool IsSelected);
+internal sealed record SeasonsSeriesDownloadItem(
+    string Bvid,
+    bool IsSelected,
+    string? DisplayName = null);
 
 internal sealed record SeasonsSeriesPageSnapshot(
     IReadOnlyList<SpaceSeasonsSeriesArchives> Archives,
@@ -124,7 +127,10 @@ internal sealed class SeasonsSeriesCoordinator : ISeasonsSeriesCoordinator
 
     private static ContentDownloadItem[] CreateDownloadItems(
         IEnumerable<SeasonsSeriesDownloadItem> items) =>
-        items.Select(static item => ContentDownloadItem.TryCreate(item.Bvid, item.IsSelected))
+        items.Select(static item => ContentDownloadItem.TryCreate(
+                item.Bvid,
+                item.IsSelected,
+                item.DisplayName))
             .OfType<ContentDownloadItem>()
             .ToArray();
 }

@@ -98,7 +98,8 @@ public sealed class DialogWindowChromeTests
         {
             (new ViewAlertDialog(), "ConfirmAlertButton", "CancelAlertButton"),
             (new DownloadContentConflictDialog(), "UseAvailableContentButton", "SkipDownloadPageButton"),
-            (new DownloadDuplicateBatchDialog(), "RedownloadDuplicateBatchButton", "SkipDuplicateBatchButton")
+            (new DownloadDuplicateBatchDialog(), "RedownloadDuplicateBatchButton", "SkipDuplicateBatchButton"),
+            (new DownloadUnavailableBatchDialog(), "SkipUnavailableBatchButton", "CancelUnavailableBatchButton")
         };
 
         try

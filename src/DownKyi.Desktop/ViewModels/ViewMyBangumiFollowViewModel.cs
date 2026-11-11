@@ -272,7 +272,8 @@ internal partial class ViewMyBangumiFollowViewModel : ViewModelBase
             .Where(media => media.MediaId > 0)
             .Select(media => new ContentDownloadItem(
                 new BilibiliBangumiMediaInput(media.MediaId),
-                media.IsSelected))
+                media.IsSelected,
+                media.Title))
             .ToArray();
         try
         {

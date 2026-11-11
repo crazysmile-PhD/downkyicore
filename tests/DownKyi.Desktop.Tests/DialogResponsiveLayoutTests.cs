@@ -49,6 +49,17 @@ public sealed class DialogResponsiveLayoutTests
         var duplicates = new DownloadDuplicateBatchDialogViewModel();
         duplicates.OnDialogOpened(DownloadDuplicateBatchDialogContract.CreateRequest(new DownloadDuplicateBatchPrompt(
             Enumerable.Range(1, 40).Select(i => $"第 {i} 集 · 很长的影片标题用于验证缩小后的自动换行与滚动").ToArray(), 3)));
+        var unavailable = new DownloadUnavailableBatchDialogViewModel();
+        unavailable.OnDialogOpened(DownloadUnavailableBatchDialogContract.CreateRequest(
+            new DownloadUnavailableBatchPrompt(Enumerable.Range(1, 40)
+                .Select(i => new DownloadUnavailableBatchPromptItem(
+                    $"第 {i} 集 · 无法下载的长影片标题",
+                    $"BV{i:D10}",
+                    i % 2 == 0
+                        ? DownloadUnavailableReason.AccessRestrictedOrUnavailable
+                        : DownloadUnavailableReason.Unknown,
+                    i % 2 == 0 ? -404 : null))
+                .ToArray())));
         var conflict = new DownloadContentConflictDialogViewModel();
         conflict.OnDialogOpened(DownloadContentConflictDialogContract.CreateRequest(
             DownloadContentConflictPrompt.QualitySubstitutionBatch(Enumerable.Range(1, 40).Select(i => new DownloadContentConflictPromptItem(
@@ -60,6 +71,7 @@ public sealed class DialogResponsiveLayoutTests
         {
             (new ViewAlertDialog(), alert, "ConfirmAlertButton"),
             (new DownloadDuplicateBatchDialog(), duplicates, "RedownloadDuplicateBatchButton"),
+            (new DownloadUnavailableBatchDialog(), unavailable, "SkipUnavailableBatchButton"),
             (new DownloadContentConflictDialog(), conflict, "UseAvailableContentButton")
         };
         try

@@ -246,7 +246,10 @@ internal class ViewSeasonsSeriesDetailViewModel : ViewModelBase
     {
         var cancellationToken = ReplaceCancellationSource(ref _downloadCancellation);
         var items = Medias
-            .Select(media => new SeasonsSeriesDownloadItem(media.Bvid, media.IsSelected))
+            .Select(media => new SeasonsSeriesDownloadItem(
+                media.Bvid,
+                media.IsSelected,
+                media.Title))
             .ToArray();
         try
         {
@@ -319,7 +322,10 @@ internal class ViewSeasonsSeriesDetailViewModel : ViewModelBase
                     Medias.Count.ToString(CultureInfo.CurrentCulture),
                     StringComparison.Ordinal);
             var items = Medias
-                .Select(media => new SeasonsSeriesDownloadItem(media.Bvid, media.IsSelected))
+                .Select(media => new SeasonsSeriesDownloadItem(
+                    media.Bvid,
+                    media.IsSelected,
+                    media.Title))
                 .ToArray();
             var progress = new Progress<ContentDownloadBatchProgress>(ApplyDownloadPreparationProgress);
             var result = await _coordinator

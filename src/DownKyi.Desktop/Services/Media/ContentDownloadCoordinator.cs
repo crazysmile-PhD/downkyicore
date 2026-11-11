@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Bilibili;
+using DownKyi.Application.Desktop;
 using DownKyi.Application.Diagnostics;
 using DownKyi.Application.Downloads;
 using DownKyi.Application.Media;
@@ -18,12 +19,18 @@ using Microsoft.Extensions.Logging;
 
 namespace DownKyi.Services.Media;
 
-internal sealed record ContentDownloadItem(BilibiliMediaInput Input, bool IsSelected)
+internal sealed record ContentDownloadItem(
+    BilibiliMediaInput Input,
+    bool IsSelected,
+    string? DisplayName = null)
 {
-    public static ContentDownloadItem? TryCreate(string? source, bool isSelected)
+    public static ContentDownloadItem? TryCreate(
+        string? source,
+        bool isSelected,
+        string? displayName = null)
     {
         return BilibiliInputParser.Parse(source) is BilibiliMediaInput input
-            ? new ContentDownloadItem(input, isSelected)
+            ? new ContentDownloadItem(input, isSelected, displayName)
             : null;
     }
 }
@@ -112,17 +119,20 @@ internal sealed class ContentDownloadCoordinator : IContentDownloadCoordinator
     private readonly IAddToDownloadServiceFactory _serviceFactory;
     private readonly IContentInfoServiceFactory _infoServiceFactory;
     private readonly DownloadActionPlanner _actionPlanner;
+    private readonly IAppDialogService _dialogService;
     private readonly ILogger<ContentDownloadCoordinator> _logger;
 
     public ContentDownloadCoordinator(
         IAddToDownloadServiceFactory serviceFactory,
         IContentInfoServiceFactory infoServiceFactory,
         DownloadActionPlanner actionPlanner,
+        IAppDialogService dialogService,
         ILogger<ContentDownloadCoordinator> logger)
     {
         _serviceFactory = serviceFactory ?? throw new ArgumentNullException(nameof(serviceFactory));
         _infoServiceFactory = infoServiceFactory ?? throw new ArgumentNullException(nameof(infoServiceFactory));
         _actionPlanner = actionPlanner ?? throw new ArgumentNullException(nameof(actionPlanner));
+        _dialogService = dialogService ?? throw new ArgumentNullException(nameof(dialogService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -156,12 +166,16 @@ internal sealed class ContentDownloadCoordinator : IContentDownloadCoordinator
                 progress,
                 cancellationToken),
             cancellationToken).ConfigureAwait(true);
-        return flow.Outcome == DownloadAddFlowOutcome.Completed
-            ? flow.Value
+        return flow is
+        {
+            Outcome: DownloadAddFlowOutcome.Completed,
+            Value: { Canceled: false } execution
+        }
+            ? execution.Result
             : null;
     }
 
-    private Task<ContentDownloadBatchResult> AddItemsAsync(
+    private Task<ContentDownloadExecutionResult> AddItemsAsync(
         IAddToDownloadSession addToDownloadSession,
         ContentDownloadItem[] items,
         DownloadAddSelection selection,
@@ -173,6 +187,7 @@ internal sealed class ContentDownloadCoordinator : IContentDownloadCoordinator
             var processedCount = 0;
             var skippedCount = 0;
             var preparedDownloads = new List<PreparedDownload>(items.Length);
+            var unavailableItems = new List<DownloadUnavailableBatchPromptItem>();
             foreach (var item in items)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -186,22 +201,30 @@ internal sealed class ContentDownloadCoordinator : IContentDownloadCoordinator
                         .PrepareAsync(infoService, selection.RequestedContent, cancellationToken)
                         .ConfigureAwait(false);
                 }
-                catch (BilibiliApiResponseException exception) when (IsUnavailableVideo(exception))
+                catch (Exception exception) when (
+                    ContentDownloadPreparationFailureClassifier.TryClassify(
+                        exception,
+                        cancellationToken,
+                        out var failure))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    skippedCount++;
+                    unavailableItems.Add(CreateUnavailableItem(item, failure));
                     processedCount++;
                     ReportProgress();
                     _logger.LogWarningMessage(
-                        $"A content download item was skipped because Bilibili reported it unavailable; " +
-                        $"operation={exception.Operation}; code={exception.Code}.",
+                        $"A content download item could not be prepared; " +
+                        $"input={DescribeInput(item.Input)}; " +
+                        $"reason={failure.Reason:G}.",
                         exception);
                     continue;
                 }
 
                 if (preparedDownload == null)
                 {
-                    skippedCount++;
+                    unavailableItems.Add(CreateUnavailableItem(
+                        item,
+                        new ContentDownloadPreparationFailure(
+                            DownloadUnavailableReason.NoDownloadData)));
                 }
                 else
                 {
@@ -210,6 +233,29 @@ internal sealed class ContentDownloadCoordinator : IContentDownloadCoordinator
 
                 processedCount++;
                 ReportProgress();
+            }
+
+            if (unavailableItems.Count > 0)
+            {
+                var action = await DownloadUnavailableBatchDialogContract.ShowAsync(
+                    _dialogService,
+                    new DownloadUnavailableBatchPrompt(unavailableItems),
+                    cancellationToken).ConfigureAwait(true);
+                cancellationToken.ThrowIfCancellationRequested();
+                if (action == DownloadUnavailableBatchAction.CancelBatch)
+                {
+                    return ContentDownloadExecutionResult.CanceledByUser;
+                }
+
+                skippedCount += unavailableItems.Count;
+            }
+
+            if (preparedDownloads.Count == 0)
+            {
+                return ContentDownloadExecutionResult.Completed(
+                    new ContentDownloadBatchResult(
+                        AddedCount: 0,
+                        SkippedCount: skippedCount));
             }
 
             var finalizedDownloads = await _actionPlanner
@@ -224,11 +270,11 @@ internal sealed class ContentDownloadCoordinator : IContentDownloadCoordinator
             var addResult = await addToDownloadSession
                 .AddToDownloadBatch(selection, finalizedDownloads, cancellationToken)
                 .ConfigureAwait(false);
-            return new ContentDownloadBatchResult(
+            return ContentDownloadExecutionResult.Completed(new ContentDownloadBatchResult(
                 addResult.AddedCount,
                 skippedCount + addResult.SkippedCount,
                 addResult.DuplicateCount,
-                addResult.FailedCount);
+                addResult.FailedCount));
 
             void ReportProgress()
             {
@@ -239,12 +285,30 @@ internal sealed class ContentDownloadCoordinator : IContentDownloadCoordinator
         }, cancellationToken);
     }
 
-    private static bool IsUnavailableVideo(BilibiliApiResponseException exception) =>
-        exception.Code == 62002
-        && string.Equals(
-            exception.Operation,
-            nameof(VideoInfo.VideoViewInfoAsync),
-            StringComparison.Ordinal);
+    private static DownloadUnavailableBatchPromptItem CreateUnavailableItem(
+        ContentDownloadItem item,
+        ContentDownloadPreparationFailure failure)
+    {
+        var source = DescribeInput(item.Input);
+        return new DownloadUnavailableBatchPromptItem(
+            string.IsNullOrWhiteSpace(item.DisplayName) ? source : item.DisplayName.Trim(),
+            source,
+            failure.Reason,
+            failure.ApiCode);
+    }
+
+    private static string DescribeInput(BilibiliMediaInput input) =>
+        input switch
+        {
+            BilibiliBvidInput bvid => bvid.Bvid,
+            BilibiliAvidInput avid => $"av{avid.Avid}",
+            BilibiliBangumiSeasonInput season => $"ss{season.SeasonId}",
+            BilibiliBangumiEpisodeInput episode => $"ep{episode.EpisodeId}",
+            BilibiliBangumiMediaInput media => $"md{media.MediaId}",
+            BilibiliCheeseSeasonInput season => $"cheese/ss{season.SeasonId}",
+            BilibiliCheeseEpisodeInput episode => $"cheese/ep{episode.EpisodeId}",
+            _ => input.CanonicalUri.AbsoluteUri
+        };
 
     private static PlayStreamType ToPlayStreamType(BilibiliMediaInput input)
     {
@@ -256,5 +320,17 @@ internal sealed class ContentDownloadCoordinator : IContentDownloadCoordinator
             BilibiliCheeseSeasonInput or BilibiliCheeseEpisodeInput => PlayStreamType.Cheese,
             _ => throw new ArgumentOutOfRangeException(nameof(input))
         };
+    }
+
+    private readonly record struct ContentDownloadExecutionResult(
+        bool Canceled,
+        ContentDownloadBatchResult Result)
+    {
+        public static ContentDownloadExecutionResult CanceledByUser { get; } =
+            new(Canceled: true, default);
+
+        public static ContentDownloadExecutionResult Completed(
+            ContentDownloadBatchResult result) =>
+            new(Canceled: false, result);
     }
 }

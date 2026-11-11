@@ -1,0 +1,156 @@
+<UserControl
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vmd="clr-namespace:DownKyi.ViewModels.Dialogs"
+    x:Class="DownKyi.Views.Dialogs.DownloadUnavailableBatchDialog"
+    x:DataType="vmd:DownloadUnavailableBatchDialogViewModel"
+    Classes="studio-page studio-dialog">
+    <UserControl.Styles>
+        <StyleInclude Source="/Themes/Styles/StudioDialog.axaml" />
+    </UserControl.Styles>
+    <Border Background="{DynamicResource SpacePaper}" BorderBrush="{DynamicResource SpaceRule}" BorderThickness="1">
+        <Grid RowDefinitions="40,*,Auto">
+            <Grid Classes="dialog-titlebar" ColumnDefinitions="*,40" WindowDecorationProperties.ElementRole="TitleBar">
+                <TextBlock
+                    Text="DownKyi"
+                    FontSize="12"
+                    Margin="24,0"
+                    VerticalAlignment="Center"
+                    Foreground="{DynamicResource SpaceMuted}" />
+            </Grid>
+            <ScrollViewer
+                Name="DialogBodyScroll"
+                Grid.Row="1"
+                HorizontalScrollBarVisibility="Disabled"
+                VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="24,16,24,24" Spacing="16">
+                    <TextBlock Text="{Binding Title}" Classes="dialog-heading" />
+                    <TextBlock
+                        Foreground="{DynamicResource SpaceInk}"
+                        FontSize="14"
+                        Text="{Binding Message}"
+                        TextWrapping="Wrap" />
+                    <TextBlock
+                        Foreground="{DynamicResource SpaceMuted}"
+                        FontSize="12"
+                        Text="{Binding AffectedItemsHeader}"
+                        TextWrapping="Wrap" />
+                    <Border
+                        BorderBrush="{DynamicResource SpaceRule}"
+                        BorderThickness="1"
+                        CornerRadius="4">
+                        <ListBox
+                            x:Name="UnavailableItemsList"
+                            ItemsSource="{Binding Items}"
+                            MaxHeight="300"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            Padding="0"
+                            ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                            ScrollViewer.VerticalScrollBarVisibility="Auto">
+                            <ListBox.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <VirtualizingStackPanel />
+                                </ItemsPanelTemplate>
+                            </ListBox.ItemsPanel>
+                            <ListBox.Theme>
+                                <ControlTheme TargetType="ListBox">
+                                    <Setter Property="Template">
+                                        <ControlTemplate TargetType="ListBox">
+                                            <Border
+                                                Padding="{TemplateBinding Padding}"
+                                                Background="{TemplateBinding Background}"
+                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                BorderThickness="{TemplateBinding BorderThickness}">
+                                                <ScrollViewer
+                                                    Focusable="False"
+                                                    HorizontalScrollBarVisibility="Disabled"
+                                                    VerticalScrollBarVisibility="Auto">
+                                                    <ItemsPresenter ItemsPanel="{TemplateBinding ItemsPanel}" />
+                                                </ScrollViewer>
+                                            </Border>
+                                        </ControlTemplate>
+                                    </Setter>
+                                </ControlTheme>
+                            </ListBox.Theme>
+                            <ListBox.ItemContainerTheme>
+                                <ControlTheme TargetType="ListBoxItem">
+                                    <Setter Property="Focusable" Value="False" />
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                    <Setter Property="Padding" Value="0" />
+                                    <Setter Property="Template">
+                                        <ControlTemplate TargetType="ListBoxItem">
+                                            <ContentPresenter
+                                                Content="{TemplateBinding Content}"
+                                                ContentTemplate="{TemplateBinding ContentTemplate}"
+                                                HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}" />
+                                        </ControlTemplate>
+                                    </Setter>
+                                </ControlTheme>
+                            </ListBox.ItemContainerTheme>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="vmd:DownloadUnavailableItemViewModel">
+                                    <Border Padding="12,10" BorderBrush="{DynamicResource SpaceRule}" BorderThickness="0,0,0,1">
+                                        <StackPanel Spacing="5">
+                                            <TextBlock
+                                                Foreground="{DynamicResource SpaceInk}"
+                                                FontWeight="SemiBold"
+                                                Text="{Binding DisplayName}"
+                                                TextWrapping="Wrap" />
+                                            <TextBlock
+                                                Foreground="{DynamicResource SpaceMuted}"
+                                                FontSize="11"
+                                                Text="{Binding Source}"
+                                                TextWrapping="Wrap" />
+                                            <Border
+                                                Padding="9,7"
+                                                Background="{DynamicResource SpaceHover}"
+                                                BorderBrush="{DynamicResource SpaceRule}"
+                                                BorderThickness="0,1,0,0"
+                                                CornerRadius="2">
+                                                <StackPanel Spacing="2">
+                                                    <TextBlock
+                                                        Foreground="{DynamicResource SpaceInk}"
+                                                        FontSize="12"
+                                                        Text="{Binding Reason}"
+                                                        TextWrapping="Wrap" />
+                                                    <TextBlock
+                                                        Foreground="{DynamicResource SpaceMuted}"
+                                                        FontSize="11"
+                                                        IsVisible="{Binding !!TechnicalDetail}"
+                                                        Text="{Binding TechnicalDetail}"
+                                                        TextWrapping="Wrap" />
+                                                </StackPanel>
+                                            </Border>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+            <Border Name="DialogFooter" Classes="dialog-footer" Grid.Row="2">
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="16">
+                    <Button
+                        x:Name="SkipUnavailableBatchButton"
+                        Grid.Column="0"
+                        Command="{Binding SkipCommand}"
+                        MinHeight="40"
+                        Classes="studio-primary"
+                        HorizontalContentAlignment="Center">
+                        <TextBlock Text="{Binding SkipText}" TextAlignment="Center" TextWrapping="Wrap" />
+                    </Button>
+                    <Button
+                        x:Name="CancelUnavailableBatchButton"
+                        Grid.Column="1"
+                        Command="{Binding CancelCommand}"
+                        MinHeight="40"
+                        HorizontalContentAlignment="Center">
+                        <TextBlock Text="{Binding CancelText}" TextAlignment="Center" TextWrapping="Wrap" />
+                    </Button>
+                </Grid>
+            </Border>
+        </Grid>
+    </Border>
+</UserControl>

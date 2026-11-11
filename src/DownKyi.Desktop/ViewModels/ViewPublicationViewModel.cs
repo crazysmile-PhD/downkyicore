@@ -390,7 +390,10 @@ namespace DownKyi.ViewModels
             ArgumentNullException.ThrowIfNull(medias);
             return medias
                 .Where(static media => media.IsDirectVideo)
-                .Select(media => ContentDownloadItem.TryCreate(media.Bvid, media.IsSelected))
+                .Select(media => ContentDownloadItem.TryCreate(
+                    media.Bvid,
+                    media.IsSelected,
+                    media.Title))
                 .OfType<ContentDownloadItem>()
                 .ToArray();
         }
