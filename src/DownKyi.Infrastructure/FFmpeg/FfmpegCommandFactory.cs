@@ -10,7 +10,8 @@ internal static class FfmpegCommandFactory
         string? videoFile,
         string outputFile,
         bool transcodeAudioToMp3,
-        FfmpegEmbeddedAudioMode embeddedAudioMode)
+        FfmpegEmbeddedAudioMode embeddedAudioMode,
+        string? coverFile = null)
     {
         var arguments = CreateBaseArguments();
         AddRequiredOutputContract(arguments);
@@ -22,6 +23,13 @@ internal static class FfmpegCommandFactory
         if (videoFile != null)
         {
             arguments.AddRange(["-i", videoFile]);
+        }
+
+        var coverInputIndex = -1;
+        if (videoFile != null && coverFile != null)
+        {
+            coverInputIndex = audioFile != null ? 2 : 1;
+            arguments.AddRange(["-i", coverFile]);
         }
 
         if (audioFile != null && videoFile != null)
@@ -51,6 +59,11 @@ internal static class FfmpegCommandFactory
         else
         {
             arguments.AddRange(["-vn", "-c:a", "copy"]);
+        }
+
+        if (coverInputIndex >= 0)
+        {
+            AddEmbeddedCover(arguments, coverInputIndex);
         }
 
         if (videoFile != null && string.Equals(Path.GetExtension(outputFile), ".mp4", StringComparison.OrdinalIgnoreCase))
@@ -114,7 +127,8 @@ internal static class FfmpegCommandFactory
         string outputFile,
         FfmpegConcatStrategy strategy,
         FfmpegHardwareEncoderProfile? hardwareEncoder,
-        FfmpegEmbeddedAudioMode embeddedAudioMode)
+        FfmpegEmbeddedAudioMode embeddedAudioMode,
+        string? coverFile = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(listFile);
         ArgumentException.ThrowIfNullOrWhiteSpace(outputFile);
@@ -134,10 +148,14 @@ internal static class FfmpegCommandFactory
             "-safe",
             "0",
             "-i",
-            listFile,
-            "-map",
-            "0:v:0"
+            listFile
         ]);
+        if (coverFile != null)
+        {
+            arguments.AddRange(["-i", coverFile]);
+        }
+
+        arguments.AddRange(["-map", "0:v:0"]);
         if (embeddedAudioMode == FfmpegEmbeddedAudioMode.Required)
         {
             arguments.AddRange(["-map", "0:a:0"]);
@@ -175,8 +193,13 @@ internal static class FfmpegCommandFactory
                 throw new ArgumentOutOfRangeException(nameof(strategy), strategy, "Unsupported concat strategy.");
         }
 
+        if (coverFile != null)
+        {
+            AddEmbeddedCover(arguments, inputIndex: 1);
+        }
+
         arguments.AddRange([
-            "-pix_fmt", "yuv420p",
+            "-pix_fmt:v:0", "yuv420p",
             "-avoid_negative_ts", "make_zero",
             "-movflags", "+faststart",
             outputFile
@@ -193,5 +216,15 @@ internal static class FfmpegCommandFactory
     private static void AddRequiredOutputContract(List<string> arguments)
     {
         arguments.AddRange(["-abort_on", "empty_output_stream"]);
+    }
+
+    private static void AddEmbeddedCover(List<string> arguments, int inputIndex)
+    {
+        arguments.AddRange([
+            "-map", $"{inputIndex}:v:0",
+            "-c:v:1", "png",
+            "-frames:v:1", "1",
+            "-disposition:v:1", "attached_pic"
+        ]);
     }
 }

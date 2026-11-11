@@ -121,6 +121,8 @@ internal sealed class DownloadExecutionContext
 
     public string? PageCoverFile { get; set; }
 
+    public string? PreferredCoverFile { get; set; }
+
     public bool NeedsAudio => Input.RequestedContent.Audio;
 
     public bool NeedsVideo => Input.RequestedContent.Video;

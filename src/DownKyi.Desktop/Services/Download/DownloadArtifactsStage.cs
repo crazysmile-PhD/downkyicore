@@ -202,6 +202,13 @@ internal sealed class DownloadArtifactsStage : IDownloadPipelineStage
             }
 
             var file = cover.Files.SingleOrDefault();
+            if (file == null
+                && context.PublishedArtifacts.TryGetValue(candidate.Key, out var publishedFile)
+                && DownloadFileIntegrity.Check(publishedFile).IsUsable)
+            {
+                file = publishedFile;
+            }
+
             if (candidate.Key == DownloadArtifactWriter.MainCoverTransferKey)
             {
                 context.CoverFile = file;
@@ -209,6 +216,12 @@ internal sealed class DownloadArtifactsStage : IDownloadPipelineStage
             else
             {
                 context.PageCoverFile = file;
+            }
+
+            if (context.PreferredCoverFile == null
+                && DownloadFileIntegrity.Check(file).IsUsable)
+            {
+                context.PreferredCoverFile = file;
             }
 
             if (stopAfterFirstCreated && (file != null || context.HasPublished(candidate.Key)))

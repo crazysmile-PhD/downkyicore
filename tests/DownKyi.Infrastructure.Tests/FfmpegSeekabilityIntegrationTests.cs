@@ -1,3 +1,4 @@
+using System.Text.Json;
 using DownKyi.Application.Media;
 using DownKyi.Infrastructure.FFmpeg;
 using DownKyi.Infrastructure.Settings;
@@ -56,6 +57,82 @@ public sealed class FfmpegSeekabilityIntegrationTests : IDisposable
         Assert.True(result.Succeeded, result.FailureReason);
         Assert.True(File.Exists(output));
         Assert.NotEqual(0, new FileInfo(output).Length);
+    }
+
+    [Fact]
+    [Trait("Category", "FfmpegIntegration")]
+    public async Task DashMergeEmbedsRequestedCoverAsAttachedPicture()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var processRunner = new FfmpegProcessRunner();
+        if (!await AreMediaToolsAvailableAsync(processRunner, cancellationToken).ConfigureAwait(true))
+        {
+            Assert.Skip("ffmpeg and ffprobe are required for the cover integration test.");
+        }
+
+        var video = Path.Combine(_testDirectory, "cover-merge-video.mp4");
+        var cover = Path.Combine(_testDirectory, "cover-merge.png");
+        var output = Path.Combine(_testDirectory, "cover-merge-output.mp4");
+        await CreateSegmentAsync(processRunner, video, "red", cancellationToken).ConfigureAwait(true);
+        await CreateCoverAsync(processRunner, cover, cancellationToken).ConfigureAwait(true);
+        using var settings = new SettingsStore(Path.Combine(_testDirectory, "cover-merge-settings.json"));
+        var processor = new FfmpegProcessor(
+            settings,
+            NullLoggerFactory.Instance,
+            processRunner);
+
+        var result = await processor.MergeMediaAsync(
+            settings.Current.Video,
+            audio: null,
+            video,
+            destination: output,
+            overwriteDestination: true,
+            embeddedAudioMode: FfmpegEmbeddedAudioMode.Excluded,
+            cover,
+            cancellationToken).ConfigureAwait(true);
+
+        Assert.True(result.Succeeded, result.FailureReason);
+        await AssertAttachedCoverAsync(processRunner, output, cancellationToken).ConfigureAwait(true);
+    }
+
+    [Fact]
+    [Trait("Category", "FfmpegIntegration")]
+    public async Task MultiSegmentDurlEmbedsRequestedCoverAsAttachedPicture()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var processRunner = new FfmpegProcessRunner();
+        if (!await AreMediaToolsAvailableAsync(processRunner, cancellationToken).ConfigureAwait(true))
+        {
+            Assert.Skip("ffmpeg and ffprobe are required for the cover integration test.");
+        }
+
+        var first = Path.Combine(_testDirectory, "cover-segment-1.mp4");
+        var second = Path.Combine(_testDirectory, "cover-segment-2.mp4");
+        var cover = Path.Combine(_testDirectory, "cover-concat.png");
+        var output = Path.Combine(_testDirectory, "cover-concat-output.mp4");
+        await CreateSegmentAsync(processRunner, first, "red", cancellationToken).ConfigureAwait(true);
+        await CreateSegmentAsync(processRunner, second, "blue", cancellationToken).ConfigureAwait(true);
+        await CreateCoverAsync(processRunner, cover, cancellationToken).ConfigureAwait(true);
+        var runtime = new FfmpegConcatRuntime(
+            processRunner,
+            new AsyncConcurrencyGate(() => 1),
+            NullLogger<FfmpegConcatRuntime>.Instance);
+
+        var result = await runtime.ConcatAsync(
+            [
+                new FfmpegConcatSegment(2, second),
+                new FfmpegConcatSegment(1, first)
+            ],
+            output,
+            hardwareEncoder: null,
+            allowStreamCopy: false,
+            overwriteDestination: true,
+            embeddedAudioMode: FfmpegEmbeddedAudioMode.Excluded,
+            coverFile: cover,
+            cancellationToken: cancellationToken).ConfigureAwait(true);
+
+        Assert.True(result.Succeeded, result.FailureReason);
+        await AssertAttachedCoverAsync(processRunner, output, cancellationToken).ConfigureAwait(true);
     }
 
     [Fact]
@@ -134,7 +211,7 @@ public sealed class FfmpegSeekabilityIntegrationTests : IDisposable
             destination: mergeOutput,
             overwriteDestination: true,
             embeddedAudioMode: FfmpegEmbeddedAudioMode.Required,
-            cancellationToken).ConfigureAwait(true);
+            cancellationToken: cancellationToken).ConfigureAwait(true);
 
         var concatRuntime = new FfmpegConcatRuntime(
             processRunner,
@@ -176,6 +253,46 @@ public sealed class FfmpegSeekabilityIntegrationTests : IDisposable
         return result.Succeeded;
     }
 
+    private static async Task<bool> AreMediaToolsAvailableAsync(
+        FfmpegProcessRunner processRunner,
+        CancellationToken cancellationToken) =>
+        await IsToolAvailableAsync(
+            processRunner,
+            FfmpegExecutableLocator.Ffmpeg,
+            cancellationToken).ConfigureAwait(false)
+        && await IsToolAvailableAsync(
+            processRunner,
+            FfmpegExecutableLocator.Ffprobe,
+            cancellationToken).ConfigureAwait(false);
+
+    private static async Task AssertAttachedCoverAsync(
+        FfmpegProcessRunner processRunner,
+        string mediaFile,
+        CancellationToken cancellationToken)
+    {
+        var result = await processRunner.RunAsync(
+            new FfmpegCommand(
+                FfmpegExecutableLocator.Ffprobe,
+                [
+                    "-v", "error",
+                    "-show_entries", "stream=codec_name:stream_disposition=attached_pic",
+                    "-of", "json",
+                    mediaFile
+                ],
+                "probe-attached-cover"),
+            ProcessTimeout,
+            cancellationToken).ConfigureAwait(false);
+        Assert.True(result.Succeeded, result.StandardError);
+
+        using var document = JsonDocument.Parse(result.StandardOutput);
+        var streams = document.RootElement.GetProperty("streams").EnumerateArray().ToArray();
+        Assert.Contains(streams, stream =>
+            stream.GetProperty("codec_name").GetString() == "png"
+            && stream.GetProperty("disposition").GetProperty("attached_pic").GetInt32() == 1);
+        Assert.Contains(streams, stream =>
+            stream.GetProperty("disposition").GetProperty("attached_pic").GetInt32() == 0);
+    }
+
     private static async Task CreateSegmentAsync(
         FfmpegProcessRunner processRunner,
         string output,
@@ -196,6 +313,31 @@ public sealed class FfmpegSeekabilityIntegrationTests : IDisposable
                     output
                 ],
                 "create-test-segment"),
+            ProcessTimeout,
+            cancellationToken).ConfigureAwait(false);
+
+        Assert.True(result.Succeeded, result.StandardError);
+    }
+
+    private static async Task CreateCoverAsync(
+        FfmpegProcessRunner processRunner,
+        string output,
+        CancellationToken cancellationToken)
+    {
+        var result = await processRunner.RunAsync(
+            new FfmpegCommand(
+                FfmpegExecutableLocator.Ffmpeg,
+                [
+                    "-hide_banner",
+                    "-nostdin",
+                    "-y",
+                    "-f", "lavfi",
+                    "-i", "color=c=orange:s=640x360:d=0.04",
+                    "-frames:v", "1",
+                    "-c:v", "png",
+                    output
+                ],
+                "create-test-cover"),
             ProcessTimeout,
             cancellationToken).ConfigureAwait(false);
 

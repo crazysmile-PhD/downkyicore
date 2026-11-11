@@ -75,6 +75,7 @@ internal sealed class MuxStage : IDownloadPipelineStage
             finalFile,
             overwriteDestination: false,
             embeddedAudioMode: FfmpegEmbeddedAudioMode.Excluded,
+            cover: GetCoverFile(context),
             cancellationToken).ConfigureAwait(true);
         await DownloadOutputRecorder.RecordFileSizeAsync(
             context.TaskId,
@@ -112,6 +113,7 @@ internal sealed class MuxStage : IDownloadPipelineStage
                 destination: finalFile,
                 overwriteDestination: false,
                 embeddedAudioMode: GetEmbeddedAudioMode(context),
+                cover: GetCoverFile(context),
                 cancellationToken).ConfigureAwait(true);
             await DownloadOutputRecorder.RecordFileSizeAsync(
                 context.TaskId,
@@ -141,6 +143,7 @@ internal sealed class MuxStage : IDownloadPipelineStage
             outputPath,
             overwriteDestination: false,
             embeddedAudioMode: GetEmbeddedAudioMode(context),
+            cover: GetCoverFile(context),
             cancellationToken: cancellationToken).ConfigureAwait(true);
         await DownloadOutputRecorder.RecordFileSizeAsync(
             context.TaskId,
@@ -161,5 +164,12 @@ internal sealed class MuxStage : IDownloadPipelineStage
         context.NeedsAudio
             ? FfmpegEmbeddedAudioMode.Required
             : FfmpegEmbeddedAudioMode.Excluded;
+
+    private static string? GetCoverFile(DownloadExecutionContext context) =>
+        context.NeedsVideo
+        && context.NeedsCover
+        && DownloadFileIntegrity.Check(context.PreferredCoverFile).IsUsable
+            ? context.PreferredCoverFile
+            : null;
 
 }
