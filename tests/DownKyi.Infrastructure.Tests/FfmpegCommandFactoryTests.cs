@@ -131,7 +131,7 @@ public sealed class FfmpegCommandFactoryTests
     }
 
     [Fact]
-    public void MergeMapsRequestedCoverAsAttachedPicture()
+    public void MergeTranscodesWebpCoverToMjpegAttachedPicture()
     {
         var command = FfmpegCommandFactory.BuildMerge(
             audioFile: "audio.m4s",
@@ -142,11 +142,12 @@ public sealed class FfmpegCommandFactoryTests
             coverFile: "cover.webp");
 
         AssertInput(command, "cover.webp", expectedInputIndex: 2);
-        AssertEmbeddedCover(command, expectedInputIndex: 2);
+        AssertEmbeddedCover(command, expectedInputIndex: 2, expectedCodec: "mjpeg");
+        AssertOption(command, "-q:v:1", "2");
     }
 
     [Fact]
-    public void ConcatMapsRequestedCoverAsAttachedPicture()
+    public void ConcatTranscodesAvifCoverToMjpegAttachedPicture()
     {
         var command = FfmpegCommandFactory.BuildConcat(
             "segments.txt",
@@ -157,9 +158,28 @@ public sealed class FfmpegCommandFactoryTests
             coverFile: "cover.avif");
 
         AssertInput(command, "cover.avif", expectedInputIndex: 1);
-        AssertEmbeddedCover(command, expectedInputIndex: 1);
+        AssertEmbeddedCover(command, expectedInputIndex: 1, expectedCodec: "mjpeg");
+        AssertOption(command, "-q:v:1", "2");
         AssertOption(command, "-pix_fmt:v:0", "yuv420p");
         Assert.DoesNotContain("-pix_fmt", command.Arguments);
+    }
+
+    [Theory]
+    [InlineData("cover.jpg")]
+    [InlineData("cover.JPEG")]
+    [InlineData("cover.png")]
+    public void MergeCopiesMp4CompatibleCoverWithoutReencoding(string coverFile)
+    {
+        var command = FfmpegCommandFactory.BuildMerge(
+            audioFile: null,
+            videoFile: "video.mp4",
+            outputFile: "output.mp4",
+            transcodeAudioToMp3: false,
+            embeddedAudioMode: FfmpegEmbeddedAudioMode.Excluded,
+            coverFile);
+
+        AssertEmbeddedCover(command, expectedInputIndex: 1, expectedCodec: "copy");
+        Assert.DoesNotContain("-q:v:1", command.Arguments);
     }
 
     [Fact]
@@ -191,10 +211,13 @@ public sealed class FfmpegCommandFactoryTests
         Assert.Equal(expectedInput, inputs[expectedInputIndex]);
     }
 
-    private static void AssertEmbeddedCover(FfmpegCommand command, int expectedInputIndex)
+    private static void AssertEmbeddedCover(
+        FfmpegCommand command,
+        int expectedInputIndex,
+        string expectedCodec)
     {
         AssertOption(command, "-map", $"{expectedInputIndex}:v:0");
-        AssertOption(command, "-c:v:1", "png");
+        AssertOption(command, "-c:v:1", expectedCodec);
         AssertOption(command, "-frames:v:1", "1");
         AssertOption(command, "-disposition:v:1", "attached_pic");
     }

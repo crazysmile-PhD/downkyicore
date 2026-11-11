@@ -168,8 +168,7 @@ internal sealed class MuxStage : IDownloadPipelineStage
     private static string? GetCoverFile(DownloadExecutionContext context) =>
         context.NeedsVideo
         && context.NeedsCover
-        && DownloadFileIntegrity.Check(context.PreferredCoverFile).IsUsable
-            ? context.PreferredCoverFile
+            ? context.GetPreferredUsableCoverFile()
             : null;
 
 }

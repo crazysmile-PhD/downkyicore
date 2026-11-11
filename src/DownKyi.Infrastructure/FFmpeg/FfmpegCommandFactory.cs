@@ -61,9 +61,9 @@ internal static class FfmpegCommandFactory
             arguments.AddRange(["-vn", "-c:a", "copy"]);
         }
 
-        if (coverInputIndex >= 0)
+        if (coverInputIndex >= 0 && coverFile != null)
         {
-            AddEmbeddedCover(arguments, coverInputIndex);
+            AddEmbeddedCover(arguments, coverInputIndex, coverFile);
         }
 
         if (videoFile != null && string.Equals(Path.GetExtension(outputFile), ".mp4", StringComparison.OrdinalIgnoreCase))
@@ -195,7 +195,7 @@ internal static class FfmpegCommandFactory
 
         if (coverFile != null)
         {
-            AddEmbeddedCover(arguments, inputIndex: 1);
+            AddEmbeddedCover(arguments, inputIndex: 1, coverFile);
         }
 
         arguments.AddRange([
@@ -218,13 +218,29 @@ internal static class FfmpegCommandFactory
         arguments.AddRange(["-abort_on", "empty_output_stream"]);
     }
 
-    private static void AddEmbeddedCover(List<string> arguments, int inputIndex)
+    private static void AddEmbeddedCover(
+        List<string> arguments,
+        int inputIndex,
+        string coverFile)
     {
+        var canCopy = CanCopyCoverToMp4(coverFile);
         arguments.AddRange([
             "-map", $"{inputIndex}:v:0",
-            "-c:v:1", "png",
+            "-c:v:1", canCopy ? "copy" : "mjpeg",
             "-frames:v:1", "1",
             "-disposition:v:1", "attached_pic"
         ]);
+        if (!canCopy)
+        {
+            arguments.AddRange(["-q:v:1", "2"]);
+        }
+    }
+
+    private static bool CanCopyCoverToMp4(string coverFile)
+    {
+        var extension = Path.GetExtension(coverFile);
+        return extension.Equals(".jpg", StringComparison.OrdinalIgnoreCase)
+               || extension.Equals(".jpeg", StringComparison.OrdinalIgnoreCase)
+               || extension.Equals(".png", StringComparison.OrdinalIgnoreCase);
     }
 }

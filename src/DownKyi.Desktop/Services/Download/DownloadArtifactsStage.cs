@@ -218,12 +218,6 @@ internal sealed class DownloadArtifactsStage : IDownloadPipelineStage
                 context.PageCoverFile = file;
             }
 
-            if (context.PreferredCoverFile == null
-                && DownloadFileIntegrity.Check(file).IsUsable)
-            {
-                context.PreferredCoverFile = file;
-            }
-
             if (stopAfterFirstCreated && (file != null || context.HasPublished(candidate.Key)))
             {
                 break;

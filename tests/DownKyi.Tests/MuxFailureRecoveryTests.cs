@@ -2,6 +2,7 @@ using DownKyi.Application.Downloads;
 using DownKyi.Application.Media;
 using DownKyi.Application.Settings;
 using DownKyi.Application.Time;
+using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.BiliApi.VideoStream.Models;
 using DownKyi.Domain.Downloads;
 using DownKyi.Domain.Results;
@@ -88,7 +89,7 @@ public sealed class MuxFailureRecoveryTests
             cover,
             [1, 2, 3],
             TestContext.Current.CancellationToken).ConfigureAwait(true);
-        test.Execution.PreferredCoverFile = cover;
+        test.Execution.CoverFile = cover;
         var stage = test.CreateStage(new FfmpegOperationResult(
             succeeded: true,
             outputPath: test.Execution.WorkingBasePath + ".mp4",
@@ -109,6 +110,40 @@ public sealed class MuxFailureRecoveryTests
             Assert.Equal(cover, test.Muxer?.ConcatCover);
             Assert.Null(test.Muxer?.MergeCover);
         }
+    }
+
+    [Fact]
+    public async Task RequestedCoverFallsBackWhenPreferredEpisodeCoverIsUnavailable()
+    {
+        var requestedContent = DownloadContentSelection.None with
+        {
+            Audio = true,
+            Video = true,
+            Cover = true,
+            MediaKind = DownloadMediaKind.Dash
+        };
+        var test = await MuxTestContext.CreateAsync(
+            requestedContent,
+            PlayStreamType.Bangumi).ConfigureAwait(true);
+        await using var testLifetime = test.ConfigureAwait(true);
+        test.Execution.PageCoverFile = test.Execution.WorkingBasePath + ".missing.jpg";
+        var fallbackCover = test.Execution.WorkingBasePath + ".Cover.jpg";
+        await File.WriteAllBytesAsync(
+            fallbackCover,
+            [1, 2, 3],
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+        test.Execution.CoverFile = fallbackCover;
+        var stage = test.CreateStage(new FfmpegOperationResult(
+            succeeded: true,
+            outputPath: test.Execution.WorkingBasePath + ".mp4",
+            failureReason: null));
+
+        var result = await stage.ExecuteAsync(
+            test.Execution,
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.True(result.IsSuccess, result.Error?.Message);
+        Assert.Equal(fallbackCover, test.Muxer?.MergeCover);
     }
 
     private static FfmpegEmbeddedAudioMode GetExpectedEmbeddedAudioMode(bool needsAudio) =>
@@ -183,7 +218,8 @@ public sealed class MuxFailureRecoveryTests
         public StubMuxer? Muxer { get; private set; }
 
         public static async Task<MuxTestContext> CreateAsync(
-            DownloadContentSelection? requestedContent = null)
+            DownloadContentSelection? requestedContent = null,
+            PlayStreamType streamType = PlayStreamType.Video)
         {
             var directory = Path.Combine(
                 Path.GetTempPath(),
@@ -216,7 +252,8 @@ public sealed class MuxFailureRecoveryTests
                 {
                     Id = taskId.Value,
                     DownloadBase = downloadBase,
-                    DownloadStatus = DownloadStatus.WaitForDownload
+                    DownloadStatus = DownloadStatus.WaitForDownload,
+                    PlayStreamType = streamType
                 }
             };
             await projectionStore.AddDownloadingAsync(

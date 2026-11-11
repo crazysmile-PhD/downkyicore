@@ -74,7 +74,11 @@ public sealed class FfmpegSeekabilityIntegrationTests : IDisposable
         var cover = Path.Combine(_testDirectory, "cover-merge.png");
         var output = Path.Combine(_testDirectory, "cover-merge-output.mp4");
         await CreateSegmentAsync(processRunner, video, "red", cancellationToken).ConfigureAwait(true);
-        await CreateCoverAsync(processRunner, cover, cancellationToken).ConfigureAwait(true);
+        await CreateCoverAsync(
+            processRunner,
+            cover,
+            "png",
+            cancellationToken).ConfigureAwait(true);
         using var settings = new SettingsStore(Path.Combine(_testDirectory, "cover-merge-settings.json"));
         var processor = new FfmpegProcessor(
             settings,
@@ -92,7 +96,11 @@ public sealed class FfmpegSeekabilityIntegrationTests : IDisposable
             cancellationToken).ConfigureAwait(true);
 
         Assert.True(result.Succeeded, result.FailureReason);
-        await AssertAttachedCoverAsync(processRunner, output, cancellationToken).ConfigureAwait(true);
+        await AssertAttachedCoverAsync(
+            processRunner,
+            output,
+            expectedCodec: "png",
+            cancellationToken: cancellationToken).ConfigureAwait(true);
     }
 
     [Fact]
@@ -108,11 +116,15 @@ public sealed class FfmpegSeekabilityIntegrationTests : IDisposable
 
         var first = Path.Combine(_testDirectory, "cover-segment-1.mp4");
         var second = Path.Combine(_testDirectory, "cover-segment-2.mp4");
-        var cover = Path.Combine(_testDirectory, "cover-concat.png");
+        var cover = Path.Combine(_testDirectory, "cover-concat.webp");
         var output = Path.Combine(_testDirectory, "cover-concat-output.mp4");
         await CreateSegmentAsync(processRunner, first, "red", cancellationToken).ConfigureAwait(true);
         await CreateSegmentAsync(processRunner, second, "blue", cancellationToken).ConfigureAwait(true);
-        await CreateCoverAsync(processRunner, cover, cancellationToken).ConfigureAwait(true);
+        await CreateCoverAsync(
+            processRunner,
+            cover,
+            "libwebp",
+            cancellationToken).ConfigureAwait(true);
         var runtime = new FfmpegConcatRuntime(
             processRunner,
             new AsyncConcurrencyGate(() => 1),
@@ -132,7 +144,11 @@ public sealed class FfmpegSeekabilityIntegrationTests : IDisposable
             cancellationToken: cancellationToken).ConfigureAwait(true);
 
         Assert.True(result.Succeeded, result.FailureReason);
-        await AssertAttachedCoverAsync(processRunner, output, cancellationToken).ConfigureAwait(true);
+        await AssertAttachedCoverAsync(
+            processRunner,
+            output,
+            expectedCodec: "mjpeg",
+            cancellationToken: cancellationToken).ConfigureAwait(true);
     }
 
     [Fact]
@@ -268,6 +284,7 @@ public sealed class FfmpegSeekabilityIntegrationTests : IDisposable
     private static async Task AssertAttachedCoverAsync(
         FfmpegProcessRunner processRunner,
         string mediaFile,
+        string expectedCodec,
         CancellationToken cancellationToken)
     {
         var result = await processRunner.RunAsync(
@@ -287,7 +304,7 @@ public sealed class FfmpegSeekabilityIntegrationTests : IDisposable
         using var document = JsonDocument.Parse(result.StandardOutput);
         var streams = document.RootElement.GetProperty("streams").EnumerateArray().ToArray();
         Assert.Contains(streams, stream =>
-            stream.GetProperty("codec_name").GetString() == "png"
+            stream.GetProperty("codec_name").GetString() == expectedCodec
             && stream.GetProperty("disposition").GetProperty("attached_pic").GetInt32() == 1);
         Assert.Contains(streams, stream =>
             stream.GetProperty("disposition").GetProperty("attached_pic").GetInt32() == 0);
@@ -322,6 +339,7 @@ public sealed class FfmpegSeekabilityIntegrationTests : IDisposable
     private static async Task CreateCoverAsync(
         FfmpegProcessRunner processRunner,
         string output,
+        string codec,
         CancellationToken cancellationToken)
     {
         var result = await processRunner.RunAsync(
@@ -334,7 +352,7 @@ public sealed class FfmpegSeekabilityIntegrationTests : IDisposable
                     "-f", "lavfi",
                     "-i", "color=c=orange:s=640x360:d=0.04",
                     "-frames:v", "1",
-                    "-c:v", "png",
+                    "-c:v", codec,
                     output
                 ],
                 "create-test-cover"),
