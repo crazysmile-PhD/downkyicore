@@ -177,6 +177,7 @@ internal sealed class AvaloniaDialogService : IAppDialogService
             AppDialog.StartupDiagnostics => new Size(760, 680),
             AppDialog.DownloadContentConflict => new Size(680, 560),
             AppDialog.DownloadDuplicateBatch => new Size(680, 520),
+            AppDialog.DownloadUnavailableBatch => new Size(720, 600),
             _ => throw new ArgumentOutOfRangeException(nameof(dialog), dialog, null)
         };
         var availableWidth = Math.Max(1, workingArea.Width / scaling - WorkAreaMargin);

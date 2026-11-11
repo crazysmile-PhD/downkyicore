@@ -42,6 +42,9 @@ internal sealed class DialogContentFactory(IServiceProvider services)
             AppDialog.DownloadDuplicateBatch => (
                 typeof(DownloadDuplicateBatchDialog),
                 typeof(DownloadDuplicateBatchDialogViewModel)),
+            AppDialog.DownloadUnavailableBatch => (
+                typeof(DownloadUnavailableBatchDialog),
+                typeof(DownloadUnavailableBatchDialogViewModel)),
             _ => throw new ArgumentOutOfRangeException(nameof(dialog), dialog, null)
         };
     }
