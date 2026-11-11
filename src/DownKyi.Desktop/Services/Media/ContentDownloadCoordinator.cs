@@ -171,7 +171,7 @@ internal sealed class ContentDownloadCoordinator : IContentDownloadCoordinator
             Outcome: DownloadAddFlowOutcome.Completed,
             Value: { Canceled: false } execution
         }
-            ? execution.Result
+            ? execution.BatchResult
             : null;
     }
 
@@ -324,7 +324,7 @@ internal sealed class ContentDownloadCoordinator : IContentDownloadCoordinator
 
     private readonly record struct ContentDownloadExecutionResult(
         bool Canceled,
-        ContentDownloadBatchResult Result)
+        ContentDownloadBatchResult BatchResult)
     {
         public static ContentDownloadExecutionResult CanceledByUser { get; } =
             new(Canceled: true, default);
