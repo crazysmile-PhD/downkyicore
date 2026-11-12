@@ -22,6 +22,26 @@ public sealed class ApplicationLogProviderTests : IDisposable
         MicrosoftLogLevel.Warning,
         new EventId(1002, "WarningMessage"),
         "Download transfer attempt failed; backend=built-in; attempt=1/5; failure=TransientNetwork; error=download.transfer.network; next=RetrySameAddress; delayMilliseconds=500 Authorization: Bearer opaque-bearer-value https://example.test/file?X-Amz-Signature=opaque-signature");
+    private static readonly Action<ILogger, Exception?> FfmpegProcessFailed = LoggerMessage.Define(
+        MicrosoftLogLevel.Error,
+        new EventId(1003, "ErrorMessage"),
+        "FFmpeg operation failed. operation=merge-media; exit=1; timedOut=False");
+    private static readonly Action<ILogger, Exception?> FfmpegConcatFailed = LoggerMessage.Define(
+        MicrosoftLogLevel.Error,
+        new EventId(1003, "ErrorMessage"),
+        "FFmpeg operation failed. operation=concat-CpuEncoder; exit=1; timedOut=False");
+    private static readonly Action<ILogger, Exception?> UnrecognizedSensitiveFfmpegFailure = LoggerMessage.Define(
+        MicrosoftLogLevel.Error,
+        new EventId(1003, "ErrorMessage"),
+        "FFmpeg operation failed. operation=merge-media; exit=1; timedOut=False path=C:\\Users\\alice\\Videos\\private.mp4");
+    private static readonly Action<ILogger, Exception?> DownloadStageFailed = LoggerMessage.Define(
+        MicrosoftLogLevel.Warning,
+        new EventId(1002, "WarningMessage"),
+        "Download stage MuxStage failed with download.mux.dash.");
+    private static readonly Action<ILogger, Exception?> UnrecognizedSensitiveDownloadStageFailure = LoggerMessage.Define(
+        MicrosoftLogLevel.Warning,
+        new EventId(1002, "WarningMessage"),
+        "Download stage MuxStage failed with download.mux.dash. token=opaque-token-value");
     private static readonly Action<ILogger, int, Exception?> RecentEntry = LoggerMessage.Define<int>(
         MicrosoftLogLevel.Information,
         new EventId(2, nameof(RecentEntry)),
@@ -205,11 +225,22 @@ public sealed class ApplicationLogProviderTests : IDisposable
         var logger = firstProvider.CreateLogger("DownKyi.Tests.Feedback");
         var transferLogger = firstProvider.CreateLogger(
             "DownKyi.Services.Download.DownloadTransferCoordinator");
+        var ffmpegLogger = firstProvider.CreateLogger(
+            "DownKyi.Infrastructure.FFmpeg.FfmpegProcessor");
+        var ffmpegConcatLogger = firstProvider.CreateLogger(
+            "DownKyi.Infrastructure.FFmpeg.FfmpegConcatRuntime");
+        var pipelineLogger = firstProvider.CreateLogger(
+            "DownKyi.Services.Download.DownloadPipeline");
         RecentEntry(logger, 1, null);
         using (logger.BeginScope("cookie=scope-private"))
         {
             TransferAttemptFailed(transferLogger, null);
             UnrecognizedSensitiveWarning(transferLogger, null);
+            FfmpegProcessFailed(ffmpegLogger, null);
+            FfmpegConcatFailed(ffmpegConcatLogger, null);
+            UnrecognizedSensitiveFfmpegFailure(ffmpegLogger, null);
+            DownloadStageFailed(pipelineLogger, null);
+            UnrecognizedSensitiveDownloadStageFailure(pipelineLogger, null);
             RequestFailed(logger, new InvalidOperationException(
                 "opaque-private-value-73918 C:\\Users\\alice\\Videos\\private.mp4"));
         }
@@ -233,7 +264,7 @@ public sealed class ApplicationLogProviderTests : IDisposable
                 .ConfigureAwait(true);
             using var manifestJson = JsonDocument.Parse(manifest);
             Assert.Equal(2, manifestJson.RootElement.GetProperty("schemaVersion").GetInt32());
-            Assert.Equal(3, manifestJson.RootElement.GetProperty("eventCount").GetInt32());
+            Assert.Equal(8, manifestJson.RootElement.GetProperty("eventCount").GetInt32());
 
             var errors = await ReadArchiveEntryAsync(archive, "errors.jsonl", cancellationToken)
                 .ConfigureAwait(true);
@@ -242,6 +273,18 @@ public sealed class ApplicationLogProviderTests : IDisposable
                 StringComparison.Ordinal);
             Assert.Contains(
                 "Download transfer attempt failed; backend=built-in; attempt=1/5; failure=TransientNetwork; error=download.transfer.network; next=RetrySameAddress; delayMilliseconds=500",
+                errors,
+                StringComparison.Ordinal);
+            Assert.Contains(
+                "FFmpeg operation failed. operation=concat-CpuEncoder; exit=1; timedOut=False",
+                errors,
+                StringComparison.Ordinal);
+            Assert.Contains(
+                "FFmpeg operation failed. operation=merge-media; exit=1; timedOut=False",
+                errors,
+                StringComparison.Ordinal);
+            Assert.Contains(
+                "Download stage MuxStage failed with download.mux.dash.",
                 errors,
                 StringComparison.Ordinal);
             Assert.DoesNotContain("entry=1", errors, StringComparison.Ordinal);
@@ -254,6 +297,8 @@ public sealed class ApplicationLogProviderTests : IDisposable
             Assert.DoesNotContain("opaque-bearer-value", errors, StringComparison.Ordinal);
             Assert.DoesNotContain("X-Amz-Signature", errors, StringComparison.Ordinal);
             Assert.DoesNotContain("opaque-signature", errors, StringComparison.Ordinal);
+            Assert.DoesNotContain("opaque-token-value", errors, StringComparison.Ordinal);
+            Assert.DoesNotContain("token=[redacted]", errors, StringComparison.Ordinal);
             Assert.Contains("\"message\"", errors, StringComparison.Ordinal);
             Assert.DoesNotContain("\"exceptionText\"", errors, StringComparison.Ordinal);
             Assert.DoesNotContain("\"scope\"", errors, StringComparison.Ordinal);
