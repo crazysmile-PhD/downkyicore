@@ -1,0 +1,44 @@
+{
+  "name": "downkyi-ffmpeg-source",
+  "version-string": "0.1.0",
+  "builtin-baseline": "177e8175121536d414f405ed8b3099b325a42638",
+  "dependencies": [
+    {
+      "name": "ffmpeg",
+      "default-features": false,
+      "features": [
+        "ffmpeg",
+        "ffprobe",
+        "gpl",
+        "mp3lame",
+        "swresample",
+        "swscale",
+        "x264"
+      ]
+    }
+  ],
+  "features": {
+    "win-x86": {
+      "description": "Hardware encoders used on Windows x86",
+      "dependencies": [{ "name": "ffmpeg", "default-features": false, "features": ["amf", "nvcodec", "qsv"] }]
+    },
+    "win-x64": {
+      "description": "Hardware encoders used on Windows x64",
+      "dependencies": [{ "name": "ffmpeg", "default-features": false, "features": ["amf", "nvcodec", "qsv"] }]
+    },
+    "linux-x64": {
+      "description": "Hardware encoders used on Linux x64",
+      "dependencies": [{ "name": "ffmpeg", "default-features": false, "features": ["nvcodec", "qsv", "vaapi"] }]
+    },
+    "linux-arm64": {
+      "description": "Hardware encoders used on Linux arm64",
+      "dependencies": [{ "name": "ffmpeg", "default-features": false, "features": ["nvcodec", "vaapi"] }]
+    },
+    "osx-x64": {
+      "description": "macOS x64 uses FFmpeg's native VideoToolbox support"
+    },
+    "osx-arm64": {
+      "description": "macOS arm64 uses FFmpeg's native VideoToolbox support"
+    }
+  }
+}

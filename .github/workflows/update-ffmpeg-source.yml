@@ -1,0 +1,41 @@
+name: Update FFmpeg source
+
+on:
+  schedule:
+    - cron: '17 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  propose:
+    runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
+    steps:
+      - name: Checkout current source selection
+        uses: $/.github/actions/checkout
+        with:
+          persist-credentials: false
+      - name: Install Python
+        uses: $/.github/actions/setup-python
+        with:
+          python-version-file: .python-version
+      - name: Check the official FFmpeg source selected by vcpkg
+        id: candidate
+        run: python script/ffmpeg-source/update.py
+      - name: Open source-only update pull request
+        if: steps.candidate.outputs.updated == 'true'
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ secrets.DOWNKYI_AUTOMATION_TOKEN }}
+          add-paths: |
+            script/ffmpeg-source/vcpkg.json
+            script/ffmpeg-source/ffmpeg-source.tar.gz
+          commit-message: 'build(deps): update source-built FFmpeg to ${{ steps.candidate.outputs.version }}'
+          branch: automation/ffmpeg-source
+          base: ${{ github.event.repository.default_branch }}
+          delete-branch: true
+          title: 'build(deps): update source-built FFmpeg to ${{ steps.candidate.outputs.version }}'
+          body: |
+            Update the one stored official FFmpeg source archive and the vcpkg baseline together.
+            The Build workflow must compile and validate all six release RIDs before automatic merge.

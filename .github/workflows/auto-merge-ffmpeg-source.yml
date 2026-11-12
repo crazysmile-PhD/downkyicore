@@ -1,0 +1,48 @@
+name: Auto-merge validated FFmpeg source update
+
+on:
+  workflow_run:
+    workflows: [Build]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  auto-merge:
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'automation/ffmpeg-source' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
+    steps:
+      - name: Merge only the exact validated source update
+        env:
+          GH_TOKEN: ${{ secrets.DOWNKYI_AUTOMATION_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          BUILD_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/source-update-identity"
+          gh run download "$BUILD_RUN_ID" --repo "$REPOSITORY" \
+            --name ffmpeg-update-identity --dir "$RUNNER_TEMP/source-update-identity"
+          identity="$RUNNER_TEMP/source-update-identity/ffmpeg-update-identity.json"
+          PR_NUMBER=$(jq -r '.number' "$identity")
+          VALIDATED_HEAD=$(jq -r '.head' "$identity")
+          read -r base head state source_branch source_repo < <(gh api "repos/$REPOSITORY/pulls/$PR_NUMBER" \
+            --jq '[.base.ref, .head.sha, .state, .head.ref, .head.repo.full_name] | @tsv')
+          if [[ "$base" != main || "$head" != "$VALIDATED_HEAD" || \
+                "$state" != open || "$source_branch" != automation/ffmpeg-source || \
+                "$source_repo" != "$REPOSITORY" ]]; then
+            echo 'The pull request is not the exact validated source update.'
+            exit 0
+          fi
+          changed_paths=$(gh api "repos/$REPOSITORY/pulls/$PR_NUMBER/files" \
+            --paginate --jq '.[].filename' | sort)
+          expected_paths=$'script/ffmpeg-source/ffmpeg-source.tar.gz\nscript/ffmpeg-source/vcpkg.json'
+          if [[ "$changed_paths" != "$expected_paths" ]]; then
+            echo 'The pull request changes files outside the source archive and baseline.'
+            exit 0
+          fi
+          gh pr merge "$PR_NUMBER" --repo "$REPOSITORY" --auto --merge \
+            --match-head-commit "$VALIDATED_HEAD"

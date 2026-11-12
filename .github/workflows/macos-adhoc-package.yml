@@ -15,10 +15,7 @@ on:
       - 'global.json'
       - 'version.txt'
       - 'THIRD-PARTY-NOTICES.md'
-      - 'script/ffmpeg.sh'
-      - 'script/ffmpeg-assets.py'
       - 'script/validate-publish-output.ps1'
-      - 'script/assets/**'
       - 'script/macos/**'
   workflow_dispatch:
 
@@ -33,7 +30,7 @@ jobs:
   package-validation:
     name: Validate package (${{ matrix.runtime }}, ad-hoc)
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:
@@ -60,7 +57,7 @@ jobs:
         uses: $/.github/actions/setup-dotnet
         with:
           global-json-file: global.json
-      - name: Install Python for FFmpeg manifest verification
+      - name: Install Python for FFmpeg source build
         uses: $/.github/actions/setup-python
         with:
           python-version-file: .python-version

@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Reflection;
-using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
@@ -269,20 +268,29 @@ public sealed class ReleaseWorkflowArchitectureTests
     }
 
     [Fact]
-    public void BuildHasOneReleasePathAndTheUpdaterHasItsOwnEntryPoint()
+    public void BuildRunsForFfmpegSourceUpdatesAndKeepsOneReleasePath()
     {
         var build = ReadWorkflow("build.yml");
-        var updater = ReadWorkflow("update-ffmpeg-assets.yml");
         var pullRequest = GetYamlBlock(NormalizeWorkflowLines(build), "  pull_request:", 2);
         var paths = GetYamlSequenceValues(pullRequest, "    paths:", 4);
 
-        Assert.Equal("script/assets/external-assets.json", Assert.Single(paths));
+        Assert.Contains("script/assets/external-assets.json", paths);
+        Assert.Contains("script/ffmpeg-source/**", paths);
+        Assert.Contains("script/ffmpeg.ps1", paths);
+        Assert.Contains("script/ffmpeg.sh", paths);
         Assert.DoesNotContain("ffmpeg-asset-updater:", build, StringComparison.Ordinal);
         Assert.DoesNotContain("detect-production-manifest-change:", build, StringComparison.Ordinal);
         Assert.DoesNotContain("ffmpeg-required-gate:", build, StringComparison.Ordinal);
+        var sourceAutoMerge = ReadWorkflow("auto-merge-ffmpeg-source.yml");
+        Assert.Contains("workflow_run:", sourceAutoMerge, StringComparison.Ordinal);
+        Assert.Contains("github.event.workflow_run.conclusion == 'success'", sourceAutoMerge, StringComparison.Ordinal);
+        Assert.Contains("--match-head-commit", sourceAutoMerge, StringComparison.Ordinal);
+        Assert.Contains("ffmpeg-update-identity", build, StringComparison.Ordinal);
+        var updater = ReadWorkflow("update-ffmpeg-source.yml");
         Assert.Contains("  schedule:", updater, StringComparison.Ordinal);
         Assert.Contains("  workflow_dispatch:", updater, StringComparison.Ordinal);
-        Assert.DoesNotContain("  workflow_call:", updater, StringComparison.Ordinal);
+        Assert.Contains("script/ffmpeg-source/ffmpeg-source.tar.gz", updater, StringComparison.Ordinal);
+        Assert.False(File.Exists(Path.Combine(RepositoryRoot, ".github", "workflows", "update-ffmpeg-assets.yml")));
     }
 
     [Fact]
@@ -311,11 +319,13 @@ public sealed class ReleaseWorkflowArchitectureTests
             ("script/validate-publish-output.ps1", ["macos"]),
             (".github/actions/build-macos-app/action.yml", ["macos"]),
             ("script/macos/validate-dmg-package.sh", ["macos"]),
-            ("script/download-external-asset.ps1", []),
             ("script/resolve-release-plan.ps1", []),
-            ("script/ffmpeg-assets.py", ["macos"]),
-            ("script/assets/external-assets.json", ["build", "macos"]),
-            (".github/workflows/build.yml", []),
+            ("script/ffmpeg-source/vcpkg.json", ["build"]),
+            ("script/ffmpeg-source/build.py", ["build"]),
+            ("script/ffmpeg.ps1", ["build"]),
+            ("script/ffmpeg.sh", ["build"]),
+            ("script/assets/external-assets.json", ["build"]),
+            (".github/workflows/build.yml", ["build"]),
             (".github/workflows/quality.yml", ["infrastructure"])
         };
         foreach (var (path, extraWorkflows) in pullRequests)
@@ -340,7 +350,7 @@ public sealed class ReleaseWorkflowArchitectureTests
 
         // A combined PR takes the union of path matches.
         Assert.True(WorkflowRuns(workflows["build"], "pull_request",
-            "script/validate-build-run-artifacts.ps1", "script/assets/external-assets.json"));
+            "script/validate-build-run-artifacts.ps1", "script/ffmpeg-source/vcpkg.json"));
     }
 
     [Fact]
@@ -389,25 +399,21 @@ public sealed class ReleaseWorkflowArchitectureTests
     }
 
     [Fact]
-    public void FfmpegToolingChecksRunInTheRequiredPrJob()
+    public void FfmpegSourceBuildRunsOnReleasePrAndDisablesBinaryCaching()
     {
         var qualitySteps = GetWorkflowSteps(ReadWorkflow("quality.yml"), "  format:");
-        var preflight = GetYamlBlock(NormalizeWorkflowLines(ReadWorkflow("build.yml")),
-            "  external-assets-preflight:", 2);
+        var build = ReadWorkflow("build.yml");
+        var preflight = GetYamlBlock(NormalizeWorkflowLines(build), "  external-assets-preflight:", 2);
+        var sourceBuilder = File.ReadAllText(Path.Combine(RepositoryRoot, "script", "ffmpeg-source", "build.py"));
 
-        Assert.Contains(FindWorkflowStep(qualitySteps, "Run FFmpeg asset guards"),
-            line => line.Contains("python -m unittest script/tests/test_ffmpeg_assets.py -v",
-                StringComparison.Ordinal));
         Assert.Contains(FindWorkflowStep(qualitySteps, "Validate GitHub Actions workflows"),
             line => line.Contains("uses: $/.github/actions/actionlint", StringComparison.Ordinal));
-        AssertStepHasNoContinueOnError(qualitySteps, "Run FFmpeg asset guards");
         AssertStepHasNoContinueOnError(qualitySteps, "Validate GitHub Actions workflows");
-        Assert.Contains(preflight, line => line.Contains(
-            "python script/ffmpeg-assets.py validate-manifest --manifest script/assets/external-assets.json",
-            StringComparison.Ordinal));
-        Assert.Contains(preflight, line => line.Contains(
-            "python script/ffmpeg-assets.py preflight --manifest script/assets/external-assets.json --timeout 30",
-            StringComparison.Ordinal));
+        Assert.Contains(preflight, line => line.Contains("install-appimagetool.ps1", StringComparison.Ordinal));
+        Assert.Contains("--binarysource=clear", sourceBuilder, StringComparison.Ordinal);
+        Assert.Contains("hashlib.sha512()", sourceBuilder, StringComparison.Ordinal);
+        Assert.True(File.Exists(Path.Combine(RepositoryRoot, "script", "ffmpeg-source", "ffmpeg-source.tar.gz")));
+        Assert.Contains("Build FFmpeg from source", build, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -503,6 +509,7 @@ public sealed class ReleaseWorkflowArchitectureTests
             "assets",
             "external-assets.json");
         using var manifest = JsonDocument.Parse(File.ReadAllText(manifestPath));
+        Assert.False(manifest.RootElement.TryGetProperty("ffmpeg", out _));
 
         foreach (var tool in manifest.RootElement.EnumerateObject())
         {
@@ -519,7 +526,7 @@ public sealed class ReleaseWorkflowArchitectureTests
     }
 
     [Fact]
-    public void ExternalAssetScriptsResolveFromTheirOwnDirectoryAndShareTheManifest()
+    public void FfmpegScriptsResolveTheSourceBuilderFromTheirOwnDirectory()
     {
         var scripts = new[]
         {
@@ -527,123 +534,19 @@ public sealed class ReleaseWorkflowArchitectureTests
             File.ReadAllText(Path.Combine(RepositoryRoot, "script", "ffmpeg.sh")),
         };
 
-        Assert.All(scripts, source =>
-        {
-            Assert.Contains("external-assets.json", source, StringComparison.Ordinal);
-            Assert.DoesNotContain(
-                "download_dir=\"./downloads\"",
-                source,
-                StringComparison.Ordinal);
-            Assert.DoesNotContain(
-                "Create-Dir \".\\downloads\"",
-                source,
-                StringComparison.Ordinal);
-            Assert.DoesNotContain("curl -k", source, StringComparison.Ordinal);
-            Assert.DoesNotContain("curl --insecure", source, StringComparison.Ordinal);
-        });
+        Assert.All(scripts, source => Assert.Contains("ffmpeg-source/build.py", source, StringComparison.Ordinal));
         Assert.Contains("$PSScriptRoot", scripts[0], StringComparison.Ordinal);
         Assert.Contains("BASH_SOURCE[0]", scripts[1], StringComparison.Ordinal);
     }
 
     [Fact]
-    public void WindowsExternalAssetInstallerUsesTheSharedBoundedRetryOwner()
+    public void WindowsFfmpegInstallerUsesTheSourceBuilder()
     {
         var ffmpegInstaller = File.ReadAllText(Path.Combine(RepositoryRoot, "script", "ffmpeg.ps1"));
 
-        Assert.Contains("download-external-asset.ps1", ffmpegInstaller, StringComparison.Ordinal);
-        Assert.Contains("Invoke-ExternalAssetDownload", ffmpegInstaller, StringComparison.Ordinal);
+        Assert.Contains("ffmpeg-source/build.py", ffmpegInstaller, StringComparison.Ordinal);
+        Assert.DoesNotContain("external-assets.json", ffmpegInstaller, StringComparison.Ordinal);
         Assert.DoesNotContain("Start-BitsTransfer", ffmpegInstaller, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void ExternalAssetDownloadRetriesTransientFailuresAndFailsClosed()
-    {
-        var helperPath = Path.Combine(RepositoryRoot, "script", "download-external-asset.ps1");
-        var command = $$"""
-            $ErrorActionPreference = 'Stop'
-            $ProgressPreference = 'SilentlyContinue'
-            . '{{helperPath.Replace("'", "''", StringComparison.Ordinal)}}'
-            $successPath = [IO.Path]::GetTempFileName()
-            $failurePath = [IO.Path]::GetTempFileName()
-            try {
-                $successAttempts = 0
-                Invoke-ExternalAssetDownload `
-                    -Uri 'https://example.invalid/immutable.zip' `
-                    -Destination $successPath `
-                    -MaximumAttempts 3 `
-                    -RetryDelaySeconds 0 `
-                    -TransferOperation {
-                        param($source, $destination)
-                        $script:successAttempts++
-                        if ($script:successAttempts -lt 3) {
-                            throw [IO.IOException]::new('injected transient transport failure')
-                        }
-                        [IO.File]::WriteAllText($destination, 'verified later by the manifest checksum')
-                    }
-                if ($successAttempts -ne 3 -or -not (Test-Path -LiteralPath $successPath)) {
-                    throw 'The bounded retry did not recover on the final allowed attempt.'
-                }
-
-                $failureAttempts = 0
-                $failedClosed = $false
-                try {
-                    Invoke-ExternalAssetDownload `
-                        -Uri 'https://example.invalid/immutable.zip' `
-                        -Destination $failurePath `
-                        -MaximumAttempts 3 `
-                        -RetryDelaySeconds 0 `
-                        -TransferOperation {
-                            param($source, $destination)
-                            $script:failureAttempts++
-                            [IO.File]::WriteAllText($destination, 'injected partial response')
-                            throw [IO.IOException]::new('injected persistent transport failure')
-                        }
-                }
-                catch [IO.IOException] {
-                    $failedClosed = $true
-                }
-                if (-not $failedClosed -or $failureAttempts -ne 3) {
-                    throw 'Retry exhaustion did not preserve the transport failure.'
-                }
-                if (Test-Path -LiteralPath $failurePath) {
-                    throw 'Retry exhaustion left an unverified partial asset behind.'
-                }
-            }
-            finally {
-                foreach ($path in @($successPath, $failurePath)) {
-                    if (Test-Path -LiteralPath $path) {
-                        Remove-Item -LiteralPath $path -Force
-                    }
-                }
-            }
-            exit 0
-            """;
-
-        var encodedCommand = Convert.ToBase64String(Encoding.Unicode.GetBytes(command));
-        using var process = Process.Start(new ProcessStartInfo
-        {
-            FileName = "pwsh",
-            ArgumentList =
-            {
-                "-NoLogo",
-                "-NoProfile",
-                "-NonInteractive",
-                "-EncodedCommand",
-                encodedCommand
-            },
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        });
-        Assert.NotNull(process);
-        process.WaitForExit();
-
-        var standardOutput = process.StandardOutput.ReadToEnd();
-        var standardError = process.StandardError.ReadToEnd();
-        Assert.True(
-            process.ExitCode == 0,
-            $"External-asset retry regression failed. stdout={standardOutput} stderr={standardError}");
     }
 
     [Fact]
@@ -759,7 +662,7 @@ public sealed class ReleaseWorkflowArchitectureTests
         AssertInOrder(
             appBuildAction,
             "Read version",
-            "Download and verify upstream runtime dependencies",
+            "Build and verify FFmpeg from source",
             "Publish app",
             "Package app bundle",
             "Validate packaged runtime");
@@ -902,10 +805,7 @@ public sealed class ReleaseWorkflowArchitectureTests
                      "src/**/*.csproj",
                      "src/DownKyi.Desktop/Resources/favicon.ico",
                      "THIRD-PARTY-NOTICES.md",
-                     "script/ffmpeg.sh",
-                     "script/ffmpeg-assets.py",
                      "script/validate-publish-output.ps1",
-                     "script/assets/**",
                      "script/macos/**",
                      ".github/actions/build-macos-app/action.yml"
                  })

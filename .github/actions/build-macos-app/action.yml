@@ -21,7 +21,7 @@ runs:
       id: version
       shell: bash
       run: echo "content=$(tr -d '\r\n' < version.txt)" >> "$GITHUB_OUTPUT"
-    - name: Download and verify upstream runtime dependencies
+    - name: Build and verify FFmpeg from source
       shell: bash
       working-directory: ./script
       run: |

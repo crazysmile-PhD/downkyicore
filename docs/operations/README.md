@@ -1,7 +1,7 @@
 # Operations
 
 - `verification-and-rollback.md`：本機與 CI 驗證、產物、失敗判讀及回滾。
-- `ffmpeg-asset-mirroring.md`：FFmpeg immutable mirror、updater 權限、失敗恢復與 manifest 驗證。
+- `ffmpeg-source-build.md`：FFmpeg 六平台原始碼編譯、更新門檻與發行打包。
 - `bilibili-api-audit.md`：Bilibili generated endpoint inventory、非推導 contract 例外與 live-audit 安全邊界。
 - `historical-source-archive.md`：1.0.24 以前的原始 Git 提交、封存 tags、快照辨識與查閱指令。
 - `../../script/historical-rebuild/README.md`：25 個封存 tags 的獨立三平台重建、Draft Release 與失敗重跑操作。
