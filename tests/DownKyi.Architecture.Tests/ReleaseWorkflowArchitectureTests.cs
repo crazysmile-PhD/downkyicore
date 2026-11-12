@@ -1299,7 +1299,7 @@ public sealed class ReleaseWorkflowArchitectureTests
         {
             var line = lines[index];
             if (!string.IsNullOrWhiteSpace(line) &&
-                !line.TrimStart().StartsWith('#') &&
+                !line.TrimStart().StartsWith('#', StringComparison.Ordinal) &&
                 GetIndent(line) <= headerIndent)
             {
                 break;

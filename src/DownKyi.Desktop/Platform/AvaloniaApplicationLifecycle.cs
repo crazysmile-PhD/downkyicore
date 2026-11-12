@@ -191,8 +191,12 @@ internal sealed class AvaloniaApplicationLifecycle : IApplicationLifecycle
         }
 
         var cleanup = Task.WhenAll(cleanupTasks);
+        using var cleanupTimeoutCancellation = new CancellationTokenSource();
+        var cleanupTimeout = Task.Delay(_cleanupTimeout, cleanupTimeoutCancellation.Token);
+        var completedCleanupTask = await Task.WhenAny(cleanup, cleanupTimeout).ConfigureAwait(false);
+        await cleanupTimeoutCancellation.CancelAsync().ConfigureAwait(false);
         TimeoutException? cleanupTimeoutException = null;
-        if (await Task.WhenAny(cleanup, Task.Delay(_cleanupTimeout)).ConfigureAwait(false) == cleanup)
+        if (completedCleanupTask == cleanup)
         {
             try
             {

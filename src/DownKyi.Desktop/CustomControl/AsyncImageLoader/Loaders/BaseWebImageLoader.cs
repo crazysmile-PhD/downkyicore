@@ -114,7 +114,7 @@ internal class BaseWebImageLoader : IAsyncImageLoader
             if (ImageSourceUriResolver.ResolveExternal(url) != null)
                 return null;
 
-            var uri = url.StartsWith('/')
+            var uri = url.StartsWith('/', StringComparison.Ordinal)
                 ? new Uri(url, UriKind.Relative)
                 : new Uri(url, UriKind.RelativeOrAbsolute);
 

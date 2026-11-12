@@ -926,10 +926,12 @@ public sealed class CentralTestRunnerRecorderTests
 
         public override System.Text.Encoding Encoding => System.Text.Encoding.UTF8;
 
-        public override Task WriteLineAsync(string? value)
+        public override Task WriteLineAsync(
+            ReadOnlyMemory<char> buffer,
+            CancellationToken cancellationToken)
         {
             entered.TrySetResult();
-            release.Wait();
+            release.Wait(CancellationToken.None);
             return Task.CompletedTask;
         }
 
@@ -946,4 +948,5 @@ public sealed class CentralTestRunnerRecorderTests
             base.Dispose(disposing);
         }
     }
+
 }

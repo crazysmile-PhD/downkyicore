@@ -27,7 +27,7 @@ internal static class BoundedOutputCapture
                     ? TruncatedOutputLine
                     : redactor.Redact(line.ToString());
                 tail.Add(redacted);
-                await destination.WriteLineAsync(redacted).ConfigureAwait(false);
+                await destination.WriteLineAsync(redacted, cancellationToken).ConfigureAwait(false);
                 line.Clear();
                 discardingLine = false;
             }
