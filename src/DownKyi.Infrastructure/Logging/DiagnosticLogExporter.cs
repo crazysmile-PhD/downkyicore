@@ -16,6 +16,12 @@ internal sealed partial class DiagnosticLogExporter(
 {
     private const string TransferCoordinatorCategory =
         "DownKyi.Services.Download.DownloadTransferCoordinator";
+    private const string DownloadPipelineCategory =
+        "DownKyi.Services.Download.DownloadPipeline";
+    private const string FfmpegProcessorCategory =
+        "DownKyi.Infrastructure.FFmpeg.FfmpegProcessor";
+    private const string FfmpegConcatRuntimeCategory =
+        "DownKyi.Infrastructure.FFmpeg.FfmpegConcatRuntime";
 
     public async Task<string> ExportAsync(
         Func<ApplicationLogMetrics> getMetrics,
@@ -121,17 +127,16 @@ internal sealed partial class DiagnosticLogExporter(
 
     private static string ProjectFeedbackMessage(ApplicationLogRecord record)
     {
-        if (!string.Equals(
-                record.Category,
-                TransferCoordinatorCategory,
-                StringComparison.Ordinal))
+        var isAllowed = record.Category switch
         {
-            return string.Empty;
-        }
+            TransferCoordinatorCategory => TransferAttemptDiagnosticRegex().IsMatch(record.Message),
+            DownloadPipelineCategory => DownloadPipelineFailureRegex().IsMatch(record.Message),
+            FfmpegProcessorCategory or FfmpegConcatRuntimeCategory =>
+                FfmpegFailureDiagnosticRegex().IsMatch(record.Message),
+            _ => false
+        };
 
-        return TransferAttemptDiagnosticRegex().IsMatch(record.Message)
-            ? record.Message
-            : string.Empty;
+        return isAllowed ? record.Message : string.Empty;
     }
 
     [GeneratedRegex(
@@ -143,6 +148,18 @@ internal sealed partial class DiagnosticLogExporter(
         "delayMilliseconds=(?:0|[1-9][0-9]*)\\z",
         RegexOptions.CultureInvariant | RegexOptions.NonBacktracking)]
     private static partial Regex TransferAttemptDiagnosticRegex();
+
+    [GeneratedRegex(
+        "\\ADownload stage (?:[A-Z][A-Za-z0-9]*|unknown) failed with " +
+        "(?:download\\.[a-z0-9.-]+|unknown)\\.\\z",
+        RegexOptions.CultureInvariant | RegexOptions.NonBacktracking)]
+    private static partial Regex DownloadPipelineFailureRegex();
+
+    [GeneratedRegex(
+        "\\AFFmpeg operation failed\\. operation=[A-Za-z][A-Za-z0-9-]*; " +
+        "exit=-?(?:0|[1-9][0-9]*); timedOut=(?:True|False)\\z",
+        RegexOptions.CultureInvariant | RegexOptions.NonBacktracking)]
+    private static partial Regex FfmpegFailureDiagnosticRegex();
 
     private static async Task WriteFeedbackManifestAsync(
         ZipArchive archive,

@@ -1,5 +1,6 @@
 using DownKyi.Application.Media;
 using DownKyi.Infrastructure.FFmpeg;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DownKyi.Infrastructure.Tests;
@@ -109,10 +110,11 @@ public sealed class FfmpegConcatRuntimeTests : IDisposable
         var corrupt = CreateSegment("diagnostic-corrupt.flv");
         var third = CreateSegment("diagnostic-third.flv");
         var runner = new FailedConcatRunner();
+        var logger = new RecordingLogger<FfmpegConcatRuntime>();
         var runtime = new FfmpegConcatRuntime(
             runner,
             new AsyncConcurrencyGate(() => 1),
-            NullLogger<FfmpegConcatRuntime>.Instance);
+            logger);
 
         var result = await runtime.ConcatAsync(
             [
@@ -132,6 +134,11 @@ public sealed class FfmpegConcatRuntimeTests : IDisposable
         Assert.True(File.Exists(first));
         Assert.True(File.Exists(corrupt));
         Assert.True(File.Exists(third));
+        Assert.Contains(
+            logger.Entries,
+            entry => entry.Level == LogLevel.Error
+                     && entry.Message ==
+                     "FFmpeg operation failed. operation=concat-CpuEncoder; exit=1; timedOut=False");
     }
 
     public void Dispose()
@@ -191,6 +198,26 @@ public sealed class FfmpegConcatRuntimeTests : IDisposable
                 string.Empty,
                 "concat failed",
                 false));
+        }
+    }
+
+    private sealed class RecordingLogger<T> : ILogger<T>
+    {
+        public List<(LogLevel Level, string Message)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            Entries.Add((logLevel, formatter(state, exception)));
         }
     }
 }

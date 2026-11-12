@@ -147,6 +147,11 @@ internal sealed class FfmpegConcatRuntime
             : result.StandardError.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? "unknown";
         _logger.LogInformationMessage(
             $"FFmpeg operation completed. operation={command.Operation}; exitCode={result.ExitCode}; timedOut={result.TimedOut}; error={error}");
+        if (!result.Succeeded)
+        {
+            _logger.LogErrorMessage(
+                $"FFmpeg operation failed. operation={command.Operation}; exit={result.ExitCode}; timedOut={result.TimedOut}");
+        }
     }
 
     private void DeleteFile(string file)
