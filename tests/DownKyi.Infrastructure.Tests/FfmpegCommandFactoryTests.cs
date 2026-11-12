@@ -218,7 +218,7 @@ public sealed class FfmpegCommandFactoryTests
     {
         AssertOption(command, "-map", $"{expectedInputIndex}:v:0");
         AssertOption(command, "-c:v:1", expectedCodec);
-        AssertOption(command, "-frames:v:1", "1");
+        Assert.DoesNotContain("-frames:v:1", command.Arguments);
         AssertOption(command, "-disposition:v:1", "attached_pic");
     }
 
