@@ -175,13 +175,17 @@ public sealed class AgentEnvironmentArchitectureTests
         Assert.Contains("external-assets.json", Read("script/install-appimagetool.ps1"), StringComparison.Ordinal);
         Assert.Contains("install-appimagetool.ps1", workflowSources, StringComparison.Ordinal);
 
-        var updaterWorkflow = Read(".github/workflows/update-ffmpeg-assets.yml");
+        var sourceManifest = Read("script/ffmpeg-source/vcpkg.json");
+        var sourceAutoMerge = Read(".github/workflows/auto-merge-ffmpeg-source.yml");
+        var sourceUpdater = Read(".github/workflows/update-ffmpeg-source.yml");
         var historicalAssets = Read("script/historical-rebuild/runtime-assets.json");
         var appImageToolInstaller = Read("script/install-appimagetool.ps1");
         var productionAssets = Read("script/assets/external-assets.json");
         foreach (var dependencySource in new[]
                  {
-                     updaterWorkflow,
+                     sourceManifest,
+                     sourceAutoMerge,
+                     sourceUpdater,
                      historicalAssets,
                      appImageToolInstaller,
                      productionAssets
@@ -190,15 +194,8 @@ public sealed class AgentEnvironmentArchitectureTests
             Assert.DoesNotContain("crazysmile-PhD/downkyi-runtime-assets/releases/download/", dependencySource, StringComparison.Ordinal);
         }
         Assert.DoesNotContain("crazysmile-PhD/downkyi-aria2-static-build/releases/download/", historicalAssets, StringComparison.Ordinal);
-        Assert.DoesNotContain("RUNTIME_ASSETS_TOKEN", updaterWorkflow, StringComparison.Ordinal);
-        Assert.DoesNotContain("IMMUTABLE_RELEASES_READ_TOKEN", updaterWorkflow, StringComparison.Ordinal);
-        Assert.Contains("MIRROR_REPOSITORY: ${{ github.repository }}", updaterWorkflow, StringComparison.Ordinal);
-        Assert.Contains("RELEASE_TOKEN: ${{ github.token }}", updaterWorkflow, StringComparison.Ordinal);
-        Assert.Contains("--prerelease", updaterWorkflow, StringComparison.Ordinal);
-        Assert.Contains("--latest=false", updaterWorkflow, StringComparison.Ordinal);
-        Assert.Contains("releases/latest", updaterWorkflow, StringComparison.Ordinal);
-        Assert.Contains("  schedule:", updaterWorkflow, StringComparison.Ordinal);
-        Assert.Contains("  workflow_dispatch:", updaterWorkflow, StringComparison.Ordinal);
+        Assert.Contains("\"builtin-baseline\"", sourceManifest, StringComparison.Ordinal);
+        Assert.Contains("workflow_run:", sourceAutoMerge, StringComparison.Ordinal);
         Assert.DoesNotContain("update-ffmpeg-assets.yml",
             Read(".github/workflows/build.yml"), StringComparison.Ordinal);
 
@@ -450,7 +447,7 @@ public sealed class AgentEnvironmentArchitectureTests
             new System.Text.RegularExpressions.Regex(@"(?m)^\s+needs\s*:", System.Text.RegularExpressions.RegexOptions.CultureInvariant),
             qualityWorkflow);
 
-        AssertTestJobsUseTwentyMinuteLimit();
+        AssertTestJobsUseBoundedLimit();
         Assert.False(File.Exists(Path.Combine(
             RepositoryRoot,
             PathFromRepository(".github/workflows/retry-timed-out-quality.yml"))));
@@ -588,7 +585,7 @@ public sealed class AgentEnvironmentArchitectureTests
         Assert.True(missing.Length == 0, $"Missing repository entry points: {string.Join(", ", missing)}");
     }
 
-    private static void AssertTestJobsUseTwentyMinuteLimit()
+    private static void AssertTestJobsUseBoundedLimit()
     {
         var workflowsDirectory = Path.Combine(
             RepositoryRoot,
@@ -600,7 +597,7 @@ public sealed class AgentEnvironmentArchitectureTests
             @"^  (?<name>[A-Za-z0-9_-]+):\s*$",
             System.Text.RegularExpressions.RegexOptions.CultureInvariant);
         var timeout = new System.Text.RegularExpressions.Regex(
-            @"^    timeout-minutes: 20\s*$",
+            @"^    timeout-minutes: (?<minutes>\d+)\s*$",
             System.Text.RegularExpressions.RegexOptions.CultureInvariant);
         var testJobs = new HashSet<string>(StringComparer.Ordinal);
 
@@ -636,7 +633,14 @@ public sealed class AgentEnvironmentArchitectureTests
                 }
 
                 var jobLines = lines[currentJobStart..jobEnd];
-                Assert.Single(jobLines, line => timeout.IsMatch(line));
+                var expectedMinutes = (Path.GetFileName(workflowPath), currentJob) switch
+                {
+                    ("build.yml", "build-macos") => "240",
+                    ("macos-adhoc-package.yml", "package-validation") => "180",
+                    _ => "20"
+                };
+                var timeoutLine = Assert.Single(jobLines, line => timeout.IsMatch(line));
+                Assert.Equal(expectedMinutes, timeout.Match(timeoutLine).Groups["minutes"].Value);
                 testJobs.Add($"{Path.GetFileName(workflowPath)}:{currentJob}");
             }
         }

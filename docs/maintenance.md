@@ -26,7 +26,8 @@ PR 修正文件。
 | Desktop、DI、Host、theme、XAML | Desktop composition + design tokens | architecture + XAML + packaged smoke | [Desktop／Host 卡](#desktop-host) |
 | Bilibili、WBI、endpoint、envelope | API adapter + `IWbiKeyProvider` + fixtures | contract fixture + inventory gate | [Bilibili／WBI 卡](#bilibili-wbi) |
 | analyzer、warning、suppression、nullable | strict build config + analyzer inventory | clean strict build + inventory | [Analyzer 卡](#analyzer) |
-| asset、checksum、FFmpeg binary | `script/assets/external-assets.json` + installer scripts | digest + six-RID gates | [External Binary 卡](#external-binary) |
+| FFmpeg source、codec、six RID | `script/ffmpeg-source/vcpkg.json` + current source archive + `build.py` | SHA-512 + six-RID source build／package gates | [FFmpeg Source Build](operations/ffmpeg-source-build.md) |
+| appimagetool asset、checksum | `script/assets/external-assets.json` + installer | digest + package gate | [External Binary 卡](#external-binary) |
 | release、tag、exact head、rollback | `version.txt` + release workflow | exact-head release gates | [Release 卡](#release) |
 
 ## 共用起飛檢查
@@ -175,13 +176,12 @@ cross-platform stress proof，不得移除。
 
 ## External Binary 卡
 
-- **Use when**：asset URL、checksum、installer、provenance、TLS、six RID。
-- **Owner**：URL／checksum=`external-assets.json`；安裝=installer；source／build provenance 與 trust policy=security docs。
+- **Use when**：appimagetool asset URL、checksum、installer、provenance、TLS。
+- **Owner**：URL／checksum=`external-assets.json`；安裝=`install-appimagetool.ps1`；source／build provenance 與 trust policy=security docs。FFmpeg 由 [source build](operations/ffmpeg-source-build.md) 維護。
 - **Invariant**：immutable URL + checksum；installer 可從 root／`script/` 執行。Credential 只給 exact HTTPS `bilibili.com` host／subdomain；禁止 downgrade／credential cross-origin redirect。
-- **Do**：固定 commits；驗 six-RID digests、installer 與 TLS。FFmpeg／ffprobe 驗 target encoder 並保留 CPU fallback。
-- **Proof**：manifest、installer、six-RID digest／TLS。
+- **Do**：固定 commits；驗 appimagetool digest、installer 與 TLS。
+- **Proof**：manifest、installer、digest／TLS。
 - **Stop**：mutable `latest`、略過 checksum／TLS、擴 credential host。
-- **Details**：[FFmpeg Asset Mirroring](operations/ffmpeg-asset-mirroring.md)。
 
 <a id="release"></a>
 

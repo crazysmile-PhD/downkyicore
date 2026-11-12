@@ -233,7 +233,8 @@ public sealed class ReleaseSafetyRegressionTests
         Assert.DoesNotContain("kind: [ AppImage, deb, rpm ]", linuxPublish, StringComparison.Ordinal);
         Assert.DoesNotContain("dotnet publish ./DownKyi/DownKyi.csproj", linuxPackages, StringComparison.Ordinal);
         Assert.Contains("needs: [changelog, build-linux-publish]", linuxPackages, StringComparison.Ordinal);
-        Assert.Contains("tools/linux_x64/protoc", workflow, StringComparison.Ordinal);
+        Assert.Contains("ubuntu-22.04-arm", linuxPublish, StringComparison.Ordinal);
+        Assert.Contains("tools/linux_arm64/protoc", workflow, StringComparison.Ordinal);
         Assert.Contains("file artifacts/publish/linux-arm64/DownKyi | grep -qi 'ELF.*aarch64'", workflow, StringComparison.Ordinal);
         Assert.DoesNotContain("p7zip-full", workflow, StringComparison.Ordinal);
 

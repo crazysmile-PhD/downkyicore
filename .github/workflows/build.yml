@@ -12,23 +12,40 @@ on:
       - main
     paths:
       - 'script/assets/external-assets.json'
+      - 'script/ffmpeg-source/**'
+      - 'script/ffmpeg.ps1'
+      - 'script/ffmpeg.sh'
+      - '.github/workflows/build.yml'
   workflow_dispatch:
 
 jobs:
+  source-update-identity:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
+    steps:
+      - name: Checkout
+        uses: $/.github/actions/checkout
+      - name: Record the exact pull request head for post-build merge
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          jq -n --argjson number "$PR_NUMBER" --arg head "$PR_HEAD" \
+            '{number: $number, head: $head}' > "$RUNNER_TEMP/ffmpeg-update-identity.json"
+      - name: Upload source update identity
+        uses: $/.github/actions/upload-artifact
+        with:
+          name: ffmpeg-update-identity
+          path: ${{ runner.temp }}/ffmpeg-update-identity.json
+          if-no-files-found: error
+          retention-days: 1
+
   external-assets-preflight:
     name: Production manifest preflight
     runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
     steps:
       - name: Checkout
         uses: $/.github/actions/checkout
-      - name: Install Python
-        uses: $/.github/actions/setup-python
-        with:
-          python-version-file: .python-version
-      - name: Validate immutable FFmpeg manifest
-        run: python script/ffmpeg-assets.py validate-manifest --manifest script/assets/external-assets.json
-      - name: Check external asset availability
-        run: python script/ffmpeg-assets.py preflight --manifest script/assets/external-assets.json --timeout 30
       - name: Verify mirrored appimagetool
         shell: pwsh
         run: ./script/install-appimagetool.ps1 -ToolPath '${{ runner.temp }}/appimagetool-preflight'
@@ -137,6 +154,7 @@ jobs:
 
   build-windows:
     runs-on: windows-latest
+    timeout-minutes: 240
     needs: changelog
     strategy:
       fail-fast: false
@@ -150,7 +168,7 @@ jobs:
         uses: $/.github/actions/setup-dotnet
         with:
           global-json-file: global.json
-      - name: Install Python for FFmpeg manifest verification
+      - name: Install Python for FFmpeg source build
         uses: $/.github/actions/setup-python
         with:
           python-version-file: .python-version
@@ -163,7 +181,7 @@ jobs:
       - name: Install Pupnet
         shell: pwsh
         run: ./script/install-pupnet.ps1 -ToolPath ./.tools
-      - name: Get Deps
+      - name: Build FFmpeg from source
         run: |
           .\ffmpeg.ps1 ${{ matrix.cpu }}
         working-directory: ./script
@@ -213,7 +231,8 @@ jobs:
             script/pupnet/output/DownKyi-${{ steps.version.outputs.content }}-1.win-${{ matrix.cpu }}.${{ matrix.kind }}.sha256
             script/pupnet/output/publish-manifest-win-${{ matrix.cpu }}.json
   build-linux-publish:
-    runs-on: ubuntu-22.04
+    runs-on: ${{ matrix.cpu == 'arm64' && 'ubuntu-22.04-arm' || 'ubuntu-22.04' }}
+    timeout-minutes: 240
     needs: changelog
     strategy:
       fail-fast: false
@@ -226,7 +245,7 @@ jobs:
         uses: $/.github/actions/setup-dotnet
         with:
           global-json-file: global.json
-      - name: Install Python for FFmpeg manifest verification
+      - name: Install Python for FFmpeg source build
         uses: $/.github/actions/setup-python
         with:
           python-version-file: .python-version
@@ -234,7 +253,11 @@ jobs:
         id: version
         run: |
           echo "content=$(tr -d '\r\n' < version.txt)" >> "$GITHUB_OUTPUT"
-      - name: Get Deps
+      - name: Install FFmpeg source build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nasm libdrm-dev
+      - name: Build FFmpeg from source
         run: |
           chmod +x ffmpeg.sh
           ./ffmpeg.sh linux ${{ matrix.cpu }}
@@ -258,15 +281,15 @@ jobs:
             -RuntimeIdentifier "linux-${{ matrix.cpu }}" `
             -ExpectedVersion "${{ steps.version.outputs.content }}" `
             -OutputPath "script/pupnet/output/expected-publish-manifest-linux-${{ matrix.cpu }}.json"
-      - name: Verify ARM64 cross-publish host tool and target architecture
+      - name: Verify native ARM64 publish host tool and target architecture
         if: ${{ matrix.cpu == 'arm64' }}
         run: |
-          test "$(uname -m)" = x86_64
+          test "$(uname -m)" = aarch64
           grpc_tools_path="$(dotnet msbuild DownKyi.Core/DownKyi.Core.csproj -nologo -verbosity:quiet -getProperty:PkgGrpc_Tools -p:Configuration=Release)"
           test -n "$grpc_tools_path"
-          protoc="$grpc_tools_path/tools/linux_x64/protoc"
+          protoc="$grpc_tools_path/tools/linux_arm64/protoc"
           test -x "$protoc"
-          file "$protoc" | grep -q 'x86-64'
+          file "$protoc" | grep -qi 'aarch64'
           "$protoc" --version
           file artifacts/publish/linux-arm64/DownKyi | grep -qi 'ELF.*aarch64'
       - name: Create canonical Linux publish transport
@@ -500,7 +523,7 @@ jobs:
             candidate/publish-manifest-linux-arm64-deb.json
   build-macos:
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    timeout-minutes: 240
     needs: changelog
     strategy:
       fail-fast: false
@@ -546,7 +569,7 @@ jobs:
         run: |
           export HOMEBREW_NO_AUTO_UPDATE=true
           brew untap aws/tap || true
-          brew install create-dmg tree
+          brew install create-dmg tree nasm
       - name: Install .NET
         uses: $/.github/actions/setup-dotnet
         with:
@@ -568,7 +591,7 @@ jobs:
             artifacts/test-results/macos-packaging-${{ matrix.cpu }}
             artifacts/test-flight-recorder
           if-no-files-found: ignore
-      - name: Install Python for FFmpeg manifest verification
+      - name: Install Python for FFmpeg source build
         uses: $/.github/actions/setup-python
         with:
           python-version-file: .python-version
