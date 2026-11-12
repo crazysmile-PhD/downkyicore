@@ -104,8 +104,21 @@ def validate(ffmpeg, ffprobe, rid):
         if not any(parts[1] == name for line in encoders.splitlines()
                    if len(parts := line.split()) >= 2):
             raise RuntimeError(f"{rid}: missing required encoder {name}")
+    decoders = run(str(ffmpeg), "-hide_banner", "-decoders", capture=True).stdout
+    if not any(parts[1] == "libdav1d" for line in decoders.splitlines()
+               if len(parts := line.split()) >= 2):
+        raise RuntimeError(f"{rid}: missing software AV1 decoder libdav1d")
     with tempfile.TemporaryDirectory(prefix="ffmpeg-smoke-") as temporary:
         directory = Path(temporary)
+        av1_frame = directory / "av1-frame.rgb"
+        # The IVF fixture is one 16x16 black frame encoded with libaom-av1.
+        run(str(ffmpeg), "-hide_banner", "-loglevel", "error", "-xerror", "-y",
+            "-i", str(MANIFEST / "fixtures" / "av1-black-16x16.ivf"),
+            "-frames:v", "1", "-pix_fmt", "rgb24", "-f", "rawvideo",
+            str(av1_frame), capture=True)
+        if av1_frame.stat().st_size != 16 * 16 * 3:
+            raise RuntimeError(f"{rid}: AV1 software decode smoke failed")
+
         image = directory / "input.ppm"
         video = directory / "output.mp4"
         image.write_text("P3\n2 2\n255\n255 0 0  0 255 0  0 0 255  255 255 255\n", encoding="ascii")

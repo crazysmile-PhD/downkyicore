@@ -9,6 +9,7 @@
       "features": [
         "ffmpeg",
         "ffprobe",
+        "dav1d",
         "gpl",
         "mp3lame",
         "swresample",

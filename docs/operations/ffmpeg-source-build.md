@@ -2,7 +2,7 @@
 
 ## Current version
 
-`script/ffmpeg-source/vcpkg.json` pins one vcpkg registry baseline. That baseline selects the FFmpeg release and the source versions of x264, LAME and platform headers. `script/ffmpeg-source/ffmpeg-source.tar.gz` holds one current copy of the official FFmpeg source archive. The six RID features define the required encoders. `script/ffmpeg-source/build.py` verifies the stored archive against the pinned port's SHA-512, builds FFmpeg and ffprobe with vcpkg binary caching disabled, checks the executables and required encoders, then installs only the current result into `DownKyi.Core/Binary/<RID>/ffmpeg` for packaging.
+`script/ffmpeg-source/vcpkg.json` pins one vcpkg registry baseline. That baseline selects the FFmpeg release and the source versions of x264, LAME, dav1d and platform headers. `script/ffmpeg-source/ffmpeg-source.tar.gz` holds one current copy of the official FFmpeg source archive. The six RID features define the required encoders. `script/ffmpeg-source/build.py` verifies the stored archive against the pinned port's SHA-512, builds FFmpeg and ffprobe with vcpkg binary caching disabled, checks the executables and required encoders, decodes a tiny AV1 frame without hardware acceleration, then installs only the current result into `DownKyi.Core/Binary/<RID>/ffmpeg` for packaging.
 
 The release jobs build for Windows x86/x64, Linux x64/ARM64 and macOS x64/ARM64. Linux ARM64 uses a native Ubuntu 22.04 ARM64 runner so its binaries retain the same minimum glibc generation as the x64 build. The final DownKyi packages include FFmpeg, ffprobe and their dependency license texts. No separate FFmpeg binary release or versioned binary manifest is published.
 
