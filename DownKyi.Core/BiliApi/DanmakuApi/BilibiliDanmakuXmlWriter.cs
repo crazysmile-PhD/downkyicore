@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Xml;
 using System.Xml.Linq;
 using DownKyi.Core.BiliApi.DanmakuApi.Models;
 
@@ -17,6 +18,11 @@ public static class BilibiliDanmakuXmlWriter
         foreach (var danmaku in danmakus)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (!CanRepresentInXml10(danmaku))
+            {
+                continue;
+            }
+
             root.Add(new XElement(
                 "d",
                 new XAttribute("p", CreateParameter(danmaku)),
@@ -38,5 +44,19 @@ public static class BilibiliDanmakuXmlWriter
             danmaku.Pool.ToString(CultureInfo.InvariantCulture),
             danmaku.MidHash,
             danmaku.Id.ToString(CultureInfo.InvariantCulture));
+    }
+
+    private static bool CanRepresentInXml10(BiliDanmaku danmaku)
+    {
+        try
+        {
+            XmlConvert.VerifyXmlChars(danmaku.Content);
+            XmlConvert.VerifyXmlChars(danmaku.MidHash);
+            return true;
+        }
+        catch (XmlException)
+        {
+            return false;
+        }
     }
 }
