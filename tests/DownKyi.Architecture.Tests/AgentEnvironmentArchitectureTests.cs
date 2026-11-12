@@ -168,10 +168,10 @@ public sealed class AgentEnvironmentArchitectureTests
         Assert.Matches(@"^[0-9a-f]{40}$", appImageTool.GetProperty("version").GetString());
         Assert.Equal("appimagetool-x86_64.AppImage", appImageToolAsset.GetProperty("fileName").GetString());
         Assert.Matches(@"^[0-9a-f]{64}$", appImageToolAsset.GetProperty("sha256").GetString());
-        Assert.StartsWith(
-            "https://github.com/crazysmile-PhD/downkyicore/releases/download/runtime-assets-",
-            appImageToolAsset.GetProperty("url").GetString(),
-            StringComparison.Ordinal);
+        Assert.Equal(
+            "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage",
+            appImageToolAsset.GetProperty("url").GetString());
+        Assert.False(appImageTool.TryGetProperty("mirror", out _));
         Assert.Contains("external-assets.json", Read("script/install-appimagetool.ps1"), StringComparison.Ordinal);
         Assert.Contains("install-appimagetool.ps1", workflowSources, StringComparison.Ordinal);
 

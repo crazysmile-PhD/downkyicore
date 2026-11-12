@@ -1,27 +1,21 @@
 {
   "appimagetool": {
-    "version": "854e19e951900cf141245b384d45735942521abe",
+    "version": "11d54c9acc7f246df1398050a4b880314ac76862",
     "repository": "https://github.com/AppImage/appimagetool",
     "assets": {
       "linux-x64": {
-        "url": "https://github.com/crazysmile-PhD/downkyicore/releases/download/runtime-assets-2026-10-15/appimagetool-x86_64.AppImage",
-        "sha256": "95cbe7cce9717fce90c484e34052ee7c7f1d7635b33c12525b4776826a7d29b6",
+        "url": "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage",
+        "sha256": "e8c1169c4af66c3184d7ee110713d4be04befe671fa358e2c1591ee840553b03",
         "fileName": "appimagetool-x86_64.AppImage",
-        "size": 15092216,
+        "size": 15133176,
         "provenance": {
           "upstreamRepository": "https://github.com/AppImage/appimagetool",
           "upstreamRelease": "continuous",
-          "upstreamCommit": "854e19e951900cf141245b384d45735942521abe",
-          "upstreamAssetId": 610035789,
-          "originalAssetName": "appimagetool-x86_64.AppImage",
-          "mirroredRelease": "runtime-assets-2026-10-15"
+          "upstreamCommit": "11d54c9acc7f246df1398050a4b880314ac76862",
+          "upstreamAssetId": 715388534,
+          "originalAssetName": "appimagetool-x86_64.AppImage"
         }
       }
-    },
-    "mirror": {
-      "repository": "crazysmile-PhD/downkyicore",
-      "retention": "never-delete",
-      "tagPrefix": "runtime-assets-"
     }
   }
 }

@@ -177,9 +177,9 @@ cross-platform stress proof，不得移除。
 ## External Binary 卡
 
 - **Use when**：appimagetool asset URL、checksum、installer、provenance、TLS。
-- **Owner**：URL／checksum=`external-assets.json`；安裝=`install-appimagetool.ps1`；source／build provenance 與 trust policy=security docs。FFmpeg 由 [source build](operations/ffmpeg-source-build.md) 維護。
-- **Invariant**：immutable URL + checksum；installer 可從 root／`script/` 執行。Credential 只給 exact HTTPS `bilibili.com` host／subdomain；禁止 downgrade／credential cross-origin redirect。
-- **Do**：固定 commits；驗 appimagetool digest、installer 與 TLS。
+- **Owner**：目前使用的 appimagetool commit、asset id、URL、size 與 checksum=`external-assets.json`；安裝與執行驗證=`install-appimagetool.ps1`。FFmpeg 由 [source build](operations/ffmpeg-source-build.md) 維護。
+- **Invariant**：只接受 reviewed upstream `continuous` asset URL，下載後重算 size／SHA-256 並實際執行；upstream 替換 asset 後，在 manifest 更新前 fail closed。不保留或建立歷史 appimagetool mirror。Installer 可從 root／`script/` 執行。Credential 只給 exact HTTPS `bilibili.com` host／subdomain；禁止 downgrade／credential cross-origin redirect。
+- **Do**：需要新版時只更新 current manifest pin；驗 appimagetool digest、執行、installer 與 TLS。
 - **Proof**：manifest、installer、digest／TLS。
 - **Stop**：mutable `latest`、略過 checksum／TLS、擴 credential host。
 

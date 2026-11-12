@@ -28,18 +28,13 @@ $sha256 = ([string]$asset.sha256).ToLowerInvariant()
 $fileName = [string]$asset.fileName
 $expectedSize = [long]$asset.size
 
-$mirrorRepository = [string]$appImageTool.mirror.repository
-$mirrorTagPrefix = [string]$appImageTool.mirror.tagPrefix
-if ($mirrorRepository -ne "crazysmile-PhD/downkyicore") {
-    throw "appimagetool must use the DownKyiCore release mirror."
+$upstreamRepository = [string]$appImageTool.repository
+if ($upstreamRepository -ne "https://github.com/AppImage/appimagetool") {
+    throw "appimagetool must use the reviewed upstream repository."
 }
-if ([string]::IsNullOrWhiteSpace($mirrorTagPrefix)) {
-    throw "appimagetool mirror tagPrefix is required."
-}
-
-$mirrorPrefix = "https://github.com/$mirrorRepository/releases/download/$mirrorTagPrefix"
-if (-not $url.StartsWith($mirrorPrefix, [StringComparison]::Ordinal)) {
-    throw "appimagetool must come from a fixed DownKyiCore release mirror."
+$expectedUrl = "$upstreamRepository/releases/download/continuous/$fileName"
+if (-not [String]::Equals($url, $expectedUrl, [StringComparison]::Ordinal)) {
+    throw "appimagetool must use the reviewed upstream continuous asset URL."
 }
 if ($fileName -ne "appimagetool-x86_64.AppImage") {
     throw "Unexpected appimagetool file name: $fileName"
@@ -87,6 +82,18 @@ if (-not [String]::Equals($actualSha256, $sha256, [StringComparison]::Ordinal)) 
 & chmod +x -- $destination
 if ($LASTEXITCODE -ne 0) {
     throw "Failed to mark appimagetool executable."
+}
+
+$previousExtractAndRun = $env:APPIMAGE_EXTRACT_AND_RUN
+try {
+    $env:APPIMAGE_EXTRACT_AND_RUN = "1"
+    & $destination --version
+    if ($LASTEXITCODE -ne 0) {
+        throw "appimagetool executable validation failed with exit code $LASTEXITCODE."
+    }
+}
+finally {
+    $env:APPIMAGE_EXTRACT_AND_RUN = $previousExtractAndRun
 }
 
 Write-Host "Installed verified appimagetool at $destination"
