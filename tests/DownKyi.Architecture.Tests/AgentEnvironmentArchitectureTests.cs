@@ -66,7 +66,7 @@ public sealed class AgentEnvironmentArchitectureTests
             "\\\"version\\\"\\s*:\\s*\\\"\\d+\\.\\d+\\.\\d+\\\"",
             Read("global.json"));
         Assert.Matches(
-            @"^\d+\.\d+(?:\.\d+)?\r?\n?$",
+            @"^3\.\d+\r?\n?$",
             Read(".python-version"));
 
         var workflowsDirectory = Path.Combine(
@@ -96,6 +96,11 @@ public sealed class AgentEnvironmentArchitectureTests
         Assert.DoesNotContain("python-version:", workflows, StringComparison.Ordinal);
 
         Assert.Contains("      - '.python-version'", Read(".github/workflows/macos-adhoc-package.yml"), StringComparison.Ordinal);
+
+        var pythonUpdater = Read(".github/workflows/update-ffmpeg-source.yml");
+        Assert.Contains("script/update-python-version.py", pythonUpdater, StringComparison.Ordinal);
+        Assert.Contains("add_paths: .python-version", pythonUpdater, StringComparison.Ordinal);
+        Assert.Contains("branch: automation/python-version", pythonUpdater, StringComparison.Ordinal);
     }
 
     [Fact]
