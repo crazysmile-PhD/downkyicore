@@ -292,7 +292,8 @@ public sealed class FfmpegSeekabilityIntegrationTests : IDisposable
                 FfmpegExecutableLocator.Ffprobe,
                 [
                     "-v", "error",
-                    "-show_entries", "stream=codec_name:stream_disposition=attached_pic",
+                    "-count_packets",
+                    "-show_entries", "stream=codec_name,codec_type,nb_read_packets:stream_disposition=attached_pic",
                     "-of", "json",
                     mediaFile
                 ],
@@ -306,8 +307,15 @@ public sealed class FfmpegSeekabilityIntegrationTests : IDisposable
         Assert.Contains(streams, stream =>
             stream.GetProperty("codec_name").GetString() == expectedCodec
             && stream.GetProperty("disposition").GetProperty("attached_pic").GetInt32() == 1);
-        Assert.Contains(streams, stream =>
-            stream.GetProperty("disposition").GetProperty("attached_pic").GetInt32() == 0);
+        var primaryVideo = Assert.Single(streams, stream =>
+            stream.GetProperty("codec_type").GetString() == "video"
+            && stream.GetProperty("disposition").GetProperty("attached_pic").GetInt32() == 0);
+        Assert.True(
+            int.TryParse(primaryVideo.GetProperty("nb_read_packets").GetString(), out var packetCount),
+            "ffprobe did not report the primary video packet count.");
+        Assert.True(
+            packetCount > 1,
+            $"Expected the primary video to contain more than one packet, but found {packetCount}.");
     }
 
     private static async Task CreateSegmentAsync(

@@ -227,7 +227,6 @@ internal static class FfmpegCommandFactory
         arguments.AddRange([
             "-map", $"{inputIndex}:v:0",
             "-c:v:1", canCopy ? "copy" : "mjpeg",
-            "-frames:v:1", "1",
             "-disposition:v:1", "attached_pic"
         ]);
         if (!canCopy)
