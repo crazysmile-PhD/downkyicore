@@ -34,6 +34,14 @@ jobs:
             body: >-
               Update the numeric stable appimagetool release and its GitHub-provided SHA-256 together.
               The Build workflow must package and validate the x64 and ARM64 AppImages before merge.
+          - name: Python
+            command: python script/update-python-version.py
+            add_paths: .python-version
+            topic: Python
+            branch: automation/python-version
+            body: >-
+              Update the repository-owned Python feature line to the newest official stable release.
+              Existing CI must validate every Python consumer before merge.
     steps:
       - name: Checkout current tool selection
         uses: $/.github/actions/checkout
