@@ -113,7 +113,7 @@ public sealed class WbiKeyProvider : IWbiKeyProvider, IDisposable
             return string.Empty;
         }
 
-        var fileName = address[(address.LastIndexOf('/') + 1)..];
+        var fileName = address[(address.LastIndexOf('/', StringComparison.Ordinal) + 1)..];
         var suffixIndex = fileName.IndexOfAny(['?', '#']);
         if (suffixIndex >= 0)
         {

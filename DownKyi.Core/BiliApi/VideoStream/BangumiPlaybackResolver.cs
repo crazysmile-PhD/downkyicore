@@ -130,7 +130,7 @@ internal static class BangumiPlaybackResolver
 
     private static string? ExtractJsonObject(string source, int searchStart)
     {
-        var objectStart = source.IndexOf('{', searchStart);
+        var objectStart = source.IndexOf('{', searchStart, StringComparison.Ordinal);
         if (objectStart < 0)
         {
             return null;

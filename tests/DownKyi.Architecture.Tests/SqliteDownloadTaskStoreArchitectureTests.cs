@@ -568,7 +568,7 @@ public sealed class SqliteDownloadTaskStoreArchitectureTests
 
             if (source[index] == '/' && index + 1 < source.Length && source[index + 1] == '/')
             {
-                index = source.IndexOf('\n', index + 2);
+                index = source.IndexOf('\n', index + 2, StringComparison.Ordinal);
                 if (index < 0)
                 {
                     break;
