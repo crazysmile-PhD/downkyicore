@@ -52,7 +52,7 @@ jobs:
         run: |
           export HOMEBREW_NO_AUTO_UPDATE=true
           brew untap aws/tap || true
-          brew install create-dmg tree
+          brew install create-dmg tree nasm
       - name: Install .NET
         uses: $/.github/actions/setup-dotnet
         with:

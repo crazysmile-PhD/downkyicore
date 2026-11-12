@@ -253,6 +253,10 @@ jobs:
         id: version
         run: |
           echo "content=$(tr -d '\r\n' < version.txt)" >> "$GITHUB_OUTPUT"
+      - name: Install FFmpeg source build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nasm libdrm-dev
       - name: Build FFmpeg from source
         run: |
           chmod +x ffmpeg.sh
@@ -565,7 +569,7 @@ jobs:
         run: |
           export HOMEBREW_NO_AUTO_UPDATE=true
           brew untap aws/tap || true
-          brew install create-dmg tree
+          brew install create-dmg tree nasm
       - name: Install .NET
         uses: $/.github/actions/setup-dotnet
         with:

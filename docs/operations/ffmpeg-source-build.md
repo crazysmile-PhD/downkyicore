@@ -22,4 +22,4 @@ From the repository root on Windows with Visual Studio C++ Build Tools and Pytho
 pwsh ./script/ffmpeg.ps1 x64
 ```
 
-On Linux or macOS, run `./script/ffmpeg.sh linux x64` or `./script/ffmpeg.sh mac arm64` from `script/`. The first build downloads the pinned vcpkg toolchain and compiles its dependencies, so it takes substantially longer than the former binary download.
+On Linux or macOS, run `./script/ffmpeg.sh linux x64` or `./script/ffmpeg.sh mac arm64` from `script/`. Linux needs `nasm` and `libdrm-dev`; macOS needs `nasm` (for example, `brew install nasm`) to build x264. The first build downloads the pinned vcpkg toolchain and compiles its dependencies, so it takes substantially longer than the former binary download.
