@@ -48,9 +48,10 @@ Release，會 fail closed 而不修改它。
 1. `Ensure-HistoricalDraftReleases.ps1` 只建立缺少的 Draft Release。
 2. `New-HistoricalBuildPlan.ps1` 依現有 assets 建立缺項 matrix。
 3. `Prepare-HistoricalRuntimeAssets.ps1` 依目前受控的
-   `script/historical-rebuild/runtime-assets.json` 下載並驗證歷史版本所需的 aria2、FFmpeg 與
-   appimagetool；固定 runtime binaries 來自 DownKyiCore 自己的非 Latest、不可變 release，
-   而最後一個 aria2 版本的 source archive 與 build info 另保存在 `v1.3.0` release。
+   `script/historical-rebuild/runtime-assets.json` 下載並驗證歷史版本所需的 aria2 與 FFmpeg，
+   並從 production manifest 安裝目前受支持的 stable appimagetool；固定 runtime binaries
+   來自 DownKyiCore 自己的非 Latest、不可變 release，而最後一個 aria2 版本的 source
+   archive 與 build info 另保存在 `v1.3.0` release。
    工具不執行舊版未固定版本或未驗 checksum 的下載腳本。
 4. `Invoke-HistoricalBuild.ps1` 在臨時 detached worktree 建置指定 tag，注入上述
    已驗證依賴、檢查版本與封裝內容並做基本啟動測試，最後移除 worktree。

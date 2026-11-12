@@ -23,36 +23,23 @@ if ($null -eq $appImageTool -or $null -eq $appImageTool.assets.'linux-x64') {
 }
 
 $asset = $appImageTool.assets.'linux-x64'
-$url = [string]$asset.url
+$version = [string]$appImageTool.version
+$repository = [string]$appImageTool.repository
 $sha256 = ([string]$asset.sha256).ToLowerInvariant()
 $fileName = [string]$asset.fileName
-$expectedSize = [long]$asset.size
-
-$mirrorRepository = [string]$appImageTool.mirror.repository
-$mirrorTagPrefix = [string]$appImageTool.mirror.tagPrefix
-if ($mirrorRepository -ne "crazysmile-PhD/downkyicore") {
-    throw "appimagetool must use the DownKyiCore release mirror."
+if ($repository -ne "https://github.com/AppImage/appimagetool") {
+    throw "appimagetool must come from the official AppImage repository."
 }
-if ([string]::IsNullOrWhiteSpace($mirrorTagPrefix)) {
-    throw "appimagetool mirror tagPrefix is required."
-}
-
-$mirrorPrefix = "https://github.com/$mirrorRepository/releases/download/$mirrorTagPrefix"
-if (-not $url.StartsWith($mirrorPrefix, [StringComparison]::Ordinal)) {
-    throw "appimagetool must come from a fixed DownKyiCore release mirror."
+if ($version -notmatch '^\d+\.\d+\.\d+$') {
+    throw "appimagetool must use a numeric stable release."
 }
 if ($fileName -ne "appimagetool-x86_64.AppImage") {
     throw "Unexpected appimagetool file name: $fileName"
 }
-if ([IO.Path]::GetFileName(([Uri]$url).AbsolutePath) -ne $fileName) {
-    throw "appimagetool fileName does not match its URL."
-}
 if ($sha256 -notmatch '^[0-9a-f]{64}$') {
     throw "appimagetool has an invalid SHA-256 value."
 }
-if ($expectedSize -le 0) {
-    throw "appimagetool has an invalid expected size."
-}
+$url = "$repository/releases/download/$version/$fileName"
 
 New-Item -ItemType Directory -Path $ToolPath -Force | Out-Null
 $destination = Join-Path $ToolPath $fileName
@@ -74,11 +61,6 @@ for ($attempt = 1; $attempt -le 3; $attempt++) {
     }
 }
 
-$download = Get-Item -LiteralPath $destination -ErrorAction Stop
-if ($download.Length -ne $expectedSize) {
-    throw "appimagetool size mismatch. Expected $expectedSize bytes, got $($download.Length)."
-}
-
 $actualSha256 = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant()
 if (-not [String]::Equals($actualSha256, $sha256, [StringComparison]::Ordinal)) {
     throw "appimagetool checksum mismatch. Expected $sha256, got $actualSha256."
@@ -89,4 +71,16 @@ if ($LASTEXITCODE -ne 0) {
     throw "Failed to mark appimagetool executable."
 }
 
-Write-Host "Installed verified appimagetool at $destination"
+$previousExtractAndRun = $env:APPIMAGE_EXTRACT_AND_RUN
+try {
+    $env:APPIMAGE_EXTRACT_AND_RUN = "1"
+    & $destination --version
+    if ($LASTEXITCODE -ne 0) {
+        throw "appimagetool executable validation failed with exit code $LASTEXITCODE."
+    }
+}
+finally {
+    $env:APPIMAGE_EXTRACT_AND_RUN = $previousExtractAndRun
+}
+
+Write-Host "Installed verified appimagetool $version at $destination"

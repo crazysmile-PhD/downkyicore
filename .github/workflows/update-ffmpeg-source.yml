@@ -1,8 +1,8 @@
-name: Update FFmpeg source
+name: Update external build tools
 
 on:
   schedule:
-    - cron: '17 3 * * 1'
+    - cron: '0 0 * * 1'
   workflow_dispatch:
 
 permissions:
@@ -10,9 +10,32 @@ permissions:
 
 jobs:
   propose:
+    name: Propose ${{ matrix.name }} update
     runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: FFmpeg source
+            command: python script/ffmpeg-source/update.py
+            add_paths: |
+              script/ffmpeg-source/vcpkg.json
+              script/ffmpeg-source/ffmpeg-source.tar.gz
+            topic: source-built FFmpeg
+            branch: automation/ffmpeg-source
+            body: >-
+              Update the one stored official FFmpeg source archive and the vcpkg baseline together.
+              The Build workflow must compile and validate all six release RIDs before automatic merge.
+          - name: appimagetool
+            command: python script/update-appimagetool.py
+            add_paths: script/assets/external-assets.json
+            topic: appimagetool
+            branch: automation/appimagetool
+            body: >-
+              Update the numeric stable appimagetool release and its GitHub-provided SHA-256 together.
+              The Build workflow must package and validate the x64 and ARM64 AppImages before merge.
     steps:
-      - name: Checkout current source selection
+      - name: Checkout current tool selection
         uses: $/.github/actions/checkout
         with:
           persist-credentials: false
@@ -20,22 +43,18 @@ jobs:
         uses: $/.github/actions/setup-python
         with:
           python-version-file: .python-version
-      - name: Check the official FFmpeg source selected by vcpkg
+      - name: Check the official stable selection
         id: candidate
-        run: python script/ffmpeg-source/update.py
-      - name: Open source-only update pull request
+        run: ${{ matrix.command }}
+      - name: Open focused update pull request
         if: steps.candidate.outputs.updated == 'true'
         uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.DOWNKYI_AUTOMATION_TOKEN }}
-          add-paths: |
-            script/ffmpeg-source/vcpkg.json
-            script/ffmpeg-source/ffmpeg-source.tar.gz
-          commit-message: 'build(deps): update source-built FFmpeg to ${{ steps.candidate.outputs.version }}'
-          branch: automation/ffmpeg-source
+          add-paths: ${{ matrix.add_paths }}
+          commit-message: 'build(deps): update ${{ matrix.topic }} to ${{ steps.candidate.outputs.version }}'
+          branch: ${{ matrix.branch }}
           base: ${{ github.event.repository.default_branch }}
           delete-branch: true
-          title: 'build(deps): update source-built FFmpeg to ${{ steps.candidate.outputs.version }}'
-          body: |
-            Update the one stored official FFmpeg source archive and the vcpkg baseline together.
-            The Build workflow must compile and validate all six release RIDs before automatic merge.
+          title: 'build(deps): update ${{ matrix.topic }} to ${{ steps.candidate.outputs.version }}'
+          body: ${{ matrix.body }}

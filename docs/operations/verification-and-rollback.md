@@ -127,7 +127,8 @@ FFmpeg 的目前來源版本由 `script/ffmpeg-source/vcpkg.json` 的 baseline �
 官方原始碼只以 `script/ffmpeg-source/ffmpeg-source.tar.gz` 保存目前一份，
 參見 [FFmpeg source build](ffmpeg-source-build.md)。腳本從來源編譯並驗證
 `ffmpeg`、`ffprobe` 與目標平台需要的 encoder；不再下載 FFmpeg 預編譯附件。
-`script/assets/external-assets.json` 仍維護 appimagetool 的固定 URL 與 SHA-256。
+`script/assets/external-assets.json` 維護 appimagetool 的 numeric stable version 與 SHA-256；
+production 與 historical build 都由 installer 導出官方版本化 URL，沒有 project-owned mirror。
 
 交叉發布必須明確 restore 同一個目標 RID，再以 `--no-restore` publish。
 Core 只保存外部 binary catalog，不得選擇平台內容或設定 SDK
