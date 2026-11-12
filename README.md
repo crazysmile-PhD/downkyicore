@@ -9,7 +9,7 @@
 
 </div>
 
-DownKyi Core 是基于哔哩下载姬 Windows 版与 Avalonia 的跨平台 B 站视频下载工具。项目使用 .NET 10、Avalonia 12、Microsoft Generic Host、Microsoft DI 与 CommunityToolkit MVVM。
+DownKyi Core 是基于哔哩下载姬 Windows 版与 Avalonia 的跨平台 B 站视频下载工具。项目使用 .NET 11、Avalonia 12、Microsoft Generic Host、Microsoft DI 与 CommunityToolkit MVVM。
 
 ## 下载
 
@@ -66,7 +66,7 @@ Windows ZIP 必须完整解压到新目录后再运行。`DownKyi.exe` 旁必须
 
 ## 开发者入口
 
-开发需要 .NET 10 SDK。按问题类型进入唯一 owner：
+开发需要 .NET 11 SDK。按问题类型进入唯一 owner：
 
 - [AGENTS.md](AGENTS.md)：修改协议、导航顺序和禁止事项。
 - [ARCHITECTURE.md](ARCHITECTURE.md)：当前拓扑、边界、invariant 与可执行防线。
