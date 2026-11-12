@@ -146,10 +146,17 @@ $records.Add([ordered]@{
 })
 
 if ($Rid -eq 'linux-x64') {
-    & (Join-Path $RepositoryRoot 'script/install-appimagetool.ps1') -ToolPath (Join-Path $OutputRoot 'appimagetool') -ManifestPath $manifestPath
-    if ($LASTEXITCODE -ne 0) { throw 'Pinned appimagetool installation failed.' }
-    $toolAsset = $manifest.appimagetool.assets.'linux-x64'
-    $records.Add([ordered]@{ name = 'appimagetool'; url = $toolAsset.url; archiveSha256 = $toolAsset.sha256; binarySha256 = $toolAsset.sha256 })
+    $toolManifestPath = Join-Path $RepositoryRoot 'script/assets/external-assets.json'
+    & (Join-Path $RepositoryRoot 'script/install-appimagetool.ps1') `
+        -ToolPath (Join-Path $OutputRoot 'appimagetool') `
+        -ManifestPath $toolManifestPath
+    if ($LASTEXITCODE -ne 0) { throw 'Current appimagetool installation failed.' }
+    $toolManifest = Get-Content -LiteralPath $toolManifestPath -Raw | ConvertFrom-Json
+    $toolAsset = $toolManifest.appimagetool.assets.'linux-x64'
+    $toolRepository = [string]$toolManifest.appimagetool.repository
+    $toolVersion = [string]$toolManifest.appimagetool.version
+    $toolUrl = "$toolRepository/releases/download/$toolVersion/$($toolAsset.fileName)"
+    $records.Add([ordered]@{ name = 'appimagetool'; url = $toolUrl; archiveSha256 = $toolAsset.sha256; binarySha256 = $toolAsset.sha256 })
 }
 
 if ($Rid -ne 'win-x64') {

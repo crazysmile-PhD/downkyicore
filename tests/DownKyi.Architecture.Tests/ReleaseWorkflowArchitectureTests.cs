@@ -290,6 +290,9 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.Contains("  schedule:", updater, StringComparison.Ordinal);
         Assert.Contains("  workflow_dispatch:", updater, StringComparison.Ordinal);
         Assert.Contains("script/ffmpeg-source/ffmpeg-source.tar.gz", updater, StringComparison.Ordinal);
+        Assert.Contains("script/update-appimagetool.py", updater, StringComparison.Ordinal);
+        Assert.Contains("add_paths: script/assets/external-assets.json", updater, StringComparison.Ordinal);
+        Assert.Contains("branch: automation/appimagetool", updater, StringComparison.Ordinal);
         Assert.False(File.Exists(Path.Combine(RepositoryRoot, ".github", "workflows", "update-ffmpeg-assets.yml")));
     }
 
@@ -501,7 +504,7 @@ public sealed class ReleaseWorkflowArchitectureTests
     }
 
     [Fact]
-    public void ExternalAssetManifestPinsImmutableReleaseUrlsAndSha256Digests()
+    public void ExternalAssetManifestPinsOfficialStableVersionAndSha256Digest()
     {
         var manifestPath = Path.Combine(
             RepositoryRoot,
@@ -510,19 +513,21 @@ public sealed class ReleaseWorkflowArchitectureTests
             "external-assets.json");
         using var manifest = JsonDocument.Parse(File.ReadAllText(manifestPath));
         Assert.False(manifest.RootElement.TryGetProperty("ffmpeg", out _));
+        var tool = manifest.RootElement.GetProperty("appimagetool");
+        var version = Assert.IsType<string>(tool.GetProperty("version").GetString());
+        var repository = Assert.IsType<string>(tool.GetProperty("repository").GetString());
+        var asset = tool.GetProperty("assets").GetProperty("linux-x64");
+        var fileName = Assert.IsType<string>(asset.GetProperty("fileName").GetString());
+        var checksum = Assert.IsType<string>(asset.GetProperty("sha256").GetString());
+        var derivedUrl = $"{repository}/releases/download/{version}/{fileName}";
 
-        foreach (var tool in manifest.RootElement.EnumerateObject())
-        {
-            foreach (var asset in tool.Value.GetProperty("assets").EnumerateObject())
-            {
-                AssertPinnedAsset(asset.Value, "url", "sha256");
-
-                if (asset.Value.TryGetProperty("ffprobeUrl", out _))
-                {
-                    AssertPinnedAsset(asset.Value, "ffprobeUrl", "ffprobeSha256");
-                }
-            }
-        }
+        Assert.Matches(@"^\d+\.\d+\.\d+$", version);
+        Assert.Equal("https://github.com/AppImage/appimagetool", repository);
+        Assert.True(Uri.TryCreate(derivedUrl, UriKind.Absolute, out var uri));
+        Assert.Equal(Uri.UriSchemeHttps, uri.Scheme);
+        Assert.DoesNotContain("/latest/", derivedUrl, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("/continuous/", derivedUrl, StringComparison.OrdinalIgnoreCase);
+        Assert.Matches("^[a-f0-9]{64}$", checksum);
     }
 
     [Fact]
@@ -1239,22 +1244,6 @@ public sealed class ReleaseWorkflowArchitectureTests
     private static int GetIndent(string line)
     {
         return line.Length - line.TrimStart().Length;
-    }
-
-    private static void AssertPinnedAsset(
-        JsonElement asset,
-        string urlProperty,
-        string checksumProperty)
-    {
-        var url = asset.GetProperty(urlProperty).GetString();
-        var checksum = asset.GetProperty(checksumProperty).GetString();
-
-        Assert.NotNull(url);
-        Assert.NotNull(checksum);
-        Assert.True(Uri.TryCreate(url, UriKind.Absolute, out var uri));
-        Assert.Equal(Uri.UriSchemeHttps, uri.Scheme);
-        Assert.DoesNotContain("/latest/", url, StringComparison.OrdinalIgnoreCase);
-        Assert.Matches("^[a-f0-9]{64}$", checksum);
     }
 
     private static bool IsBuildOutput(string path)

@@ -165,13 +165,13 @@ public sealed class AgentEnvironmentArchitectureTests
         using var externalAssets = JsonDocument.Parse(Read("script/assets/external-assets.json"));
         var appImageTool = externalAssets.RootElement.GetProperty("appimagetool");
         var appImageToolAsset = appImageTool.GetProperty("assets").GetProperty("linux-x64");
-        Assert.Matches(@"^[0-9a-f]{40}$", appImageTool.GetProperty("version").GetString());
+        Assert.Matches(@"^\d+\.\d+\.\d+$", appImageTool.GetProperty("version").GetString());
+        Assert.Equal("https://github.com/AppImage/appimagetool", appImageTool.GetProperty("repository").GetString());
         Assert.Equal("appimagetool-x86_64.AppImage", appImageToolAsset.GetProperty("fileName").GetString());
         Assert.Matches(@"^[0-9a-f]{64}$", appImageToolAsset.GetProperty("sha256").GetString());
-        Assert.StartsWith(
-            "https://github.com/crazysmile-PhD/downkyicore/releases/download/runtime-assets-",
-            appImageToolAsset.GetProperty("url").GetString(),
-            StringComparison.Ordinal);
+        Assert.False(appImageTool.TryGetProperty("mirror", out _));
+        Assert.False(appImageToolAsset.TryGetProperty("url", out _));
+        Assert.False(appImageToolAsset.TryGetProperty("provenance", out _));
         Assert.Contains("external-assets.json", Read("script/install-appimagetool.ps1"), StringComparison.Ordinal);
         Assert.Contains("install-appimagetool.ps1", workflowSources, StringComparison.Ordinal);
 
@@ -194,8 +194,11 @@ public sealed class AgentEnvironmentArchitectureTests
             Assert.DoesNotContain("crazysmile-PhD/downkyi-runtime-assets/releases/download/", dependencySource, StringComparison.Ordinal);
         }
         Assert.DoesNotContain("crazysmile-PhD/downkyi-aria2-static-build/releases/download/", historicalAssets, StringComparison.Ordinal);
+        Assert.DoesNotContain("appimagetool", historicalAssets, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("\"builtin-baseline\"", sourceManifest, StringComparison.Ordinal);
         Assert.Contains("workflow_run:", sourceAutoMerge, StringComparison.Ordinal);
+        Assert.Contains("script/update-appimagetool.py", sourceUpdater, StringComparison.Ordinal);
+        Assert.Contains("automation/appimagetool", sourceUpdater, StringComparison.Ordinal);
         Assert.DoesNotContain("update-ffmpeg-assets.yml",
             Read(".github/workflows/build.yml"), StringComparison.Ordinal);
 

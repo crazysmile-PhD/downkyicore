@@ -46,7 +46,7 @@ jobs:
     steps:
       - name: Checkout
         uses: $/.github/actions/checkout
-      - name: Verify mirrored appimagetool
+      - name: Verify pinned stable appimagetool
         shell: pwsh
         run: ./script/install-appimagetool.ps1 -ToolPath '${{ runner.temp }}/appimagetool-preflight'
 
@@ -361,7 +361,7 @@ jobs:
           fuse_package=libfuse2
           if ! apt-cache show "$fuse_package" >/dev/null 2>&1; then fuse_package=libfuse2t64; fi
           sudo apt-get install -y cpio "$fuse_package" rpm rpm2cpio xauth xvfb
-      - name: Install mirrored appimagetool
+      - name: Install pinned stable appimagetool
         if: ${{ matrix.kind == 'AppImage' }}
         run: |
           pwsh ./script/install-appimagetool.ps1 -ToolPath ./.tools

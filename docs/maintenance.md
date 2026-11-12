@@ -177,11 +177,11 @@ cross-platform stress proof，不得移除。
 ## External Binary 卡
 
 - **Use when**：appimagetool asset URL、checksum、installer、provenance、TLS。
-- **Owner**：URL／checksum=`external-assets.json`；安裝=`install-appimagetool.ps1`；source／build provenance 與 trust policy=security docs。FFmpeg 由 [source build](operations/ffmpeg-source-build.md) 維護。
-- **Invariant**：immutable URL + checksum；installer 可從 root／`script/` 執行。Credential 只給 exact HTTPS `bilibili.com` host／subdomain；禁止 downgrade／credential cross-origin redirect。
-- **Do**：固定 commits；驗 appimagetool digest、installer 與 TLS。
-- **Proof**：manifest、installer、digest／TLS。
-- **Stop**：mutable `latest`、略過 checksum／TLS、擴 credential host。
+- **Owner**：numeric stable version／checksum=`external-assets.json`；安裝=`install-appimagetool.ps1`；更新提案=`update-appimagetool.py`。FFmpeg 由 [source build](operations/ffmpeg-source-build.md) 維護。
+- **Invariant**：只使用官方 numeric stable release + checksum；production 與 historical build 共用目前的工具選擇，不保存 appimagetool 歷史鏡像。Installer 可從 root／`script/` 執行。Credential 只給 exact HTTPS `bilibili.com` host／subdomain；禁止 downgrade／credential cross-origin redirect。
+- **Do**：每週檢查 stable release，只在版本增加且 asset 提供有效 GitHub digest 時提出 manifest-only PR；由 installer checksum 與 x64／ARM64 package gates 驗證下載內容及輸出行為。
+- **Proof**：manifest、installer、digest、AppImage package／launch gates。
+- **Stop**：mutable `latest`／`continuous`、略過 checksum／TLS、未要求 exact-byte reproduction 卻建立 binary mirror、擴 credential host。
 
 <a id="release"></a>
 

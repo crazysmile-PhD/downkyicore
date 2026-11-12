@@ -32,9 +32,7 @@ Assert-True ($commitCount -eq 25) 'Not all historical tags were validated.'
 
 $runtimeManifestText = Get-Content -LiteralPath (Join-Path $RepositoryRoot 'script/historical-rebuild/runtime-assets.json') -Raw
 $runtimeManifest = $runtimeManifestText | ConvertFrom-Json
-$appImageToolAsset = $runtimeManifest.appimagetool.assets.'linux-x64'
-Assert-True ($null -ne $appImageToolAsset) 'Missing pinned appimagetool asset for linux-x64.'
-Assert-True (([string]$appImageToolAsset.sha256) -match '^[0-9a-f]{64}$') 'Invalid appimagetool checksum for linux-x64.'
+Assert-True ($runtimeManifest.PSObject.Properties.Name -notcontains 'appimagetool') 'Historical rebuild must use the current appimagetool selection.'
 Assert-True ($runtimeManifest.aria2.sourceArchive.url -eq 'https://github.com/crazysmile-PhD/downkyicore/releases/download/v1.3.0/aria2-source.zip') 'The final aria2 source archive must be owned by the v1.3.0 release.'
 Assert-True ($runtimeManifest.aria2.buildInfo.url -eq 'https://github.com/crazysmile-PhD/downkyicore/releases/download/v1.3.0/aria2-build-info.txt') 'The final aria2 build information must be owned by the v1.3.0 release.'
 Assert-True (([string]$runtimeManifest.aria2.sourceArchive.sha256) -match '^[0-9a-f]{64}$') 'Invalid archived aria2 source checksum.'
@@ -64,6 +62,8 @@ Assert-True ($syncScript -match '\$release\.target_commitish\s+-ne\s+\$expectedC
 Assert-True ($syncScript -notmatch '(?m)^\s*target_commitish\s*=') 'Draft note updates must not request historical ref rewrites.'
 $ensureScript = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Ensure-HistoricalDraftReleases.ps1') -Raw
 Assert-True ($ensureScript -match "-like 'untagged-\*'") 'Draft setup must recover GitHub-detached historical drafts without creating duplicates.'
+$prepareScript = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Prepare-HistoricalRuntimeAssets.ps1') -Raw
+Assert-True ($prepareScript -match 'script/assets/external-assets\.json') 'Historical rebuild must install the current appimagetool selection.'
 $buildScript = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Invoke-HistoricalBuild.ps1') -Raw
 Assert-True ($buildScript -notmatch "Invoke-Native\s+chmod[^\r\n]*'--'") 'Historical builds must use chmod arguments supported by BSD and GNU hosts.'
 Assert-True ($buildScript -match 'Join-Path\s+\$stubProject\s+''global\.json''') 'The isolated smoke helper must pin its own historical SDK owner.'
