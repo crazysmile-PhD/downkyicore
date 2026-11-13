@@ -360,7 +360,7 @@
     <system:String x:Key="Diagnostics">Diagnostic log</system:String>
     <system:String x:Key="OpenLogs">Open logs</system:String>
     <system:String x:Key="ExportDiagnosticLog">Export diagnostic logs</system:String>
-    <system:String x:Key="DiagnosticLogTip">Public feedback packages contain only predefined recent warnings, errors, and diagnostic fields. They do not include raw logs, databases, or settings files.</system:String>
+    <system:String x:Key="DiagnosticLogTip">Diagnostic packages contain redacted operation messages, warnings, errors, and exception diagnostics. Databases and settings files are not attached. Review the contents before uploading publicly.</system:String>
     <system:String x:Key="DiagnosticLogExported">Diagnostic package exported.</system:String>
     <system:String x:Key="DiagnosticLogExportFailed">Could not export the diagnostic package. Try again later.</system:String>
     <system:String x:Key="ReceiveBetaVersion">Receive beta updates</system:String>

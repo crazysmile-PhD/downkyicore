@@ -360,7 +360,7 @@
     <system:String x:Key="Diagnostics">诊断日志</system:String>
     <system:String x:Key="OpenLogs">打开日志</system:String>
     <system:String x:Key="ExportDiagnosticLog">导出诊断日志</system:String>
-    <system:String x:Key="DiagnosticLogTip">公开反馈包只含预定义的近期警告、错误和异常诊断字段，不含原始日志、数据库或设置文件。</system:String>
+    <system:String x:Key="DiagnosticLogTip">诊断包包含已遮蔽敏感信息的操作消息、警告、错误和异常诊断，不附加数据库或设置文件。公开上传前请检查内容。</system:String>
     <system:String x:Key="DiagnosticLogExported">已导出错误诊断包~</system:String>
     <system:String x:Key="DiagnosticLogExportFailed">导出错误诊断包失败，请稍后重试~</system:String>
     <system:String x:Key="ReceiveBetaVersion">接收测试版更新</system:String>

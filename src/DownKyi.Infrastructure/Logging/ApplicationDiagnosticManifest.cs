@@ -13,7 +13,8 @@ internal sealed record ApplicationDiagnosticManifest(
     int EventCount,
     string[] Files,
     string[] Redaction,
-    ApplicationLogMetrics Storage);
+    ApplicationLogMetrics Storage,
+    bool Truncated);
 
 internal sealed record FeedbackDiagnosticManifest(
     int SchemaVersion,
@@ -23,7 +24,8 @@ internal sealed record FeedbackDiagnosticManifest(
     string OperatingSystem,
     string Architecture,
     int EventCount,
-    string[] Files);
+    string[] Files,
+    bool Truncated);
 
 internal sealed record FeedbackDiagnosticEvent(
     DateTimeOffset Timestamp,
@@ -31,12 +33,15 @@ internal sealed record FeedbackDiagnosticEvent(
     string Component,
     int EventId,
     string Message,
-    string ExceptionDiagnostic);
+    string ExceptionDiagnostic,
+    string ExceptionText);
 
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
-    WriteIndented = false)]
+    WriteIndented = false,
+    Converters = new[] { typeof(ApplicationLogSerializer.EventIdConverter) })]
 [JsonSerializable(typeof(ApplicationLogRecord))]
+[JsonSerializable(typeof(ApplicationLogSerializer.PersistedEventId))]
 [JsonSerializable(typeof(ApplicationDiagnosticManifest))]
 [JsonSerializable(typeof(FeedbackDiagnosticManifest))]
 [JsonSerializable(typeof(FeedbackDiagnosticEvent))]

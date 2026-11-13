@@ -360,7 +360,7 @@
     <system:String x:Key="Diagnostics">診断ログ</system:String>
     <system:String x:Key="OpenLogs">ログを開く</system:String>
     <system:String x:Key="ExportDiagnosticLog">診断ログをエクスポートする</system:String>
-    <system:String x:Key="DiagnosticLogTip">公開用のフィードバックパッケージには、定義済みの最近の警告、エラー、診断項目のみが含まれます。元のログ、データベース、設定ファイルは含まれません。</system:String>
+    <system:String x:Key="DiagnosticLogTip">診断パッケージには、機密情報をマスクした操作メッセージ、警告、エラー、例外診断が含まれます。データベースや設定ファイルは添付されません。公開アップロード前に内容を確認してください。</system:String>
     <system:String x:Key="DiagnosticLogExported">診断パッケージをエクスポートしました。</system:String>
     <system:String x:Key="DiagnosticLogExportFailed">診断パッケージをエクスポートできませんでした。しばらくしてから再試行してください。</system:String>
     <system:String x:Key="ReceiveBetaVersion">ベータ版アップデートを受け取る</system:String>
