@@ -69,14 +69,94 @@ public sealed class ApplicationLogProviderTests : IDisposable
         Guid.NewGuid().ToString("N"));
 
     [Theory]
+    [InlineData(42, "ExampleFailure")]
+    [InlineData(1003, "ErrorMessage")]
+    [InlineData(0, null)]
+    public void PersistedEventsRoundTripTheirEventIdAndName(int id, string? name)
+    {
+        var record = new ApplicationLogRecord(
+            DateTimeOffset.UtcNow, MicrosoftLogLevel.Error, "DownKyi.Tests.RoundTrip",
+            new EventId(id, name), "Example failure", string.Empty, 0, 0, string.Empty);
+        var json = ApplicationLogSerializer.Serialize(record);
+        using var stored = JsonDocument.Parse(json);
+        Assert.Equal(id, stored.RootElement.GetProperty("eventId").GetProperty("id").GetInt32());
+
+        var restored = Assert.IsType<ApplicationLogRecord>(ApplicationLogSerializer.Deserialize(json));
+        Assert.Equal(id, restored.EventId.Id);
+        Assert.Equal(name, restored.EventId.Name);
+    }
+
+    [Theory]
+    [InlineData(@"path=C:\Downloads\video.mp4; reason=No space left on device")]
+    [InlineData(@"path=C:\My Downloads\video.mp4; reason=No space left on device")]
+    [InlineData("path=/tmp/video.mp4; reason=No space left on device")]
+    [InlineData("path=/home/alice/My Videos/video.mp4; reason=No space left on device")]
+    [InlineData(@"path='C:\My Downloads\private;video.mp4'; reason=No space left on device")]
+    [InlineData("path='/home/alice/My Videos/private;video.mp4'; reason=No space left on device")]
+    public void PathRedactionPreservesTheFollowingDiagnosticFields(string input)
+    {
+        var redacted = new SensitiveDataRedactor().Redact(input);
+
+        Assert.Contains("reason=No space left on device", redacted, StringComparison.Ordinal);
+        Assert.DoesNotContain("video.mp4", redacted, StringComparison.Ordinal);
+        Assert.DoesNotContain("private", redacted, StringComparison.Ordinal);
+        Assert.DoesNotContain("alice", redacted, StringComparison.Ordinal);
+    }
+
+    [Theory]
     [InlineData(@"C:\Users\alice\Videos\private.mp4")]
     [InlineData("/home/alice/Videos/private.mp4")]
-    public void RedactorUsesOnlyTheLeafNameForEveryPathStyle(string path)
+    [InlineData("'/mnt/media/My Videos/private.mp4'")]
+    [InlineData(@"'C:\Users\alice\My Videos\private.mp4'")]
+    [InlineData(@"\\server\alice\private.mp4")]
+    [InlineData(@"C:\Users\alice\My Videos\private.mp4")]
+    [InlineData("/mnt/media/My Videos/private.mp4")]
+    [InlineData("path=/mnt/media/private.mp4")]
+    [InlineData("(/home/alice/private.mp4)")]
+    public void RedactorRemovesPathsIncludingFileNames(string path)
     {
         var redacted = new SensitiveDataRedactor().Redact(path);
 
-        Assert.Equal($"[path]{Path.DirectorySeparatorChar}private.mp4", redacted);
+        Assert.Contains("[path]", redacted, StringComparison.Ordinal);
+        Assert.DoesNotContain("private.mp4", redacted, StringComparison.Ordinal);
         Assert.DoesNotContain("alice", redacted, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData("Authorization: Bearer private-value")]
+    [InlineData("Proxy-Authorization: Basic private-value")]
+    [InlineData("Cookie: SESSDATA=private-value; unknown_cookie=another-private-value")]
+    [InlineData("Set-Cookie: unknown_cookie=private-value; Secure; HttpOnly")]
+    [InlineData("https://example.test/x/player/playurl?X-Amz-Signature=private-value")]
+    [InlineData("//example.test/x/player/playurl?new_signature=private-value")]
+    [InlineData("refresh_token=private-value")]
+    [InlineData("{\"api_key\":\"private-value\",\"uid\":\"another-private-value\"}")]
+    [InlineData("user_id=private-value")]
+    [InlineData("username=private-value")]
+    [InlineData("file:///home/alice/private-value")]
+    [InlineData("https://[invalid]/private-value")]
+    public void RedactorRemovesCredentialsAndAccountValuesWithoutErasingTheFailure(string sensitiveText)
+    {
+        var redactor = new SensitiveDataRedactor();
+        var redacted = redactor.Redact($"Request failed; status=403; {sensitiveText}");
+
+        Assert.StartsWith("Request failed; status=403; ", redacted, StringComparison.Ordinal);
+        Assert.DoesNotContain("private-value", redacted, StringComparison.Ordinal);
+        Assert.Equal(redacted, redactor.Redact(redacted));
+    }
+
+    [Theory]
+    [InlineData("https://alice:private-value@example.test:8443/x/player/playurl?token=private-value#private-value", "https://example.test:8443/x/player/playurl")]
+    [InlineData("//example.test/x/player/playurl?new_signature=private-value", "https://example.test/x/player/playurl")]
+    [InlineData("https://[::1]:8443/x/player/playurl?token=private-value", "https://[::1]:8443/x/player/playurl")]
+    [InlineData("https://example.test/foo-/bar?token=private-value", "https://example.test/foo-/bar")]
+    public void RedactorPreservesTheUrlServerAndEndpoint(string input, string expected)
+    {
+        var redactor = new SensitiveDataRedactor();
+        var redacted = redactor.Redact($"Request failed for '{input}'; status=403");
+
+        Assert.Equal($"Request failed for '{expected}'; status=403", redacted);
+        Assert.Equal(redacted, redactor.Redact(redacted));
     }
 
     [Fact]
@@ -99,6 +179,7 @@ public sealed class ApplicationLogProviderTests : IDisposable
         Assert.Equal(512L * 1024 * 1024, options.MaxTotalBytes);
         Assert.Equal(TimeSpan.FromDays(7), options.MaxRetainedAge);
         Assert.Equal(TimeSpan.FromHours(1), options.MaintenanceInterval);
+        Assert.Equal(24_000_000, options.MaxExportBytes);
     }
 
     [Fact]
@@ -164,9 +245,9 @@ public sealed class ApplicationLogProviderTests : IDisposable
             var root = document.RootElement;
             Assert.Equal("2026-07-18T03:04:05+00:00", root.GetProperty("timestamp").GetString());
             Assert.Equal("Download.Runtime", root.GetProperty("category").GetString());
-            Assert.Contains("access_key=[redacted]", root.GetProperty("message").GetString(), StringComparison.Ordinal);
+            Assert.Contains("Request failed for https://example.test/file", root.GetProperty("message").GetString(), StringComparison.Ordinal);
             Assert.Contains("token=[redacted]", root.GetProperty("scope").GetString(), StringComparison.Ordinal);
-            Assert.Contains($"[path]{Path.DirectorySeparatorChar}private.mp4", root.GetProperty("exceptionText").GetString(), StringComparison.Ordinal);
+            Assert.DoesNotContain("private.mp4", root.GetProperty("exceptionText").GetString(), StringComparison.Ordinal);
             var serialized = root.GetRawText();
             Assert.DoesNotContain("query-secret", serialized, StringComparison.Ordinal);
             Assert.DoesNotContain("scope-secret", serialized, StringComparison.Ordinal);
@@ -181,7 +262,7 @@ public sealed class ApplicationLogProviderTests : IDisposable
     }
 
     [Fact]
-    public async Task DiagnosticExportWritesAiReadableManifestAndBoundedEvents()
+    public async Task DiagnosticExportDoesNotUseTheInMemoryRecentEventLimit()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         var clock = new ManualTimeProvider(new DateTimeOffset(2026, 7, 18, 3, 4, 5, TimeSpan.Zero));
@@ -199,15 +280,16 @@ public sealed class ApplicationLogProviderTests : IDisposable
                 await File.ReadAllTextAsync(manifestPath, cancellationToken).ConfigureAwait(true));
             Assert.Equal(1, manifest.RootElement.GetProperty("schemaVersion").GetInt32());
             Assert.False(string.IsNullOrWhiteSpace(manifest.RootElement.GetProperty("applicationVersion").GetString()));
-            Assert.Equal(3, manifest.RootElement.GetProperty("eventCount").GetInt32());
+            Assert.Equal(6, manifest.RootElement.GetProperty("eventCount").GetInt32());
+            Assert.False(manifest.RootElement.GetProperty("truncated").GetBoolean());
             Assert.Equal("events.jsonl", manifest.RootElement.GetProperty("files")[0].GetString());
             Assert.Equal(6, manifest.RootElement.GetProperty("storage").GetProperty("eventsWritten").GetInt64());
 
             var exportedEvents = await File.ReadAllLinesAsync(
                 Path.Combine(Path.GetDirectoryName(manifestPath)!, "events.jsonl"),
                 cancellationToken).ConfigureAwait(true);
-            Assert.Equal(3, exportedEvents.Length);
-            Assert.DoesNotContain(exportedEvents, line => line.Contains("entry=2", StringComparison.Ordinal));
+            Assert.Equal(6, exportedEvents.Length);
+            Assert.Contains(exportedEvents, line => line.Contains("entry=0", StringComparison.Ordinal));
             Assert.Contains(exportedEvents, line => line.Contains("entry=5", StringComparison.Ordinal));
             Assert.All(exportedEvents, line => JsonDocument.Parse(line).Dispose());
         }
@@ -218,10 +300,10 @@ public sealed class ApplicationLogProviderTests : IDisposable
     }
 
     [Fact]
-    public async Task FeedbackPackageIncludesOnlyAllowlistedPersistedMessagesAfterRestart()
+    public async Task FeedbackPackageIncludesRedactedMessagesAndContextFromAnyComponentAfterRestart()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
-        var firstProvider = CreateProvider();
+        var firstProvider = CreateProvider(queueCapacity: 1024);
         var logger = firstProvider.CreateLogger("DownKyi.Tests.Feedback");
         var transferLogger = firstProvider.CreateLogger(
             "DownKyi.Services.Download.DownloadTransferCoordinator");
@@ -231,7 +313,10 @@ public sealed class ApplicationLogProviderTests : IDisposable
             "DownKyi.Infrastructure.FFmpeg.FfmpegConcatRuntime");
         var pipelineLogger = firstProvider.CreateLogger(
             "DownKyi.Services.Download.DownloadPipeline");
-        RecentEntry(logger, 1, null);
+        for (var index = 0; index < 400; index++)
+        {
+            RecentEntry(logger, index, null);
+        }
         using (logger.BeginScope("cookie=scope-private"))
         {
             TransferAttemptFailed(transferLogger, null);
@@ -242,7 +327,7 @@ public sealed class ApplicationLogProviderTests : IDisposable
             DownloadStageFailed(pipelineLogger, null);
             UnrecognizedSensitiveDownloadStageFailure(pipelineLogger, null);
             RequestFailed(logger, new InvalidOperationException(
-                "opaque-private-value-73918 C:\\Users\\alice\\Videos\\private.mp4"));
+                "No space left on device; token=exception-private C:\\Users\\alice\\Videos\\private.mp4"));
         }
 
         await firstProvider.FlushAsync(cancellationToken).ConfigureAwait(true);
@@ -263,11 +348,18 @@ public sealed class ApplicationLogProviderTests : IDisposable
             var manifest = await ReadArchiveEntryAsync(archive, "manifest.json", cancellationToken)
                 .ConfigureAwait(true);
             using var manifestJson = JsonDocument.Parse(manifest);
-            Assert.Equal(2, manifestJson.RootElement.GetProperty("schemaVersion").GetInt32());
-            Assert.Equal(8, manifestJson.RootElement.GetProperty("eventCount").GetInt32());
+            Assert.Equal(3, manifestJson.RootElement.GetProperty("schemaVersion").GetInt32());
+            Assert.Equal(408, manifestJson.RootElement.GetProperty("eventCount").GetInt32());
+            Assert.False(manifestJson.RootElement.GetProperty("truncated").GetBoolean());
+            Assert.Equal("events.jsonl", manifestJson.RootElement.GetProperty("files")[0].GetString());
 
-            var errors = await ReadArchiveEntryAsync(archive, "errors.jsonl", cancellationToken)
+            var errors = await ReadArchiveEntryAsync(archive, "events.jsonl", cancellationToken)
                 .ConfigureAwait(true);
+            var exportedLines = errors.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            using var firstEvent = JsonDocument.Parse(exportedLines[0]);
+            using var lastEvent = JsonDocument.Parse(exportedLines[^1]);
+            Assert.Equal(2, firstEvent.RootElement.GetProperty("eventId").GetInt32());
+            Assert.Equal(1, lastEvent.RootElement.GetProperty("eventId").GetInt32());
             Assert.Contains("DownKyi.Tests.Feedback", errors, StringComparison.Ordinal);
             Assert.Contains("Exception type: System.InvalidOperationException", errors,
                 StringComparison.Ordinal);
@@ -287,9 +379,11 @@ public sealed class ApplicationLogProviderTests : IDisposable
                 "Download stage MuxStage failed with download.mux.dash.",
                 errors,
                 StringComparison.Ordinal);
-            Assert.DoesNotContain("entry=1", errors, StringComparison.Ordinal);
-            Assert.DoesNotContain("Request failed for", errors, StringComparison.Ordinal);
-            Assert.DoesNotContain("opaque-private-value-73918", errors, StringComparison.Ordinal);
+            Assert.Contains("entry=1", errors, StringComparison.Ordinal);
+            Assert.Contains("entry=399", errors, StringComparison.Ordinal);
+            Assert.Contains("Request failed for https://example.test/file user=[email] mid=[redacted]", errors, StringComparison.Ordinal);
+            Assert.Contains("No space left on device", errors, StringComparison.Ordinal);
+            Assert.DoesNotContain("exception-private", errors, StringComparison.Ordinal);
             Assert.DoesNotContain("private.mp4", errors, StringComparison.Ordinal);
             Assert.DoesNotContain("query-secret", errors, StringComparison.Ordinal);
             Assert.DoesNotContain("scope-private", errors, StringComparison.Ordinal);
@@ -298,15 +392,141 @@ public sealed class ApplicationLogProviderTests : IDisposable
             Assert.DoesNotContain("X-Amz-Signature", errors, StringComparison.Ordinal);
             Assert.DoesNotContain("opaque-signature", errors, StringComparison.Ordinal);
             Assert.DoesNotContain("opaque-token-value", errors, StringComparison.Ordinal);
-            Assert.DoesNotContain("token=[redacted]", errors, StringComparison.Ordinal);
+            Assert.Contains("token=[redacted]", errors, StringComparison.Ordinal);
             Assert.Contains("\"message\"", errors, StringComparison.Ordinal);
-            Assert.DoesNotContain("\"exceptionText\"", errors, StringComparison.Ordinal);
+            Assert.Contains("\"exceptionText\"", errors, StringComparison.Ordinal);
             Assert.DoesNotContain("\"scope\"", errors, StringComparison.Ordinal);
             Assert.DoesNotContain("\"processId\"", errors, StringComparison.Ordinal);
         }
         finally
         {
             await secondProvider.DisposeAsync().ConfigureAwait(true);
+        }
+    }
+
+    [Fact]
+    public async Task FeedbackPackageBoundsEventBytesAndRedactsOlderPersistedRecordsAgain()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var directory = Path.Combine(_directory, "2026-07-18");
+        Directory.CreateDirectory(directory);
+        var records = Enumerable.Range(0, 5).Select(index => new ApplicationLogRecord(
+            DateTimeOffset.UtcNow.AddSeconds(index),
+            index == 3 ? MicrosoftLogLevel.Warning : MicrosoftLogLevel.Information,
+            "DownKyi.Tests.NewComponent",
+            new EventId(42),
+            $"Stage {index} failed; https://example.test/x/player/playurl?new_signature=legacy-secret; uid=123456",
+            string.Empty, 0, 0, "cookie=scope-private", "No space left on device; token=exception-private"));
+        var oversized = new ApplicationLogRecord(
+            DateTimeOffset.UtcNow.AddMinutes(1), MicrosoftLogLevel.Error,
+            "DownKyi.Tests.NewComponent", new EventId(43), new string('x', 1000), string.Empty, 0, 0, string.Empty);
+        await File.WriteAllLinesAsync(
+            Path.Combine(directory, "events.jsonl"),
+            records.Append(oversized).Select(ApplicationLogSerializer.Serialize),
+            cancellationToken).ConfigureAwait(true);
+
+        var provider = CreateProvider(recentEventCapacity: 1, maxExportBytes: 600);
+        try
+        {
+            var packagePath = await provider.ExportFeedbackPackageAsync(cancellationToken).ConfigureAwait(true);
+            using var archive = await ZipFile.OpenReadAsync(packagePath, cancellationToken).ConfigureAwait(true);
+            var events = await ReadArchiveEntryAsync(archive, "events.jsonl", cancellationToken).ConfigureAwait(true);
+            var lines = events.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+
+            Assert.InRange(lines.Length, 1, 4);
+            Assert.True(Encoding.UTF8.GetByteCount(events) <= 600);
+            Assert.All(lines, line =>
+            {
+                using var document = JsonDocument.Parse(line);
+                Assert.False(string.IsNullOrWhiteSpace(document.RootElement.GetProperty("message").GetString()));
+            });
+            Assert.Contains("Stage 4 failed", lines[^1], StringComparison.Ordinal);
+            Assert.Contains("https://example.test/x/player/playurl", lines[^1], StringComparison.Ordinal);
+            Assert.Contains("No space left on device", lines[^1], StringComparison.Ordinal);
+            Assert.DoesNotContain("Stage 0 failed", events, StringComparison.Ordinal);
+            Assert.DoesNotContain("legacy-secret", events, StringComparison.Ordinal);
+            Assert.DoesNotContain("123456", events, StringComparison.Ordinal);
+            Assert.DoesNotContain("private", events, StringComparison.Ordinal);
+            var manifest = await ReadArchiveEntryAsync(archive, "manifest.json", cancellationToken).ConfigureAwait(true);
+            using var manifestJson = JsonDocument.Parse(manifest);
+            Assert.True(manifestJson.RootElement.GetProperty("truncated").GetBoolean());
+        }
+        finally
+        {
+            await provider.DisposeAsync().ConfigureAwait(true);
+        }
+    }
+
+    [Fact]
+    public async Task FeedbackPackageStopsBeforeOlderFilesAfterSelectingTheNewestSuffix()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var timestamp = new DateTimeOffset(2026, 7, 18, 0, 0, 0, TimeSpan.Zero);
+        var directory = Path.Combine(_directory, "2026-07-18");
+        Directory.CreateDirectory(directory);
+        for (var file = 0; file < 3; file++)
+        {
+            var path = Path.Combine(directory, $"events-{file:D3}.jsonl");
+            var records = Enumerable.Range(file == 2 ? 20 : 0, file == 2 ? 2 : 20)
+                .Select(index => ApplicationLogSerializer.Serialize(new ApplicationLogRecord(
+                    timestamp.AddSeconds(index), MicrosoftLogLevel.Information, "DownKyi.Tests.Files",
+                    new EventId(index), $"Stage {index}", string.Empty, 0, 0, string.Empty)));
+            await File.WriteAllLinesAsync(path, file == 0 ? ["{malformed-old-record"] : records, cancellationToken)
+                .ConfigureAwait(true);
+            File.SetLastWriteTimeUtc(path, timestamp.AddSeconds(file).UtcDateTime);
+        }
+
+        var provider = CreateProvider(maxExportBytes: 800);
+        try
+        {
+            var package = await provider.ExportFeedbackPackageAsync(cancellationToken).ConfigureAwait(true);
+            using var archive = await ZipFile.OpenReadAsync(package, cancellationToken).ConfigureAwait(true);
+            var events = await ReadArchiveEntryAsync(archive, "events.jsonl", cancellationToken).ConfigureAwait(true);
+            var timestamps = events.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(line =>
+            {
+                using var record = JsonDocument.Parse(line);
+                return record.RootElement.GetProperty("timestamp").GetDateTimeOffset();
+            }).ToArray();
+
+            Assert.Contains(timestamp.AddSeconds(20), timestamps);
+            Assert.Equal(timestamp.AddSeconds(21), timestamps[^1]);
+            Assert.DoesNotContain(timestamp, timestamps);
+            Assert.Equal(timestamps.Order(), timestamps);
+            Assert.True(Encoding.UTF8.GetByteCount(events) <= 800);
+            Assert.Equal(0, provider.GetMetrics().MalformedExportRecords);
+            using var manifest = JsonDocument.Parse(
+                await ReadArchiveEntryAsync(archive, "manifest.json", cancellationToken).ConfigureAwait(true));
+            Assert.True(manifest.RootElement.GetProperty("truncated").GetBoolean());
+        }
+        finally
+        {
+            await provider.DisposeAsync().ConfigureAwait(true);
+        }
+    }
+
+    [Fact]
+    public async Task FeedbackPackageKeepsOnePhysicalLinePerEventAndPreservesMultilineExceptions()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var provider = CreateProvider();
+        try
+        {
+            var logger = provider.CreateLogger("DownKyi.Tests.Multiline");
+            RecentEntry(logger, 1, null);
+            RequestFailed(logger, new IOException("No space left on device\r\nOperation: write"));
+            var package = await provider.ExportFeedbackPackageAsync(cancellationToken).ConfigureAwait(true);
+            using var archive = await ZipFile.OpenReadAsync(package, cancellationToken).ConfigureAwait(true);
+            var events = await ReadArchiveEntryAsync(archive, "events.jsonl", cancellationToken).ConfigureAwait(true);
+            var lines = events.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+
+            Assert.Equal(2, lines.Length);
+            Assert.Contains("\\r\\nOperation: write", lines[1], StringComparison.Ordinal);
+            using var error = JsonDocument.Parse(lines[1]);
+            Assert.Contains("\r\nOperation: write", error.RootElement.GetProperty("exceptionText").GetString(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            await provider.DisposeAsync().ConfigureAwait(true);
         }
     }
 
@@ -682,8 +902,8 @@ public sealed class ApplicationLogProviderTests : IDisposable
                     cancellationToken)
                 .ConfigureAwait(true);
 
-            Assert.Equal(3, exportedEvents.Length);
-            Assert.DoesNotContain(exportedEvents, line => line.Contains("entry=2", StringComparison.Ordinal));
+            Assert.Equal(6, exportedEvents.Length);
+            Assert.Contains(exportedEvents, line => line.Contains("entry=0", StringComparison.Ordinal));
             Assert.Contains(exportedEvents, line => line.Contains("entry=3", StringComparison.Ordinal));
             Assert.Contains(exportedEvents, line => line.Contains("entry=5", StringComparison.Ordinal));
         }
@@ -794,7 +1014,8 @@ public sealed class ApplicationLogProviderTests : IDisposable
         long maxFileBytes = 1024 * 1024,
         long maxTotalBytes = 512L * 1024 * 1024,
         int queueCapacity = 64,
-        TimeProvider? clock = null)
+        TimeProvider? clock = null,
+        int maxExportBytes = ApplicationLogOptions.DefaultMaxExportBytes)
     {
         return new ApplicationLogProvider(
             new ApplicationLogOptions(_directory)
@@ -802,7 +1023,8 @@ public sealed class ApplicationLogProviderTests : IDisposable
                 QueueCapacity = queueCapacity,
                 RecentEventCapacity = recentEventCapacity,
                 MaxFileBytes = maxFileBytes,
-                MaxTotalBytes = maxTotalBytes
+                MaxTotalBytes = maxTotalBytes,
+                MaxExportBytes = maxExportBytes
             },
             new SensitiveDataRedactor(),
             clock ?? new ManualTimeProvider(new DateTimeOffset(2026, 7, 18, 0, 0, 0, TimeSpan.Zero)));

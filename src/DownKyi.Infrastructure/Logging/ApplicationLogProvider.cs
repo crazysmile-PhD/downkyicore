@@ -163,6 +163,7 @@ public sealed class ApplicationLogProvider :
 
         if (options.QueueCapacity <= 0
             || options.RecentEventCapacity <= 0
+            || options.MaxExportBytes <= 0
             || options.MaxFileBytes <= 0
             || options.MaxTotalBytes <= 0
             || options.MaxRetainedAge <= TimeSpan.Zero

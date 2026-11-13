@@ -39,6 +39,32 @@ Keeping the former BCL channel sink would retain custom queue／rolling maintena
 7. One private sink instance owns queue、file handles and lifecycle. A second provider／sink would duplicate events and split failure ownership.
 8. Windows、Linux and macOS use the same logging path.
 
+Feedback ZIP schema 3 contains `events.jsonl`, including operation context and
+failures. Export reads retained files independently of the in-memory recent-event
+buffer. Serialized UTF-8 event data is capped at 24,000,000 bytes, leaving room
+for ZIP overhead and the manifest below GitHub's 25 MB attachment limit. On
+overflow the newest events are retained and the manifest reports `truncated`;
+a single event larger than the budget is skipped and also marks truncation.
+Both export formats share this byte limit, read/selection owner and output writer.
+Selected events are held as UTF-8 bytes. Files are inspected newest first; once a
+file's newest suffix fills the remaining budget, earlier files are not opened.
+Output keeps file/log order and one physical line per event, with multiline
+message and exception values escaped inside JSON. They use the same
+redactor before persistence and again on export, with no component or message
+allowlist. Whole credential headers and file paths are suppressed;
+known credential/account fields and email addresses are masked. HTTP(S) URL
+servers and endpoint paths are retained, with user information, query strings
+and fragments removed. Unsupported or invalid URLs are replaced with a marker.
+The feedback projection includes messages, exception text redacted by these same
+rules, and safe exception diagnostics. Scopes, request/response bodies, settings
+files and database contents are not attached. Free text and URL paths can still
+contain unrecognized private values; users review the ZIP before public upload.
+
+Event identifiers retain their existing `id`/`name` JSON object through a typed
+adapter for the readonly framework `EventId`. Unquoted paths end at semicolon
+field separators; quoted paths may include spaces and semicolons, without
+removing the diagnostic text that follows them.
+
 The sink keeps a cooperative flush barrier. Events accepted while Windows file handles reopen enter a second bounded queue and are drained before completion；the private logger configuration stays alive. Per-record writes let file-size rolling evaluate each JSONL record without moving serialization back to producer threads.
 
 ## Verification

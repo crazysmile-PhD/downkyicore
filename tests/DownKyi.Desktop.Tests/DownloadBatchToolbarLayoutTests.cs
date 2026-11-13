@@ -22,6 +22,7 @@ public sealed class DownloadBatchToolbarLayoutTests
     {
         return AvaloniaTestDispatcher.RunAsync(() =>
         {
+            DesktopTestResources.EnsureDownloadProjectionResources();
             var application = DesktopTestResources.EnsureProductThemeResources();
             var originalTheme = application.RequestedThemeVariant;
             var fluentTheme = new FluentTheme();
@@ -48,6 +49,7 @@ public sealed class DownloadBatchToolbarLayoutTests
     {
         return AvaloniaTestDispatcher.RunAsync(() =>
         {
+            DesktopTestResources.EnsureDownloadProjectionResources();
             var application = DesktopTestResources.EnsureProductThemeResources();
             var originalTheme = application.RequestedThemeVariant;
             application.RequestedThemeVariant = ThemeVariant.Dark;
