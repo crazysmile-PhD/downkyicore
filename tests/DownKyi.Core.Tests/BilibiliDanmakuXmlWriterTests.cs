@@ -31,8 +31,9 @@ public sealed class BilibiliDanmakuXmlWriterTests
                     }
                 ],
                 TestContext.Current.CancellationToken);
+            Assert.Empty(output.InvalidCharacters);
             var document = XDocument.Parse(
-                output.ToString(SaveOptions.DisableFormatting),
+                output.Document.ToString(SaveOptions.DisableFormatting),
                 LoadOptions.PreserveWhitespace);
             Assert.Equal("i", document.Root?.Name.LocalName);
             var element = Assert.Single(document.Root!.Elements("d"));
@@ -93,8 +94,30 @@ public sealed class BilibiliDanmakuXmlWriterTests
             ],
             TestContext.Current.CancellationToken);
 
+        Assert.Equal(4, output.InvalidCharacters.Count);
+        var nullCharacter = output.InvalidCharacters[0];
+        Assert.Equal(42, nullCharacter.Id);
+        Assert.Equal("content", nullCharacter.Field);
+        Assert.Equal(1, nullCharacter.Utf16Index);
+        Assert.Equal(0, nullCharacter.InvalidValue);
+        Assert.Equal(UnicodeCategory.Control, nullCharacter.Category);
+        Assert.Equal("前", nullCharacter.ContextBefore);
+        Assert.Equal("中\v後\uFFFF", nullCharacter.ContextAfter);
+
+        var verticalTab = output.InvalidCharacters[1];
+        Assert.Equal(0x000B, verticalTab.InvalidValue);
+        Assert.Equal(3, verticalTab.Utf16Index);
+        Assert.Equal("前\0中", verticalTab.ContextBefore);
+        Assert.Equal("後\uFFFF", verticalTab.ContextAfter);
+
+        var senderHash = output.InvalidCharacters[3];
+        Assert.Equal(43, senderHash.Id);
+        Assert.Equal("senderHash", senderHash.Field);
+        Assert.Equal(0, senderHash.InvalidValue);
+        Assert.Null(senderHash.ContextBefore);
+        Assert.Null(senderHash.ContextAfter);
         var document = XDocument.Parse(
-            output.ToString(SaveOptions.DisableFormatting),
+            output.Document.ToString(SaveOptions.DisableFormatting),
             LoadOptions.PreserveWhitespace);
         var elements = document.Root!.Elements("d").ToArray();
         Assert.Equal(2, elements.Length);
