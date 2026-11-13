@@ -83,6 +83,47 @@ public sealed class FfmpegSeekabilityIntegrationTests : IDisposable
 
     [Fact]
     [Trait("Category", "FfmpegIntegration")]
+    public async Task CorruptCoverIsClassifiedFromFfmpegDecodeFailure()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var processRunner = new FfmpegProcessRunner();
+        if (!await IsToolAvailableAsync(
+                processRunner,
+                FfmpegExecutableLocator.Ffmpeg,
+                cancellationToken).ConfigureAwait(true))
+        {
+            Assert.Skip("ffmpeg is required for the cover classification integration test.");
+        }
+
+        var audio = Path.Combine(_testDirectory, "classification-audio.m4s");
+        var video = Path.Combine(_testDirectory, "classification-video.m4s");
+        var cover = Path.Combine(_testDirectory, "classification-cover.download");
+        await File.WriteAllBytesAsync(audio, [1, 2, 3], cancellationToken).ConfigureAwait(true);
+        await File.WriteAllBytesAsync(video, [1, 2, 3], cancellationToken).ConfigureAwait(true);
+        await File.WriteAllBytesAsync(cover, [1, 2, 3], cancellationToken).ConfigureAwait(true);
+        using var settings = new SettingsStore(
+            Path.Combine(_testDirectory, "classification-settings.json"));
+        var processor = new FfmpegProcessor(settings, NullLoggerFactory.Instance);
+
+        var result = await processor.MergeMediaAsync(
+            settings.Current.Video,
+            audio,
+            video,
+            Path.Combine(_testDirectory, "classification-output.mp4"),
+            overwriteDestination: false,
+            cover: cover,
+            cancellationToken: cancellationToken).ConfigureAwait(true);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(FfmpegOperationFailureKind.InputInvalid, result.FailureKind);
+        Assert.Equal(FfmpegOperationFailureStage.Cover, result.FailureStage);
+        Assert.DoesNotContain(
+            Directory.EnumerateFiles(_testDirectory),
+            file => Path.GetFileName(file).Contains("downkyi-cover", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    [Trait("Category", "FfmpegIntegration")]
     public async Task MultiSegmentDurlOutputIsFinalizedAfterFfmpegSuccess()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
@@ -286,7 +327,7 @@ public sealed class FfmpegSeekabilityIntegrationTests : IDisposable
             cancellationToken: cancellationToken).ConfigureAwait(true);
 
         Assert.False(result.Succeeded);
-        Assert.Equal(FfmpegOperationFailureKind.ProcessFailure, result.FailureKind);
+        Assert.Equal(FfmpegOperationFailureKind.InputInvalid, result.FailureKind);
         Assert.False(File.Exists(output));
     }
 
@@ -344,7 +385,7 @@ public sealed class FfmpegSeekabilityIntegrationTests : IDisposable
         Assert.Equal(FfmpegOperationFailureKind.ProcessFailure, mergeResult.FailureKind);
         Assert.False(File.Exists(mergeOutput));
         Assert.False(concatResult.Succeeded);
-        Assert.Equal(FfmpegOperationFailureKind.ProcessFailure, concatResult.FailureKind);
+        Assert.Equal(FfmpegOperationFailureKind.InputInvalid, concatResult.FailureKind);
         Assert.False(File.Exists(concatOutput));
     }
 

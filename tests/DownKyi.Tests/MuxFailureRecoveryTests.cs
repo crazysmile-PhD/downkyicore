@@ -160,7 +160,7 @@ public sealed class MuxFailureRecoveryTests
         test.Execution.CoverFile = cover;
         var stage = test.CreateStage(FfmpegOperationResult.Failure(
             "The cover could not be converted.",
-            FfmpegOperationFailureKind.ProcessFailure,
+            FfmpegOperationFailureKind.InputInvalid,
             FfmpegOperationFailureStage.Cover));
         var result = await stage.ExecuteAsync(
             test.Execution,
@@ -177,14 +177,17 @@ public sealed class MuxFailureRecoveryTests
         Assert.Equal("resume-identity", task.Transfer.BackendIdentity);
     }
 
-    [Fact]
-    public async Task CoverInfrastructureFailureRemainsRetryableAndDistinctFromMuxFailure()
+    [Theory]
+    [InlineData(FfmpegOperationFailureKind.ProcessFailure)]
+    [InlineData(FfmpegOperationFailureKind.OutputInvalid)]
+    public async Task UnconfirmedCoverFailureRemainsRetryableAndDistinctFromMuxFailure(
+        FfmpegOperationFailureKind failureKind)
     {
         var test = await MuxTestContext.CreateAsync().ConfigureAwait(true);
         await using var testLifetime = test.ConfigureAwait(true);
         var stage = test.CreateStage(FfmpegOperationResult.Failure(
-            "The cover conversion timed out.",
-            FfmpegOperationFailureKind.Timeout,
+            "The cover output could not be written.",
+            failureKind,
             FfmpegOperationFailureStage.Cover));
 
         var result = await stage.ExecuteAsync(

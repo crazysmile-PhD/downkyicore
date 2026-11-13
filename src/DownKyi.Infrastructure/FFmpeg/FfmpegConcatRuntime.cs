@@ -79,11 +79,7 @@ internal sealed class FfmpegConcatRuntime
                         LogProcessResult(command, processResult);
                         if (!processResult.Succeeded)
                         {
-                            operationFailureKind = !processResult.ProcessStarted
-                                ? FfmpegOperationFailureKind.ProcessUnavailable
-                                : processResult.TimedOut
-                                    ? FfmpegOperationFailureKind.Timeout
-                                    : FfmpegOperationFailureKind.ProcessFailure;
+                            operationFailureKind = processResult.ToOperationFailureKind();
                             continue;
                         }
 

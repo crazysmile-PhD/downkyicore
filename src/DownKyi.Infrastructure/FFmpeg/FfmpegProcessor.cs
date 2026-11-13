@@ -292,12 +292,7 @@ public sealed class FfmpegProcessor : IFfmpegMediaMuxer
             LogResult(result, command.Operation, action);
             if (!result.Succeeded)
             {
-                return FfmpegOutputResult.Failure(
-                    !result.ProcessStarted
-                        ? FfmpegOperationFailureKind.ProcessUnavailable
-                        : result.TimedOut
-                            ? FfmpegOperationFailureKind.Timeout
-                            : FfmpegOperationFailureKind.ProcessFailure);
+                return FfmpegOutputResult.Failure(result.ToOperationFailureKind());
             }
 
             if (!File.Exists(temporaryOutput) || new FileInfo(temporaryOutput).Length == 0)

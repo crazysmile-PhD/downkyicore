@@ -9,6 +9,7 @@ public enum FfmpegOperationFailureKind
     ProcessUnavailable,
     ProcessFailure,
     Timeout,
+    InputInvalid,
     OutputInvalid,
     DestinationConflict,
     DestinationAccessDenied,

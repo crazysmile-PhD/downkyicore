@@ -172,8 +172,7 @@ internal sealed class MuxStage : IDownloadPipelineStage
         string muxCode,
         string muxMessage) =>
         result.FailureStage == FfmpegOperationFailureStage.Cover
-            ? result.FailureKind is FfmpegOperationFailureKind.ProcessFailure
-                or FfmpegOperationFailureKind.OutputInvalid
+            ? result.FailureKind == FfmpegOperationFailureKind.InputInvalid
                 ? DownloadStageResult.Failure(
                     "download.cover.convert",
                     "The downloaded cover could not be converted for MP4 output.")

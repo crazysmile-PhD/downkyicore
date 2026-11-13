@@ -106,12 +106,13 @@ public sealed class FfmpegProcessorMergeTests : IDisposable
     }
 
     [Fact]
-    public async Task CoverNormalizationFailureIsTypedAndDoesNotStartMediaMux()
+    public async Task InvalidCoverIsConfirmedWithoutStartingMediaMux()
     {
         var audio = CreateInput("cover-failure-audio.m4s");
         var video = CreateInput("cover-failure-video.m4s");
         var cover = CreateInput("cover-failure.webp");
-        var runner = new CoverFailureRunner();
+        var runner = new CoverFailureRunner(
+            "Invalid data found when processing input");
         var processor = new FfmpegProcessor(
             _settings,
             NullLoggerFactory.Instance,
@@ -122,6 +123,37 @@ public sealed class FfmpegProcessorMergeTests : IDisposable
             audio,
             video,
             Path.Combine(_directory, "cover-failure-output.mp4"),
+            overwriteDestination: false,
+            cover: cover,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(FfmpegOperationFailureKind.InputInvalid, result.FailureKind);
+        Assert.Equal(FfmpegOperationFailureStage.Cover, result.FailureStage);
+        Assert.Equal(["normalize-cover"], runner.Operations);
+        Assert.True(File.Exists(audio));
+        Assert.True(File.Exists(video));
+        Assert.True(File.Exists(cover));
+        AssertNoCoverTemporaryFiles();
+    }
+
+    [Fact]
+    public async Task CoverOutputProcessFailureRemainsRetryable()
+    {
+        var audio = CreateInput("cover-output-failure-audio.m4s");
+        var video = CreateInput("cover-output-failure-video.m4s");
+        var cover = CreateInput("cover-output-failure.webp");
+        var runner = new CoverFailureRunner("No space left on device");
+        var processor = new FfmpegProcessor(
+            _settings,
+            NullLoggerFactory.Instance,
+            runner);
+
+        var result = await processor.MergeMediaAsync(
+            _settings.Current.Video,
+            audio,
+            video,
+            Path.Combine(_directory, "cover-output-failure.mp4"),
             overwriteDestination: false,
             cover: cover,
             cancellationToken: TestContext.Current.CancellationToken);
@@ -254,7 +286,7 @@ public sealed class FfmpegProcessorMergeTests : IDisposable
         }
     }
 
-    private sealed class CoverFailureRunner : IFfmpegProcessRunner
+    private sealed class CoverFailureRunner(string standardError) : IFfmpegProcessRunner
     {
         public List<string> Operations { get; } = [];
 
@@ -269,7 +301,7 @@ public sealed class FfmpegProcessorMergeTests : IDisposable
                 false,
                 1,
                 string.Empty,
-                "cover decode failed",
+                standardError,
                 false));
         }
     }
