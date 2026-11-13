@@ -218,6 +218,7 @@
     <system:String x:Key="DownloadFailureSubtitleDetails">所选字幕未能完成下载。可点“重试”；若字幕已不可用，请重新建立任务并调整字幕选择。</system:String>
     <system:String x:Key="DownloadFailureArtifactDetails">附加文件未能完成下载。请检查网络和下载目录后重试；持续失败时可在“设置 → 关于与反馈”导出诊断包。</system:String>
     <system:String x:Key="DownloadFailureProcessingDetails">下载后的文件处理未完成。可点“重试”；持续失败时可在“设置 → 关于与反馈”导出诊断包。</system:String>
+    <system:String x:Key="DownloadFailureCoverConversionDetails">封面无法转换为 MP4 可写入的格式。重试同一任务不会改变结果；请取消“封面”后重新建立任务，并在“设置 → 关于与反馈”导出诊断包。</system:String>
     <system:String x:Key="DownloadFailureTlsDetails">安全连接验证失败。请检查系统日期、代理和证书设置，然后再重试。</system:String>
     <system:String x:Key="DownloadFailureRuntimeDetails">下载服务无法继续运行。请重新启动应用；若仍失败，请在“设置 → 关于与反馈”导出诊断包。</system:String>
     <system:String x:Key="DownloadFailureLegacyDetails">此任务使用已移除的旧下载器，无法直接重试。请重新解析并建立任务。</system:String>

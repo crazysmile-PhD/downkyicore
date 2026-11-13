@@ -61,14 +61,9 @@ internal static class FfmpegCommandFactory
             arguments.AddRange(["-vn", "-c:a", "copy"]);
         }
 
-        if (coverInputIndex >= 0 && coverFile != null)
+        if (coverInputIndex >= 0)
         {
-            AddEmbeddedCover(arguments, coverInputIndex, coverFile);
-        }
-
-        if (videoFile != null && string.Equals(Path.GetExtension(outputFile), ".mp4", StringComparison.OrdinalIgnoreCase))
-        {
-            arguments.AddRange(["-movflags", "+faststart"]);
+            AddEmbeddedJpegCover(arguments, coverInputIndex);
         }
 
         arguments.Add(outputFile);
@@ -120,6 +115,23 @@ internal static class FfmpegCommandFactory
             outputFile
         ]);
         return new FfmpegCommand(FfmpegExecutableLocator.Ffmpeg, arguments, "extract-frame");
+    }
+
+    public static FfmpegCommand BuildNormalizeCover(string inputFile, string outputFile)
+    {
+        var arguments = CreateBaseArguments();
+        arguments.Add("-xerror");
+        AddRequiredOutputContract(arguments);
+        arguments.AddRange([
+            "-i", inputFile,
+            "-map", "0:v:0",
+            "-frames:v", "1",
+            "-c:v", "mjpeg",
+            "-q:v", "2",
+            "-pix_fmt", "yuvj420p",
+            outputFile
+        ]);
+        return new FfmpegCommand(FfmpegExecutableLocator.Ffmpeg, arguments, "normalize-cover");
     }
 
     public static FfmpegCommand BuildConcat(
@@ -195,13 +207,12 @@ internal static class FfmpegCommandFactory
 
         if (coverFile != null)
         {
-            AddEmbeddedCover(arguments, inputIndex: 1, coverFile);
+            AddEmbeddedJpegCover(arguments, inputIndex: 1);
         }
 
         arguments.AddRange([
             "-pix_fmt:v:0", "yuv420p",
             "-avoid_negative_ts", "make_zero",
-            "-movflags", "+faststart",
             outputFile
         ]);
 
@@ -218,28 +229,13 @@ internal static class FfmpegCommandFactory
         arguments.AddRange(["-abort_on", "empty_output_stream"]);
     }
 
-    private static void AddEmbeddedCover(
-        List<string> arguments,
-        int inputIndex,
-        string coverFile)
+    private static void AddEmbeddedJpegCover(List<string> arguments, int inputIndex)
     {
-        var canCopy = CanCopyCoverToMp4(coverFile);
         arguments.AddRange([
             "-map", $"{inputIndex}:v:0",
-            "-c:v:1", canCopy ? "copy" : "mjpeg",
+            "-c:v:1", "copy",
             "-disposition:v:1", "attached_pic"
         ]);
-        if (!canCopy)
-        {
-            arguments.AddRange(["-q:v:1", "2"]);
-        }
     }
 
-    private static bool CanCopyCoverToMp4(string coverFile)
-    {
-        var extension = Path.GetExtension(coverFile);
-        return extension.Equals(".jpg", StringComparison.OrdinalIgnoreCase)
-               || extension.Equals(".jpeg", StringComparison.OrdinalIgnoreCase)
-               || extension.Equals(".png", StringComparison.OrdinalIgnoreCase);
-    }
 }

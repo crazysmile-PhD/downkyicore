@@ -31,6 +31,7 @@ REQUIRED_ENCODERS = {
     "osx-x64": ("h264_videotoolbox",),
     "osx-arm64": ("h264_videotoolbox",),
 }
+REQUIRED_IMAGE_DECODERS = ("bmp", "gif", "mjpeg", "png", "webp")
 
 
 def run(*args, cwd=None, capture=False):
@@ -105,9 +106,14 @@ def validate(ffmpeg, ffprobe, rid):
                    if len(parts := line.split()) >= 2):
             raise RuntimeError(f"{rid}: missing required encoder {name}")
     decoders = run(str(ffmpeg), "-hide_banner", "-decoders", capture=True).stdout
-    if not any(parts[1] == "libdav1d" for line in decoders.splitlines()
-               if len(parts := line.split()) >= 2):
-        raise RuntimeError(f"{rid}: missing software AV1 decoder libdav1d")
+    available_decoders = {
+        parts[1]
+        for line in decoders.splitlines()
+        if len(parts := line.split()) >= 2
+    }
+    for name in (*REQUIRED_IMAGE_DECODERS, "libdav1d"):
+        if name not in available_decoders:
+            raise RuntimeError(f"{rid}: missing required image decoder {name}")
     with tempfile.TemporaryDirectory(prefix="ffmpeg-smoke-") as temporary:
         directory = Path(temporary)
         av1_frame = directory / "av1-frame.rgb"

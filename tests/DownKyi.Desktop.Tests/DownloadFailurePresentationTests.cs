@@ -169,6 +169,25 @@ public sealed class DownloadFailurePresentationTests
     }
 
     [AvaloniaFact]
+    public Task CoverConversionFailureDoesNotOfferAnIneffectiveRetry()
+    {
+        return AvaloniaTestDispatcher.RunAsync(() =>
+        {
+            DesktopTestResources.EnsureDownloadProjectionResources();
+            var failure = DownloadActivityPresenter.CreateFailure(
+                OperationError.Unexpected(
+                    "download.cover.convert",
+                    "The downloaded cover could not be converted."));
+            var details = DownloadActivityPresenter.FormatFailureDetails(failure);
+
+            Assert.False(failure.IsTransient);
+            Assert.Contains("封面无法转换", details, StringComparison.Ordinal);
+            Assert.Contains("取消“封面”", details, StringComparison.Ordinal);
+            Assert.DoesNotContain("点“重试”", details, StringComparison.Ordinal);
+        });
+    }
+
+    [AvaloniaFact]
     public Task SubtitleIoFailuresExplainTheirDistinctRecoveryPaths()
     {
         return AvaloniaTestDispatcher.RunAsync(() =>
