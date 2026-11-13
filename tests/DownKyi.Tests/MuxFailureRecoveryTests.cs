@@ -49,7 +49,6 @@ public sealed class MuxFailureRecoveryTests
                 GetExpectedEmbeddedAudioMode(needsAudio),
                 test.Muxer?.MergeEmbeddedAudioMode);
             Assert.Null(test.Muxer?.ConcatEmbeddedAudioMode);
-            Assert.Null(test.Muxer?.MergeCover);
         }
         else
         {
@@ -57,7 +56,6 @@ public sealed class MuxFailureRecoveryTests
                 GetExpectedEmbeddedAudioMode(needsAudio),
                 test.Muxer?.ConcatEmbeddedAudioMode);
             Assert.Null(test.Muxer?.MergeEmbeddedAudioMode);
-            Assert.Null(test.Muxer?.ConcatCover);
         }
     }
 
@@ -65,7 +63,8 @@ public sealed class MuxFailureRecoveryTests
     [InlineData(0)]
     [InlineData(1)]
     [InlineData(3)]
-    public async Task RequestedCoverIsPassedToEveryVideoMuxPath(int durlSegmentCount)
+    public async Task RequestedCoverIsPassedIntoEveryVideoMuxPath(
+        int durlSegmentCount)
     {
         var mediaKind = durlSegmentCount == 0
             ? DownloadMediaKind.Dash
@@ -90,26 +89,21 @@ public sealed class MuxFailureRecoveryTests
             [1, 2, 3],
             TestContext.Current.CancellationToken).ConfigureAwait(true);
         test.Execution.CoverFile = cover;
-        var stage = test.CreateStage(new FfmpegOperationResult(
+        var muxStage = test.CreateStage(new FfmpegOperationResult(
             succeeded: true,
             outputPath: test.Execution.WorkingBasePath + ".mp4",
             failureReason: null));
 
-        var result = await stage.ExecuteAsync(
+        var result = await muxStage.ExecuteAsync(
             test.Execution,
             TestContext.Current.CancellationToken).ConfigureAwait(true);
 
         Assert.True(result.IsSuccess, result.Error?.Message);
-        if (durlSegmentCount <= 1)
-        {
-            Assert.Equal(cover, test.Muxer?.MergeCover);
-            Assert.Null(test.Muxer?.ConcatCover);
-        }
-        else
-        {
-            Assert.Equal(cover, test.Muxer?.ConcatCover);
-            Assert.Null(test.Muxer?.MergeCover);
-        }
+        Assert.Equal(
+            cover,
+            durlSegmentCount > 1
+                ? test.Muxer?.ConcatCover
+                : test.Muxer?.MergeCover);
     }
 
     [Fact]
@@ -133,17 +127,79 @@ public sealed class MuxFailureRecoveryTests
             [1, 2, 3],
             TestContext.Current.CancellationToken).ConfigureAwait(true);
         test.Execution.CoverFile = fallbackCover;
-        var stage = test.CreateStage(new FfmpegOperationResult(
+        var muxStage = test.CreateStage(new FfmpegOperationResult(
             succeeded: true,
             outputPath: test.Execution.WorkingBasePath + ".mp4",
             failureReason: null));
 
-        var result = await stage.ExecuteAsync(
+        var result = await muxStage.ExecuteAsync(
             test.Execution,
             TestContext.Current.CancellationToken).ConfigureAwait(true);
 
         Assert.True(result.IsSuccess, result.Error?.Message);
         Assert.Equal(fallbackCover, test.Muxer?.MergeCover);
+    }
+
+    [Fact]
+    public async Task CoverConversionFailureHasDedicatedErrorAndPreservesSources()
+    {
+        var requestedContent = DownloadContentSelection.None with
+        {
+            Audio = true,
+            Video = true,
+            Cover = true,
+            MediaKind = DownloadMediaKind.Dash
+        };
+        var test = await MuxTestContext.CreateAsync(requestedContent).ConfigureAwait(true);
+        await using var testLifetime = test.ConfigureAwait(true);
+        var cover = test.Execution.WorkingBasePath + ".jpg";
+        await File.WriteAllBytesAsync(
+            cover,
+            [1, 2, 3],
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+        test.Execution.CoverFile = cover;
+        var stage = test.CreateStage(FfmpegOperationResult.Failure(
+            "The cover could not be converted.",
+            FfmpegOperationFailureKind.InputInvalid,
+            FfmpegOperationFailureStage.Cover));
+        var result = await stage.ExecuteAsync(
+            test.Execution,
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("download.cover.convert", result.Error?.Code);
+        Assert.Null(test.Execution.OutputMedia);
+        Assert.True(File.Exists(test.AudioFile));
+        Assert.True(File.Exists(test.VideoFile));
+        var task = await test.GetTaskAsync().ConfigureAwait(true);
+        Assert.Contains(test.AudioKey, task.Transfer.CompletedFileKeys);
+        Assert.Contains(test.VideoKey, task.Transfer.CompletedFileKeys);
+        Assert.Equal("resume-identity", task.Transfer.BackendIdentity);
+    }
+
+    [Theory]
+    [InlineData(FfmpegOperationFailureKind.ProcessFailure)]
+    [InlineData(FfmpegOperationFailureKind.OutputInvalid)]
+    public async Task UnconfirmedCoverFailureRemainsRetryableAndDistinctFromMuxFailure(
+        FfmpegOperationFailureKind failureKind)
+    {
+        var test = await MuxTestContext.CreateAsync().ConfigureAwait(true);
+        await using var testLifetime = test.ConfigureAwait(true);
+        var stage = test.CreateStage(FfmpegOperationResult.Failure(
+            "The cover output could not be written.",
+            failureKind,
+            FfmpegOperationFailureStage.Cover));
+
+        var result = await stage.ExecuteAsync(
+            test.Execution,
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("download.cover.process", result.Error?.Code);
+        var failure = DownloadActivityPresenter.CreateFailure(result.Error);
+        Assert.True(failure.IsTransient);
+        Assert.True(File.Exists(test.AudioFile));
+        Assert.True(File.Exists(test.VideoFile));
     }
 
     private static FfmpegEmbeddedAudioMode GetExpectedEmbeddedAudioMode(bool needsAudio) =>

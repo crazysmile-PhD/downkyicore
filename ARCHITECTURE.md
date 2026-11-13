@@ -111,6 +111,7 @@ flowchart LR
 - `DownloadOutputLayout` 是 media、subtitle、danmaku、NFO、cover 邏輯輸出路徑與 file-family mapping 的唯一 owner；stage 與 physical path resolver 擁有 I/O、完整性、發布與實體 identity，不得各自複製 suffix／image 規則表。
 - 無效 transfer artifact 必須先完成實體清理，才能撤銷其 completed key。同一 key 的所有 artifact 都清理成功才可更新 durable state；任何清理失敗都保留 completed evidence 並 fail closed。
 - FFmpeg 只能發布已驗證輸出，且不得因一般非零 exit code 推定來源損壞。只有 fail-on-error decode 的明確證據才可撤銷對應 completed key、identity 與 source。
+- FFmpeg 在最終 mux 前以獨立的封面命令把實際輸入內容標準化為單幀 JPEG，再於唯一一次影音 mux 寫入 `attached_pic`；不得按下載副檔名猜測 codec，也不得為封面二次複製或重寫完整 MP4。中間 JPEG 必須在 mux operation 返回前清理，轉換失敗以 `download.cover.convert` 與影音 mux 失敗分流；本地成品的 seekability 以中段／片尾解碼驗證，不以 `+faststart` 搬移 `moov` 作為契約。
 - 只有 finalize 成功提交 Domain `Completed` 後，既有 file service 才能清理該任務的精確來源與 sidecars。
 - `FfmpegProcessRunner` 是 FFmpeg concurrency、timeout、cancellation 與 process tree 的唯一 owner。
 

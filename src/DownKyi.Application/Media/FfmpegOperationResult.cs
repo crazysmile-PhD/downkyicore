@@ -9,10 +9,18 @@ public enum FfmpegOperationFailureKind
     ProcessUnavailable,
     ProcessFailure,
     Timeout,
+    InputInvalid,
     OutputInvalid,
     DestinationConflict,
     DestinationAccessDenied,
     OutputIoFailure
+}
+
+public enum FfmpegOperationFailureStage
+{
+    None,
+    Media,
+    Cover
 }
 
 public sealed record FfmpegOperationResult
@@ -25,7 +33,8 @@ public sealed record FfmpegOperationResult
             succeeded,
             outputPath,
             failureReason,
-            succeeded ? FfmpegOperationFailureKind.None : FfmpegOperationFailureKind.ProcessFailure)
+            succeeded ? FfmpegOperationFailureKind.None : FfmpegOperationFailureKind.ProcessFailure,
+            succeeded ? FfmpegOperationFailureStage.None : FfmpegOperationFailureStage.Media)
     {
     }
 
@@ -34,11 +43,27 @@ public sealed record FfmpegOperationResult
         string? outputPath,
         string? failureReason,
         FfmpegOperationFailureKind failureKind)
+        : this(
+            succeeded,
+            outputPath,
+            failureReason,
+            failureKind,
+            succeeded ? FfmpegOperationFailureStage.None : FfmpegOperationFailureStage.Media)
     {
-        if (succeeded != (failureKind == FfmpegOperationFailureKind.None))
+    }
+
+    public FfmpegOperationResult(
+        bool succeeded,
+        string? outputPath,
+        string? failureReason,
+        FfmpegOperationFailureKind failureKind,
+        FfmpegOperationFailureStage failureStage)
+    {
+        if (succeeded != (failureKind == FfmpegOperationFailureKind.None)
+            || succeeded != (failureStage == FfmpegOperationFailureStage.None))
         {
             throw new ArgumentException(
-                "Successful FFmpeg operations require a None failure kind and failed operations require a non-None kind.",
+                "Successful FFmpeg operations require no failure kind or stage; failed operations require both.",
                 nameof(failureKind));
         }
 
@@ -46,6 +71,7 @@ public sealed record FfmpegOperationResult
         OutputPath = outputPath;
         FailureReason = failureReason;
         FailureKind = failureKind;
+        FailureStage = failureStage;
     }
 
     public bool Succeeded { get; }
@@ -56,6 +82,8 @@ public sealed record FfmpegOperationResult
 
     public FfmpegOperationFailureKind FailureKind { get; }
 
+    public FfmpegOperationFailureStage FailureStage { get; }
+
     public static FfmpegOperationResult Failure(string reason)
     {
         return Failure(reason, FfmpegOperationFailureKind.ProcessFailure);
@@ -65,10 +93,19 @@ public sealed record FfmpegOperationResult
         string reason,
         FfmpegOperationFailureKind failureKind)
     {
+        return Failure(reason, failureKind, FfmpegOperationFailureStage.Media);
+    }
+
+    public static FfmpegOperationResult Failure(
+        string reason,
+        FfmpegOperationFailureKind failureKind,
+        FfmpegOperationFailureStage failureStage)
+    {
         return new FfmpegOperationResult(
             false,
             null,
             reason,
-            failureKind);
+            failureKind,
+            failureStage);
     }
 }

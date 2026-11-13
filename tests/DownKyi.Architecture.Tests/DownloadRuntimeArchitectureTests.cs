@@ -664,6 +664,8 @@ public sealed class DownloadRuntimeArchitectureTests
             "InvalidateCompletedFilesAsync",
             muxSource,
             StringComparison.Ordinal);
+        Assert.Contains("GetPreferredUsableCoverFile", muxSource, StringComparison.Ordinal);
+        Assert.Contains("\"download.cover.convert\"", muxSource, StringComparison.Ordinal);
         Assert.DoesNotContain(
             "InvalidateCompletedFileAsync",
             mediaSource,

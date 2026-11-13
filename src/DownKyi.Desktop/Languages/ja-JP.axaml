@@ -218,6 +218,7 @@
     <system:String x:Key="DownloadFailureSubtitleDetails">選択した字幕をダウンロードできませんでした。「再試行」を押してください。字幕が利用できなくなった場合は、別の字幕を選んで新しいタスクを作成してください。</system:String>
     <system:String x:Key="DownloadFailureArtifactDetails">追加ファイルをダウンロードできませんでした。ネットワークとダウンロード先を確認してから再試行してください。失敗が続く場合は、「設定 → 概要とフィードバック」で診断パッケージをエクスポートしてください。</system:String>
     <system:String x:Key="DownloadFailureProcessingDetails">ダウンロード後のファイル処理が完了しませんでした。「再試行」を押してください。失敗が続く場合は、「設定 → 概要とフィードバック」で診断パッケージをエクスポートしてください。</system:String>
+    <system:String x:Key="DownloadFailureCoverConversionDetails">カバー画像を MP4 に保存できる形式へ変換できませんでした。同じタスクを再試行しても結果は変わりません。「カバー」を外してタスクを作り直し、「設定 → 概要とフィードバック」から診断パッケージをエクスポートしてください。</system:String>
     <system:String x:Key="DownloadFailureTlsDetails">安全な接続の検証に失敗しました。システムの日付、プロキシ、および証明書の設定を確認して、再試行してください。</system:String>
     <system:String x:Key="DownloadFailureRuntimeDetails">ダウンロードサービスを続行できません。DownKyi を再起動してください。それでも失敗する場合は、「設定 → 概要とフィードバック」で診断パッケージをエクスポートしてください。</system:String>
     <system:String x:Key="DownloadFailureLegacyDetails">このタスクは廃止されたダウンローダーを使用しているため、直接再試行できません。動画を再解析して新しいタスクを作成してください。</system:String>

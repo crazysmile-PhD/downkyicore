@@ -75,7 +75,7 @@ internal sealed class MuxStage : IDownloadPipelineStage
             finalFile,
             overwriteDestination: false,
             embeddedAudioMode: FfmpegEmbeddedAudioMode.Excluded,
-            cover: GetCoverFile(context),
+            cover: GetCoverForMux(context),
             cancellationToken).ConfigureAwait(true);
         await DownloadOutputRecorder.RecordFileSizeAsync(
             context.TaskId,
@@ -86,7 +86,8 @@ internal sealed class MuxStage : IDownloadPipelineStage
         context.MediaSucceeded = result.Succeeded;
         return result.Succeeded
             ? DownloadStageResult.Success(Name)
-            : DownloadStageResult.Failure(
+            : CreateMuxFailure(
+                result,
                 "download.mux.dash",
                 "Audio and video streams could not be finalized.");
     }
@@ -113,7 +114,7 @@ internal sealed class MuxStage : IDownloadPipelineStage
                 destination: finalFile,
                 overwriteDestination: false,
                 embeddedAudioMode: GetEmbeddedAudioMode(context),
-                cover: GetCoverFile(context),
+                cover: GetCoverForMux(context),
                 cancellationToken).ConfigureAwait(true);
             await DownloadOutputRecorder.RecordFileSizeAsync(
                 context.TaskId,
@@ -124,7 +125,8 @@ internal sealed class MuxStage : IDownloadPipelineStage
             context.MediaSucceeded = mergeResult.Succeeded;
             return mergeResult.Succeeded
                 ? DownloadStageResult.Success(Name)
-                : DownloadStageResult.Failure(
+                : CreateMuxFailure(
+                    mergeResult,
                     "download.mux.durl",
                     "The media segment could not be finalized.");
         }
@@ -143,7 +145,7 @@ internal sealed class MuxStage : IDownloadPipelineStage
             outputPath,
             overwriteDestination: false,
             embeddedAudioMode: GetEmbeddedAudioMode(context),
-            cover: GetCoverFile(context),
+            cover: GetCoverForMux(context),
             cancellationToken: cancellationToken).ConfigureAwait(true);
         await DownloadOutputRecorder.RecordFileSizeAsync(
             context.TaskId,
@@ -154,21 +156,35 @@ internal sealed class MuxStage : IDownloadPipelineStage
         context.MediaSucceeded = result.Succeeded;
         return result.Succeeded
             ? DownloadStageResult.Success(Name)
-            : DownloadStageResult.Failure(
+            : CreateMuxFailure(
+                result,
                 "download.mux.concat",
                 "Segmented media could not be concatenated.");
     }
+
+    private static string? GetCoverForMux(DownloadExecutionContext context) =>
+        context.NeedsVideo && context.NeedsCover
+            ? context.GetPreferredUsableCoverFile()
+            : null;
+
+    private static OperationResult<DownloadStageResult> CreateMuxFailure(
+        FfmpegOperationResult result,
+        string muxCode,
+        string muxMessage) =>
+        result.FailureStage == FfmpegOperationFailureStage.Cover
+            ? result.FailureKind == FfmpegOperationFailureKind.InputInvalid
+                ? DownloadStageResult.Failure(
+                    "download.cover.convert",
+                    "The downloaded cover could not be converted for MP4 output.")
+                : DownloadStageResult.Failure(
+                    "download.cover.process",
+                    "The cover conversion process could not be completed.")
+            : DownloadStageResult.Failure(muxCode, muxMessage);
 
     private static FfmpegEmbeddedAudioMode GetEmbeddedAudioMode(
         DownloadExecutionContext context) =>
         context.NeedsAudio
             ? FfmpegEmbeddedAudioMode.Required
             : FfmpegEmbeddedAudioMode.Excluded;
-
-    private static string? GetCoverFile(DownloadExecutionContext context) =>
-        context.NeedsVideo
-        && context.NeedsCover
-            ? context.GetPreferredUsableCoverFile()
-            : null;
 
 }

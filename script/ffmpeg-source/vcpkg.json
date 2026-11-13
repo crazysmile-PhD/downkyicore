@@ -14,7 +14,8 @@
         "mp3lame",
         "swresample",
         "swscale",
-        "x264"
+        "x264",
+        "zlib"
       ]
     }
   ],

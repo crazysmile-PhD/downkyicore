@@ -51,19 +51,27 @@ public sealed class FfmpegProcessor : IFfmpegMediaMuxer
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(videoSettings);
-        var encoder = await _hardwareEncoderDetector.SelectAsync(
-                videoSettings.FfmpegHardwareAcceleration,
-                cancellationToken)
-            .ConfigureAwait(false);
-        return await _concatRuntime.ConcatAsync(
-                segments,
+        return await RunWithPreparedCoverAsync(
+                NormalizeOptionalInput(cover),
                 outputVideo,
-                encoder,
-                allowStreamCopy: false,
-                overwriteDestination,
-                action,
-                embeddedAudioMode,
-                coverFile: NormalizeOptionalInput(cover),
+                async normalizedCover =>
+                {
+                    var encoder = await _hardwareEncoderDetector.SelectAsync(
+                            videoSettings.FfmpegHardwareAcceleration,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    return await _concatRuntime.ConcatAsync(
+                            segments,
+                            outputVideo,
+                            encoder,
+                            allowStreamCopy: false,
+                            overwriteDestination,
+                            action,
+                            embeddedAudioMode,
+                            normalizedCover,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                },
                 cancellationToken)
             .ConfigureAwait(false);
     }
@@ -81,7 +89,6 @@ public sealed class FfmpegProcessor : IFfmpegMediaMuxer
         ArgumentNullException.ThrowIfNull(videoSettings);
         var audioPath = !string.IsNullOrWhiteSpace(audio) ? audio : null;
         var videoPath = !string.IsNullOrWhiteSpace(video) ? video : null;
-        var coverPath = videoPath != null ? NormalizeOptionalInput(cover) : null;
         if (audioPath == null && videoPath == null)
         {
             return FfmpegOperationResult.Failure(
@@ -89,34 +96,81 @@ public sealed class FfmpegProcessor : IFfmpegMediaMuxer
                 FfmpegOperationFailureKind.NoInput);
         }
 
-        var outputResult = await RunToFileAsync(
-            temporaryOutput => FfmpegCommandFactory.BuildMerge(
-                audioPath,
-                videoPath,
-                temporaryOutput,
-                videoSettings.IsTranscodingAacToMp3 == AllowStatus.Yes,
-                embeddedAudioMode,
-                coverFile: coverPath),
-            destination,
-            overwriteDestination,
-            action: null,
-            cancellationToken).ConfigureAwait(false);
-        if (outputResult.Succeeded)
-        {
-            return new FfmpegOperationResult(
-                true,
+        return await RunWithPreparedCoverAsync(
+                videoPath == null ? null : NormalizeOptionalInput(cover),
                 destination,
-                null,
-                FfmpegOperationFailureKind.None);
-        }
-
-        return FfmpegOperationResult.Failure(
-            "FFmpeg output could not be finalized.",
-            outputResult.FailureKind);
+                async normalizedCover =>
+                {
+                    var outputResult = await RunToFileAsync(
+                        temporaryOutput => FfmpegCommandFactory.BuildMerge(
+                            audioPath,
+                            videoPath,
+                            temporaryOutput,
+                            videoSettings.IsTranscodingAacToMp3 == AllowStatus.Yes,
+                            embeddedAudioMode,
+                            normalizedCover),
+                        destination,
+                        overwriteDestination,
+                        action: null,
+                        cancellationToken).ConfigureAwait(false);
+                    return outputResult.Succeeded
+                        ? new FfmpegOperationResult(
+                            true,
+                            destination,
+                            null,
+                            FfmpegOperationFailureKind.None)
+                        : FfmpegOperationResult.Failure(
+                            "FFmpeg output could not be finalized.",
+                            outputResult.FailureKind);
+                },
+                cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private static string? NormalizeOptionalInput(string? path) =>
         !string.IsNullOrWhiteSpace(path) ? path : null;
+
+    private async Task<FfmpegOperationResult> RunWithPreparedCoverAsync(
+        string? cover,
+        string destination,
+        Func<string?, Task<FfmpegOperationResult>> operation,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+        string? normalizedCover = null;
+        try
+        {
+            if (cover != null)
+            {
+                var directory = Path.GetDirectoryName(Path.GetFullPath(destination))
+                    ?? throw new InvalidOperationException("The output directory is unavailable.");
+                normalizedCover = Path.Combine(
+                    directory,
+                    $".downkyi-cover-{Guid.NewGuid():N}.jpg");
+                var coverResult = await RunToFileAsync(
+                    temporaryOutput => FfmpegCommandFactory.BuildNormalizeCover(
+                        cover,
+                        temporaryOutput),
+                    normalizedCover,
+                    overwriteDestination: false,
+                    action: null,
+                    cancellationToken).ConfigureAwait(false);
+                if (!coverResult.Succeeded)
+                {
+                    return FfmpegOperationResult.Failure(
+                        "The cover image could not be converted to JPEG.",
+                        coverResult.FailureKind,
+                        FfmpegOperationFailureStage.Cover);
+                }
+            }
+
+            return await operation(normalizedCover).ConfigureAwait(false);
+        }
+        finally
+        {
+            DeleteFile(normalizedCover);
+        }
+    }
 
     public Task<bool> DelogoAsync(
         string video,
@@ -238,12 +292,7 @@ public sealed class FfmpegProcessor : IFfmpegMediaMuxer
             LogResult(result, command.Operation, action);
             if (!result.Succeeded)
             {
-                return FfmpegOutputResult.Failure(
-                    !result.ProcessStarted
-                        ? FfmpegOperationFailureKind.ProcessUnavailable
-                        : result.TimedOut
-                            ? FfmpegOperationFailureKind.Timeout
-                            : FfmpegOperationFailureKind.ProcessFailure);
+                return FfmpegOutputResult.Failure(result.ToOperationFailureKind());
             }
 
             if (!File.Exists(temporaryOutput) || new FileInfo(temporaryOutput).Length == 0)
@@ -291,8 +340,13 @@ public sealed class FfmpegProcessor : IFfmpegMediaMuxer
         }
     }
 
-    private void DeleteFile(string file)
+    private void DeleteFile(string? file)
     {
+        if (string.IsNullOrWhiteSpace(file))
+        {
+            return;
+        }
+
         try
         {
             if (File.Exists(file))

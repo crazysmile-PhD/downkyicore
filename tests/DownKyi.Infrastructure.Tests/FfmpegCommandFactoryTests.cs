@@ -131,104 +131,73 @@ public sealed class FfmpegCommandFactoryTests
     }
 
     [Fact]
-    public void MergeTranscodesWebpCoverToMjpegAttachedPicture()
+    public void CoverNormalizationUsesOneDeterministicJpegFrameWithoutExtensionBranching()
     {
-        var command = FfmpegCommandFactory.BuildMerge(
+        var command = FfmpegCommandFactory.BuildNormalizeCover(
+            "cover.unknown",
+            "normalized.jpg");
+
+        Assert.Equal("normalize-cover", command.Operation);
+        Assert.Contains("-xerror", command.Arguments);
+        Assert.Contains("cover.unknown", command.Arguments);
+        Assert.Contains("0:v:0", command.Arguments);
+        Assert.Contains("-frames:v", command.Arguments);
+        Assert.Contains("1", command.Arguments);
+        Assert.Contains("mjpeg", command.Arguments);
+        Assert.Contains("yuvj420p", command.Arguments);
+        Assert.Equal("normalized.jpg", command.Arguments[^1]);
+    }
+
+    [Fact]
+    public void MediaMuxCommandsEmbedOnlyTheNormalizedJpegCover()
+    {
+        var merge = FfmpegCommandFactory.BuildMerge(
             audioFile: "audio.m4s",
             videoFile: "video.m4s",
             outputFile: "output.mp4",
             transcodeAudioToMp3: false,
             embeddedAudioMode: FfmpegEmbeddedAudioMode.Required,
-            coverFile: "cover.webp");
-
-        AssertInput(command, "cover.webp", expectedInputIndex: 2);
-        AssertEmbeddedCover(command, expectedInputIndex: 2, expectedCodec: "mjpeg");
-        AssertOption(command, "-q:v:1", "2");
-    }
-
-    [Fact]
-    public void ConcatTranscodesAvifCoverToMjpegAttachedPicture()
-    {
-        var command = FfmpegCommandFactory.BuildConcat(
+            coverFile: "normalized.jpg");
+        var concat = FfmpegCommandFactory.BuildConcat(
             "segments.txt",
             "output.mp4",
             FfmpegConcatStrategy.CpuEncoder,
             hardwareEncoder: null,
             embeddedAudioMode: FfmpegEmbeddedAudioMode.Required,
-            coverFile: "cover.avif");
+            coverFile: "normalized.jpg");
 
-        AssertInput(command, "cover.avif", expectedInputIndex: 1);
-        AssertEmbeddedCover(command, expectedInputIndex: 1, expectedCodec: "mjpeg");
-        AssertOption(command, "-q:v:1", "2");
-        AssertOption(command, "-pix_fmt:v:0", "yuv420p");
-        Assert.DoesNotContain("-pix_fmt", command.Arguments);
-    }
-
-    [Theory]
-    [InlineData("cover.jpg")]
-    [InlineData("cover.JPEG")]
-    [InlineData("cover.png")]
-    public void MergeCopiesMp4CompatibleCoverWithoutReencoding(string coverFile)
-    {
-        var command = FfmpegCommandFactory.BuildMerge(
-            audioFile: null,
-            videoFile: "video.mp4",
-            outputFile: "output.mp4",
-            transcodeAudioToMp3: false,
-            embeddedAudioMode: FfmpegEmbeddedAudioMode.Excluded,
-            coverFile);
-
-        AssertEmbeddedCover(command, expectedInputIndex: 1, expectedCodec: "copy");
-        Assert.DoesNotContain("-q:v:1", command.Arguments);
+        Assert.Contains("attached_pic", merge.Arguments);
+        Assert.Contains("attached_pic", concat.Arguments);
+        Assert.Contains("-c:v:1", merge.Arguments);
+        Assert.Contains("-c:v:1", concat.Arguments);
+        Assert.Contains("2:v:0", merge.Arguments);
+        Assert.Contains("1:v:0", concat.Arguments);
+        Assert.Equal(3, merge.Arguments.Count(argument => argument == "-i"));
+        Assert.Equal(2, concat.Arguments.Count(argument => argument == "-i"));
+        Assert.DoesNotContain("-frames:v", merge.Arguments);
+        Assert.DoesNotContain("-frames:v", concat.Arguments);
     }
 
     [Fact]
-    public void AudioOnlyMergeDoesNotMapCover()
+    public void LocalMp4MuxCommandsDoNotRelocateMetadataWithFaststart()
     {
-        var command = FfmpegCommandFactory.BuildMerge(
+        var merge = FfmpegCommandFactory.BuildMerge(
             audioFile: "audio.m4s",
-            videoFile: null,
-            outputFile: "output.aac",
+            videoFile: "video.m4s",
+            outputFile: "output.mp4",
             transcodeAudioToMp3: false,
-            embeddedAudioMode: FfmpegEmbeddedAudioMode.Excluded,
-            coverFile: "cover.jpg");
+            embeddedAudioMode: FfmpegEmbeddedAudioMode.Required,
+            coverFile: "normalized.jpg");
+        var concat = FfmpegCommandFactory.BuildConcat(
+            "segments.txt",
+            "output.mp4",
+            FfmpegConcatStrategy.StreamCopy,
+            hardwareEncoder: null,
+            embeddedAudioMode: FfmpegEmbeddedAudioMode.Required,
+            coverFile: "normalized.jpg");
 
-        Assert.DoesNotContain("cover.jpg", command.Arguments);
-        Assert.DoesNotContain("attached_pic", command.Arguments);
-    }
-
-    private static void AssertInput(
-        FfmpegCommand command,
-        string expectedInput,
-        int expectedInputIndex)
-    {
-        var inputs = command.Arguments
-            .Select((argument, index) => (argument, index))
-            .Where(item => item.argument == "-i")
-            .Select(item => command.Arguments[item.index + 1])
-            .ToArray();
-
-        Assert.Equal(expectedInput, inputs[expectedInputIndex]);
-    }
-
-    private static void AssertEmbeddedCover(
-        FfmpegCommand command,
-        int expectedInputIndex,
-        string expectedCodec)
-    {
-        AssertOption(command, "-map", $"{expectedInputIndex}:v:0");
-        AssertOption(command, "-c:v:1", expectedCodec);
-        Assert.DoesNotContain("-frames:v:1", command.Arguments);
-        AssertOption(command, "-disposition:v:1", "attached_pic");
-    }
-
-    private static void AssertOption(FfmpegCommand command, string option, string value)
-    {
-        Assert.Contains(
-            command.Arguments.Select((argument, index) => (argument, index)),
-            item => item.argument == option
-                    && item.index + 1 < command.Arguments.Count
-                    && command.Arguments[item.index + 1] == value);
+        Assert.DoesNotContain("+faststart", merge.Arguments);
+        Assert.DoesNotContain("+faststart", concat.Arguments);
     }
 
 }

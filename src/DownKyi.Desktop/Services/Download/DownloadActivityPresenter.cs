@@ -127,6 +127,7 @@ internal sealed class DownloadActivityPresenter
             or "download.resolve.recreate-task"
             or "download.media.contract"
             or "download.media.durl-audio-only"
+            or "download.cover.convert"
             or "download.validate.published-missing")
         {
             return new DownloadFailure(
@@ -256,9 +257,12 @@ internal sealed class DownloadActivityPresenter
             or "download.mux.durl-input"
             or "download.mux.durl"
             or "download.mux.concat"
+            or "download.cover.process"
             or "download.finalize.unvalidated"
             or "download.publish.unvalidated"
             or "download.publish.invalid" => "DownloadFailureProcessingDetails",
+
+            "download.cover.convert" => "DownloadFailureCoverConversionDetails",
 
             "download.publish.reconcile" => "DownloadFailurePublicationRecoveryDetails",
 
