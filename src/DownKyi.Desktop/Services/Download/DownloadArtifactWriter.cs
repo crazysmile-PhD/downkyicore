@@ -22,6 +22,7 @@ using DownKyi.Domain.Downloads;
 using DownKyi.Domain.Results;
 using Google.Protobuf;
 using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
 
 namespace DownKyi.Services.Download;
 
@@ -207,7 +208,30 @@ internal sealed partial class DownloadArtifactWriter
 
             if (xmlFile != null)
             {
-                var document = BilibiliDanmakuXmlWriter.CreateDocument(danmakus, cancellationToken);
+                var xml = BilibiliDanmakuXmlWriter.CreateDocument(danmakus, cancellationToken);
+                foreach (var invalidCharacter in xml.InvalidCharacters)
+                {
+                    var message =
+                        "Skipped danmaku that XML 1.0 cannot represent. " +
+                        $"dmid={invalidCharacter.Id.ToString(CultureInfo.InvariantCulture)}; " +
+                        $"field={invalidCharacter.Field}; " +
+                        $"invalid=U+{invalidCharacter.InvalidValue:X4}; " +
+                        $"utf16Index={invalidCharacter.Utf16Index.ToString(CultureInfo.InvariantCulture)}; " +
+                        $"category={invalidCharacter.Category}";
+                    if (invalidCharacter.ContextBefore != null && invalidCharacter.ContextAfter != null)
+                    {
+                        message +=
+                            $"; before={JsonConvert.ToString(invalidCharacter.ContextBefore)}" +
+                            $"; after={JsonConvert.ToString(invalidCharacter.ContextAfter)}";
+                    }
+                    else
+                    {
+                        message += "; context=redacted";
+                    }
+
+                    _logger.LogWarningMessage(message + ".");
+                }
+
                 var output = new FileStream(
                     xmlFile,
                     FileMode.Create,
@@ -217,7 +241,7 @@ internal sealed partial class DownloadArtifactWriter
                     FileOptions.Asynchronous);
                 await using (output.ConfigureAwait(false))
                 {
-                    await document.SaveAsync(output, SaveOptions.DisableFormatting, cancellationToken)
+                    await xml.Document.SaveAsync(output, SaveOptions.DisableFormatting, cancellationToken)
                         .ConfigureAwait(false);
                     await output.FlushAsync(cancellationToken).ConfigureAwait(false);
                 }
