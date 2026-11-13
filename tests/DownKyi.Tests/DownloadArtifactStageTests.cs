@@ -19,6 +19,7 @@ using DownKyi.ViewModels.DownloadManager;
 using Google.Protobuf;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DownKyi.Tests;
@@ -119,6 +120,67 @@ public sealed class DownloadArtifactStageTests
             $"{context.Downloading.DownloadBase.FilePath}.xml",
             task.Plan.TransferFiles[DownloadArtifactWriter.DanmakuXmlTransferKey]);
         AssertPhysicalArtifactsAreDurablyOwned(context, task);
+    }
+
+    [Fact]
+    public async Task XmlDanmakuLogsEachInvalidCharacterWithEscapedContext()
+    {
+        var logger = new RecordingLogger();
+        var client = CreateDanmakuClient(
+        [
+            new DanmakuElem
+            {
+                Id = 1,
+                MidHash = "valid",
+                Content = "kept"
+            },
+            new DanmakuElem
+            {
+                Id = 2,
+                MidHash = "invalid-content",
+                Content = "invalid\n\0content"
+            },
+            new DanmakuElem
+            {
+                Id = 3,
+                MidHash = "invalid\0sender",
+                Content = "invalid metadata"
+            }
+        ]);
+        using var context = await ArtifactTestContext.CreateAsync(
+            client,
+            danmaku: true,
+            danmakuOutputFormat: DanmakuOutputFormat.Xml,
+            logger: logger).ConfigureAwait(true);
+
+        var result = await context.Stage.ExecuteAsync(
+            context.Execution,
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.True(result.IsSuccess, result.Error?.Message);
+        Assert.Collection(
+            logger.Entries,
+            entry =>
+            {
+                Assert.Equal(LogLevel.Warning, entry.Level);
+                Assert.Contains("dmid=2", entry.Message, StringComparison.Ordinal);
+                Assert.Contains("field=content", entry.Message, StringComparison.Ordinal);
+                Assert.Contains("invalid=U+0000", entry.Message, StringComparison.Ordinal);
+                Assert.Contains("utf16Index=8", entry.Message, StringComparison.Ordinal);
+                Assert.Contains("category=Control", entry.Message, StringComparison.Ordinal);
+                Assert.Contains("before=\"invalid\\n\"", entry.Message, StringComparison.Ordinal);
+                Assert.Contains("after=\"content\"", entry.Message, StringComparison.Ordinal);
+                Assert.DoesNotContain('\n', entry.Message);
+            },
+            entry =>
+            {
+                Assert.Equal(LogLevel.Warning, entry.Level);
+                Assert.Contains("dmid=3", entry.Message, StringComparison.Ordinal);
+                Assert.Contains("field=senderHash", entry.Message, StringComparison.Ordinal);
+                Assert.Contains("invalid=U+0000", entry.Message, StringComparison.Ordinal);
+                Assert.Contains("context=redacted", entry.Message, StringComparison.Ordinal);
+                Assert.DoesNotContain("invalid\0sender", entry.Message, StringComparison.Ordinal);
+            });
     }
 
     [Fact]
@@ -1833,7 +1895,8 @@ public sealed class DownloadArtifactStageTests
             long[]? selectedSubtitleTrackIds = null,
             long? defaultSubtitleTrackId = null,
             Func<DanmakuApplicationSettings, DanmakuApplicationSettings>? configureDanmaku = null,
-            SubtitleLanguagePreference preferredSubtitleLanguage = SubtitleLanguagePreference.Unspecified)
+            SubtitleLanguagePreference preferredSubtitleLanguage = SubtitleLanguagePreference.Unspecified,
+            ILogger? logger = null)
         {
             var directory = Path.Combine(
                 Path.GetTempPath(),
@@ -1935,7 +1998,7 @@ public sealed class DownloadArtifactStageTests
             var writer = new DownloadArtifactWriter(
                 new TestWbiKeyProvider(),
                 stateWriter,
-                NullLogger<DownloadArtifactWriter>.Instance,
+                logger ?? NullLogger<DownloadArtifactWriter>.Instance,
                 client);
             return new ArtifactTestContext(
                 directory,
@@ -1960,6 +2023,31 @@ public sealed class DownloadArtifactStageTests
             }
         }
     }
+
+    private sealed class RecordingLogger : ILogger
+    {
+        private readonly List<LogEntry> _entries = [];
+
+        public IReadOnlyList<LogEntry> Entries => _entries;
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            ArgumentNullException.ThrowIfNull(formatter);
+            _entries.Add(new LogEntry(logLevel, formatter(state, exception)));
+        }
+    }
+
+    private sealed record LogEntry(LogLevel Level, string Message);
 
     private sealed class ProductionBilibiliClientContext : IDisposable
     {
