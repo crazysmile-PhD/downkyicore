@@ -115,10 +115,10 @@ public sealed class DownloadArtifactStageTests
         var task = await context.GetTaskAsync().ConfigureAwait(true);
         Assert.Equal(
             $"{context.Downloading.DownloadBase.FilePath}.ass",
-            task.Plan.TransferFiles[DownloadArtifactWriter.DanmakuAssTransferKey]);
+            task.Plan.TransferFiles[DownloadArtifactIdentity.DanmakuAssTransferKey]);
         Assert.Equal(
             $"{context.Downloading.DownloadBase.FilePath}.xml",
-            task.Plan.TransferFiles[DownloadArtifactWriter.DanmakuXmlTransferKey]);
+            task.Plan.TransferFiles[DownloadArtifactIdentity.DanmakuXmlTransferKey]);
         AssertPhysicalArtifactsAreDurablyOwned(context, task);
     }
 
@@ -328,8 +328,8 @@ public sealed class DownloadArtifactStageTests
     }
 
     [Theory]
-    [InlineData(DanmakuOutputFormat.Ass, "ass", DownloadArtifactWriter.DanmakuAssTransferKey)]
-    [InlineData(DanmakuOutputFormat.Xml, "xml", DownloadArtifactWriter.DanmakuXmlTransferKey)]
+    [InlineData(DanmakuOutputFormat.Ass, "ass", DownloadArtifactIdentity.DanmakuAssTransferKey)]
+    [InlineData(DanmakuOutputFormat.Xml, "xml", DownloadArtifactIdentity.DanmakuXmlTransferKey)]
     public async Task DanmakuWriteFailureIsTypedAndTheClaimRemainsDurable(
         DanmakuOutputFormat outputFormat, string extension, string transferKey)
     {
@@ -353,8 +353,8 @@ public sealed class DownloadArtifactStageTests
     }
 
     [Theory]
-    [InlineData(DanmakuOutputFormat.Ass, "ass", DownloadArtifactWriter.DanmakuAssTransferKey)]
-    [InlineData(DanmakuOutputFormat.Xml, "xml", DownloadArtifactWriter.DanmakuXmlTransferKey)]
+    [InlineData(DanmakuOutputFormat.Ass, "ass", DownloadArtifactIdentity.DanmakuAssTransferKey)]
+    [InlineData(DanmakuOutputFormat.Xml, "xml", DownloadArtifactIdentity.DanmakuXmlTransferKey)]
     public async Task DanmakuCancellationRemainsVisibleAfterDurableClaim(
         DanmakuOutputFormat outputFormat, string extension, string transferKey)
     {
@@ -392,8 +392,8 @@ public sealed class DownloadArtifactStageTests
             context.Stage.ExecuteAsync(context.Execution, cancellation.Token)).ConfigureAwait(true);
 
         var task = await context.GetTaskAsync().ConfigureAwait(true);
-        Assert.Contains(DownloadArtifactWriter.DanmakuAssTransferKey, task.Plan.TransferFiles);
-        Assert.Contains(DownloadArtifactWriter.DanmakuXmlTransferKey, task.Plan.TransferFiles);
+        Assert.Contains(DownloadArtifactIdentity.DanmakuAssTransferKey, task.Plan.TransferFiles);
+        Assert.Contains(DownloadArtifactIdentity.DanmakuXmlTransferKey, task.Plan.TransferFiles);
         var currentSettings = context.SetDanmakuOutputFormat(DanmakuOutputFormat.Ass);
         var resumedInput = DownloadExecutionContextFactory.CreateInput(task, currentSettings);
         Assert.Equal(DanmakuOutputFormat.AssAndXml, resumedInput.DanmakuSettings.OutputFormat);
@@ -422,7 +422,7 @@ public sealed class DownloadArtifactStageTests
             danmakuOutputFormat: DanmakuOutputFormat.Xml).ConfigureAwait(true);
         var xmlFile = $"{context.Downloading.DownloadBase!.FilePath}.xml";
         await context.ClaimTransferFileAsync(
-            DownloadArtifactWriter.DanmakuXmlTransferKey,
+            DownloadArtifactIdentity.DanmakuXmlTransferKey,
             xmlFile).ConfigureAwait(true);
         await File.WriteAllTextAsync(
             xmlFile,
@@ -786,9 +786,9 @@ public sealed class DownloadArtifactStageTests
         Assert.NotEmpty(context.GetPhysicalArtifactFiles());
         if (kind == ArtifactKind.Subtitle)
         {
-            Assert.Contains(DownloadArtifactWriter.DefaultSubtitleTransferKey, task.Plan.TransferFiles.Keys);
-            Assert.Contains(DownloadArtifactWriter.GetSubtitleTrackTransferKey(11), task.Plan.TransferFiles.Keys);
-            Assert.Contains(DownloadArtifactWriter.GetSubtitleTrackTransferKey(22), task.Plan.TransferFiles.Keys);
+            Assert.Contains(DownloadArtifactIdentity.DefaultSubtitleTransferKey, task.Plan.TransferFiles.Keys);
+            Assert.Contains(DownloadArtifactIdentity.GetSubtitleTrackTransferKey(11), task.Plan.TransferFiles.Keys);
+            Assert.Contains(DownloadArtifactIdentity.GetSubtitleTrackTransferKey(22), task.Plan.TransferFiles.Keys);
             Assert.Equal(3, context.GetPhysicalArtifactFiles().Length);
         }
     }
@@ -851,8 +851,8 @@ public sealed class DownloadArtifactStageTests
     }
 
     [Theory]
-    [InlineData(PlayStreamType.Video, "https://example.test/main.png", DownloadArtifactWriter.MainCoverTransferKey)]
-    [InlineData(PlayStreamType.Cheese, "https://example.test/page.jpg", DownloadArtifactWriter.PageCoverTransferKey)]
+    [InlineData(PlayStreamType.Video, "https://example.test/main.png", DownloadArtifactIdentity.MainCoverTransferKey)]
+    [InlineData(PlayStreamType.Cheese, "https://example.test/page.jpg", DownloadArtifactIdentity.PageCoverTransferKey)]
     public async Task CoverSelectionCreatesOnlyThePreferredImage(
         PlayStreamType streamType,
         string expectedAddress,
@@ -921,7 +921,7 @@ public sealed class DownloadArtifactStageTests
             context.Execution.GetPreferredUsableCoverFile());
         var task = await context.GetTaskAsync().ConfigureAwait(true);
         Assert.Equal(
-            [DownloadArtifactWriter.MainCoverTransferKey, DownloadArtifactWriter.PageCoverTransferKey],
+            [DownloadArtifactIdentity.MainCoverTransferKey, DownloadArtifactIdentity.PageCoverTransferKey],
             task.Plan.TransferFiles.Keys.Order(StringComparer.Ordinal));
         Assert.Equal(
             [
@@ -1077,7 +1077,7 @@ public sealed class DownloadArtifactStageTests
         var existing = context.Downloading.DownloadBase!.FilePath + ".jpg";
         await File.WriteAllTextAsync(
             existing, "existing", TestContext.Current.CancellationToken).ConfigureAwait(true);
-        context.Execution.PublishedArtifacts[DownloadArtifactWriter.PageCoverTransferKey] = existing;
+        context.Execution.PublishedArtifacts[DownloadArtifactIdentity.PageCoverTransferKey] = existing;
 
         var result = await context.Stage.ExecuteAsync(
             context.Execution,
@@ -1109,9 +1109,9 @@ public sealed class DownloadArtifactStageTests
             context.Execution.WorkingBasePath, context.Execution.Input.Metadata.PageCoverAddress);
         var mainFile = DownloadOutputLayout.GetMainCoverPath(
             context.Execution.WorkingBasePath, context.Execution.Input.Metadata.CoverAddress);
-        await context.ClaimTransferFileAsync(DownloadArtifactWriter.PageCoverTransferKey, pageFile)
+        await context.ClaimTransferFileAsync(DownloadArtifactIdentity.PageCoverTransferKey, pageFile)
             .ConfigureAwait(true);
-        await context.ClaimTransferFileAsync(DownloadArtifactWriter.MainCoverTransferKey, mainFile)
+        await context.ClaimTransferFileAsync(DownloadArtifactIdentity.MainCoverTransferKey, mainFile)
             .ConfigureAwait(true);
         await File.WriteAllTextAsync(pageFile, "page", TestContext.Current.CancellationToken)
             .ConfigureAwait(true);
@@ -1438,7 +1438,7 @@ public sealed class DownloadArtifactStageTests
             TestContext.Current.CancellationToken).ConfigureAwait(true);
 
         Assert.False(result.IsSuccess);
-        Assert.Equal(DownloadArtifactWriter.SubtitleOutputWriteFailureCode, result.Error?.Code);
+        Assert.Equal(DownloadArtifactFailure.SubtitleOutputWriteFailureCode, result.Error?.Code);
     }
 
     [Fact]
@@ -1462,8 +1462,8 @@ public sealed class DownloadArtifactStageTests
             TestContext.Current.CancellationToken).ConfigureAwait(true);
 
         Assert.False(result.IsSuccess);
-        Assert.Equal(DownloadArtifactWriter.SubtitleResponseReadFailureCode, result.Error?.Code);
-        Assert.NotEqual(DownloadArtifactWriter.SubtitleOutputWriteFailureCode, result.Error?.Code);
+        Assert.Equal(DownloadArtifactFailure.SubtitleResponseReadFailureCode, result.Error?.Code);
+        Assert.NotEqual(DownloadArtifactFailure.SubtitleOutputWriteFailureCode, result.Error?.Code);
     }
 
     [Fact]

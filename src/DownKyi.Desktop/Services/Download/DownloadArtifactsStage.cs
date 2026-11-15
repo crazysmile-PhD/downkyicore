@@ -53,10 +53,10 @@ internal sealed class DownloadArtifactsStage : IDownloadPipelineStage
                 context.WorkingBasePath,
                 input.DanmakuSettings.OutputFormat);
             var canReuseOutputs = danmakuOutputs.All(output =>
-                context.HasPublished(DownloadArtifactWriter.GetDanmakuTransferKey(output.Kind)) ||
+                context.HasPublished(DownloadArtifactIdentity.GetDanmakuTransferKey(output.Kind)) ||
                 IsDanmakuOutputUsable(output));
             if (!canReuseOutputs && danmakuOutputs.Any(output =>
-                    context.HasPublished(DownloadArtifactWriter.GetDanmakuTransferKey(output.Kind))))
+                    context.HasPublished(DownloadArtifactIdentity.GetDanmakuTransferKey(output.Kind))))
             {
                 return StageFailure(OperationError.Unexpected(
                     "download.artifact.danmaku.snapshot-incomplete",
@@ -77,7 +77,7 @@ internal sealed class DownloadArtifactsStage : IDownloadPipelineStage
             foreach (var output in danmakuOutputs)
             {
                 context.RecordUnpublishedArtifact(
-                    DownloadArtifactWriter.GetDanmakuTransferKey(output.Kind),
+                    DownloadArtifactIdentity.GetDanmakuTransferKey(output.Kind),
                     output.File);
             }
 
@@ -107,14 +107,14 @@ internal sealed class DownloadArtifactsStage : IDownloadPipelineStage
             foreach (var subtitle in subtitles.TrackFiles)
             {
                 context.RecordUnpublishedArtifact(
-                    DownloadArtifactWriter.GetSubtitleArtifactKey(subtitle.Key),
+                    DownloadArtifactIdentity.GetSubtitleArtifactKey(subtitle.Key),
                     subtitle.Value);
             }
 
             if (subtitles.DefaultFile != null)
             {
                 context.RecordUnpublishedArtifact(
-                    DownloadArtifactWriter.DefaultSubtitleArtifactKey,
+                    DownloadArtifactIdentity.DefaultSubtitleArtifactKey,
                     subtitles.DefaultFile);
             }
 
@@ -148,12 +148,12 @@ internal sealed class DownloadArtifactsStage : IDownloadPipelineStage
             cancellationToken).ConfigureAwait(true);
         var metadata = context.Input.Metadata;
         var pageCover = new CoverCandidate(
-            DownloadArtifactWriter.PageCoverTransferKey,
+            DownloadArtifactIdentity.PageCoverTransferKey,
             metadata.PageCoverAddress,
             DownloadOutputLayout.GetPageCoverPath(
                 context.WorkingBasePath, metadata.PageCoverAddress));
         var mainCover = new CoverCandidate(
-            DownloadArtifactWriter.MainCoverTransferKey,
+            DownloadArtifactIdentity.MainCoverTransferKey,
             metadata.CoverAddress,
             DownloadOutputLayout.GetMainCoverPath(
                 context.WorkingBasePath, metadata.CoverAddress));
@@ -209,7 +209,7 @@ internal sealed class DownloadArtifactsStage : IDownloadPipelineStage
                 file = publishedFile;
             }
 
-            if (candidate.Key == DownloadArtifactWriter.MainCoverTransferKey)
+            if (candidate.Key == DownloadArtifactIdentity.MainCoverTransferKey)
             {
                 context.CoverFile = file;
             }
@@ -281,7 +281,7 @@ internal sealed class DownloadArtifactsStage : IDownloadPipelineStage
 
         foreach (var transferFile in context.Input.TransferFiles)
         {
-            if (DownloadArtifactWriter.TryGetSubtitleTrackIdFromTransferKey(
+            if (DownloadArtifactIdentity.TryGetSubtitleTrackIdFromTransferKey(
                     transferFile.Key,
                     out var trackId)
                 && DownloadFileIntegrity.Check(transferFile.Value).IsUsable)
@@ -292,7 +292,7 @@ internal sealed class DownloadArtifactsStage : IDownloadPipelineStage
 
         foreach (var artifact in context.PublishedArtifacts)
         {
-            if (DownloadArtifactWriter.TryGetSubtitleTrackIdFromArtifactKey(
+            if (DownloadArtifactIdentity.TryGetSubtitleTrackIdFromArtifactKey(
                     artifact.Key,
                     out var trackId)
                 && DownloadFileIntegrity.Check(artifact.Value).IsUsable)
@@ -305,14 +305,14 @@ internal sealed class DownloadArtifactsStage : IDownloadPipelineStage
             ? context.DefaultSubtitleFile
             : null;
         if (context.PublishedArtifacts.TryGetValue(
-                DownloadArtifactWriter.DefaultSubtitleArtifactKey,
+                DownloadArtifactIdentity.DefaultSubtitleArtifactKey,
                 out var publishedDefault)
             && DownloadFileIntegrity.Check(publishedDefault).IsUsable)
         {
             defaultFile = publishedDefault;
         }
         else if (context.Input.TransferFiles.TryGetValue(
-                     DownloadArtifactWriter.DefaultSubtitleTransferKey,
+                     DownloadArtifactIdentity.DefaultSubtitleTransferKey,
                      out var stagedDefault)
                  && DownloadFileIntegrity.Check(stagedDefault).IsUsable)
         {

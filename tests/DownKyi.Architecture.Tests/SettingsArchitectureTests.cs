@@ -3,6 +3,11 @@ namespace DownKyi.Architecture.Tests;
 public sealed class SettingsArchitectureTests
 {
     private static readonly string RepositoryRoot = FindRepositoryRoot();
+    private static readonly string[] sourceArray = new[]
+        {
+            "DownloadArtifactWriter.cs", "DownloadDanmakuWriter.cs",
+            "DownloadSubtitleWriter.cs", "DownloadMetadataWriter.cs"
+        };
 
     [Theory]
     [InlineData("src", "DownKyi.Desktop", "ViewModels", "ViewVideoDetailViewModel.cs")]
@@ -247,7 +252,7 @@ public sealed class SettingsArchitectureTests
             "Services",
             "Download",
             "DownloadExecutionContextFactory.cs");
-        var artifactSource = ReadSource("src", "DownKyi.Desktop", "Services", "Download", "DownloadArtifactWriter.cs");
+        var artifactSource = string.Join("\n", sourceArray.Select(file => ReadSource("src", "DownKyi.Desktop", "Services", "Download", file)));
         var diagnosticSource = ReadSource("src", "DownKyi.Desktop", "Services", "Download", "DownloadDiagnosticLogger.cs");
         var ffmpegSource = ReadSource("src", "DownKyi.Infrastructure", "FFmpeg", "FfmpegProcessor.cs");
 

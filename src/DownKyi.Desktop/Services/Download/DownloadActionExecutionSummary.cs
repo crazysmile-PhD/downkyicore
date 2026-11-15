@@ -36,7 +36,7 @@ internal static class DownloadActionResultEvaluator
                     context.WorkingBasePath,
                     context.Input.DanmakuSettings.OutputFormat)
                 .All(output => context.HasPublished(
-                                   DownloadArtifactWriter.GetDanmakuTransferKey(output.Kind))
+                                   DownloadArtifactIdentity.GetDanmakuTransferKey(output.Kind))
                                || DownloadFileIntegrity.Check(output.File).IsUsable);
             context.ActionResults.Set(
                 DownloadActionKind.Danmaku,

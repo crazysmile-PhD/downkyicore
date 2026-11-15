@@ -84,12 +84,12 @@ public sealed class DownloadExecutionContextFactoryTests : IDisposable
         await stateWriter.StartAsync(taskId, TestContext.Current.CancellationToken);
         await stateWriter.ClaimTransferFileAsync(
             taskId,
-            DownloadArtifactWriter.DanmakuAssTransferKey,
+            DownloadArtifactIdentity.DanmakuAssTransferKey,
             $"{downloadBase.FilePath}.ass",
             TestContext.Current.CancellationToken);
         await stateWriter.CompleteTransferFileAsync(
             taskId,
-            DownloadArtifactWriter.DanmakuAssTransferKey,
+            DownloadArtifactIdentity.DanmakuAssTransferKey,
             TestContext.Current.CancellationToken);
         var activeProjection = projections.GetRequiredDownloadingProjection(taskId);
 
@@ -161,7 +161,7 @@ public sealed class DownloadExecutionContextFactoryTests : IDisposable
         Assert.Equal(PlayStreamType.Bangumi, context.Input.StreamType);
         Assert.Null(context.PlayUrl);
         Assert.Equal(
-            DownloadArtifactWriter.DanmakuAssTransferKey,
+            DownloadArtifactIdentity.DanmakuAssTransferKey,
             Assert.Single(context.Input.CompletedTransferKeys));
         Assert.Equal(DownloadFinishedSort.Number, context.Input.FinishedSort);
         Assert.Equal(originalSettings.Video, context.Input.VideoSettings);

@@ -90,8 +90,8 @@ internal sealed class DownloadExecutionContextFactory
             };
         }
 
-        var hasAss = transferFiles.ContainsKey(DownloadArtifactWriter.DanmakuAssTransferKey);
-        var hasXml = transferFiles.ContainsKey(DownloadArtifactWriter.DanmakuXmlTransferKey);
+        var hasAss = transferFiles.ContainsKey(DownloadArtifactIdentity.DanmakuAssTransferKey);
+        var hasXml = transferFiles.ContainsKey(DownloadArtifactIdentity.DanmakuXmlTransferKey);
         return (hasAss, hasXml) switch
         {
             (true, true) => DanmakuOutputFormat.AssAndXml,
