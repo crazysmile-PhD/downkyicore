@@ -17,7 +17,8 @@ internal sealed record DownloadTransferRequest(
     Action<DownloadProgress> PublishProgress,
     Func<DownloadProgress, CancellationToken, Task> PersistProgressAsync,
     CancellationToken CancellationToken,
-    string? StagingDirectory = null);
+    string? StagingDirectory = null,
+    Action<bool>? NetworkReadStateChanged = null);
 
 internal interface ITransferBackend
 {
@@ -44,7 +45,8 @@ internal enum DownloadTransferFailureKind
     CandidateRejected,
     Disk,
     Tls,
-    Permanent
+    Permanent,
+    SlowSource
 }
 
 internal sealed record DownloadTransferResult(

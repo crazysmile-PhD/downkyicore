@@ -16,7 +16,7 @@ using Microsoft.Extensions.Logging;
 
 namespace DownKyi.Services.Download;
 
-internal sealed class BuiltinTransferBackend : ITransferBackend
+internal sealed partial class BuiltinTransferBackend : ITransferBackend, IDownloadSourceProbe
 {
     private readonly ISettingsStore _settingsStore;
     private readonly DownloadDiagnosticLogger _diagnosticLogger;
@@ -77,7 +77,6 @@ internal sealed class BuiltinTransferBackend : ITransferBackend
             DownloadProgressUiUpdater.DefaultMinimumInterval);
         var speedSampler = new BuiltinDownloadSpeedSampler(TimeProvider.System);
         var progressSync = new Lock();
-        DownloadProgress? lastProgress = null;
 
         void ReportProgress(long received, long total)
         {
@@ -95,7 +94,6 @@ internal sealed class BuiltinTransferBackend : ITransferBackend
                     return;
                 }
 
-                lastProgress = progress;
                 request.PublishProgress(progress);
                 _diagnosticLogger.LogSpeed(
                     Name,
@@ -160,6 +158,7 @@ internal sealed class BuiltinTransferBackend : ITransferBackend
                 network.Split,
                 ReportProgress,
                 _logger,
+                networkReadStateChanged: request.NetworkReadStateChanged,
                 disposeHandler: false,
                 bandwidthLimiter: bandwidthLease,
                 planCreated: chunkCount => _diagnosticLogger.LogBuiltInTaskStart(
@@ -169,28 +168,10 @@ internal sealed class BuiltinTransferBackend : ITransferBackend
                     chunkCount,
                     network.Split,
                     network));
-            using var transferCancellation = CancellationTokenSource.CreateLinkedTokenSource(
-                request.CancellationToken);
-            var transferTask = downloader.DownloadAsync(
+            var result = await downloader.DownloadAsync(
                 targetFile,
                 request.ExpectedBytes,
-                transferCancellation.Token);
-
-            while (!transferTask.IsCompleted)
-            {
-                if (request.IsPauseRequested())
-                {
-                    await transferCancellation.CancelAsync().ConfigureAwait(true);
-                    break;
-                }
-
-                request.EnsureActive();
-                await Task.Delay(
-                    TimeSpan.FromMilliseconds(100),
-                    request.CancellationToken).ConfigureAwait(true);
-            }
-
-            var result = await transferTask.ConfigureAwait(true);
+                request.CancellationToken).ConfigureAwait(true);
             if (IsDownloadedMediaFileUsable(
                     targetFile,
                     request.ExpectedBytes,
@@ -222,14 +203,6 @@ internal sealed class BuiltinTransferBackend : ITransferBackend
             _logger.LogWarningMessage(
                 $"Built-in transfer failed; type={exception.GetType().Name}.");
             return ClassifyFailure(exception, reportedCanceled: false);
-        }
-        finally
-        {
-            if (lastProgress != null)
-            {
-                await request.PersistProgressAsync(lastProgress, CancellationToken.None)
-                    .ConfigureAwait(true);
-            }
         }
     }
 
@@ -342,7 +315,9 @@ internal sealed class BuiltinTransferBackend : ITransferBackend
             AllowAutoRedirect = false,
             AutomaticDecompression = DecompressionMethods.None,
             ConnectTimeout = TimeSpan.FromSeconds(15),
-            MaxConnectionsPerServer = network.Split,
+            // Reserve one connection so a speculative range is not queued behind
+            // the very workers it is meant to rescue.
+            MaxConnectionsPerServer = checked(network.Split + 1),
             PooledConnectionLifetime = TimeSpan.FromMinutes(2),
             UseCookies = false,
             UseProxy = proxyAddress != null

@@ -40,13 +40,16 @@ internal sealed class BuiltinRangeDownloader : IDisposable
     private readonly DownloadRequestHeaders _headers;
     private readonly ILogger _logger;
     private readonly Action<int>? _planCreated;
+    private readonly Action<bool>? _networkReadStateChanged;
     private readonly int _parallelCount;
     private readonly Action<long, long> _progress;
     private readonly TimeSpan _readStallTimeout;
     private readonly long _segmentSize;
     private readonly DownloadBandwidthLimiter.TransferLease? _bandwidthLimiter;
     private readonly SemaphoreSlim _checkpointGate = new(1, 1);
-    private long _lastCheckpointTimestamp;
+    private readonly SemaphoreSlim _hedgeGate = new(1, 1);
+    private readonly TimeSpan _hedgeDelay;
+    private long _referenceBytesPerSecond;
     private bool _disposed;
 
     public BuiltinRangeDownloader(
@@ -60,7 +63,9 @@ internal sealed class BuiltinRangeDownloader : IDisposable
         TimeSpan? readStallTimeout = null,
         bool disposeHandler = true,
         DownloadBandwidthLimiter.TransferLease? bandwidthLimiter = null,
-        Action<int>? planCreated = null)
+        Action<int>? planCreated = null,
+        Action<bool>? networkReadStateChanged = null,
+        TimeSpan? hedgeDelay = null)
     {
         ArgumentNullException.ThrowIfNull(handler);
         _address = address ?? throw new ArgumentNullException(nameof(address));
@@ -70,6 +75,9 @@ internal sealed class BuiltinRangeDownloader : IDisposable
         _progress = progress ?? throw new ArgumentNullException(nameof(progress));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _planCreated = planCreated;
+        _networkReadStateChanged = networkReadStateChanged;
+        _hedgeDelay = hedgeDelay ?? TimeSpan.FromSeconds(10);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(_hedgeDelay, TimeSpan.Zero);
         _parallelCount = parallelCount;
         _segmentSize = segmentSize;
         _bandwidthLimiter = bandwidthLimiter;
@@ -138,6 +146,11 @@ internal sealed class BuiltinRangeDownloader : IDisposable
             probe.ResourceIdentity,
             cancellationToken).ConfigureAwait(false);
         _planCreated?.Invoke(state.Chunks.Length);
+        _logger.LogInformationMessage(
+            $"Built-in range plan; ranges={probe.SupportsRanges}; " +
+            $"validator={probe.ResourceIdentity.HasContinuityValidator}; " +
+            $"workers={Math.Min(_parallelCount, state.Chunks.Count(static chunk => !chunk.IsComplete))}; " +
+            $"retainedBytes={state.Chunks.Sum(static chunk => chunk.Position)}.");
         var receivedBytes = state.Chunks.Sum(static chunk => chunk.Position);
         _progress(receivedBytes, probe.TotalBytes);
 
@@ -149,11 +162,10 @@ internal sealed class BuiltinRangeDownloader : IDisposable
             BufferSize,
             FileOptions.Asynchronous | FileOptions.RandomAccess);
         await using var storageLifetime = storage.ConfigureAwait(false);
-        _lastCheckpointTimestamp = Stopwatch.GetTimestamp();
         Exception? primaryFailure = null;
         try
         {
-            receivedBytes = await DownloadPendingChunksAsync(
+            receivedBytes = await DownloadWithCheckpointsAsync(
                 storage,
                 state,
                 probe.SupportsRanges,
@@ -737,6 +749,197 @@ internal sealed class BuiltinRangeDownloader : IDisposable
         Action<int> reportBytes,
         CancellationToken cancellationToken)
     {
+        // A single unvalidated representation cannot safely race independent ranges.
+        // Bound speculative memory and duplicate traffic to one range per transfer.
+        if (!supportsRanges || !state.ResourceIdentity.HasContinuityValidator ||
+            chunk.End - chunk.Start + 1 > DefaultSegmentSize)
+        {
+            await DownloadChunkBodyAsync(storage, state, chunk, supportsRanges,
+                reportBytes, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var waiting = 0;
+        var initialPosition = chunk.Position;
+        var started = Stopwatch.GetTimestamp();
+        var primary = DownloadChunkBodyAsync(storage, state, chunk, supportsRanges,
+            reportBytes, lifetime.Token, value => Interlocked.Exchange(ref waiting, value ? 1 : 0));
+        try
+        {
+            using var timer = new PeriodicTimer(_hedgeDelay);
+            while (!primary.IsCompleted)
+            {
+                if (await Task.WhenAny(primary, timer.WaitForNextTickAsync(cancellationToken).AsTask())
+                        .ConfigureAwait(false) == primary)
+                {
+                    break;
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+                var rate = (chunk.Position - initialPosition) / Stopwatch.GetElapsedTime(started).TotalSeconds;
+                var slowThreshold = Math.Max(16 * 1024, Interlocked.Read(ref _referenceBytesPerSecond) / 4);
+                if (Volatile.Read(ref waiting) == 0 || rate >= slowThreshold ||
+                    _bandwidthLimiter?.IsLimited == true ||
+                    !await _hedgeGate.WaitAsync(0, cancellationToken).ConfigureAwait(false))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    await RaceChunkAsync(storage, state, chunk, primary, lifetime,
+                        reportBytes, cancellationToken).ConfigureAwait(false);
+                    return;
+                }
+                finally
+                {
+                    _hedgeGate.Release();
+                }
+            }
+
+            await primary.ConfigureAwait(false);
+        }
+        finally
+        {
+            await lifetime.CancelAsync().ConfigureAwait(false);
+            // Also join on monitor/caller failure; no old writer survives this lease.
+            await ObserveRevokedWorkerAsync(primary, lifetime.Token).ConfigureAwait(false);
+        }
+    }
+
+    private async Task RaceChunkAsync(
+        FileStream storage, BuiltinRangeResumeState state, BuiltinRangeChunk chunk,
+        Task primary, CancellationTokenSource primaryLifetime, Action<int> reportBytes,
+        CancellationToken cancellationToken)
+    {
+        using var hedgeLifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var candidateStart = checked(chunk.Start + chunk.Position);
+        if (candidateStart > chunk.End)
+        {
+            await primary.ConfigureAwait(false);
+            return;
+        }
+
+        _logger.LogInformationMessage("Slow range suspected; speculativeAttempt=started; maximumHedges=1.");
+        var candidate = ReadChunkCandidateAsync(state, candidateStart, chunk.End, hedgeLifetime.Token);
+        try
+        {
+            var winner = await Task.WhenAny(primary, candidate).ConfigureAwait(false);
+            if (winner == primary)
+            {
+                try
+                {
+                    await primary.ConfigureAwait(false);
+                    return;
+                }
+                catch (Exception exception) when (exception is HttpRequestException or HttpIOException or TimeoutException)
+                {
+                    // Only a successful, validated completion wins. A transport
+                    // failure must not cancel a still viable backup range.
+                    _logger.LogDebugMessage($"Primary range failed during speculation; failure={exception.GetType().Name}.");
+                }
+            }
+
+            byte[] bytes;
+            try
+            {
+                bytes = await candidate.ConfigureAwait(false);
+            }
+            catch (Exception exception) when (exception is HttpRequestException or IOException or TimeoutException)
+            {
+                if (exception is BuiltinResumeRejectedException)
+                {
+                    throw;
+                }
+
+                // A speculative transport failure does not revoke a usable primary.
+                _logger.LogDebugMessage($"Speculative range failed; failure={exception.GetType().Name}.");
+                await primary.ConfigureAwait(false);
+                return;
+            }
+            await primaryLifetime.CancelAsync().ConfigureAwait(false);
+            await ObserveRevokedWorkerAsync(primary, primaryLifetime.Token).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            // There is now exactly one writer. Count only newly committed bytes,
+            // never the duplicated network traffic from the speculative request.
+            await RandomAccess.WriteAsync(storage.SafeFileHandle, bytes, candidateStart,
+                cancellationToken).ConfigureAwait(false);
+            var committed = checked((int)(chunk.End - chunk.Start + 1 - chunk.Position));
+            chunk.Advance(committed);
+            reportBytes(committed);
+            _logger.LogInformationMessage("Speculative range committed; predecessor=drained.");
+        }
+        finally
+        {
+            await hedgeLifetime.CancelAsync().ConfigureAwait(false);
+            await ObserveRevokedWorkerAsync(candidate, hedgeLifetime.Token).ConfigureAwait(false);
+        }
+    }
+
+    private async Task<byte[]> ReadChunkCandidateAsync(
+        BuiltinRangeResumeState state, long start, long end, CancellationToken cancellationToken)
+    {
+        using var request = CreateRequest(start, end, state.ResourceIdentity.IfRangeValue);
+        using var response = await SendWithStallTimeoutAsync(request, cancellationToken).ConfigureAwait(false);
+        ValidateChunkResponse(response, start, end, state.TotalBytes, true, state.ResourceIdentity);
+        if (state.ResourceIdentity.CompareContinuity(BuiltinRangeResourceIdentity.Create(_address, response))
+            != BuiltinRangeContinuity.Match)
+        {
+            throw new BuiltinResumeRejectedException("A speculative range must confirm the same resource version.");
+        }
+        var bytes = new byte[checked((int)(end - start + 1))];
+        var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        await using var streamLifetime = stream.ConfigureAwait(false);
+        var position = 0;
+        while (position < bytes.Length)
+        {
+            var read = await ReadWithBandwidthLimitAsync(stream, bytes.AsMemory(position), cancellationToken)
+                .ConfigureAwait(false);
+            if (read == 0)
+            {
+                throw new HttpIOException(HttpRequestError.ResponseEnded, "The speculative range ended early.");
+            }
+
+            position += read;
+        }
+
+        return bytes;
+    }
+
+    private async Task ObserveRevokedWorkerAsync(Task worker, CancellationToken revoked)
+    {
+        try
+        {
+            await worker.ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (revoked.IsCancellationRequested)
+        {
+            // Acknowledgement of the lease revocation, not a transfer failure.
+            _logger.LogDebugMessage("Revoked range worker acknowledged cancellation.");
+        }
+        catch (Exception exception) when (exception is HttpRequestException or IOException or TimeoutException)
+        {
+            // Keep resource mismatches fatal even when the other attempt won.
+            if (exception is BuiltinResumeRejectedException)
+            {
+                throw;
+            }
+
+            _logger.LogDebugMessage($"Revoked range joined; failure={exception.GetType().Name}.");
+        }
+    }
+
+    private async Task DownloadChunkBodyAsync(
+        FileStream storage,
+        BuiltinRangeResumeState state,
+        BuiltinRangeChunk chunk,
+        bool supportsRanges,
+        Action<int> reportBytes,
+        CancellationToken cancellationToken,
+        Action<bool>? readActivity = null)
+    {
+        var started = Stopwatch.GetTimestamp();
         var requestStart = checked(chunk.Start + chunk.Position);
         using var request = supportsRanges
             ? CreateRequest(
@@ -763,10 +966,18 @@ internal sealed class BuiltinRangeDownloader : IDisposable
         {
             while (remaining > 0)
             {
-                var read = await ReadWithBandwidthLimitAsync(
-                    source,
-                    buffer.AsMemory(0, (int)Math.Min(buffer.Length, remaining)),
-                    cancellationToken).ConfigureAwait(false);
+                int read;
+                readActivity?.Invoke(true);
+                try
+                {
+                    read = await ReadWithBandwidthLimitAsync(source,
+                        buffer.AsMemory(0, (int)Math.Min(buffer.Length, remaining)),
+                        cancellationToken).ConfigureAwait(false);
+                }
+                finally
+                {
+                    readActivity?.Invoke(false);
+                }
                 if (read == 0)
                 {
                     throw new HttpIOException(
@@ -783,10 +994,20 @@ internal sealed class BuiltinRangeDownloader : IDisposable
                 chunk.Advance(read);
                 remaining -= read;
                 reportBytes(read);
-                await SaveCheckpointIfDueAsync(
-                    storage,
-                    state,
-                    cancellationToken).ConfigureAwait(false);
+            }
+
+            var elapsed = Stopwatch.GetElapsedTime(started).TotalSeconds;
+            var rate = checked((long)Math.Min((chunk.End - requestStart + 1) / Math.Max(elapsed, 0.001), long.MaxValue));
+            var previous = Interlocked.Read(ref _referenceBytesPerSecond);
+            while (rate > previous)
+            {
+                var observed = Interlocked.CompareExchange(ref _referenceBytesPerSecond, rate, previous);
+                if (observed == previous)
+                {
+                    break;
+                }
+
+                previous = observed;
             }
         }
         finally
@@ -849,6 +1070,7 @@ internal sealed class BuiltinRangeDownloader : IDisposable
         using var stallCancellation = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken);
         stallCancellation.CancelAfter(_readStallTimeout);
+        _networkReadStateChanged?.Invoke(true);
         try
         {
             return await _http.SendAsync(request, stallCancellation.Token).ConfigureAwait(false);
@@ -861,6 +1083,10 @@ internal sealed class BuiltinRangeDownloader : IDisposable
                 "The media server stopped before sending response headers.",
                 exception);
         }
+        finally
+        {
+            _networkReadStateChanged?.Invoke(false);
+        }
     }
 
     private async ValueTask<int> ReadWithStallTimeoutAsync(
@@ -871,6 +1097,7 @@ internal sealed class BuiltinRangeDownloader : IDisposable
         using var stallCancellation = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken);
         stallCancellation.CancelAfter(_readStallTimeout);
+        _networkReadStateChanged?.Invoke(true);
         try
         {
             return await source.ReadAsync(buffer, stallCancellation.Token).ConfigureAwait(false);
@@ -880,6 +1107,10 @@ internal sealed class BuiltinRangeDownloader : IDisposable
             throw new TimeoutException(
                 "The media response stopped producing data.",
                 exception);
+        }
+        finally
+        {
+            _networkReadStateChanged?.Invoke(false);
         }
     }
 
@@ -913,23 +1144,59 @@ internal sealed class BuiltinRangeDownloader : IDisposable
         }
     }
 
-    private async Task SaveCheckpointIfDueAsync(
+    private async Task<long> DownloadWithCheckpointsAsync(
         FileStream storage,
         BuiltinRangeResumeState state,
+        bool supportsRanges,
+        long initialReceivedBytes,
         CancellationToken cancellationToken)
     {
-        var now = Stopwatch.GetTimestamp();
-        var previous = Interlocked.Read(ref _lastCheckpointTimestamp);
-        if (Stopwatch.GetElapsedTime(previous, now) < TimeSpan.FromSeconds(1)
-            || Interlocked.CompareExchange(
-                ref _lastCheckpointTimestamp,
-                now,
-                previous) != previous)
+        var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var workers = DownloadPendingChunksAsync(storage, state, supportsRanges,
+            initialReceivedBytes, lifetime.Token);
+        var checkpoints = CheckpointLoopAsync(storage, state, workers, lifetime);
+        try
         {
-            return;
+            return await workers.ConfigureAwait(false);
         }
+        finally
+        {
+            try
+            {
+                await checkpoints.ConfigureAwait(false);
+            }
+            finally
+            {
+                lifetime.Dispose();
+            }
+        }
+    }
 
-        await SaveCheckpointAsync(storage, state, cancellationToken).ConfigureAwait(false);
+    private async Task CheckpointLoopAsync(
+        FileStream storage, BuiltinRangeResumeState state, Task workers, CancellationTokenSource lifetime)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+        try
+        {
+            while (!workers.IsCompleted)
+            {
+                if (await Task.WhenAny(workers, timer.WaitForNextTickAsync(lifetime.Token).AsTask())
+                        .ConfigureAwait(false) == workers)
+                {
+                    break;
+                }
+
+                lifetime.Token.ThrowIfCancellationRequested();
+                await SaveCheckpointAsync(storage, state, lifetime.Token).ConfigureAwait(false);
+            }
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            // A failed durable checkpoint terminates its workers; it cannot leave
+            // an unobserved background failure or outlive the shared file handle.
+            await lifetime.CancelAsync().ConfigureAwait(false);
+            throw;
+        }
     }
 
     private async Task SaveCheckpointAsync(
@@ -1146,6 +1413,7 @@ internal sealed class BuiltinRangeDownloader : IDisposable
         _disposed = true;
         _http.Dispose();
         _checkpointGate.Dispose();
+        _hedgeGate.Dispose();
     }
 }
 

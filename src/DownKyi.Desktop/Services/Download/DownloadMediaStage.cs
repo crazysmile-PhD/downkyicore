@@ -342,7 +342,7 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
 
         if (result.Outcome == DownloadTransferOutcome.Paused)
         {
-            throw new OperationCanceledException("Download was paused.");
+            throw new DownloadPausedException();
         }
 
         return OperationResult.Failure<DownloadedMediaTransfer>(OperationError.Unexpected(

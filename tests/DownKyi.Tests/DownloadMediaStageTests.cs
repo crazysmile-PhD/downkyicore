@@ -187,7 +187,7 @@ public sealed class DownloadMediaStageTests
             downloadVideo: true,
             backendResults: [DownloadTransferResult.Paused()]).ConfigureAwait(true);
 
-        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+        await Assert.ThrowsAsync<DownloadPausedException>(() =>
             fixture.Stage.ExecuteAsync(
                 fixture.Context,
                 TestContext.Current.CancellationToken));

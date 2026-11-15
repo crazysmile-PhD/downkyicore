@@ -10,6 +10,28 @@ public sealed class DownloadTaskApplicationServiceTests
     private static readonly DateTimeOffset Epoch = new(2026, 7, 22, 0, 0, 0, TimeSpan.Zero);
 
     [Fact]
+    public async Task RepeatedCancelAndLateProgressDoNotWriteOrPublish()
+    {
+        var store = new RecordingStore();
+        using var service = new DownloadTaskApplicationService(store,
+            DownloadHistoryService.CreateForSharedStore(store), new AdvancingClock());
+        var task = CreateTask().Cancel(Epoch.AddSeconds(1)).RequireValue();
+        await service.AddAsync(task, TestContext.Current.CancellationToken);
+        var events = 0;
+        service.TaskChanged += (_, _) => events++;
+
+        var canceled = await service.CancelAsync(task.Id, TestContext.Current.CancellationToken);
+        var progress = await service.UpdateProgressAsync(task.Id,
+            new DownloadProgress(50, 50, 100), TestContext.Current.CancellationToken);
+
+        Assert.Same(task, canceled.RequireValue());
+        Assert.Same(task, progress.RequireValue());
+        Assert.Empty(store.ExpectedVersions);
+        Assert.Equal(0, events);
+        Assert.Same(task, store.Current);
+    }
+
+    [Fact]
     public async Task ResumingQueuedTaskDoesNotWriteOrPublish()
     {
         var store = new RecordingStore();
