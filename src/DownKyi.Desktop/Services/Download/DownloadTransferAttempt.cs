@@ -20,10 +20,8 @@ internal sealed class DownloadTransferAttempt
     private readonly ILogger _logger;
     private bool _revoked;
     private int _networkReaders;
-    private long _bytes;
+    private long _networkBytes;
     private DownloadProgress? _progress;
-    private long _firstProgressAt;
-    private long _baselineBytes;
 
     public DownloadTransferAttempt(
         TimeProvider clock,
@@ -55,12 +53,6 @@ internal sealed class DownloadTransferAttempt
                         return;
                     }
 
-                    _bytes = progress.DownloadedBytes ?? 0;
-                    if (_progress == null)
-                    {
-                        _firstProgressAt = _clock.GetTimestamp();
-                        _baselineBytes = _bytes;
-                    }
                     _progress = progress;
                     request.PublishProgress(progress);
                 }
@@ -76,12 +68,23 @@ internal sealed class DownloadTransferAttempt
                         _networkReaders += waiting ? 1 : -1;
                     }
                 }
+            },
+            NetworkBytesReceived = count =>
+            {
+                lock (_gate)
+                {
+                    if (!_revoked && !lifetime.IsCancellationRequested)
+                    {
+                        _networkBytes += count;
+                    }
+                }
             }
         };
         DownloadTransferResult? interrupted = null;
         // Backend invocation is inside the lifetime: synchronous throws are safe too.
         Task<DownloadTransferResult>? worker = null;
         var observed = false;
+        var persistProgress = false;
         try
         {
             worker = backend.TransferAsync(leasedRequest);
@@ -115,13 +118,16 @@ internal sealed class DownloadTransferAttempt
             }
 
             request.EnsureActive();
-            if (_progress != null)
-            {
-                await request.PersistProgressAsync(_progress, cancellationToken).ConfigureAwait(false);
-            }
+            persistProgress = true;
 
             return interrupted ?? result ?? throw new InvalidOperationException(
                 "The transfer attempt returned no result.");
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && request.IsPauseRequested())
+        {
+            // An active guard can observe Pausing just after the monitor checked
+            // it. The finally block still drains and persists before acknowledging.
+            return DownloadTransferResult.Paused();
         }
         finally
         {
@@ -140,6 +146,15 @@ internal sealed class DownloadTransferAttempt
                 {
                     await DrainAsync(worker, lifetime.Token).ConfigureAwait(false);
                 }
+            }
+
+            // A pause is a checkpoint boundary too, including a pause racing the
+            // active guard. Save only accepted progress after all writers stop;
+            // caller cancellation/deletion must never persist stale callbacks.
+            if (_progress != null && !cancellationToken.IsCancellationRequested &&
+                (persistProgress || request.IsPauseRequested()))
+            {
+                await request.PersistProgressAsync(_progress, cancellationToken).ConfigureAwait(false);
             }
         }
     }
@@ -164,7 +179,6 @@ internal sealed class DownloadTransferAttempt
         var started = _clock.GetTimestamp();
         var windowStarted = started;
         var windowBytes = 0L;
-        var hasBaseline = false;
         var slowWindows = 0;
         using var timer = new PeriodicTimer(_policy.PollInterval, _clock);
         while (!worker.IsCompleted)
@@ -185,23 +199,18 @@ internal sealed class DownloadTransferAttempt
             var now = _clock.GetTimestamp();
             lock (_gate)
             {
-                if (_progress != null && !hasBaseline)
-                {
-                    hasBaseline = true;
-                    windowBytes = _baselineBytes;
-                    windowStarted = _firstProgressAt;
-                }
-
                 var elapsed = _clock.GetElapsedTime(windowStarted, now);
                 if (_clock.GetElapsedTime(started, now) < _policy.StartupGrace || elapsed < _policy.Window)
                 {
                     continue;
                 }
 
-                var rate = Math.Max(0, _bytes - windowBytes) / elapsed.TotalSeconds;
+                // Verification, sequential reads and speculative reads all move
+                // wire bytes, independently of retained/committed/UI progress.
+                var rate = Math.Max(0, _networkBytes - windowBytes) / elapsed.TotalSeconds;
                 slowWindows = _networkReaders > 0 && !_isLimited() && rate < _policy.MinimumBytesPerSecond
                     ? slowWindows + 1 : 0;
-                windowBytes = _bytes;
+                windowBytes = _networkBytes;
                 windowStarted = now;
                 if (slowWindows >= _policy.SlowWindows)
                 {

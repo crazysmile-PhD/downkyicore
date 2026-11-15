@@ -41,6 +41,7 @@ internal sealed class BuiltinRangeDownloader : IDisposable
     private readonly ILogger _logger;
     private readonly Action<int>? _planCreated;
     private readonly Action<bool>? _networkReadStateChanged;
+    private readonly Action<int>? _networkBytesReceived;
     private readonly int _parallelCount;
     private readonly Action<long, long> _progress;
     private readonly TimeSpan _readStallTimeout;
@@ -65,7 +66,8 @@ internal sealed class BuiltinRangeDownloader : IDisposable
         DownloadBandwidthLimiter.TransferLease? bandwidthLimiter = null,
         Action<int>? planCreated = null,
         Action<bool>? networkReadStateChanged = null,
-        TimeSpan? hedgeDelay = null)
+        TimeSpan? hedgeDelay = null,
+        Action<int>? networkBytesReceived = null)
     {
         ArgumentNullException.ThrowIfNull(handler);
         _address = address ?? throw new ArgumentNullException(nameof(address));
@@ -76,6 +78,7 @@ internal sealed class BuiltinRangeDownloader : IDisposable
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _planCreated = planCreated;
         _networkReadStateChanged = networkReadStateChanged;
+        _networkBytesReceived = networkBytesReceived;
         _hedgeDelay = hedgeDelay ?? TimeSpan.FromSeconds(10);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(_hedgeDelay, TimeSpan.Zero);
         _parallelCount = parallelCount;
@@ -1100,7 +1103,9 @@ internal sealed class BuiltinRangeDownloader : IDisposable
         _networkReadStateChanged?.Invoke(true);
         try
         {
-            return await source.ReadAsync(buffer, stallCancellation.Token).ConfigureAwait(false);
+            var read = await source.ReadAsync(buffer, stallCancellation.Token).ConfigureAwait(false);
+            _networkBytesReceived?.Invoke(read);
+            return read;
         }
         catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
         {

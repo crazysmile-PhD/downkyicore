@@ -13,6 +13,38 @@ namespace DownKyi.Tests;
 public sealed class BuiltinRangeDownloaderTests
 {
     [Fact]
+    public async Task ResumeVerificationReportsWireBytesBeforeAnyCommittedProgress()
+    {
+        var payload = CreatePayload(12);
+        using var handler = new RangePayloadHandler(payload, entityTag: null);
+        var directory = CreateTemporaryDirectory("verification-wire-bytes");
+        var target = Path.Combine(directory, "media.bin");
+        try
+        {
+            await WriteSingleChunkPartialAsync(target, payload, ResourceIdentity(strongETag: null), 6)
+                .ConfigureAwait(true);
+            var wireBytes = 0L;
+            long? firstProgressWireBytes = null;
+            using var downloader = new BuiltinRangeDownloader(handler, MediaAddress,
+                new DownloadRequestHeaders([], "DownKyi-Test", false), 1,
+                (_, _) => firstProgressWireBytes ??= Interlocked.Read(ref wireBytes),
+                NullLogger.Instance, segmentSize: 4, disposeHandler: false,
+                networkBytesReceived: count => Interlocked.Add(ref wireBytes, count));
+
+            var result = await downloader.DownloadAsync(target, payload.Length, TestContext.Current.CancellationToken);
+
+            Assert.Equal(6, firstProgressWireBytes);
+            Assert.Equal(12, wireBytes);
+            Assert.Equal(payload.Length, result.ReceivedBytes);
+            Assert.Equal(payload, await File.ReadAllBytesAsync(target, TestContext.Current.CancellationToken));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task ExistingCompletedTargetIsRecoveredWithoutAnotherRequest()
     {
         var payload = CreatePayload(12);

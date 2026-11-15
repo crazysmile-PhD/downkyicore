@@ -159,6 +159,7 @@ internal sealed partial class BuiltinTransferBackend : ITransferBackend, IDownlo
                 ReportProgress,
                 _logger,
                 networkReadStateChanged: request.NetworkReadStateChanged,
+                networkBytesReceived: request.NetworkBytesReceived,
                 disposeHandler: false,
                 bandwidthLimiter: bandwidthLease,
                 planCreated: chunkCount => _diagnosticLogger.LogBuiltInTaskStart(

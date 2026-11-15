@@ -7,6 +7,111 @@ namespace DownKyi.Tests;
 
 public sealed class DownloadTransferSessionTests
 {
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    public async Task WatchdogMeasuresWireThroughputIndependentlyOfCommittedProgress(bool healthy, bool publishProgress)
+    {
+        var clock = new TestClock();
+        var finish = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        DownloadTransferRequest? lease = null;
+        var windows = 0;
+        var backend = new Backend(async request =>
+        {
+            lease = request;
+            request.NetworkReadStateChanged!(true);
+            try
+            {
+                // Retained-range verification performs reads before publishing
+                // any newly committed progress; keep it alive for many windows.
+                await finish.Task.WaitAsync(request.CancellationToken).ConfigureAwait(false);
+                return DownloadTransferResult.Succeeded();
+            }
+            finally
+            {
+                request.NetworkReadStateChanged(false);
+            }
+        });
+        var request = Request(Path.GetTempPath()) with
+        {
+            Urls = ["https://primary.invalid/media"],
+            EnsureActive = () =>
+            {
+                var window = Interlocked.Increment(ref windows);
+                clock.Advance(TimeSpan.FromSeconds(20));
+                lease!.NetworkBytesReceived?.Invoke(healthy ? 20 * 1024 * 1024 : 1000);
+                if (publishProgress)
+                {
+                    lease.PublishProgress(new DownloadProgress(10, window * 20 * 1024 * 1024L, 1024 * 1024 * 1024L));
+                }
+
+                if (window >= 6)
+                {
+                    finish.TrySetResult();
+                }
+            }
+        };
+        var result = await Coordinator(backend, clock).TransferAsync(request,
+            static _ => Task.FromResult<IReadOnlyList<string>>([]), TestContext.Current.CancellationToken);
+
+        Assert.Equal(healthy ? DownloadTransferOutcome.Succeeded : DownloadTransferOutcome.Failed, result.Outcome);
+        if (!healthy)
+        {
+            Assert.Equal(DownloadTransferFailureKind.SlowSource, result.FailureKind);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PausePersistsAcceptedProgressAfterDrainingEvenWhenActiveGuardObservesThePause(bool guardRace)
+    {
+        var stopped = false;
+        var paused = false;
+        DownloadProgress? persisted = null;
+        var accepted = new DownloadProgress(60, 60, 100);
+        var backend = new Backend(async request =>
+        {
+            request.PublishProgress(accepted);
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, request.CancellationToken).ConfigureAwait(false);
+                return DownloadTransferResult.Succeeded();
+            }
+            finally
+            {
+                request.PublishProgress(new DownloadProgress(75, 75, 100));
+                stopped = true;
+            }
+        });
+        var request = Request(Path.GetTempPath()) with
+        {
+            IsPauseRequested = () => paused,
+            EnsureActive = () =>
+            {
+                paused = true;
+                if (guardRace)
+                {
+                    throw new OperationCanceledException("Pause arrived between the phase check and active guard.");
+                }
+            },
+            PersistProgressAsync = (progress, token) =>
+            {
+                Assert.True(stopped);
+                Assert.False(token.IsCancellationRequested);
+                persisted = progress;
+                return Task.CompletedTask;
+            }
+        };
+        var transfer = Coordinator(backend, new TestClock()).TransferAsync(request,
+            static _ => throw new InvalidOperationException("Pause cannot refresh sources."), TestContext.Current.CancellationToken);
+        Assert.Equal(DownloadTransferOutcome.Paused, (await transfer.ConfigureAwait(true)).Outcome);
+
+        Assert.True(stopped);
+        Assert.Same(accepted, persisted);
+    }
+
     [Fact]
     public async Task DrippingSourceIsRevokedAndDrainedBeforeBackupStarts()
     {
@@ -53,6 +158,7 @@ public sealed class DownloadTransferSessionTests
                     clock.Advance(TimeSpan.FromSeconds(20));
                     expiredLease?.PublishProgress(new DownloadProgress(1,
                         Interlocked.Add(ref drippingBytes, 1000), 100000));
+                    expiredLease?.NetworkBytesReceived?.Invoke(1000);
                 },
                 PublishProgress = progress => updates.Add(progress.DownloadedBytes)
             };
@@ -142,8 +248,10 @@ public sealed class DownloadTransferSessionTests
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
         var stopped = false;
         var paused = false;
+        var persisted = false;
         var backend = new Backend(async request =>
         {
+            request.PublishProgress(new DownloadProgress(60, 60, 100));
             started.SetResult();
             try
             {
@@ -155,7 +263,11 @@ public sealed class DownloadTransferSessionTests
                 stopped = true;
             }
         });
-        var request = Request(Path.GetTempPath()) with { IsPauseRequested = () => paused };
+        var request = Request(Path.GetTempPath()) with
+        {
+            IsPauseRequested = () => paused,
+            PersistProgressAsync = (_, _) => { persisted = true; return Task.CompletedTask; }
+        };
         var transfer = Coordinator(backend, new TestClock()).TransferAsync(request,
             static _ => throw new InvalidOperationException("No refresh after cancellation."), lifetime.Token);
         await started.Task.ConfigureAwait(true);
@@ -171,6 +283,7 @@ public sealed class DownloadTransferSessionTests
         }
 
         Assert.True(stopped);
+        Assert.Equal(pause, persisted);
     }
 
     [Fact]

@@ -18,7 +18,8 @@ internal sealed record DownloadTransferRequest(
     Func<DownloadProgress, CancellationToken, Task> PersistProgressAsync,
     CancellationToken CancellationToken,
     string? StagingDirectory = null,
-    Action<bool>? NetworkReadStateChanged = null);
+    Action<bool>? NetworkReadStateChanged = null,
+    Action<int>? NetworkBytesReceived = null);
 
 internal interface ITransferBackend
 {
