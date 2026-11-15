@@ -1,7 +1,6 @@
 using System;
 using System.Net;
 using System.Net.Http;
-using System.Net.Http.Headers;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Infrastructure.Bilibili;
@@ -33,15 +32,7 @@ internal sealed partial class BuiltinTransferBackend
 
             using var handler = CreateHttpHandler(network, proxy);
             using var http = new HttpMessageInvoker(handler, disposeHandler: false);
-            using var request = new HttpRequestMessage(HttpMethod.Get, accepted.Address);
-            request.Headers.Range = new RangeHeaderValue(0, 65535);
-            request.Headers.AcceptEncoding.ParseAdd("identity");
-            request.Headers.TryAddWithoutValidation("User-Agent", accepted.Headers.UserAgent);
-            foreach (var header in accepted.Headers.Headers)
-            {
-                var separator = header.IndexOf(':', StringComparison.Ordinal);
-                request.Headers.TryAddWithoutValidation(header[..separator], header[(separator + 1)..].TrimStart());
-            }
+            using var request = accepted.Headers.CreateRequest(accepted.Address, 0, 65535);
 
             using var response = await http.SendAsync(request, deadline.Token).ConfigureAwait(false);
             var ranges = response.StatusCode == HttpStatusCode.PartialContent;

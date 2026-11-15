@@ -12,6 +12,41 @@ namespace DownKyi.Tests;
 
 public sealed class BuiltinRangeDownloaderTests
 {
+    [Theory]
+    [InlineData("{")]
+    [InlineData("""{"TotalFileSize":12,"Chunks":null}""")]
+    [InlineData("""{"TotalFileSize":12,"Chunks":[]}""")]
+    [InlineData("""{"TotalFileSize":12,"Chunks":[null]}""")]
+    [InlineData("""{"TotalFileSize":13,"Chunks":[{"Start":0,"End":11,"Position":4}]}""")]
+    [InlineData("""{"TotalFileSize":12,"Chunks":[{"Start":0,"End":11,"Position":13}]}""")]
+    [InlineData("""{"TotalFileSize":12,"Chunks":[{"Start":1,"End":11,"Position":0}]}""")]
+    [InlineData("""{"TotalFileSize":12,"Chunks":[{"Start":0,"End":5,"Position":4},{"Start":5,"End":11,"Position":0}]}""")]
+    [InlineData("""{"TotalFileSize":12,"Chunks":[{"Start":0,"End":5,"Position":4},{"Start":7,"End":11,"Position":0}]}""")]
+    public async Task InvalidCheckpointIsRejectedWithoutChangingRetainedBytes(string metadata)
+    {
+        var payload = CreatePayload(12);
+        using var handler = new RangePayloadHandler(payload);
+        var directory = CreateTemporaryDirectory("range-invalid-checkpoint");
+        var target = Path.Combine(directory, "media.bin");
+        var retained = payload.Concat(Encoding.UTF8.GetBytes(metadata)).ToArray();
+        try
+        {
+            await File.WriteAllBytesAsync(target + ".download", retained, TestContext.Current.CancellationToken);
+            using var downloader = CreateDownloader(handler, parallelCount: 2, segmentSize: 4);
+
+            await Assert.ThrowsAsync<BuiltinResumeRejectedException>(() =>
+                downloader.DownloadAsync(target, payload.Length, TestContext.Current.CancellationToken));
+
+            Assert.Empty(handler.ChunkRanges);
+            Assert.False(File.Exists(target));
+            Assert.Equal(retained, await File.ReadAllBytesAsync(target + ".download", TestContext.Current.CancellationToken));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     [Fact]
     public async Task ResumeVerificationReportsWireBytesBeforeAnyCommittedProgress()
     {

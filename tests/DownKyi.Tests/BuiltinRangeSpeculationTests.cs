@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Text.Json;
 using DownKyi.Infrastructure.Downloads;
 using DownKyi.Services.Download;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -28,6 +29,16 @@ public sealed class BuiltinRangeSpeculationTests
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() => transfer);
             Assert.True(handler.PrimaryStopped);
             Assert.True(handler.BackupStopped);
+            // Cancellation joins the sole observer before the final checkpoint.
+            // Inspect the wire format independently of its reader.
+            var partial = await File.ReadAllBytesAsync(
+                Path.Combine(directory, "media.download"), TestContext.Current.CancellationToken);
+            using var checkpoint = JsonDocument.Parse(partial.AsMemory(handler.Payload.Length));
+            Assert.Equal(handler.Payload.Length, checkpoint.RootElement.GetProperty("TotalFileSize").GetInt64());
+            Assert.Equal(16, Assert.Single(checkpoint.RootElement.GetProperty("Chunks").EnumerateArray())
+                .GetProperty("Position").GetInt64());
+            using var exclusive = new FileStream(Path.Combine(directory, "media.download"),
+                FileMode.Open, FileAccess.ReadWrite, FileShare.None);
             clock.Advance(TimeSpan.FromSeconds(1));
             var sample = new BuiltinRangeSample(new BuiltinRangeChunk(0, 31, 0), 32,
                 true, true, 0, 0, TimeSpan.FromSeconds(20), false, TimeSpan.Zero);
@@ -83,7 +94,7 @@ public sealed class BuiltinRangeSpeculationTests
             using var downloader = new BuiltinRangeDownloader(handler,
                 new Uri("https://media.invalid/file"), new DownloadRequestHeaders([], "test", false),
                 1, static (_, _) => { }, NullLogger.Instance,
-                disposeHandler: false, hedgeDelay: TimeSpan.FromMilliseconds(20));
+                disposeHandler: false, schedulingPolicy: new BuiltinRangeSchedulingPolicy(TimeProvider.System, TimeSpan.FromMilliseconds(20)));
             var result = await downloader.DownloadAsync(target, handler.Payload.Length,
                 TestContext.Current.CancellationToken);
             Assert.Equal(handler.Payload.Length, result.ReceivedBytes);
@@ -108,7 +119,7 @@ public sealed class BuiltinRangeSpeculationTests
             using var downloader = new BuiltinRangeDownloader(handler,
                 new Uri("https://media.invalid/file"), new DownloadRequestHeaders([], "test", false),
                 1, static (_, _) => { }, NullLogger.Instance,
-                disposeHandler: false, hedgeDelay: TimeSpan.FromMilliseconds(20));
+                disposeHandler: false, schedulingPolicy: new BuiltinRangeSchedulingPolicy(TimeProvider.System, TimeSpan.FromMilliseconds(20)));
             var result = await downloader.DownloadAsync(target, handler.Payload.Length,
                 TestContext.Current.CancellationToken);
             Assert.Equal(handler.Payload.Length, result.ReceivedBytes);
@@ -134,7 +145,7 @@ public sealed class BuiltinRangeSpeculationTests
             using var downloader = new BuiltinRangeDownloader(handler,
                 new Uri("https://media.invalid/file"), new DownloadRequestHeaders([], "test", false),
                 1, (received, _) => progress.Add(received), NullLogger.Instance,
-                disposeHandler: false, hedgeDelay: TimeSpan.FromMilliseconds(20));
+                disposeHandler: false, schedulingPolicy: new BuiltinRangeSchedulingPolicy(TimeProvider.System, TimeSpan.FromMilliseconds(20)));
             var result = await downloader.DownloadAsync(target, handler.Payload.Length,
                 TestContext.Current.CancellationToken);
 
@@ -164,7 +175,7 @@ public sealed class BuiltinRangeSpeculationTests
             using var downloader = new BuiltinRangeDownloader(handler,
                 new Uri("https://media.invalid/file"), new DownloadRequestHeaders([], "test", false),
                 1, static (_, _) => { }, NullLogger.Instance,
-                disposeHandler: false, hedgeDelay: TimeSpan.FromMilliseconds(20));
+                disposeHandler: false, schedulingPolicy: new BuiltinRangeSchedulingPolicy(TimeProvider.System, TimeSpan.FromMilliseconds(20)));
             var transfer = downloader.DownloadAsync(target, handler.Payload.Length, lifetime.Token);
             await handler.BackupReturned.Task.WaitAsync(TestContext.Current.CancellationToken);
             await Assert.ThrowsAsync<BuiltinResumeRejectedException>(() => transfer);

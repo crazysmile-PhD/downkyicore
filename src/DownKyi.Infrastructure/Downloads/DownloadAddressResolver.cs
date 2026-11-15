@@ -303,4 +303,40 @@ public sealed record DownloadAddressTransportFailure : DownloadAddressResolution
 public sealed record DownloadRequestHeaders(
     IReadOnlyList<string> Headers,
     string UserAgent,
-    bool CarriesCredentials);
+    bool CarriesCredentials)
+{
+    public HttpRequestMessage CreateRequest(
+        Uri address,
+        long? rangeStart,
+        long? rangeEnd,
+        string? ifRange = null)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, address);
+        if (rangeStart.HasValue)
+        {
+            request.Headers.Range = new RangeHeaderValue(rangeStart, rangeEnd);
+            if (!string.IsNullOrWhiteSpace(ifRange))
+            {
+                request.Headers.TryAddWithoutValidation("If-Range", ifRange);
+            }
+        }
+
+        request.Headers.AcceptEncoding.ParseAdd("identity");
+        request.Headers.TryAddWithoutValidation("User-Agent", UserAgent);
+        foreach (var header in Headers)
+        {
+            var separator = header.IndexOf(':', StringComparison.Ordinal);
+            if (separator <= 0)
+            {
+                request.Dispose();
+                throw new InvalidOperationException("A built-in download header is malformed.");
+            }
+
+            request.Headers.TryAddWithoutValidation(
+                header[..separator],
+                header[(separator + 1)..].TrimStart());
+        }
+
+        return request;
+    }
+}
