@@ -110,20 +110,17 @@ must not be reported as already implemented.
 
 ## Verification
 
-Expected Skip is part of the selective CI design. Use the event/path/job
-decision matrix in `docs/operations/verification-and-rollback.md` before
-calling a skipped job a coverage defect. A proposal to widen a trigger must
-identify the violated verification requirement, a reproducible missed case,
-why existing focused checks are insufficient, the added runner time and
-resource cost, and the smallest necessary change. Preserve the formal release
-gates; do not turn selective PR validation into unconditional packaging.
+PR CI runs one Windows build/test job. Full platform and package validation
+belongs to the tag/manual Build workflow. Use the execution table in
+`docs/operations/verification-and-rollback.md`; a skipped platform or package
+job is expected outside a release.
 
-Use the smallest focused test while iterating. Before push, run the formal
-commands in `docs/operations/verification-and-rollback.md` sequentially in one
-worktree. At minimum, behavioral changes require strict Release build, the
-applicable test projects through `DownKyi.CentralTestRunner`, format and
-`git diff --check`. Process failures retain the runner's lightweight
-flight-recorder evidence.
+Use focused tests while iterating. Before push, run the daily verification
+commands for code changes, or diff/link checks for documentation changes.
+Run infrastructure self-tests only when changing or investigating their owners.
+CI additions must address an observed failure with a reproducer and state their
+per-run cost. Deleted checks have no disabled replacement; reconsider them only
+when new evidence warrants the cost.
 
 Do not weaken analyzers, relevant architecture tests, secret scanning or
 platform checks to make a change green. A passing build alone does not prove

@@ -36,7 +36,7 @@ Windows opt-in recording uses bounded, non-interactive `wpr.exe` memory logging 
 
 ## CI and artifact contract
 
-`.github/workflows/quality.yml` enables the recorder only for the controlled Windows fixture with `DOWNKYI_TARGETED_RESOURCE_FORENSICS=1`. For ordinary failures, `script/classify-resource-contention.ps1` only classifies TRX／log signatures and suggests the next investigation；it does not start tracing after the window or declare root cause.
+Run the controlled Windows fixture locally with `script/test-ci-infrastructure.ps1` when investigating resource ownership. Ordinary PR failures retain TRX and the runner's bounded failure evidence; enable targeted tracing only for a concrete resource investigation.
 
 A preserved artifact includes：
 

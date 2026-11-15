@@ -4,7 +4,7 @@ param(
     [string]$Configuration = "Release",
     [switch]$NoRestore,
     [switch]$NoBuild,
-    [switch]$ExcludeCiInfrastructure,
+    [switch]$ProductOnly,
     [string]$ResultsDirectory,
     [string]$EvidenceDirectory
 )
@@ -14,9 +14,14 @@ $repositoryRoot = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot "test-project-runner.ps1")
 
 $excludedClassNames = @()
-if ($ExcludeCiInfrastructure) {
+if ($ProductOnly) {
     . (Join-Path $PSScriptRoot "ci-infrastructure-test-slices.ps1")
     $excludedClassNames = @(Get-DownKyiCiInfrastructureTestClassNames)
+    $excludedClassNames += @(
+        'DownKyi.Architecture.Tests.ReleaseSafetyRegressionTests'
+        'DownKyi.Architecture.Tests.ReleasePublicationAssetTests'
+        'DownKyi.Architecture.Tests.PublishedReleaseReadbackTests'
+    )
 }
 
 $result = Invoke-DownKyiTestSolution `

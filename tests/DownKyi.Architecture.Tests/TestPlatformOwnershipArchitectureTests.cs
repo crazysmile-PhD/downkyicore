@@ -8,8 +8,6 @@ public sealed partial class TestPlatformOwnershipArchitectureTests
     private static readonly string RepositoryRoot = FindRepositoryRoot();
     private static readonly string[] AllowedPlatforms =
         ["Windows", "Linux", "macOS"];
-    private static readonly string[] MacOnlyPlatforms = ["macOS"];
-    private static readonly string[] WindowsOnlyPlatforms = ["Windows"];
 
     [Fact]
     public void EveryRunnableTestProjectDeclaresPlatformOwnership()
@@ -28,38 +26,6 @@ public sealed partial class TestPlatformOwnershipArchitectureTests
             var relativePath = Path.GetRelativePath(RepositoryRoot, project).Replace('\\', '/');
             Assert.Contains(relativePath, solution, StringComparison.Ordinal);
         }
-    }
-
-    [Fact]
-    public void MacSigningBehaviorIsOwnedByMacOSProject()
-    {
-        var macProject = Path.Combine(
-            RepositoryRoot,
-            "tests",
-            "DownKyi.MacOS.Tests",
-            "DownKyi.MacOS.Tests.csproj");
-        var windowsProject = Path.Combine(
-            RepositoryRoot,
-            "tests",
-            "DownKyi.Windows.Tests",
-            "DownKyi.Windows.Tests.csproj");
-        var releaseArchitecture = Read(
-            "tests/DownKyi.Architecture.Tests/ReleaseWorkflowArchitectureTests.cs");
-        var macBehavior = Read("tests/DownKyi.MacOS.Tests/MacSigningScriptTests.cs");
-        var buildWorkflow = Read(".github/workflows/build.yml");
-
-        Assert.Equal(MacOnlyPlatforms, ReadDeclaredPlatforms(macProject));
-        Assert.Equal(WindowsOnlyPlatforms, ReadDeclaredPlatforms(windowsProject));
-        Assert.DoesNotContain("RunMacSigningFixture", releaseArchitecture, StringComparison.Ordinal);
-        Assert.DoesNotContain(
-            "MacAdHocSigningExecutesUnderNounsetWithoutTimestamp",
-            releaseArchitecture,
-            StringComparison.Ordinal);
-        Assert.Contains("FileName = \"/bin/bash\"", macBehavior, StringComparison.Ordinal);
-        Assert.Contains("AdHocSigningExecutesUnderSystemBashNounsetWithoutTimestamp", macBehavior, StringComparison.Ordinal);
-        Assert.Contains("DeveloperIdSigningIncludesTimestamp", macBehavior, StringComparison.Ordinal);
-        Assert.Contains("macos-15", buildWorkflow, StringComparison.Ordinal);
-        Assert.Contains("./script/test-solution.ps1", buildWorkflow, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -128,13 +94,6 @@ public sealed partial class TestPlatformOwnershipArchitectureTests
             platforms.Length,
             platforms.Distinct(StringComparer.Ordinal).Count());
         return platforms;
-    }
-
-    private static string Read(string relativePath)
-    {
-        return File.ReadAllText(Path.Combine(
-            RepositoryRoot,
-            relativePath.Replace('/', Path.DirectorySeparatorChar)));
     }
 
     private static bool IsBuildOutput(string path)

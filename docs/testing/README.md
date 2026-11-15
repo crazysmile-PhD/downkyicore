@@ -36,13 +36,15 @@ TRX validation，不能以程序 exit code 取代測試結果證據。
 repository state 的 runner。不要直接新增平行的 `dotnet test` / `vstest`
 repository entry。
 
-PR product gate 以 `script/test-solution.ps1 -ExcludeCiInfrastructure` 排除
-runner、recorder、process cleanup 與 test-fixture 自測；這些 class slice 的唯一清單
-位於 `script/ci-infrastructure-test-slices.ps1`，並由
-`script/test-ci-infrastructure.ps1` 透過同一個 CentralTestRunner 執行。
-`.github/workflows/ci-infrastructure.yml` 只在上述工具、script、fixture 或測試 owner
-路徑改變時執行三平台 slice。未指定 `-ExcludeCiInfrastructure` 的正式本機
-`test-solution.ps1` 仍執行完整測試集合。
+PR product gate 以 `script/test-solution.ps1 -ProductOnly` 執行目前
+Windows 平台的產品測試；純文件 PR 不執行 .NET。Runner、recorder、process cleanup
+與 test-fixture 自測只在具體修改／調查時使用 `script/test-ci-infrastructure.ps1`。
+`script/ci-infrastructure-test-slices.ps1` 是這些 focused slices 的唯一清單。
+此模式也排除 `ReleaseSafetyRegressionTests`、`ReleasePublicationAssetTests` 與
+`PublishedReleaseReadbackTests`；這些測試驗證發布 package、tag 與 API 回讀。
+未指定 `-ProductOnly` 的完整測試仍執行全部適用測試，發布 Build 在
+三個平台使用此模式。CI 範圍與 required check 見
+`../operations/verification-and-rollback.md`。
 
 ## Lightweight Flight Recorder
 

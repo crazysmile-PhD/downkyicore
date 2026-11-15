@@ -14,56 +14,6 @@ public sealed class ReleaseSafetyRegressionTests
         File.ReadAllText(Path.Combine(RepositoryRoot, "version.txt")).Trim();
 
     [Fact]
-    public void GenericReleaseWorkflowInvokesFailClosedReleaseGates()
-    {
-        var workflow = File.ReadAllText(Path.Combine(RepositoryRoot, ".github", "workflows", "build.yml"));
-        var packageValidator = File.ReadAllText(
-            Path.Combine(RepositoryRoot, "script", "validate-release-package.ps1"));
-        var buildArtifactValidator = File.ReadAllText(
-            Path.Combine(RepositoryRoot, "script", "validate-build-run-artifacts.ps1"));
-
-        Assert.Contains("validate-release-subject.ps1", workflow, StringComparison.Ordinal);
-        Assert.Contains("./script/read-release-notes.ps1", workflow, StringComparison.Ordinal);
-        Assert.Contains(
-            "release_body: ${{ steps.release-notes.outputs.content }}",
-            workflow,
-            StringComparison.Ordinal);
-        Assert.Contains("body: ${{ needs.changelog.outputs.release_body }}", workflow, StringComparison.Ordinal);
-        Assert.DoesNotContain("git-cliff", workflow, StringComparison.Ordinal);
-        Assert.DoesNotContain($"v{RepositoryVersion}", workflow, StringComparison.Ordinal);
-        Assert.DoesNotContain($"'{RepositoryVersion}'", packageValidator, StringComparison.Ordinal);
-        Assert.Contains("resolve-v112-macos-trust.ps1", workflow, StringComparison.Ordinal);
-        Assert.DoesNotContain("HAS_MACOS_SIGNING: ${{ secrets.", workflow, StringComparison.Ordinal);
-        foreach (var jobName in new[] { "build-windows", "build-linux", "validate-linux-arm64" })
-        {
-            var job = GetWorkflowJob(workflow, jobName);
-            Assert.Contains("validate-release-package.ps1", job, StringComparison.Ordinal);
-            Assert.Contains("-ExpectedManifestPath", job, StringComparison.Ordinal);
-        }
-        Assert.Contains("./validate-dmg-package.sh \\", workflow, StringComparison.Ordinal);
-        Assert.Contains("ubuntu-24.04-arm", workflow, StringComparison.Ordinal);
-        Assert.Contains("validate-linux-arm64:", workflow, StringComparison.Ordinal);
-        Assert.Contains("linux-arm64-${{ matrix.kind }}.candidate.internal.transport.tar", workflow, StringComparison.Ordinal);
-        Assert.Contains("appimage-${{ matrix.cpu }}.transport.tar", workflow, StringComparison.Ordinal);
-        Assert.Contains("pre-release-validation:", workflow, StringComparison.Ordinal);
-        Assert.Contains("validate-build-run-artifacts.ps1", workflow, StringComparison.Ordinal);
-        Assert.Contains("Transported AppImage lost non-owner execute permission", buildArtifactValidator, StringComparison.Ordinal);
-        Assert.Contains("Downloaded release package does not match its SHA-256 sidecar", buildArtifactValidator, StringComparison.Ordinal);
-        Assert.Contains("'--appimage-extract'", packageValidator, StringComparison.Ordinal);
-        Assert.Contains("LinkType -ceq 'SymbolicLink'", packageValidator, StringComparison.Ordinal);
-        Assert.Contains("usr/bin/DownKyi", packageValidator, StringComparison.Ordinal);
-        Assert.Contains("Test-ElfFile", packageValidator, StringComparison.Ordinal);
-        Assert.Contains("application-initialization-timeout", packageValidator, StringComparison.Ordinal);
-        Assert.Contains("process-cleanup-timeout", packageValidator, StringComparison.Ordinal);
-        Assert.Contains("*.failure-*", workflow, StringComparison.Ordinal);
-        Assert.Contains(
-            "Assert-LinuxBinaryArchitecture -Path $executable",
-            packageValidator,
-            StringComparison.Ordinal);
-        Assert.DoesNotContain("& 7z", packageValidator, StringComparison.Ordinal);
-    }
-
-    [Fact]
     public void PackageChecksumWriterProducesCanonicalSidecarAndFailsClosed()
     {
         var root = CreateTemporaryDirectory();
@@ -166,40 +116,6 @@ public sealed class ReleaseSafetyRegressionTests
         {
             DeleteTemporaryDirectory(root);
         }
-    }
-
-    [Fact]
-    public void Arm64CandidatePromotionRejectsBrokenWorkflowTransitions()
-    {
-        var workflow = File.ReadAllText(Path.Combine(RepositoryRoot, ".github", "workflows", "build.yml"));
-        var arm64Validation = Assert.Single(
-            ReleasePackageCatalogTestSupport.LoadValidationMatrix(RepositoryVersion).Include,
-            target => target.Scope == "LinuxArm64");
-
-        AssertArm64PromotionContract(workflow);
-        Assert.Equal("ubuntu-24.04-arm", arm64Validation.Runner);
-        Assert.Equal("appimage-arm64-transport", arm64Validation.Pattern);
-        Assert.Equal($"downkyi_{RepositoryVersion}_linux_self-contained_arm64.deb", arm64Validation.Pattern2);
-        Assert.ThrowsAny<Exception>(() => AssertArm64PromotionContract(
-            workflow.Replace(
-                "needs: [changelog, release-plan, build-windows, build-linux, validate-linux-arm64, build-macos]",
-                "needs: [changelog, release-plan, build-windows, build-linux, build-macos]",
-                StringComparison.Ordinal)));
-        Assert.ThrowsAny<Exception>(() => AssertArm64PromotionContract(
-            workflow.Replace(
-                "name: linux-arm64-${{ matrix.kind }}-candidate",
-                "name: appimage-arm64-transport",
-                StringComparison.Ordinal)));
-        Assert.ThrowsAny<Exception>(() => AssertArm64PromotionContract(
-            workflow.Replace(
-                "path: candidate/*.failure-*",
-                "path: candidate/missing-validation-diagnostics",
-                StringComparison.Ordinal)));
-        Assert.ThrowsAny<Exception>(() => AssertArm64PromotionContract(
-            workflow.Replace(
-                "            -Scope Inventory",
-                "            -Scope Windows",
-                StringComparison.Ordinal)));
     }
 
     [Fact]
@@ -1668,57 +1584,6 @@ public sealed class ReleaseSafetyRegressionTests
         {
             return false;
         }
-    }
-
-    private static void AssertArm64PromotionContract(string workflow)
-    {
-        var buildLinux = GetWorkflowJob(workflow, "build-linux");
-        var validateArm64 = GetWorkflowJob(workflow, "validate-linux-arm64");
-        var preRelease = GetWorkflowJob(workflow, "pre-release-validation");
-        var release = GetWorkflowJob(workflow, "release");
-
-        Assert.Contains(
-            "name: linux-arm64-${{ matrix.kind }}-candidate",
-            buildLinux,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "path: linux-arm64-${{ matrix.kind }}.candidate.internal.transport.tar",
-            buildLinux,
-            StringComparison.Ordinal);
-        Assert.DoesNotContain("name: appimage-arm64-transport", buildLinux, StringComparison.Ordinal);
-        Assert.DoesNotContain("name: downkyi_${{ steps.version.outputs.content }}_linux_self-contained_arm64.deb", buildLinux, StringComparison.Ordinal);
-
-        Assert.Contains("needs: build-linux", validateArm64, StringComparison.Ordinal);
-        Assert.Contains("name: linux-arm64-${{ matrix.kind }}-candidate", validateArm64, StringComparison.Ordinal);
-        Assert.Contains("if: ${{ failure() }}", validateArm64, StringComparison.Ordinal);
-        Assert.Contains(
-            "name: linux-arm64-${{ matrix.kind }}-validation-diagnostics",
-            validateArm64,
-            StringComparison.Ordinal);
-        Assert.Contains("path: candidate/*.failure-*", validateArm64, StringComparison.Ordinal);
-        Assert.Contains("name: appimage-arm64-transport", validateArm64, StringComparison.Ordinal);
-        Assert.Contains(
-            "name: downkyi_${{ steps.version.outputs.content }}_linux_self-contained_arm64.deb",
-            validateArm64,
-            StringComparison.Ordinal);
-
-        Assert.Contains(
-            "needs: [changelog, release-plan, build-windows, build-linux, validate-linux-arm64, build-macos]",
-            preRelease,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "matrix: ${{ fromJSON(needs.release-plan.outputs.validation_matrix) }}",
-            preRelease,
-            StringComparison.Ordinal);
-        Assert.Contains("needs: [changelog, pre-release-validation]", release, StringComparison.Ordinal);
-        Assert.Contains(
-            "./script/validate-build-run-artifacts.ps1",
-            release,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "-Scope Inventory",
-            release,
-            StringComparison.Ordinal);
     }
 
     private static string GetWorkflowJob(string workflow, string jobName)

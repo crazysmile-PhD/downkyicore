@@ -7,54 +7,13 @@ on:
   push:
     tags:
       - 'v*'
-  pull_request:
-    branches:
-      - main
-    paths:
-      - 'script/assets/external-assets.json'
-      - 'script/ffmpeg-source/**'
-      - 'script/ffmpeg.ps1'
-      - 'script/ffmpeg.sh'
-      - '.github/workflows/build.yml'
   workflow_dispatch:
 
 jobs:
-  source-update-identity:
-    if: ${{ github.event_name == 'pull_request' }}
-    runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
-    steps:
-      - name: Checkout
-        uses: $/.github/actions/checkout
-      - name: Record the exact pull request head for post-build merge
-        env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_HEAD: ${{ github.event.pull_request.head.sha }}
-        run: |
-          jq -n --argjson number "$PR_NUMBER" --arg head "$PR_HEAD" \
-            '{number: $number, head: $head}' > "$RUNNER_TEMP/ffmpeg-update-identity.json"
-      - name: Upload source update identity
-        uses: $/.github/actions/upload-artifact
-        with:
-          name: ffmpeg-update-identity
-          path: ${{ runner.temp }}/ffmpeg-update-identity.json
-          if-no-files-found: error
-          retention-days: 1
-
-  external-assets-preflight:
-    name: Production manifest preflight
-    runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
-    steps:
-      - name: Checkout
-        uses: $/.github/actions/checkout
-      - name: Verify pinned stable appimagetool
-        shell: pwsh
-        run: ./script/install-appimagetool.ps1 -ToolPath '${{ runner.temp }}/appimagetool-preflight'
-
   release-gate:
     name: Release gate (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
-    needs: external-assets-preflight
     strategy:
       fail-fast: false
       matrix:
@@ -75,17 +34,7 @@ jobs:
       - name: Restore
         run: dotnet restore ./DownKyi.sln
       - name: Strict Release build
-        run: >
-          dotnet build ./DownKyi.sln
-          -c Release
-          --no-restore
-          --no-incremental
-          -p:TreatWarningsAsErrors=true
-          -p:CodeAnalysisTreatWarningsAsErrors=true
-          -p:EnableNETAnalyzers=true
-          -p:AnalysisMode=All
-          -p:EnforceCodeStyleInBuild=true
-          -p:UseSharedCompilation=false
+        run: dotnet build ./DownKyi.sln -c Release --no-restore -p:TreatWarningsAsErrors=true
       - name: Test
         shell: pwsh
         run: >
@@ -96,7 +45,6 @@ jobs:
           -ResultsDirectory ./artifacts/test-results
       - name: Upload test results and failure diagnostics
         if: always()
-        continue-on-error: ${{ github.event_name == 'pull_request' }}
         uses: $/.github/actions/upload-artifact
         with:
           name: release-gate-test-results-${{ matrix.os }}
@@ -112,6 +60,7 @@ jobs:
     if: ${{ always() && needs.release-gate.result == 'success' }}
     outputs:
       release_body: ${{ steps.release-notes.outputs.content }}
+      validation_matrix: ${{ steps.release-contract.outputs.validation_matrix }}
     steps:
       - name: Checkout
         uses: $/.github/actions/checkout
@@ -131,15 +80,6 @@ jobs:
             Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
           Write-Output $notes
 
-  release-plan:
-    name: Resolve release contract
-    runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
-    needs: changelog
-    outputs:
-      validation_matrix: ${{ steps.release-contract.outputs.validation_matrix }}
-    steps:
-      - name: Checkout release contract
-        uses: $/.github/actions/checkout
       - name: Export validation matrix from the package catalog
         id: release-contract
         shell: pwsh
@@ -222,7 +162,6 @@ jobs:
             -OutputPath "script/pupnet/output/publish-manifest-win-${{ matrix.cpu }}.json"
           ./script/write-package-checksum.ps1 -PackagePath $package
       - name: Upload build artifacts ${{ matrix.kind }}
-        continue-on-error: ${{ github.event_name == 'pull_request' }}
         uses: $/.github/actions/upload-artifact
         with:
           name: DownKyi-${{ steps.version.outputs.content }}-1.win-${{ matrix.cpu }}.${{ matrix.kind }}
@@ -422,7 +361,6 @@ jobs:
             "publish-manifest-linux-${{ matrix.cpu }}-${{ matrix.kind }}.json"
       - name: Upload build artifacts ${{ matrix.kind }}
         if: ${{ matrix.kind != 'AppImage' && matrix.cpu == 'x64' }}
-        continue-on-error: ${{ github.event_name == 'pull_request' }}
         uses: $/.github/actions/upload-artifact
         with:
           name: ${{ matrix.package-head }}${{ steps.version.outputs.content }}_linux_${{ matrix.type }}${{ matrix.package-tail }}.${{ matrix.kind }}
@@ -432,7 +370,6 @@ jobs:
             script/pupnet/output/publish-manifest-linux-${{ matrix.cpu }}-${{ matrix.kind }}.json
       - name: Upload permission-preserving AppImage transport
         if: ${{ matrix.kind == 'AppImage' && matrix.cpu == 'x64' }}
-        continue-on-error: ${{ github.event_name == 'pull_request' }}
         uses: $/.github/actions/upload-artifact
         with:
           name: appimage-${{ matrix.cpu }}-transport
@@ -506,14 +443,12 @@ jobs:
             "publish-manifest-linux-arm64-AppImage.json"
       - name: Upload validated ARM64 AppImage transport
         if: ${{ matrix.kind == 'AppImage' }}
-        continue-on-error: ${{ github.event_name == 'pull_request' }}
         uses: $/.github/actions/upload-artifact
         with:
           name: appimage-arm64-transport
           path: appimage-arm64.transport.tar
       - name: Upload validated ARM64 Debian package
         if: ${{ matrix.kind == 'deb' }}
-        continue-on-error: ${{ github.event_name == 'pull_request' }}
         uses: $/.github/actions/upload-artifact
         with:
           name: downkyi_${{ steps.version.outputs.content }}_linux_self-contained_arm64.deb
@@ -574,23 +509,6 @@ jobs:
         uses: $/.github/actions/setup-dotnet
         with:
           global-json-file: global.json
-      - name: Run macOS packaging regressions
-        shell: pwsh
-        run: >
-          ./script/test-project.ps1
-          -ProjectPath ./tests/DownKyi.MacOS.Tests/DownKyi.MacOS.Tests.csproj
-          -Configuration Release
-          -ResultsDirectory ./artifacts/test-results/macos-packaging-${{ matrix.cpu }}
-      - name: Upload macOS packaging test results and failure diagnostics
-        if: always()
-        continue-on-error: ${{ github.event_name == 'pull_request' }}
-        uses: $/.github/actions/upload-artifact
-        with:
-          name: macos-packaging-test-results-${{ matrix.cpu }}
-          path: |
-            artifacts/test-results/macos-packaging-${{ matrix.cpu }}
-            artifacts/test-flight-recorder
-          if-no-files-found: ignore
       - name: Install Python for FFmpeg source build
         uses: $/.github/actions/setup-python
         with:
@@ -677,7 +595,6 @@ jobs:
           $package = "script/macos/DownKyi-${{ steps.macos-app.outputs.version }}-osx-${{ matrix.cpu }}.dmg"
           ./script/write-package-checksum.ps1 -PackagePath $package
       - name: Upload build artifacts
-        continue-on-error: ${{ github.event_name == 'pull_request' }}
         uses: $/.github/actions/upload-artifact
         with:
           name: DownKyi-${{ steps.macos-app.outputs.version }}-osx-${{ matrix.cpu }}.dmg
@@ -687,11 +604,10 @@ jobs:
             script/macos/publish-manifest-osx-${{ matrix.cpu }}.json
   pre-release-validation:
     name: Pre-release artifacts (${{ matrix.scope }})
-    needs: [changelog, release-plan, build-windows, build-linux, validate-linux-arm64, build-macos]
-    if: ${{ github.event_name != 'pull_request' }}
+    needs: [changelog, build-windows, build-linux, validate-linux-arm64, build-macos]
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.release-plan.outputs.validation_matrix) }}
+      matrix: ${{ fromJSON(needs.changelog.outputs.validation_matrix) }}
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout release validators

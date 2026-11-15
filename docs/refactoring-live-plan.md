@@ -20,7 +20,7 @@ Product PRs do not update this file merely because their work state changed.
   but do not grow an unmerged release stack beyond roughly two or three layers
   or material divergence from `main`. Consolidate accepted semantics onto one
   clean current-main integration branch and validate that exact head.
-- Publish only from one clean final commit after strict quality, CodeQL and
+- Publish only from one clean final commit after the release build, full platform tests and
   Windows/Linux/macOS package validation pass for that exact commit. Once
   selected, that commit remains the release subject while later work may advance
   `main`; publication requires the subject to remain in `main`'s first-parent

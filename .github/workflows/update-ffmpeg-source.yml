@@ -25,7 +25,7 @@ jobs:
             branch: automation/ffmpeg-source
             body: >-
               Update the one stored official FFmpeg source archive and the vcpkg baseline together.
-              The Build workflow must compile and validate all six release RIDs before automatic merge.
+              Review and merge this update manually; the next release Build validates all six RIDs.
           - name: appimagetool
             command: python script/update-appimagetool.py
             add_paths: script/assets/external-assets.json
@@ -33,7 +33,7 @@ jobs:
             branch: automation/appimagetool
             body: >-
               Update the numeric stable appimagetool release and its GitHub-provided SHA-256 together.
-              The Build workflow must package and validate the x64 and ARM64 AppImages before merge.
+              The next release Build validates the x64 and ARM64 AppImages.
           - name: Python
             command: python script/update-python-version.py
             add_paths: .python-version

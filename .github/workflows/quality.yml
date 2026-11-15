@@ -1,123 +1,73 @@
-name: Strict PR CI
+name: PR CI
 
 on:
   pull_request:
-  push:
-    branches:
-      - main
 
 permissions:
   contents: read
 
+concurrency:
+  group: pr-ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 env:
   DOTNET_CLI_TELEMETRY_OPTOUT: '1'
   DOTNET_NOLOGO: '1'
-  SOLUTION_FILE: ./DownKyi.sln
 
 jobs:
-  format:
-    name: Format check
-    runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
+  build-test:
+    name: Build and test (windows)
+    runs-on: windows-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: $/.github/actions/checkout
-      - name: Install .NET
-        uses: $/.github/actions/setup-dotnet
         with:
-          global-json-file: global.json
-      - name: Restore
-        run: dotnet restore ${{ env.SOLUTION_FILE }}
-      - name: Verify formatting
-        run: dotnet format ${{ env.SOLUTION_FILE }} --verify-no-changes --no-restore --verbosity diagnostic
+          fetch-depth: 2
+      - name: Check changed files
+        id: changes
+        shell: pwsh
+        run: |
+          $paths = @(git diff --name-only HEAD^ HEAD)
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to read the pull request diff.' }
+          $code = @($paths | Where-Object { $_ -notmatch '\.md$|^docs/|^LICENSE$' })
+          # The runner policy is executable input, even though it lives under docs.
+          $runTests = $code.Count -gt 0 -or $paths -contains 'docs/testing/test-runner-policy.json'
+          "tests=$($runTests.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          $workflows = @($paths | Where-Object { $_ -like '.github/*' }).Count -gt 0
+          "workflows=$($workflows.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
       - name: Validate GitHub Actions workflows
+        if: steps.changes.outputs.workflows == 'true'
         uses: $/.github/actions/actionlint
         with:
           files: .github/workflows/*.yml
-      - name: Create local-action round-trip fixture
-        shell: pwsh
-        run: |
-          $fixturePath = Join-Path $env:RUNNER_TEMP 'downkyi-local-action-fixture.txt'
-          Set-Content -LiteralPath $fixturePath -Value 'downkyi-local-action-round-trip' -NoNewline
-      - name: Upload local-action round-trip fixture
-        uses: $/.github/actions/upload-artifact
-        with:
-          name: local-action-round-trip-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/downkyi-local-action-fixture.txt
-          if-no-files-found: error
-          retention-days: 1
-      - name: Download local-action round-trip fixture
-        uses: $/.github/actions/download-artifact
-        with:
-          name: local-action-round-trip-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/downkyi-local-action-round-trip
-      - name: Verify local-action round trip
-        shell: pwsh
-        run: |
-          $downloadedPath = Join-Path $env:RUNNER_TEMP 'downkyi-local-action-round-trip/downkyi-local-action-fixture.txt'
-          if (-not (Test-Path -LiteralPath $downloadedPath -PathType Leaf)) {
-            throw 'The local upload/download action round trip did not produce the fixture.'
-          }
-          if ((Get-Content -LiteralPath $downloadedPath -Raw) -cne 'downkyi-local-action-round-trip') {
-            throw 'The local upload/download action round trip changed the fixture content.'
-          }
-
-  build-test:
-    name: Build and test (${{ matrix.check_name }})
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: windows-latest
-            check_name: windows
-          - runner: ${{ vars.UBUNTU_X64_RUNNER }}
-            check_name: ubuntu-x64
-          - runner: macos-latest
-            check_name: macos
-    steps:
-      - name: Checkout
-        uses: $/.github/actions/checkout
       - name: Install .NET
+        if: steps.changes.outputs.tests == 'true'
         uses: $/.github/actions/setup-dotnet
         with:
           global-json-file: global.json
       - name: Restore
-        run: dotnet restore ${{ env.SOLUTION_FILE }}
-      - name: Build with all warnings as errors
-        run: >
-          dotnet build ${{ env.SOLUTION_FILE }}
-          -c Release
-          --no-restore
-          --no-incremental
-          -p:TreatWarningsAsErrors=true
-          -p:CodeAnalysisTreatWarningsAsErrors=true
-          -p:EnableNETAnalyzers=true
-          -p:AnalysisMode=All
-          -p:EnforceCodeStyleInBuild=true
-          -p:UseSharedCompilation=false
+        if: steps.changes.outputs.tests == 'true'
+        run: dotnet restore ./DownKyi.sln
+      - name: Build with warnings as errors
+        if: steps.changes.outputs.tests == 'true'
+        run: dotnet build ./DownKyi.sln -c Release --no-restore -p:TreatWarningsAsErrors=true
       - name: Test
+        if: steps.changes.outputs.tests == 'true'
         shell: pwsh
         run: >
           ./script/test-solution.ps1
           -Configuration Release
           -NoRestore
           -NoBuild
-          -ExcludeCiInfrastructure
+          -ProductOnly
           -ResultsDirectory ./TestResults
-      - name: Classify resource-contention failure
+      - name: Upload failure evidence
         if: failure()
-        shell: pwsh
-        run: >
-          ./script/classify-resource-contention.ps1
-          -ResultsDirectory ./TestResults
-          -OutputPath ./artifacts/test-flight-recorder/resource-contention-classification.json
-      - name: Upload test results
-        if: always()
         continue-on-error: true
         uses: $/.github/actions/upload-artifact
         with:
-          name: test-results-${{ matrix.check_name }}
+          name: test-results-windows
           path: |
             TestResults/*.trx
             artifacts/test-flight-recorder

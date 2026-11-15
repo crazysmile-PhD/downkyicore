@@ -170,7 +170,7 @@ flowchart LR
 ## Executable defenses
 
 - Project／module direction：`tests/DownKyi.Architecture.Tests/ProjectDependencyTests.cs`、`ModuleBoundaryBaselineTests.cs`、`LocalModuleWiringArchitectureTests.cs`
-- Repository knowledge／composition：`tests/DownKyi.Architecture.Tests/AgentEnvironmentArchitectureTests.cs`、`script/audit-module-boundaries.ps1`
+- Module audit：`script/audit-module-boundaries.ps1`
 - Bilibili contracts：`tests/DownKyi.Architecture.Tests/BilibiliApiInventoryArchitectureTests.cs`、`script/audit-bilibili-api.ps1`
 - Secrets：`script/scan-secrets.ps1`
 - Host／XAML／composition：`tests/DownKyi.Desktop.Tests/UiSmokeTests.cs`、`tests/DownKyi.Tests/LocalModuleCompositionTests.cs`
