@@ -19,7 +19,8 @@ internal sealed record DownloadTransferRequest(
     CancellationToken CancellationToken,
     string? StagingDirectory = null,
     Action<bool>? NetworkReadStateChanged = null,
-    Action<int>? NetworkBytesReceived = null);
+    Action<int>? NetworkBytesReceived = null,
+    BuiltinRangeSchedulingPolicy? RangeSchedulingPolicy = null);
 
 internal interface ITransferBackend
 {

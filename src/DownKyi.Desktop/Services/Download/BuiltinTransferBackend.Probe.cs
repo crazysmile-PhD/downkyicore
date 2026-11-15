@@ -1,5 +1,4 @@
 using System;
-using System.Diagnostics;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -17,9 +16,9 @@ internal sealed partial class BuiltinTransferBackend
     public async Task<DownloadSourceObservation> ProbeAsync(
         string address, CancellationToken cancellationToken)
     {
-        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        deadline.CancelAfter(TimeSpan.FromSeconds(3));
-        var started = Stopwatch.GetTimestamp();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(3), _clock);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeout.Token);
+        var started = _clock.GetTimestamp();
         try
         {
             var network = _settingsStore.Current.Network;
@@ -68,7 +67,7 @@ internal sealed partial class BuiltinTransferBackend
             }
 
             return bytes == 0 ? new DownloadSourceUnavailable() : new DownloadSourceReady(
-                Stopwatch.GetElapsedTime(started), bytes, ranges,
+                _clock.GetElapsedTime(started), bytes, ranges,
                 BuiltinRangeResourceIdentity.Create(accepted.Address, response).HasContinuityValidator);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)

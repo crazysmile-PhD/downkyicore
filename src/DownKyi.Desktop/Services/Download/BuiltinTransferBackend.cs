@@ -23,16 +23,18 @@ internal sealed partial class BuiltinTransferBackend : ITransferBackend, IDownlo
     private readonly ILogger<BuiltinTransferBackend> _logger;
     private readonly DownloadBandwidthLimiter _bandwidthLimiter;
     private readonly Func<Uri?, IDownloadAddressResolver> _addressResolverFactory;
+    private readonly TimeProvider _clock;
 
     public BuiltinTransferBackend(
         ISettingsStore settingsStore,
         DownloadDiagnosticLogger diagnosticLogger,
-        ILogger<BuiltinTransferBackend> logger)
+        ILogger<BuiltinTransferBackend> logger,
+        TimeProvider? clock = null)
         : this(
             settingsStore,
             diagnosticLogger,
             logger,
-            static proxyAddress => DownloadAddressResolver.Create(proxyAddress))
+            static proxyAddress => DownloadAddressResolver.Create(proxyAddress), clock)
     {
     }
 
@@ -40,13 +42,15 @@ internal sealed partial class BuiltinTransferBackend : ITransferBackend, IDownlo
         ISettingsStore settingsStore,
         DownloadDiagnosticLogger diagnosticLogger,
         ILogger<BuiltinTransferBackend> logger,
-        Func<Uri?, IDownloadAddressResolver> addressResolverFactory)
+        Func<Uri?, IDownloadAddressResolver> addressResolverFactory,
+        TimeProvider? clock = null)
     {
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         _diagnosticLogger = diagnosticLogger ?? throw new ArgumentNullException(nameof(diagnosticLogger));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _addressResolverFactory = addressResolverFactory
             ?? throw new ArgumentNullException(nameof(addressResolverFactory));
+        _clock = clock ?? TimeProvider.System;
         _bandwidthLimiter = new DownloadBandwidthLimiter(
             () =>
             {
@@ -55,7 +59,7 @@ internal sealed partial class BuiltinTransferBackend : ITransferBackend, IDownlo
                     network.MaxOverallDownloadLimit,
                     network.MaxDownloadLimit);
             },
-            TimeProvider.System);
+            _clock);
     }
 
     public string Name => "built-in";
@@ -73,9 +77,9 @@ internal sealed partial class BuiltinTransferBackend : ITransferBackend, IDownlo
         var network = _settingsStore.Current.Network;
         var targetFile = Path.Combine(request.Directory, request.FileName);
         var progressUpdater = new DownloadProgressUiUpdater(
-            TimeProvider.System,
+            _clock,
             DownloadProgressUiUpdater.DefaultMinimumInterval);
-        var speedSampler = new BuiltinDownloadSpeedSampler(TimeProvider.System);
+        var speedSampler = new BuiltinDownloadSpeedSampler(_clock);
         var progressSync = new Lock();
 
         void ReportProgress(long received, long total)
@@ -160,6 +164,8 @@ internal sealed partial class BuiltinTransferBackend : ITransferBackend, IDownlo
                 _logger,
                 networkReadStateChanged: request.NetworkReadStateChanged,
                 networkBytesReceived: request.NetworkBytesReceived,
+                schedulingPolicy: request.RangeSchedulingPolicy,
+                timeProvider: _clock,
                 disposeHandler: false,
                 bandwidthLimiter: bandwidthLease,
                 planCreated: chunkCount => _diagnosticLogger.LogBuiltInTaskStart(

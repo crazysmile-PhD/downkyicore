@@ -9,6 +9,70 @@ namespace DownKyi.Tests;
 public sealed class BuiltinRangeSpeculationTests
 {
     [Fact]
+    public async Task CancellationDrainsBothRangesBeforeReleasingTheReservation()
+    {
+        var directory = Directory.CreateTempSubdirectory("downkyi-hedge-cancel-").FullName;
+        var clock = new TestClock();
+        var policy = new BuiltinRangeSchedulingPolicy(clock, TimeSpan.FromMilliseconds(20));
+        using var handler = new SpeculativeHandler(bothStall: true,
+            primaryStalled: () => clock.Advance(TimeSpan.FromSeconds(20)));
+        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        try
+        {
+            using var downloader = new BuiltinRangeDownloader(handler,
+                new Uri("https://media.invalid/file"), new DownloadRequestHeaders([], "test", false),
+                1, static (_, _) => { }, NullLogger.Instance, disposeHandler: false, schedulingPolicy: policy);
+            var transfer = downloader.DownloadAsync(Path.Combine(directory, "media"), handler.Payload.Length, lifetime.Token);
+            await handler.BackupReturned.Task.WaitAsync(TestContext.Current.CancellationToken);
+            await lifetime.CancelAsync();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => transfer);
+            Assert.True(handler.PrimaryStopped);
+            Assert.True(handler.BackupStopped);
+            clock.Advance(TimeSpan.FromSeconds(1));
+            var sample = new BuiltinRangeSample(new BuiltinRangeChunk(0, 31, 0), 32,
+                true, true, 0, 0, TimeSpan.FromSeconds(20), false, TimeSpan.Zero);
+            var next = Assert.IsType<BuiltinRangeHedge>(policy.TryReserve([sample], limited: false));
+            policy.Complete(next, won: false);
+            Assert.False(File.Exists(Path.Combine(directory, "media")));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task BackupBodyReadsConsumeTheBudgetSharedWithLaterAttempts()
+    {
+        var directory = Directory.CreateTempSubdirectory("downkyi-hedge-budget-").FullName;
+        var clock = new TestClock();
+        var policy = new BuiltinRangeSchedulingPolicy(clock, TimeSpan.FromMilliseconds(20));
+        using var handler = new SpeculativeHandler(primaryStalled: () => clock.Advance(TimeSpan.FromSeconds(20)));
+        try
+        {
+            using var downloader = new BuiltinRangeDownloader(handler,
+                new Uri("https://media.invalid/file"), new DownloadRequestHeaders([], "test", false),
+                1, static (_, _) => { }, NullLogger.Instance, disposeHandler: false, schedulingPolicy: policy);
+            var result = await downloader.DownloadAsync(Path.Combine(directory, "media"), handler.Payload.Length,
+                TestContext.Current.CancellationToken);
+            Assert.Equal(handler.Payload.Length, result.ReceivedBytes);
+            Assert.Equal(2, handler.RangeRequests);
+            // The backup read 4080 bytes of a 4096-byte allowance. Completing
+            // the file or initializing another attempt must not refill it.
+            clock.Advance(TimeSpan.FromSeconds(1));
+            policy.InitializeBudget(100 * 1024 * 1024);
+            var candidate = new BuiltinRangeSample(new BuiltinRangeChunk(0, 31, 0), 32,
+                true, true, 0, 0, TimeSpan.FromSeconds(20), false, TimeSpan.Zero);
+            Assert.Null(policy.TryReserve([candidate], limited: false));
+            Assert.Equal(handler.Payload, await File.ReadAllBytesAsync(Path.Combine(directory, "media"), TestContext.Current.CancellationToken));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task PrimaryTransportFailureDoesNotCancelAValidBackup()
     {
         var directory = Directory.CreateTempSubdirectory("downkyi-primary-fails-").FullName;
@@ -114,7 +178,8 @@ public sealed class BuiltinRangeSpeculationTests
         }
     }
 
-    private sealed class SpeculativeHandler(bool mismatch = false, bool primaryWins = false, bool primaryFails = false) : HttpMessageHandler
+    private sealed class SpeculativeHandler(bool mismatch = false, bool primaryWins = false, bool primaryFails = false,
+        Action? primaryStalled = null, bool bothStall = false) : HttpMessageHandler
     {
         public byte[] Payload { get; } = Enumerable.Range(0, 4096).Select(static value => (byte)(value % 251)).ToArray();
         public int RangeRequests { get; private set; }
@@ -137,9 +202,9 @@ public sealed class BuiltinRangeSpeculationTests
                 {
                     PrimaryStopped = true;
                     PrimaryFinished.TrySetResult();
-                }, primaryWins || primaryFails ? BackupReturned.Task : null, primaryFails),
+                }, primaryWins || primaryFails ? BackupReturned.Task : null, primaryFails, primaryStalled),
                 2 when primaryFails => new WaitingStream(Payload[(int)start..((int)end + 1)], PrimaryFinished.Task),
-                2 when primaryWins => new PrefixThenStallStream(Payload[(int)start..((int)end + 1)],
+                2 when primaryWins || bothStall => new PrefixThenStallStream(Payload[(int)start..((int)end + 1)],
                     () => BackupStopped = true),
                 _ => new MemoryStream(Payload[(int)start..((int)end + 1)])
             };
@@ -171,7 +236,8 @@ public sealed class BuiltinRangeSpeculationTests
         }
     }
 
-    private sealed class PrefixThenStallStream(byte[] payload, Action stopped, Task? release = null, bool fail = false) : MemoryStream(payload)
+    private sealed class PrefixThenStallStream(byte[] payload, Action stopped, Task? release = null,
+        bool fail = false, Action? stalled = null) : MemoryStream(payload)
     {
         private bool _prefixRead;
         protected override void Dispose(bool disposing)
@@ -194,6 +260,7 @@ public sealed class BuiltinRangeSpeculationTests
 
             try
             {
+                stalled?.Invoke();
                 if (release != null)
                 {
                     await release.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -213,5 +280,13 @@ public sealed class BuiltinRangeSpeculationTests
                 stopped();
             }
         }
+    }
+
+    private sealed class TestClock : TimeProvider
+    {
+        private long _ticks;
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+        public override long GetTimestamp() => Interlocked.Read(ref _ticks);
+        public void Advance(TimeSpan elapsed) => Interlocked.Add(ref _ticks, elapsed.Ticks);
     }
 }

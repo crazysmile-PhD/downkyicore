@@ -48,9 +48,8 @@ internal sealed class BuiltinRangeDownloader : IDisposable
     private readonly long _segmentSize;
     private readonly DownloadBandwidthLimiter.TransferLease? _bandwidthLimiter;
     private readonly SemaphoreSlim _checkpointGate = new(1, 1);
-    private readonly SemaphoreSlim _hedgeGate = new(1, 1);
-    private readonly TimeSpan _hedgeDelay;
-    private long _referenceBytesPerSecond;
+    private readonly BuiltinRangeSchedulingPolicy _schedulingPolicy;
+    private TimeProvider Clock => _schedulingPolicy.Clock;
     private bool _disposed;
 
     public BuiltinRangeDownloader(
@@ -67,7 +66,9 @@ internal sealed class BuiltinRangeDownloader : IDisposable
         Action<int>? planCreated = null,
         Action<bool>? networkReadStateChanged = null,
         TimeSpan? hedgeDelay = null,
-        Action<int>? networkBytesReceived = null)
+        Action<int>? networkBytesReceived = null,
+        TimeProvider? timeProvider = null,
+        BuiltinRangeSchedulingPolicy? schedulingPolicy = null)
     {
         ArgumentNullException.ThrowIfNull(handler);
         _address = address ?? throw new ArgumentNullException(nameof(address));
@@ -79,8 +80,7 @@ internal sealed class BuiltinRangeDownloader : IDisposable
         _planCreated = planCreated;
         _networkReadStateChanged = networkReadStateChanged;
         _networkBytesReceived = networkBytesReceived;
-        _hedgeDelay = hedgeDelay ?? TimeSpan.FromSeconds(10);
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(_hedgeDelay, TimeSpan.Zero);
+        _schedulingPolicy = schedulingPolicy ?? new BuiltinRangeSchedulingPolicy(timeProvider ?? TimeProvider.System, hedgeDelay);
         _parallelCount = parallelCount;
         _segmentSize = segmentSize;
         _bandwidthLimiter = bandwidthLimiter;
@@ -688,10 +688,11 @@ internal sealed class BuiltinRangeDownloader : IDisposable
             return initialReceivedBytes;
         }
 
-        using var workersCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+        var workersCancellation = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken);
         ExceptionDispatchInfo? firstFailure = null;
         var receivedBytes = initialReceivedBytes;
+        _schedulingPolicy.InitializeBudget(state.TotalBytes - initialReceivedBytes);
         var workerCount = Math.Min(_parallelCount, queue.Count);
         var workers = Enumerable.Range(0, workerCount)
             .Select(async _ =>
@@ -730,9 +731,11 @@ internal sealed class BuiltinRangeDownloader : IDisposable
             })
             .ToArray();
 
+        var completion = Task.WhenAll(workers);
+        var scheduler = ScheduleRangesAsync(state, completion, workersCancellation);
         try
         {
-            await Task.WhenAll(workers).ConfigureAwait(false);
+            await completion.ConfigureAwait(false);
         }
         catch
         {
@@ -740,8 +743,54 @@ internal sealed class BuiltinRangeDownloader : IDisposable
             firstFailure?.Throw();
             throw;
         }
+        finally
+        {
+            try
+            {
+                await scheduler.ConfigureAwait(false);
+            }
+            finally
+            {
+                workersCancellation.Dispose();
+            }
+        }
 
         return receivedBytes;
+    }
+
+    private async Task ScheduleRangesAsync(BuiltinRangeResumeState state, Task workers, CancellationTokenSource lifetime)
+    {
+        var cancellationToken = lifetime.Token;
+        using var timer = new PeriodicTimer(_schedulingPolicy.PollInterval, Clock);
+        try
+        {
+            while (!workers.IsCompleted)
+            {
+                if (await Task.WhenAny(workers, timer.WaitForNextTickAsync(cancellationToken).AsTask()).ConfigureAwait(false) == workers)
+                {
+                    break;
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+                var samples = state.Chunks.Select(static chunk => chunk.Activity)
+                    .Where(static activity => activity != null).Select(static activity => activity!.Sample()).ToArray();
+                var hedge = _schedulingPolicy.TryReserve(samples, _bandwidthLimiter?.IsLimited == true);
+                if (hedge != null && !hedge.Chunk.Activity!.TryRequest(hedge))
+                {
+                    _schedulingPolicy.Complete(hedge, won: false);
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Workers own the cancellation/failure result; this observer joins them.
+            _logger.LogDebugMessage("Range scheduler acknowledged worker cancellation.");
+        }
+        catch
+        {
+            await lifetime.CancelAsync().ConfigureAwait(false);
+            throw;
+        }
     }
 
     private async Task DownloadChunkAsync(
@@ -763,57 +812,48 @@ internal sealed class BuiltinRangeDownloader : IDisposable
         }
 
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var waiting = 0;
-        var initialPosition = chunk.Position;
-        var started = Stopwatch.GetTimestamp();
+        var activity = new BuiltinRangeActivity(chunk, Clock, _schedulingPolicy.Warmup / 2);
+        chunk.Activity = activity;
         var primary = DownloadChunkBodyAsync(storage, state, chunk, supportsRanges,
-            reportBytes, lifetime.Token, value => Interlocked.Exchange(ref waiting, value ? 1 : 0));
+            reportBytes, lifetime.Token, activity);
+        var won = false;
         try
         {
-            using var timer = new PeriodicTimer(_hedgeDelay);
-            while (!primary.IsCompleted)
+            if (await Task.WhenAny(primary, activity.HedgeRequested.Task).ConfigureAwait(false) != primary)
             {
-                if (await Task.WhenAny(primary, timer.WaitForNextTickAsync(cancellationToken).AsTask())
-                        .ConfigureAwait(false) == primary)
-                {
-                    break;
-                }
-
-                cancellationToken.ThrowIfCancellationRequested();
-                var rate = (chunk.Position - initialPosition) / Stopwatch.GetElapsedTime(started).TotalSeconds;
-                var slowThreshold = Math.Max(16 * 1024, Interlocked.Read(ref _referenceBytesPerSecond) / 4);
-                if (Volatile.Read(ref waiting) == 0 || rate >= slowThreshold ||
-                    _bandwidthLimiter?.IsLimited == true ||
-                    !await _hedgeGate.WaitAsync(0, cancellationToken).ConfigureAwait(false))
-                {
-                    continue;
-                }
-
-                try
-                {
-                    await RaceChunkAsync(storage, state, chunk, primary, lifetime,
-                        reportBytes, cancellationToken).ConfigureAwait(false);
-                    return;
-                }
-                finally
-                {
-                    _hedgeGate.Release();
-                }
+                var hedge = await activity.HedgeRequested.Task.ConfigureAwait(false);
+                won = await RaceChunkAsync(storage, state, chunk, primary, lifetime,
+                    reportBytes, hedge, cancellationToken).ConfigureAwait(false);
+                return;
             }
 
             await primary.ConfigureAwait(false);
         }
         finally
         {
-            await lifetime.CancelAsync().ConfigureAwait(false);
-            // Also join on monitor/caller failure; no old writer survives this lease.
-            await ObserveRevokedWorkerAsync(primary, lifetime.Token).ConfigureAwait(false);
+            try
+            {
+                await lifetime.CancelAsync().ConfigureAwait(false);
+                // No old writer or reservation survives this worker.
+                await ObserveRevokedWorkerAsync(primary, lifetime.Token).ConfigureAwait(false);
+            }
+            finally
+            {
+                var hedge = activity.Finish();
+                if (hedge != null)
+                {
+                    _schedulingPolicy.Complete(hedge, won);
+                    _logger.LogInformationMessage($"Speculative range settled; won={won}; " +
+                        $"bodyBytes={hedge.BytesReceived}; reservedBytes={hedge.ReservedBytes}.");
+                }
+            }
         }
     }
 
-    private async Task RaceChunkAsync(
+    private async Task<bool> RaceChunkAsync(
         FileStream storage, BuiltinRangeResumeState state, BuiltinRangeChunk chunk,
         Task primary, CancellationTokenSource primaryLifetime, Action<int> reportBytes,
+        BuiltinRangeHedge hedge,
         CancellationToken cancellationToken)
     {
         using var hedgeLifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -821,11 +861,12 @@ internal sealed class BuiltinRangeDownloader : IDisposable
         if (candidateStart > chunk.End)
         {
             await primary.ConfigureAwait(false);
-            return;
+            return false;
         }
 
         _logger.LogInformationMessage("Slow range suspected; speculativeAttempt=started; maximumHedges=1.");
-        var candidate = ReadChunkCandidateAsync(state, candidateStart, chunk.End, hedgeLifetime.Token);
+        hedge.Started = true;
+        var candidate = ReadChunkCandidateAsync(state, candidateStart, chunk.End, hedge, hedgeLifetime.Token);
         try
         {
             var winner = await Task.WhenAny(primary, candidate).ConfigureAwait(false);
@@ -834,7 +875,7 @@ internal sealed class BuiltinRangeDownloader : IDisposable
                 try
                 {
                     await primary.ConfigureAwait(false);
-                    return;
+                    return false;
                 }
                 catch (Exception exception) when (exception is HttpRequestException or HttpIOException or TimeoutException)
                 {
@@ -859,7 +900,7 @@ internal sealed class BuiltinRangeDownloader : IDisposable
                 // A speculative transport failure does not revoke a usable primary.
                 _logger.LogDebugMessage($"Speculative range failed; failure={exception.GetType().Name}.");
                 await primary.ConfigureAwait(false);
-                return;
+                return false;
             }
             await primaryLifetime.CancelAsync().ConfigureAwait(false);
             await ObserveRevokedWorkerAsync(primary, primaryLifetime.Token).ConfigureAwait(false);
@@ -872,6 +913,7 @@ internal sealed class BuiltinRangeDownloader : IDisposable
             chunk.Advance(committed);
             reportBytes(committed);
             _logger.LogInformationMessage("Speculative range committed; predecessor=drained.");
+            return true;
         }
         finally
         {
@@ -881,7 +923,7 @@ internal sealed class BuiltinRangeDownloader : IDisposable
     }
 
     private async Task<byte[]> ReadChunkCandidateAsync(
-        BuiltinRangeResumeState state, long start, long end, CancellationToken cancellationToken)
+        BuiltinRangeResumeState state, long start, long end, BuiltinRangeHedge hedge, CancellationToken cancellationToken)
     {
         using var request = CreateRequest(start, end, state.ResourceIdentity.IfRangeValue);
         using var response = await SendWithStallTimeoutAsync(request, cancellationToken).ConfigureAwait(false);
@@ -905,6 +947,7 @@ internal sealed class BuiltinRangeDownloader : IDisposable
             }
 
             position += read;
+            hedge.RecordBytes(read);
         }
 
         return bytes;
@@ -940,9 +983,8 @@ internal sealed class BuiltinRangeDownloader : IDisposable
         bool supportsRanges,
         Action<int> reportBytes,
         CancellationToken cancellationToken,
-        Action<bool>? readActivity = null)
+        BuiltinRangeActivity? activity = null)
     {
-        var started = Stopwatch.GetTimestamp();
         var requestStart = checked(chunk.Start + chunk.Position);
         using var request = supportsRanges
             ? CreateRequest(
@@ -950,8 +992,9 @@ internal sealed class BuiltinRangeDownloader : IDisposable
                 chunk.End,
                 state.ResourceIdentity.IfRangeValue)
             : CreateRequest(rangeStart: null, rangeEnd: null);
-        using var response = await SendWithStallTimeoutAsync(request, cancellationToken)
+        using var response = await SendWithStallTimeoutAsync(request, cancellationToken, activity)
             .ConfigureAwait(false);
+        activity?.HeadersReceived();
         ValidateChunkResponse(
             response,
             requestStart,
@@ -969,18 +1012,9 @@ internal sealed class BuiltinRangeDownloader : IDisposable
         {
             while (remaining > 0)
             {
-                int read;
-                readActivity?.Invoke(true);
-                try
-                {
-                    read = await ReadWithBandwidthLimitAsync(source,
-                        buffer.AsMemory(0, (int)Math.Min(buffer.Length, remaining)),
-                        cancellationToken).ConfigureAwait(false);
-                }
-                finally
-                {
-                    readActivity?.Invoke(false);
-                }
+                var read = await ReadWithBandwidthLimitAsync(source,
+                    buffer.AsMemory(0, (int)Math.Min(buffer.Length, remaining)),
+                    cancellationToken, activity).ConfigureAwait(false);
                 if (read == 0)
                 {
                     throw new HttpIOException(
@@ -999,19 +1033,6 @@ internal sealed class BuiltinRangeDownloader : IDisposable
                 reportBytes(read);
             }
 
-            var elapsed = Stopwatch.GetElapsedTime(started).TotalSeconds;
-            var rate = checked((long)Math.Min((chunk.End - requestStart + 1) / Math.Max(elapsed, 0.001), long.MaxValue));
-            var previous = Interlocked.Read(ref _referenceBytesPerSecond);
-            while (rate > previous)
-            {
-                var observed = Interlocked.CompareExchange(ref _referenceBytesPerSecond, rate, previous);
-                if (observed == previous)
-                {
-                    break;
-                }
-
-                previous = observed;
-            }
         }
         finally
         {
@@ -1068,11 +1089,12 @@ internal sealed class BuiltinRangeDownloader : IDisposable
 
     private async Task<HttpResponseMessage> SendWithStallTimeoutAsync(
         HttpRequestMessage request,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        BuiltinRangeActivity? activity = null)
     {
-        using var stallCancellation = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken);
-        stallCancellation.CancelAfter(_readStallTimeout);
+        using var deadline = new CancellationTokenSource(_readStallTimeout, Clock);
+        using var stallCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
+        activity?.SetWaiting(true);
         _networkReadStateChanged?.Invoke(true);
         try
         {
@@ -1088,6 +1110,7 @@ internal sealed class BuiltinRangeDownloader : IDisposable
         }
         finally
         {
+            activity?.SetWaiting(false);
             _networkReadStateChanged?.Invoke(false);
         }
     }
@@ -1095,16 +1118,18 @@ internal sealed class BuiltinRangeDownloader : IDisposable
     private async ValueTask<int> ReadWithStallTimeoutAsync(
         Stream source,
         Memory<byte> buffer,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        BuiltinRangeActivity? activity = null)
     {
-        using var stallCancellation = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken);
-        stallCancellation.CancelAfter(_readStallTimeout);
+        using var deadline = new CancellationTokenSource(_readStallTimeout, Clock);
+        using var stallCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
         _networkReadStateChanged?.Invoke(true);
+        activity?.SetWaiting(true);
         try
         {
             var read = await source.ReadAsync(buffer, stallCancellation.Token).ConfigureAwait(false);
             _networkBytesReceived?.Invoke(read);
+            activity?.RecordBytes(read);
             return read;
         }
         catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
@@ -1115,6 +1140,7 @@ internal sealed class BuiltinRangeDownloader : IDisposable
         }
         finally
         {
+            activity?.SetWaiting(false);
             _networkReadStateChanged?.Invoke(false);
         }
     }
@@ -1122,11 +1148,12 @@ internal sealed class BuiltinRangeDownloader : IDisposable
     private async ValueTask<int> ReadWithBandwidthLimitAsync(
         Stream source,
         Memory<byte> buffer,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        BuiltinRangeActivity? activity = null)
     {
         if (_bandwidthLimiter == null)
         {
-            return await ReadWithStallTimeoutAsync(source, buffer, cancellationToken)
+            return await ReadWithStallTimeoutAsync(source, buffer, cancellationToken, activity)
                 .ConfigureAwait(false);
         }
 
@@ -1139,7 +1166,7 @@ internal sealed class BuiltinRangeDownloader : IDisposable
             var read = await ReadWithStallTimeoutAsync(
                 source,
                 buffer[..permit.ByteCount],
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken, activity).ConfigureAwait(false);
             unusedBytes -= read;
             return read;
         }
@@ -1180,7 +1207,7 @@ internal sealed class BuiltinRangeDownloader : IDisposable
     private async Task CheckpointLoopAsync(
         FileStream storage, BuiltinRangeResumeState state, Task workers, CancellationTokenSource lifetime)
     {
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1), Clock);
         try
         {
             while (!workers.IsCompleted)
@@ -1418,13 +1445,19 @@ internal sealed class BuiltinRangeDownloader : IDisposable
         _disposed = true;
         _http.Dispose();
         _checkpointGate.Dispose();
-        _hedgeGate.Dispose();
     }
 }
 
 internal sealed class BuiltinRangeChunk(long start, long end, long position)
 {
     private long _position = position;
+    private BuiltinRangeActivity? _activity;
+
+    public BuiltinRangeActivity? Activity
+    {
+        get => Volatile.Read(ref _activity);
+        set => Volatile.Write(ref _activity, value);
+    }
 
     public long Start { get; } = start;
 

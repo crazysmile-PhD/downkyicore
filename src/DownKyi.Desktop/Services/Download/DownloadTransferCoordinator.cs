@@ -68,6 +68,7 @@ internal sealed class DownloadTransferCoordinator
         }
 
         var addressIndex = 0;
+        var rangeSchedulingPolicy = new BuiltinRangeSchedulingPolicy(_timeProvider);
         var attemptsForAddress = 0;
         var resumeCleanupRetryGrantedForAddress = false;
         var canRefreshAddresses = true;
@@ -79,7 +80,8 @@ internal sealed class DownloadTransferCoordinator
             var attemptRequest = request with
             {
                 Urls = [currentAddress],
-                CancellationToken = cancellationToken
+                CancellationToken = cancellationToken,
+                RangeSchedulingPolicy = rangeSchedulingPolicy
             };
             var lease = new DownloadTransferAttempt(_timeProvider, _watchdog, _isBandwidthLimited, _logger);
             var lastResult = await lease.RunAsync(_backend, attemptRequest, cancellationToken)

@@ -147,6 +147,8 @@ public sealed class DownloadTransferSessionTests
                 }
 
                 Assert.True(firstStopped);
+                Assert.NotNull(request.RangeSchedulingPolicy);
+                Assert.Same(expiredLease!.RangeSchedulingPolicy, request.RangeSchedulingPolicy);
                 Assert.False(File.Exists(Path.Combine(directory, "media.download")));
                 request.PublishProgress(new DownloadProgress(100, 4, 4));
                 return DownloadTransferResult.Succeeded();
