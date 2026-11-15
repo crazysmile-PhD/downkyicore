@@ -389,14 +389,9 @@ public sealed class DownloadRetryPolicyTests
             Assert.Equal(DownloadTransferOutcome.Failed, result.Outcome);
             Assert.Equal(DownloadTransferFailureKind.TransientNetwork, result.FailureKind);
             Assert.Equal("download.transfer.timeout", result.ErrorCode);
-            Assert.Equal(
-                [
-                    "https://primary.invalid/media",
-                    "https://primary.invalid/media",
-                    "https://backup.invalid/media",
-                    "https://backup.invalid/media"
-                ],
-                probedAddresses);
+            Assert.Equal(6, probedAddresses.Count);
+            Assert.Equal(3, probedAddresses.Count(static address => address == "https://primary.invalid/media"));
+            Assert.Equal(3, probedAddresses.Count(static address => address == "https://backup.invalid/media"));
         }
         finally
         {
@@ -1052,7 +1047,10 @@ public sealed class DownloadRetryPolicyTests
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            probedAddresses.Add(address);
+            lock (probedAddresses)
+            {
+                probedAddresses.Add(address);
+            }
             return Task.FromResult(result);
         }
 

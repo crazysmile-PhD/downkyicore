@@ -51,6 +51,15 @@ internal sealed class DownloadBandwidthLimiter
 
     public TransferLease CreateTransferLease() => new(this);
 
+    private bool IsLimited
+    {
+        get
+        {
+            var limits = _limitsProvider();
+            return limits.OverallBytesPerSecond > 0 || limits.TransferBytesPerSecond > 0;
+        }
+    }
+
     private async ValueTask<DownloadReadPermit> AcquireAsync(
         TokenBucket transferBucket,
         int maximumBytes,
@@ -150,6 +159,8 @@ internal sealed class DownloadBandwidthLimiter
     {
         private readonly DownloadBandwidthLimiter _owner;
         private readonly TokenBucket _transferBucket = new();
+
+        public bool IsLimited => _owner.IsLimited;
 
         internal TransferLease(DownloadBandwidthLimiter owner)
         {

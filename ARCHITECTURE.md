@@ -99,6 +99,11 @@ flowchart LR
 - Pipeline 依序執行 typed stages；每個 stage 以 typed result 保存 failure taxonomy，失敗立即停止並由 typed state writer 更新狀態。不得用 empty／null success sentinel 隱藏錯誤。Presenter／projector 只按 `DownloadTaskId` 更新 UI；`DownloadListState` 只公開穩定 read-only collection。
 - `ValidateStage` 由實際 published／staged file 證據推導 requested media／subtitle／danmaku／cover 的 `Succeeded`、`NoResource` 或 `Failed`；未 requested 的 action 不建立 result entry，planning 中由使用者跳過的 page 不進入 execution。至少一個 requested action 成功才可進入 finalize。單一 action 無資源不等於 transport／解析／寫入失敗，所有 action 都沒有輸出則以 typed not-found failure 結束，不得寫入成功歷史。
 - Retry 只有一個預算 owner：coordinator 決定 typed retry／refresh／source switch，backend 每次只嘗試一個 URL。不得在 backend、RPC caller 或外層另加 retry，否則預算會相乘。
+- `DownloadTransferCoordinator` 建立每次傳輸的 `DownloadTransferAttempt` lease，統一處理 pause、active guard、progress persistence 與 throughput watchdog。Lease 結束先撤銷 callbacks，再取消並 await worker；舊 lease 的 progress 不得更新後繼 attempt，任何錯誤路徑都不得留下 writer。一般退出與 pause（包含 active guard 觀察到的 pause）都必須在 worker 停止後提交最後接受的 progress，才能確認 Paused；caller cancellation 不得提交舊 progress。Domain Cancel 重播不產生第二次 transition；Application 在 mutation gate 內拒收 terminal task 的遲到 progress。
+- 無 checkpoint 的新傳輸會並行探測最多三個主／備來源，每個來源最多三秒、64 KiB，依實際 body 吞吐排序。已有 partial 或完成檔時保留來源 affinity，不為測速丟棄恢復證據。探測結果只用於效能排序，不是跨來源的內容一致性證據；不保存完整 URL 或 headers。
+- `BuiltinRangeSchedulingPolicy` 是分片備份決策與成本預算的唯一 owner；coordinator 為一次 logical transfer 建立它，重試及換源共用剩餘額度。分片只持有 ephemeral network activity，持久化位置仍由既有 chunk／checkpoint 擁有。單一 observer 以近期 network-read time 的平滑速度、目前 peer 中位數及預計剩餘時間挑選拖尾分片；舊完成樣本會過期，磁碟／限速等待不算 network time。預估至少節省十秒且縮短 25% 才啟動備份；沒有 peer 時只容許對絕對低速分片作有界探測。相近速度的 peers 不互相競爭。
+- 每次 logical transfer 的 speculative body 額度為 `min(初始剩餘量, max(20 MiB, 初始剩餘量 / 10))`；先預留整個候選範圍，等待敗方退出後按實際讀取量結算並歸還未用額度。最多同時一個備份，單次緩衝最多 20 MiB；成功後冷卻十秒，未勝出的備份將冷卻依序延長至 20／40／80 秒。調度、read deadline 與 checkpoint 共用注入的 monotonic `TimeProvider`；競爭執行仍先校驗版本、停止原 writer，再單次提交，不由 policy 寫檔或另行重試。
+- Watchdog 用 monotonic clock、實際 response-body 讀取 bytes、啟動寬限與連續低速窗口辨識 `SlowSource`；續傳驗證、sequential 與 speculative reads 共用讀取計量，不能以 committed／UI progress 代替 network throughput。即使伺服器仍持續滴流也可切換來源。只在等待 network read 時判定，local disk／checkpoint 工作不算慢源；有使用者總體或單傳輸限速時停用低速推定與額外測速。所有主備來源及一次 refresh 用完後回傳 typed failure，不能無限循環。
 - Playback metadata query 的 transient API-code／HTTP retry 只由 `VideoStreamApi` 擁有，最多重送一次；成功 response 缺少 requested quality 是 planning availability，不得由 preparation 再發出五次相同查詢。
 - TLS 例外辨識由 Infrastructure 負責，回傳穩定錯誤碼；本地化文案由 Desktop Presenter 按精確代碼選擇，未知代碼保留通用提示，不得只按 TLS 前綴推定原因。
 - Built-in resume 必須先比較 resource identity；沒有 strong validator 時，重用前必須逐段比對所有已保存 bytes。Mismatch 回報 `ResumeRejected`，coordinator 清除該 transfer artifacts 後，同地址最多重試一次。
@@ -126,6 +131,8 @@ flowchart LR
 - Credential header 屬於 task，且只可給 exact HTTPS `bilibili.com` host／subdomain；其他 host 不得收到。禁止 downgrade 與 credential cross-origin redirect。
 - 每個 range response 必須精確符合要求的 `206 Content-Range`、總長度與 resource identity；任何 mismatch 都 fail closed 為 `ResumeRejected`。
 - Range ledger 是續傳的唯一真相。完成前所有區間必須無重疊、無缺口且各自到達終點，才可將 `.download` 原子邊界移成完成檔。
+- Range worker 可對慢分片進行一次受控的 speculative execution：同 URL、相同 strong validator、精確 Content-Range；每個 transfer 同時最多一個備份 Range、最多 20 MiB 記憶體。備份先在私有記憶體完整接收及驗證，只有停止並 join 原 writer 後才能寫入 ledger 對應區間；progress 只計算首次提交的 bytes。備份 transport failure 不撤銷可用 primary，任何 resource identity mismatch 必須 fail closed。沒有 validator 的傳輸不猜測資源相同，保留單 Range 並以整個 attempt 安全切換來源。
+- Checkpoint 由單一有界背景 loop 寫入既有 resume 格式，不阻塞每次 network read；worker 與 checkpoint task 必須一起停止，checkpoint failure 取消 workers。File mapping、resume metadata、completed keys 與既有 publication journal 保持唯一 owner，不建立第二個 download DB 或 path registry。
 
 ## Layer rules
 

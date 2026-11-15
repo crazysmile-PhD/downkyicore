@@ -593,6 +593,7 @@ public sealed class DownloadRuntimeArchitectureTests
         var pipelineSource = File.ReadAllText(Path.Combine(directory, "DownloadPipeline.cs"));
         var mediaStageSource = File.ReadAllText(Path.Combine(directory, "DownloadMediaStage.cs"));
         var builtinSource = File.ReadAllText(Path.Combine(directory, "BuiltinTransferBackend.cs"));
+        var attemptSource = File.ReadAllText(Path.Combine(directory, "DownloadTransferAttempt.cs"));
 
         Assert.DoesNotContain("paused.Phase == DownloadPhase.Pausing", stateSource, StringComparison.Ordinal);
         Assert.Contains("ConfirmPauseAfterWorkerStopsAsync", orchestratorSource, StringComparison.Ordinal);
@@ -603,8 +604,9 @@ public sealed class DownloadRuntimeArchitectureTests
         Assert.Contains("result.Outcome == DownloadTransferOutcome.Paused", mediaStageSource, StringComparison.Ordinal);
         Assert.Contains("return DownloadTransferResult.Paused()", builtinSource, StringComparison.Ordinal);
         Assert.True(
-            builtinSource.IndexOf("if (request.IsPauseRequested())", StringComparison.Ordinal) <
-            builtinSource.IndexOf("request.EnsureActive();", StringComparison.Ordinal));
+            attemptSource.IndexOf("if (request.IsPauseRequested())", StringComparison.Ordinal) <
+            attemptSource.IndexOf("request.EnsureActive();", StringComparison.Ordinal));
+        Assert.DoesNotContain("request.PersistProgressAsync", builtinSource, StringComparison.Ordinal);
     }
 
     [Fact]

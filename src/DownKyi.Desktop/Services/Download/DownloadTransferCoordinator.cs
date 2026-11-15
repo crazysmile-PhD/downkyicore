@@ -15,17 +15,23 @@ internal sealed class DownloadTransferCoordinator
     private readonly DownloadRetryPolicy _retryPolicy;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<DownloadTransferCoordinator> _logger;
+    private readonly DownloadTransferWatchdog _watchdog;
+    private readonly Func<bool> _isBandwidthLimited;
 
     public DownloadTransferCoordinator(
         ITransferBackend backend,
         DownloadRetryPolicy retryPolicy,
         TimeProvider timeProvider,
-        ILogger<DownloadTransferCoordinator> logger)
+        ILogger<DownloadTransferCoordinator> logger,
+        Func<bool>? isBandwidthLimited = null,
+        DownloadTransferWatchdog? watchdog = null)
     {
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
         _retryPolicy = retryPolicy ?? throw new ArgumentNullException(nameof(retryPolicy));
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _isBandwidthLimited = isBandwidthLimited ?? (static () => false);
+        _watchdog = watchdog ?? DownloadTransferWatchdog.Default;
     }
 
     public async Task<DownloadTransferResult> TransferAsync(
@@ -43,7 +49,26 @@ internal sealed class DownloadTransferCoordinator
                 "download.transfer.no-address");
         }
 
+        // Recovery keeps the original resource affinity. A fresh transfer surveys
+        // a bounded set of replicas; observations never become identity evidence.
+        var target = Path.Combine(request.Directory, request.FileName);
+        if (_backend is IDownloadSourceProbe probe && addresses.Length > 1 &&
+            !_isBandwidthLimited() && !File.Exists(target) && !File.Exists($"{target}.download"))
+        {
+            var surveyed = await Task.WhenAll(addresses.Take(3).Select(async address =>
+                (Address: address, Observation: await probe.ProbeAsync(address, cancellationToken)
+                    .ConfigureAwait(false)))).ConfigureAwait(true);
+            var preferred = surveyed
+                .OrderByDescending(static source => source.Observation is DownloadSourceReady ready
+                    ? ready.Bytes / Math.Max(ready.Elapsed.TotalSeconds, 0.001) : 0)
+                .Select(static source => source.Address);
+            addresses = preferred.Concat(addresses.Skip(surveyed.Length)).ToArray();
+            _logger.LogInformationMessage($"Download source survey completed; candidates={surveyed.Length}; " +
+                $"ready={surveyed.Count(static source => source.Observation is DownloadSourceReady)}.");
+        }
+
         var addressIndex = 0;
+        var rangeSchedulingPolicy = new BuiltinRangeSchedulingPolicy(_timeProvider);
         var attemptsForAddress = 0;
         var resumeCleanupRetryGrantedForAddress = false;
         var canRefreshAddresses = true;
@@ -55,9 +80,12 @@ internal sealed class DownloadTransferCoordinator
             var attemptRequest = request with
             {
                 Urls = [currentAddress],
-                CancellationToken = cancellationToken
+                CancellationToken = cancellationToken,
+                RangeSchedulingPolicy = rangeSchedulingPolicy
             };
-            var lastResult = await _backend.TransferAsync(attemptRequest).ConfigureAwait(true);
+            var lease = new DownloadTransferAttempt(_timeProvider, _watchdog, _isBandwidthLimited, _logger);
+            var lastResult = await lease.RunAsync(_backend, attemptRequest, cancellationToken)
+                .ConfigureAwait(true);
             if (lastResult.Outcome != DownloadTransferOutcome.Failed)
             {
                 return lastResult;

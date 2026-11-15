@@ -106,7 +106,12 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
             transferBackend,
             new DownloadRetryPolicy(),
             TimeProvider.System,
-            _loggerFactory.CreateLogger<DownloadTransferCoordinator>());
+            _loggerFactory.CreateLogger<DownloadTransferCoordinator>(),
+            isBandwidthLimited: () =>
+            {
+                var limits = _settingsStore.Current.Network;
+                return limits.MaxOverallDownloadLimit > 0 || limits.MaxDownloadLimit > 0;
+            });
         IDownloadPipelineStage[] stages =
         [
             new ResolvePlaybackStage(

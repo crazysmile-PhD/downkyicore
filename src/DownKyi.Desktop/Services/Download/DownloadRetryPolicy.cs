@@ -63,6 +63,8 @@ internal sealed class DownloadRetryPolicy
                 ClampServerDelay(result.RetryAfter ?? GetBackoff(attemptsForAddress))),
             DownloadTransferFailureKind.ExpiredAddress =>
                 MoveOrRefresh(hasNextAddress, canRefreshAddresses),
+            DownloadTransferFailureKind.SlowSource =>
+                MoveOrRefresh(hasNextAddress, canRefreshAddresses),
             DownloadTransferFailureKind.ResumeRejected =>
                 RetrySameThenMove(attemptsForAddress, hasNextAddress),
             DownloadTransferFailureKind.InvalidMedia => hasNextAddress

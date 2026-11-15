@@ -7,6 +7,7 @@ using DownKyi.Models;
 using DownKyi.Services.Download;
 using DownKyi.ViewModels.DownloadManager;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DownKyi.Tests;
 
@@ -16,6 +17,92 @@ public sealed class DownloadTaskProjectionStoreResumeTests : IDisposable
         Path.GetTempPath(),
         "downkyi-storage-resume-tests",
         Guid.NewGuid().ToString("N"));
+
+    [Fact]
+    public async Task TransferPausePreservesLiveProgressThroughConfirmationAndDatabaseReopen()
+    {
+        Directory.CreateDirectory(_directory);
+        var database = Path.Combine(_directory, "transfer-pause.db");
+        var item = new DownloadingItem
+        {
+            DownloadBase = new DownloadBase
+            {
+                Id = "transfer-pause",
+                FilePath = Path.Combine(_directory, "episode")
+            },
+            Downloading = new Downloading
+            {
+                Id = "transfer-pause",
+                DownloadStatus = DownloadStatus.WaitForDownload
+            }
+        };
+        using (var store = new SqliteDownloadTaskStore(new SqliteDownloadTaskStoreOptions(database), new SystemClock()))
+        {
+            var clock = new SystemClock();
+            var history = DownloadHistoryService.CreateForSharedStore(store);
+            using var tasks = new DownloadTaskApplicationService(store, history, clock);
+            using var projections = new DownloadTaskProjectionStore(tasks, history, clock);
+            var writer = new DownloadTaskStateWriter(tasks);
+            await projections.AddDownloadingAsync(item, TestContext.Current.CancellationToken);
+            var id = new DownloadTaskId(item.DownloadBase.Id);
+            await writer.StartAsync(id, TestContext.Current.CancellationToken);
+            var backend = new PausingTransferBackend();
+            var coordinator = new DownloadTransferCoordinator(backend, new DownloadRetryPolicy(),
+                TimeProvider.System, NullLogger<DownloadTransferCoordinator>.Instance);
+            var request = DownloadTransferRequestFactory.Create(id, ["https://media.invalid/file"],
+                _directory, _directory, "media", 100, projections, writer, static () => { },
+                TestContext.Current.CancellationToken);
+
+            var transfer = coordinator.TransferAsync(request,
+                static _ => throw new InvalidOperationException("A pause cannot refresh addresses."),
+                TestContext.Current.CancellationToken);
+            await backend.Started.Task.ConfigureAwait(true);
+            Assert.Equal(60, item.Progress);
+            Assert.Equal(0, projections.GetRequiredSnapshot(id).Progress.Percentage);
+            await writer.PauseAsync(id, TestContext.Current.CancellationToken);
+            Assert.Equal(DownloadTransferOutcome.Paused, (await transfer.ConfigureAwait(true)).Outcome);
+            Assert.True(backend.Stopped);
+            await writer.ConfirmPausedIfPausingAsync(id, TestContext.Current.CancellationToken);
+
+            Assert.Equal(DownloadPhase.Paused, projections.GetRequiredSnapshot(id).Phase);
+            Assert.Equal(60, projections.GetRequiredSnapshot(id).Progress.DownloadedBytes);
+            Assert.Equal(60, item.Progress);
+            Assert.Equal("60 B/100 B", item.DownloadingFileSize);
+        }
+
+        using var reopenedStore = new SqliteDownloadTaskStore(new SqliteDownloadTaskStoreOptions(database), new SystemClock());
+        var reopenedClock = new SystemClock();
+        var reopenedHistory = DownloadHistoryService.CreateForSharedStore(reopenedStore);
+        using var reopenedTasks = new DownloadTaskApplicationService(reopenedStore, reopenedHistory, reopenedClock);
+        using var reopened = new DownloadTaskProjectionStore(reopenedTasks, reopenedHistory, reopenedClock);
+        var startup = await reopened.GetDownloadingStateAsync(TestContext.Current.CancellationToken);
+        var restored = Assert.Single(startup.Projections);
+        Assert.Equal(DownloadStatus.Pause, restored.Downloading.DownloadStatus);
+        Assert.Equal(60, restored.Progress);
+        Assert.Equal("60 B/100 B", restored.DownloadingFileSize);
+    }
+
+    private sealed class PausingTransferBackend : ITransferBackend
+    {
+        public string Name => "pause-checkpoint";
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public bool Stopped { get; private set; }
+
+        public async Task<DownloadTransferResult> TransferAsync(DownloadTransferRequest request)
+        {
+            request.PublishProgress(new DownloadProgress(60, 60, 100, downloadedSizeText: "60 B/100 B"));
+            Started.TrySetResult();
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, request.CancellationToken).ConfigureAwait(false);
+                return DownloadTransferResult.Succeeded();
+            }
+            finally
+            {
+                Stopped = true;
+            }
+        }
+    }
 
     [Fact]
     public async Task AddDownloadingPreservesResumeIdentityFilesAndPausedStateAcrossReopen()

@@ -170,7 +170,9 @@ public sealed partial class DownloadTask
 
     public OperationResult<DownloadTask> Cancel(DateTimeOffset now)
     {
-        return TransitionTo(DownloadPhase.Canceled, now);
+        return Phase == DownloadPhase.Canceled
+            ? OperationResult.Success(this)
+            : TransitionTo(DownloadPhase.Canceled, now);
     }
 
     public OperationResult<DownloadTask> Delete(DateTimeOffset now)

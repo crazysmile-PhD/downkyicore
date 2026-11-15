@@ -269,6 +269,7 @@ internal sealed class DownloadActivityPresenter
             "download.validate.published-missing" => "DownloadFailurePublishedArtifactDetails",
 
             "download.transfer.network"
+            or "download.transfer.slow-source"
             or "download.transfer.timeout"
             or "download.transfer.http-408"
             or "download.transfer.http-server-error"

@@ -363,7 +363,9 @@ public sealed partial class DownloadTaskApplicationService : IDownloadTaskApplic
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(progress);
-        return MutateAsync(taskId, (task, now) => task.UpdateProgressAndTransfer(
+        return MutateAsync(taskId,
+            static task => task.Phase is DownloadPhase.Downloading or DownloadPhase.Pausing,
+            (task, now) => task.UpdateProgressAndTransfer(
             progress,
             CopyTransfer(
                 task.Transfer,

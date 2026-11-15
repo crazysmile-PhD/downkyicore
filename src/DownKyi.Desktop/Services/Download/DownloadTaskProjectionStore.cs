@@ -150,7 +150,9 @@ internal sealed class DownloadTaskProjectionStore : IDisposable
     {
         ArgumentNullException.ThrowIfNull(taskId);
         ArgumentNullException.ThrowIfNull(progress);
-        if (_downloadingProjections.TryGetValue(taskId, out var item))
+        if (_snapshots.TryGetValue(taskId, out var snapshot) &&
+            snapshot.Phase is DownloadPhase.Downloading or DownloadPhase.Pausing &&
+            _downloadingProjections.TryGetValue(taskId, out var item))
         {
             DownloadTaskProjectionMapper.ApplyLiveProgress(progress, item);
         }

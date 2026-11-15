@@ -489,6 +489,11 @@ internal sealed class DownloadOrchestrator : IDownloadRuntime
                     execution.ReportStarted();
                     await _executor.ExecuteAsync(taskId, execution.Token).ConfigureAwait(false);
                 }
+                catch (DownloadPausedException)
+                {
+                    // Pause is confirmed in finally, after the pipeline has drained.
+                    continue;
+                }
                 catch (OperationCanceledException) when (shutdownToken.IsCancellationRequested)
                 {
                     return;
