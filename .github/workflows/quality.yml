@@ -16,8 +16,8 @@ env:
 
 jobs:
   build-test:
-    name: Build and test (windows)
-    runs-on: windows-latest
+    name: Build and test (ubuntu-x64)
+    runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
     timeout-minutes: 20
     steps:
       - name: Checkout
@@ -67,7 +67,7 @@ jobs:
         continue-on-error: true
         uses: $/.github/actions/upload-artifact
         with:
-          name: test-results-windows
+          name: test-results-ubuntu-x64
           path: |
             TestResults/*.trx
             artifacts/test-flight-recorder

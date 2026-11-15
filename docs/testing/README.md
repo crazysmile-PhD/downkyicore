@@ -37,7 +37,7 @@ repository state 的 runner。不要直接新增平行的 `dotnet test` / `vstes
 repository entry。
 
 PR product gate 以 `script/test-solution.ps1 -ProductOnly` 執行目前
-Windows 平台的產品測試；純文件 PR 不執行 .NET。Runner、recorder、process cleanup
+Linux 平台的產品測試；純文件 PR 不執行 .NET。Runner、recorder、process cleanup
 與 test-fixture 自測只在具體修改／調查時使用 `script/test-ci-infrastructure.ps1`。
 `script/ci-infrastructure-test-slices.ps1` 是這些 focused slices 的唯一清單。
 此模式也排除 `ReleaseSafetyRegressionTests`、`ReleasePublicationAssetTests` 與

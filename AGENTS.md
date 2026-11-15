@@ -110,7 +110,7 @@ must not be reported as already implemented.
 
 ## Verification
 
-PR CI runs one Windows build/test job. Full platform and package validation
+PR CI runs one Linux build/test job. Full platform and package validation
 belongs to the tag/manual Build workflow. Use the execution table in
 `docs/operations/verification-and-rollback.md`; a skipped platform or package
 job is expected outside a release.

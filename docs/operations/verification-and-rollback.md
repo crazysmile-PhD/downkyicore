@@ -40,19 +40,19 @@ CI runner、process cleanup 或 recorder 的具體修改可用
 
 | 事件／變更 | 自動執行 |
 | --- | --- |
-| PR 程式、測試、script 或設定變更 | 一個 Windows restore、Release build 與 applicable product tests |
+| PR 程式、測試、script 或設定變更 | 一個 Linux restore、Release build 與 applicable product tests |
 | PR 純 Markdown／文件變更 | 同一個 required job 檢查 changed paths 後成功結束，不啟動 .NET |
 | PR `.github/**` 變更 | 同一個 job 額外執行 actionlint |
 | push 到 main | 不重跑 PR CI |
 | CodeQL／NuGet audit | 每週及手動執行；不作每張 PR 的 required check |
 | `v*` tag／手動 Build | 三平台完整測試、六 RID source build、package validation；只有 tag 發布 |
 
-Required check 僅為 `Build and test (windows)`。文件 PR 仍建立同一個
+Required check 僅為 `Build and test (ubuntu-x64)`。文件 PR 仍建立同一個
 job，因此不會因 workflow path filter 而留下永久 Pending。
 
 PR CI 以 GitHub 的 merge commit 相對第一個 parent 的 diff 判定整張 PR 的變更。
 新 head 取消該 PR 舊的 CI；失敗時才上傳 TRX 與 bounded flight-recorder evidence。
-Linux／macOS 的行為問題延至發布驗收發現，必要時可以提早手動執行 Build。
+Windows／macOS 的行為問題延至發布驗收發現，必要時可以提早手動執行 Build。
 
 不再維護獨立的 CI infrastructure、macOS ad-hoc package、Issue 句型驗證或
 FFmpeg source auto-merge workflow。FFmpeg／appimagetool 更新 PR 不自動啟動完整打包；
