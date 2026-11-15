@@ -95,7 +95,7 @@ internal sealed class ValidateStage : IDownloadPipelineStage
         DownloadExecutionContext context,
         DownloadDanmakuOutputPath output)
     {
-        var key = DownloadArtifactWriter.GetDanmakuTransferKey(output.Kind);
+        var key = DownloadArtifactIdentity.GetDanmakuTransferKey(output.Kind);
         var path = context.PublishedArtifacts.TryGetValue(key, out var published)
             ? published
             : output.File;
@@ -115,7 +115,7 @@ internal sealed class ValidateStage : IDownloadPipelineStage
         }
 
         if (context.DefaultSubtitleFile != null
-            && !context.HasPublished(DownloadArtifactWriter.DefaultSubtitleArtifactKey)
+            && !context.HasPublished(DownloadArtifactIdentity.DefaultSubtitleArtifactKey)
             && !DownloadFileIntegrity.Check(context.DefaultSubtitleFile).IsUsable)
         {
             return false;
@@ -123,7 +123,7 @@ internal sealed class ValidateStage : IDownloadPipelineStage
 
         if (context.Input.RequestedContent.DefaultSubtitleTrackId != null
             && context.DefaultSubtitleFile == null
-            && !context.HasPublished(DownloadArtifactWriter.DefaultSubtitleArtifactKey))
+            && !context.HasPublished(DownloadArtifactIdentity.DefaultSubtitleArtifactKey))
         {
             return false;
         }
@@ -142,7 +142,7 @@ internal sealed class ValidateStage : IDownloadPipelineStage
         long trackId,
         string stagedFile)
     {
-        var artifactKey = DownloadArtifactWriter.GetSubtitleArtifactKey(trackId);
+        var artifactKey = DownloadArtifactIdentity.GetSubtitleArtifactKey(trackId);
         return context.PublishedArtifacts.TryGetValue(artifactKey, out var publishedFile)
                && DownloadFileIntegrity.Check(publishedFile).IsUsable
                || DownloadFileIntegrity.Check(stagedFile).IsUsable;

@@ -9,6 +9,28 @@ public sealed class DownloadAddressResolverTests
     private const string Credentials = "fixture=download-probe";
 
     [Theory]
+    [InlineData(0L, 0L, null)]
+    [InlineData(0L, 65535L, null)]
+    [InlineData(16L, 65535L, "\"version\"")]
+    public void ResolvedHeadersBuildTheSameRequestForProbesAndTransfers(
+        long start, long end, string? ifRange)
+    {
+        var headers = new DownloadRequestHeaders(
+            [$"Cookie: {Credentials}", "Referer: https://www.bilibili.com"],
+            UserAgent, CarriesCredentials: true);
+        using var request = headers.CreateRequest(new Uri("https://www.bilibili.com/media"), start, end, ifRange);
+
+        var range = Assert.Single(request.Headers.Range!.Ranges);
+        Assert.Equal(start, range.From);
+        Assert.Equal(end, range.To);
+        Assert.Equal(ifRange, request.Headers.IfRange?.ToString());
+        Assert.Equal("identity", Assert.Single(request.Headers.AcceptEncoding).Value);
+        Assert.Equal(UserAgent, request.Headers.UserAgent.ToString());
+        Assert.Equal(Credentials, Assert.Single(request.Headers.GetValues("Cookie")));
+        Assert.Equal(new Uri("https://www.bilibili.com"), request.Headers.Referrer);
+    }
+
+    [Theory]
     [InlineData("https://bilibili.com/media", true)]
     [InlineData("https://www.bilibili.com/media", true)]
     [InlineData("https://cdn.example/media", false)]

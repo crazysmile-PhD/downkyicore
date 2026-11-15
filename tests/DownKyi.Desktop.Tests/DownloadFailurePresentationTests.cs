@@ -195,12 +195,12 @@ public sealed class DownloadFailurePresentationTests
             DesktopTestResources.EnsureDownloadProjectionResources();
             var responseDetails = DownloadActivityPresenter.FormatFailureDetails(
                 new DownKyi.Domain.Downloads.DownloadFailure(
-                    DownloadArtifactWriter.SubtitleResponseReadFailureCode,
+                    DownloadArtifactFailure.SubtitleResponseReadFailureCode,
                     "下载失败",
                     true));
             var outputDetails = DownloadActivityPresenter.FormatFailureDetails(
                 new DownKyi.Domain.Downloads.DownloadFailure(
-                    DownloadArtifactWriter.SubtitleOutputWriteFailureCode,
+                    DownloadArtifactFailure.SubtitleOutputWriteFailureCode,
                     "下载失败",
                     true));
 

@@ -217,7 +217,7 @@ internal sealed class DownloadActivityPresenter
             or "download.media.directory"
             or "download.resolve.directory"
             or "download.publish.collision"
-            or DownloadArtifactWriter.SubtitleOutputWriteFailureCode
+            or DownloadArtifactFailure.SubtitleOutputWriteFailureCode
             or "download.transfer.cleanup"
             or "download.transfer.cleanup-failed"
             or "download.transfer.source-change-cleanup"
@@ -276,7 +276,7 @@ internal sealed class DownloadActivityPresenter
             or "download.transfer.resume-rejected"
             or "download.transfer.redirect-limit"
             or "download.transfer.redirect-location-missing"
-            or DownloadArtifactWriter.SubtitleResponseReadFailureCode
+            or DownloadArtifactFailure.SubtitleResponseReadFailureCode
             or "download.artifact.cover.http"
             or "download.artifact.cover.http-408"
             or "download.artifact.cover.http-server-error"
@@ -293,8 +293,8 @@ internal sealed class DownloadActivityPresenter
 
     private static bool IsSubtitleFailureCode(string code)
     {
-        return code is DownloadArtifactWriter.SubtitleResponseReadFailureCode
-            or DownloadArtifactWriter.SubtitleOutputWriteFailureCode
+        return code is DownloadArtifactFailure.SubtitleResponseReadFailureCode
+            or DownloadArtifactFailure.SubtitleOutputWriteFailureCode
             or "download.artifact.subtitle.http"
             or "download.artifact.subtitle.http-401"
             or "download.artifact.subtitle.http-403"

@@ -113,6 +113,7 @@ flowchart LR
 ### Artifact 與完成邊界
 
 - 來源、partial、resume sidecar 與 completed key 在所有必要 stage 通過前都是 retry checkpoint。Artifact、mux、validation、cancellation 或 durable completion 失敗都必須保留。
+- `DownloadArtifactWriter` 是產物操作入口；字幕、彈幕與 NFO 的協定／轉換／寫入各由專用 writer 負責，封面留在入口。所有 writer 共用既有 state writer 的 durable claims；`DownloadArtifactIdentity` 擁有 transfer／artifact key 格式，`DownloadArtifactFailure` 擁有共用錯誤分類，不建立額外 registry 或 DI 模組。
 - `DownloadOutputLayout` 是 media、subtitle、danmaku、NFO、cover 邏輯輸出路徑與 file-family mapping 的唯一 owner；stage 與 physical path resolver 擁有 I/O、完整性、發布與實體 identity，不得各自複製 suffix／image 規則表。
 - 無效 transfer artifact 必須先完成實體清理，才能撤銷其 completed key。同一 key 的所有 artifact 都清理成功才可更新 durable state；任何清理失敗都保留 completed evidence 並 fail closed。
 - FFmpeg 只能發布已驗證輸出，且不得因一般非零 exit code 推定來源損壞。只有 fail-on-error decode 的明確證據才可撤銷對應 completed key、identity 與 source。
@@ -132,7 +133,7 @@ flowchart LR
 - 每個 range response 必須精確符合要求的 `206 Content-Range`、總長度與 resource identity；任何 mismatch 都 fail closed 為 `ResumeRejected`。
 - Range ledger 是續傳的唯一真相。完成前所有區間必須無重疊、無缺口且各自到達終點，才可將 `.download` 原子邊界移成完成檔。
 - Range worker 可對慢分片進行一次受控的 speculative execution：同 URL、相同 strong validator、精確 Content-Range；每個 transfer 同時最多一個備份 Range、最多 20 MiB 記憶體。備份先在私有記憶體完整接收及驗證，只有停止並 join 原 writer 後才能寫入 ledger 對應區間；progress 只計算首次提交的 bytes。備份 transport failure 不撤銷可用 primary，任何 resource identity mismatch 必須 fail closed。沒有 validator 的傳輸不猜測資源相同，保留單 Range 並以整個 attempt 安全切換來源。
-- Checkpoint 由單一有界背景 loop 寫入既有 resume 格式，不阻塞每次 network read；worker 與 checkpoint task 必須一起停止，checkpoint failure 取消 workers。File mapping、resume metadata、completed keys 與既有 publication journal 保持唯一 owner，不建立第二個 download DB 或 path registry。
+- `BuiltinRangeDownloader` 以單一 observer 處理分片備份與每秒 checkpoint，共用 worker cancellation 及一個 timer；observer 完成後才保存最後 checkpoint 或關閉檔案。`BuiltinRangeCheckpoint` 封裝既有 partial-file JSON trailer 的讀寫、大小限制及 range-plan 驗證；它不排程、不重試、不決定是否可續傳。Checkpoint failure 取消並 await workers，不以第二個 loop 或 semaphore 建立平行生命週期。File mapping、resume metadata、completed keys 與既有 publication journal 保持唯一 owner，不建立第二個 download DB 或 path registry。
 
 ## Layer rules
 

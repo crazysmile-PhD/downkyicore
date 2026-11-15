@@ -3,6 +3,11 @@ namespace DownKyi.Architecture.Tests;
 public sealed class DownloadRuntimeArchitectureTests
 {
     private static readonly string RepositoryRoot = FindRepositoryRoot();
+    private static readonly string[] sourceArray = new[]
+        {
+            "DownloadArtifactWriter.cs", "DownloadDanmakuWriter.cs",
+            "DownloadSubtitleWriter.cs", "DownloadMetadataWriter.cs"
+        };
 
     [Fact]
     public void DownloadRuntimeDoesNotUseSynchronousAsyncWaits()
@@ -159,7 +164,7 @@ public sealed class DownloadRuntimeArchitectureTests
         var directory = Path.Combine(RepositoryRoot, "src", "DownKyi.Desktop", "Services", "Download");
         var pipelineSource = File.ReadAllText(Path.Combine(directory, "DownloadPipeline.cs"))
             .Replace("\r\n", "\n", StringComparison.Ordinal);
-        var artifactSource = File.ReadAllText(Path.Combine(directory, "DownloadArtifactWriter.cs"));
+        var artifactSource = string.Join("\n", sourceArray.Select(file => File.ReadAllText(Path.Combine(directory, file))));
         var artifactStageSource = File.ReadAllText(Path.Combine(
             directory,
             "DownloadArtifactsStage.cs"));
@@ -174,7 +179,7 @@ public sealed class DownloadRuntimeArchitectureTests
         Assert.DoesNotContain("UpdateDownloadingAsync", pipelineSource, StringComparison.Ordinal);
         Assert.DoesNotContain("Microsoft.Data.Sqlite", pipelineSource, StringComparison.Ordinal);
 
-        Assert.Contains("_client.GetSubtitleSelectionAsync", artifactSource, StringComparison.Ordinal);
+        Assert.Contains("client.GetSubtitleSelectionAsync", artifactSource, StringComparison.Ordinal);
         Assert.Contains("new BilibiliDanmakuConverter()", artifactSource, StringComparison.Ordinal);
         Assert.Contains("XmlWriter.Create", artifactSource, StringComparison.Ordinal);
         Assert.Contains("DownloadArtifactWriter _artifactWriter", artifactStageSource, StringComparison.Ordinal);
@@ -271,6 +276,9 @@ public sealed class DownloadRuntimeArchitectureTests
             "DownloadOrchestrator.cs",
             "DownloadPipeline.cs",
             "DownloadArtifactWriter.cs",
+            "DownloadDanmakuWriter.cs",
+            "DownloadSubtitleWriter.cs",
+            "DownloadMetadataWriter.cs",
             "DownloadTaskStateWriter.cs",
             "BuiltinTransferBackend.cs",
             "DownloadDiagnosticLogger.cs"
@@ -455,6 +463,9 @@ public sealed class DownloadRuntimeArchitectureTests
             "DownloadMediaStage.cs",
             "DownloadArtifactsStage.cs",
             "DownloadArtifactWriter.cs",
+            "DownloadDanmakuWriter.cs",
+            "DownloadSubtitleWriter.cs",
+            "DownloadMetadataWriter.cs",
             "MuxStage.cs",
             "ValidateStage.cs",
             "FinalizeStage.cs"
@@ -788,7 +799,7 @@ public sealed class DownloadRuntimeArchitectureTests
         var outputResolver = File.ReadAllText(Path.Combine(directory, "DownloadOutputPathResolver.cs"));
         var executionContext = File.ReadAllText(Path.Combine(directory, "DownloadExecutionContext.cs"));
         var artifactStage = File.ReadAllText(Path.Combine(directory, "DownloadArtifactsStage.cs"));
-        var artifactWriter = File.ReadAllText(Path.Combine(directory, "DownloadArtifactWriter.cs"));
+        var artifactWriter = File.ReadAllText(Path.Combine(directory, "DownloadSubtitleWriter.cs"));
         var muxStage = File.ReadAllText(Path.Combine(directory, "MuxStage.cs"));
         var actionSummary = File.ReadAllText(Path.Combine(directory, "DownloadActionExecutionSummary.cs"));
         var validateStage = File.ReadAllText(Path.Combine(directory, "ValidateStage.cs"));

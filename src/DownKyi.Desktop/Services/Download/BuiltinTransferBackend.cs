@@ -164,8 +164,7 @@ internal sealed partial class BuiltinTransferBackend : ITransferBackend, IDownlo
                 _logger,
                 networkReadStateChanged: request.NetworkReadStateChanged,
                 networkBytesReceived: request.NetworkBytesReceived,
-                schedulingPolicy: request.RangeSchedulingPolicy,
-                timeProvider: _clock,
+                schedulingPolicy: request.RangeSchedulingPolicy ?? new BuiltinRangeSchedulingPolicy(_clock),
                 disposeHandler: false,
                 bandwidthLimiter: bandwidthLease,
                 planCreated: chunkCount => _diagnosticLogger.LogBuiltInTaskStart(

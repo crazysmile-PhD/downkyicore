@@ -3,8 +3,16 @@ using System.Globalization;
 
 namespace DownKyi.Services.Download;
 
-internal sealed partial class DownloadArtifactWriter
+internal static class DownloadArtifactIdentity
 {
+    internal static string GetDanmakuTransferKey(DownloadDanmakuOutputKind kind) =>
+        kind switch
+        {
+            DownloadDanmakuOutputKind.Ass => DanmakuAssTransferKey,
+            DownloadDanmakuOutputKind.Xml => DanmakuXmlTransferKey,
+            _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null)
+        };
+
     internal const string MainCoverTransferKey = "cover";
     internal const string PageCoverTransferKey = "page-cover";
     internal const string DefaultSubtitleTransferKey = "subtitle";

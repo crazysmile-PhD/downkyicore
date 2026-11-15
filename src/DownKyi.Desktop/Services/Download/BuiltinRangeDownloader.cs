@@ -5,11 +5,9 @@ using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.Http;
-using System.Net.Http.Headers;
 using System.Runtime.ExceptionServices;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Diagnostics;
@@ -29,12 +27,6 @@ internal sealed class BuiltinRangeDownloader : IDisposable
     internal static readonly TimeSpan DefaultReadStallTimeout = TimeSpan.FromSeconds(60);
 
     private const int BufferSize = 256 * 1024;
-    private const int MaximumResumeMetadataBytes = 4 * 1024 * 1024;
-    private static readonly JsonSerializerOptions ResumeJsonOptions = new()
-    {
-        PropertyNameCaseInsensitive = true
-    };
-
     private readonly Uri _address;
     private readonly HttpMessageInvoker _http;
     private readonly DownloadRequestHeaders _headers;
@@ -47,7 +39,6 @@ internal sealed class BuiltinRangeDownloader : IDisposable
     private readonly TimeSpan _readStallTimeout;
     private readonly long _segmentSize;
     private readonly DownloadBandwidthLimiter.TransferLease? _bandwidthLimiter;
-    private readonly SemaphoreSlim _checkpointGate = new(1, 1);
     private readonly BuiltinRangeSchedulingPolicy _schedulingPolicy;
     private TimeProvider Clock => _schedulingPolicy.Clock;
     private bool _disposed;
@@ -65,9 +56,7 @@ internal sealed class BuiltinRangeDownloader : IDisposable
         DownloadBandwidthLimiter.TransferLease? bandwidthLimiter = null,
         Action<int>? planCreated = null,
         Action<bool>? networkReadStateChanged = null,
-        TimeSpan? hedgeDelay = null,
         Action<int>? networkBytesReceived = null,
-        TimeProvider? timeProvider = null,
         BuiltinRangeSchedulingPolicy? schedulingPolicy = null)
     {
         ArgumentNullException.ThrowIfNull(handler);
@@ -80,7 +69,7 @@ internal sealed class BuiltinRangeDownloader : IDisposable
         _planCreated = planCreated;
         _networkReadStateChanged = networkReadStateChanged;
         _networkBytesReceived = networkBytesReceived;
-        _schedulingPolicy = schedulingPolicy ?? new BuiltinRangeSchedulingPolicy(timeProvider ?? TimeProvider.System, hedgeDelay);
+        _schedulingPolicy = schedulingPolicy ?? new BuiltinRangeSchedulingPolicy(TimeProvider.System);
         _parallelCount = parallelCount;
         _segmentSize = segmentSize;
         _bandwidthLimiter = bandwidthLimiter;
@@ -165,22 +154,20 @@ internal sealed class BuiltinRangeDownloader : IDisposable
             BufferSize,
             FileOptions.Asynchronous | FileOptions.RandomAccess);
         await using var storageLifetime = storage.ConfigureAwait(false);
-        Exception? primaryFailure = null;
         try
         {
-            receivedBytes = await DownloadWithCheckpointsAsync(
+            receivedBytes = await DownloadPendingChunksAsync(
                 storage,
                 state,
                 probe.SupportsRanges,
                 receivedBytes,
                 cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception exception)
+        catch
         {
-            primaryFailure = exception;
             try
             {
-                await SaveCheckpointAsync(storage, state, CancellationToken.None)
+                await BuiltinRangeCheckpoint.WriteAsync(storage, state, CancellationToken.None)
                     .ConfigureAwait(false);
             }
             catch (Exception checkpointException) when (checkpointException is IOException
@@ -191,7 +178,6 @@ internal sealed class BuiltinRangeDownloader : IDisposable
                     $"transfer failure; type={checkpointException.GetType().Name}.");
             }
 
-            ExceptionDispatchInfo.Capture(primaryFailure).Throw();
             throw;
         }
 
@@ -436,37 +422,8 @@ internal sealed class BuiltinRangeDownloader : IDisposable
             BufferSize,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
         await using var streamLifetime = stream.ConfigureAwait(false);
-        var metadataLength = stream.Length - totalBytes;
-        if (metadataLength <= 0 || metadataLength > MaximumResumeMetadataBytes)
-        {
-            throw new BuiltinResumeRejectedException(
-                "The built-in partial file has no valid resume metadata.");
-        }
-
-        var metadata = new byte[checked((int)metadataLength)];
-        stream.Position = totalBytes;
-        await stream.ReadExactlyAsync(metadata, cancellationToken).ConfigureAwait(false);
-        BuiltinRangeResumeDocument? document;
-        try
-        {
-            document = JsonSerializer.Deserialize<BuiltinRangeResumeDocument>(
-                metadata,
-                ResumeJsonOptions);
-        }
-        catch (JsonException exception)
-        {
-            throw new BuiltinResumeRejectedException(
-                "The built-in resume metadata is malformed.",
-                exception);
-        }
-
-        if (document == null
-            || document.TotalFileSize != totalBytes
-            || !TryValidateChunks(document.Chunks, totalBytes, out var chunks))
-        {
-            throw new BuiltinResumeRejectedException(
-                "The built-in resume metadata does not match the media file.");
-        }
+        var (chunks, persistedIdentity) = await BuiltinRangeCheckpoint.ReadAsync(
+            stream, totalBytes, cancellationToken).ConfigureAwait(false);
 
         var hasResumedBytes = chunks.Any(static chunk => chunk.Position > 0);
         if (!supportsRanges && (hasResumedBytes || chunks.Length != 1))
@@ -477,7 +434,7 @@ internal sealed class BuiltinRangeDownloader : IDisposable
 
         if (hasResumedBytes)
         {
-            var continuity = document.ResourceIdentity?.CompareContinuity(resourceIdentity)
+            var continuity = persistedIdentity?.CompareContinuity(resourceIdentity)
                 ?? BuiltinRangeContinuity.Unavailable;
             switch (continuity)
             {
@@ -491,7 +448,7 @@ internal sealed class BuiltinRangeDownloader : IDisposable
                         stream,
                         chunks,
                         totalBytes,
-                        document.ResourceIdentity,
+                        persistedIdentity,
                         resourceIdentity,
                         cancellationToken).ConfigureAwait(false);
                     break;
@@ -713,11 +670,6 @@ internal sealed class BuiltinRangeDownloader : IDisposable
                             },
                             workersCancellation.Token).ConfigureAwait(false);
                     }
-                    catch (OperationCanceledException) when (
-                        workersCancellation.IsCancellationRequested && firstFailure != null)
-                    {
-                        throw;
-                    }
                     catch (Exception exception)
                     {
                         Interlocked.CompareExchange(
@@ -732,7 +684,7 @@ internal sealed class BuiltinRangeDownloader : IDisposable
             .ToArray();
 
         var completion = Task.WhenAll(workers);
-        var scheduler = ScheduleRangesAsync(state, completion, workersCancellation);
+        var observer = ObserveTransferAsync(storage, state, completion, workersCancellation);
         try
         {
             await completion.ConfigureAwait(false);
@@ -747,7 +699,7 @@ internal sealed class BuiltinRangeDownloader : IDisposable
         {
             try
             {
-                await scheduler.ConfigureAwait(false);
+                await observer.ConfigureAwait(false);
             }
             finally
             {
@@ -758,10 +710,12 @@ internal sealed class BuiltinRangeDownloader : IDisposable
         return receivedBytes;
     }
 
-    private async Task ScheduleRangesAsync(BuiltinRangeResumeState state, Task workers, CancellationTokenSource lifetime)
+    private async Task ObserveTransferAsync(
+        FileStream storage, BuiltinRangeResumeState state, Task workers, CancellationTokenSource lifetime)
     {
         var cancellationToken = lifetime.Token;
         using var timer = new PeriodicTimer(_schedulingPolicy.PollInterval, Clock);
+        var lastCheckpoint = Clock.GetTimestamp();
         try
         {
             while (!workers.IsCompleted)
@@ -772,6 +726,12 @@ internal sealed class BuiltinRangeDownloader : IDisposable
                 }
 
                 cancellationToken.ThrowIfCancellationRequested();
+                if (Clock.GetElapsedTime(lastCheckpoint) >= TimeSpan.FromSeconds(1))
+                {
+                    await BuiltinRangeCheckpoint.WriteAsync(storage, state, cancellationToken).ConfigureAwait(false);
+                    lastCheckpoint = Clock.GetTimestamp();
+                }
+
                 var samples = state.Chunks.Select(static chunk => chunk.Activity)
                     .Where(static activity => activity != null).Select(static activity => activity!.Sample()).ToArray();
                 var hedge = _schedulingPolicy.TryReserve(samples, _bandwidthLimiter?.IsLimited == true);
@@ -784,7 +744,7 @@ internal sealed class BuiltinRangeDownloader : IDisposable
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             // Workers own the cancellation/failure result; this observer joins them.
-            _logger.LogDebugMessage("Range scheduler acknowledged worker cancellation.");
+            _logger.LogDebugMessage("Range observer acknowledged worker cancellation.");
         }
         catch
         {
@@ -1176,131 +1136,9 @@ internal sealed class BuiltinRangeDownloader : IDisposable
         }
     }
 
-    private async Task<long> DownloadWithCheckpointsAsync(
-        FileStream storage,
-        BuiltinRangeResumeState state,
-        bool supportsRanges,
-        long initialReceivedBytes,
-        CancellationToken cancellationToken)
-    {
-        var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var workers = DownloadPendingChunksAsync(storage, state, supportsRanges,
-            initialReceivedBytes, lifetime.Token);
-        var checkpoints = CheckpointLoopAsync(storage, state, workers, lifetime);
-        try
-        {
-            return await workers.ConfigureAwait(false);
-        }
-        finally
-        {
-            try
-            {
-                await checkpoints.ConfigureAwait(false);
-            }
-            finally
-            {
-                lifetime.Dispose();
-            }
-        }
-    }
-
-    private async Task CheckpointLoopAsync(
-        FileStream storage, BuiltinRangeResumeState state, Task workers, CancellationTokenSource lifetime)
-    {
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1), Clock);
-        try
-        {
-            while (!workers.IsCompleted)
-            {
-                if (await Task.WhenAny(workers, timer.WaitForNextTickAsync(lifetime.Token).AsTask())
-                        .ConfigureAwait(false) == workers)
-                {
-                    break;
-                }
-
-                lifetime.Token.ThrowIfCancellationRequested();
-                await SaveCheckpointAsync(storage, state, lifetime.Token).ConfigureAwait(false);
-            }
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-        {
-            // A failed durable checkpoint terminates its workers; it cannot leave
-            // an unobserved background failure or outlive the shared file handle.
-            await lifetime.CancelAsync().ConfigureAwait(false);
-            throw;
-        }
-    }
-
-    private async Task SaveCheckpointAsync(
-        FileStream storage,
-        BuiltinRangeResumeState state,
-        CancellationToken cancellationToken)
-    {
-        await _checkpointGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            var document = new BuiltinRangeResumeDocument(
-                state.TotalBytes,
-                state.Chunks.Select(static chunk => new BuiltinRangeResumeChunk(
-                    chunk.Start,
-                    chunk.End,
-                    chunk.Position)).ToArray(),
-                state.ResourceIdentity);
-            var metadata = JsonSerializer.SerializeToUtf8Bytes(document, ResumeJsonOptions);
-            if (metadata.Length > MaximumResumeMetadataBytes)
-            {
-                throw new IOException("The built-in resume metadata exceeded its safety limit.");
-            }
-
-            await storage.FlushAsync(cancellationToken).ConfigureAwait(false);
-            storage.SetLength(state.TotalBytes);
-            await RandomAccess.WriteAsync(
-                storage.SafeFileHandle,
-                metadata,
-                state.TotalBytes,
-                cancellationToken).ConfigureAwait(false);
-            storage.SetLength(checked(state.TotalBytes + metadata.Length));
-            await storage.FlushAsync(cancellationToken).ConfigureAwait(false);
-        }
-        finally
-        {
-            _checkpointGate.Release();
-        }
-    }
-
     private HttpRequestMessage CreateRequest(
-        long? rangeStart,
-        long? rangeEnd,
-        string? ifRange = null)
-    {
-        var request = new HttpRequestMessage(HttpMethod.Get, _address);
-        if (rangeStart.HasValue)
-        {
-            request.Headers.Range = new RangeHeaderValue(rangeStart, rangeEnd);
-            if (!string.IsNullOrWhiteSpace(ifRange))
-            {
-                request.Headers.TryAddWithoutValidation("If-Range", ifRange);
-            }
-        }
-
-        request.Headers.AcceptEncoding.ParseAdd("identity");
-        request.Headers.TryAddWithoutValidation("User-Agent", _headers.UserAgent);
-        foreach (var header in _headers.Headers)
-        {
-            var separator = header.IndexOf(':', StringComparison.Ordinal);
-            if (separator <= 0)
-            {
-                request.Dispose();
-                throw new InvalidOperationException("A built-in download header is malformed.");
-            }
-
-            request.Headers.TryAddWithoutValidation(
-                header[..separator],
-                header[(separator + 1)..].TrimStart());
-        }
-
-        return request;
-    }
+        long? rangeStart, long? rangeEnd, string? ifRange = null) =>
+        _headers.CreateRequest(_address, rangeStart, rangeEnd, ifRange);
 
     private void ValidateChunkResponse(
         HttpResponseMessage response,
@@ -1390,51 +1228,6 @@ internal sealed class BuiltinRangeDownloader : IDisposable
         throw new BuiltinHttpStatusException(response.StatusCode, retryAfter);
     }
 
-    private static bool TryValidateChunks(
-        BuiltinRangeResumeChunk[]? serializedChunks,
-        long totalBytes,
-        out BuiltinRangeChunk[] chunks)
-    {
-        chunks = [];
-        if (serializedChunks is not { Length: > 0 })
-        {
-            return false;
-        }
-
-        var validated = new BuiltinRangeChunk[serializedChunks.Length];
-        var expectedStart = 0L;
-        for (var index = 0; index < serializedChunks.Length; index++)
-        {
-            var serialized = serializedChunks[index];
-            if (serialized.Start != expectedStart
-                || serialized.End < serialized.Start
-                || serialized.End >= totalBytes)
-            {
-                return false;
-            }
-
-            var length = checked(serialized.End - serialized.Start + 1);
-            if (serialized.Position < 0 || serialized.Position > length)
-            {
-                return false;
-            }
-
-            validated[index] = new BuiltinRangeChunk(
-                serialized.Start,
-                serialized.End,
-                serialized.Position);
-            expectedStart = checked(serialized.End + 1);
-        }
-
-        if (expectedStart != totalBytes)
-        {
-            return false;
-        }
-
-        chunks = validated;
-        return true;
-    }
-
     public void Dispose()
     {
         if (_disposed)
@@ -1444,7 +1237,6 @@ internal sealed class BuiltinRangeDownloader : IDisposable
 
         _disposed = true;
         _http.Dispose();
-        _checkpointGate.Dispose();
     }
 }
 
@@ -1481,13 +1273,6 @@ internal sealed record BuiltinRangeResumeState(
     long TotalBytes,
     BuiltinRangeChunk[] Chunks,
     BuiltinRangeResourceIdentity ResourceIdentity);
-
-internal sealed record BuiltinRangeResumeDocument(
-    long TotalFileSize,
-    BuiltinRangeResumeChunk[] Chunks,
-    BuiltinRangeResourceIdentity? ResourceIdentity = null);
-
-internal sealed record BuiltinRangeResumeChunk(long Start, long End, long Position);
 
 internal sealed record BuiltinRangeResourceIdentity(
     string? AddressHash,
