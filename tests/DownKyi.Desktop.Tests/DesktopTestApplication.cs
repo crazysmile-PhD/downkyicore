@@ -20,5 +20,9 @@ internal static class DesktopTestApplication
 
     private sealed class TestApplication : Avalonia.Application
     {
+        public override void Initialize()
+        {
+            DesktopTestResources.EnsureDownloadProjectionResources();
+        }
     }
 }
