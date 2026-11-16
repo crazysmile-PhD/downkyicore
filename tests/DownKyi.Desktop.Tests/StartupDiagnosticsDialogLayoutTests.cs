@@ -132,7 +132,7 @@ public sealed class StartupDiagnosticsDialogLayoutTests
             NullLogger<UpgradingDialogViewModel>.Instance);
         await using var viewModelScope = viewModel.ConfigureAwait(true);
         viewModel.OnDialogOpened(new AppDialogRequest(AppDialog.LegacyUpgrade));
-        var view = new ViewUpgradingDialog { DataContext = viewModel };
+        var view = new UpgradingDialog { DataContext = viewModel };
         var window = new Window { Content = view };
 
         try

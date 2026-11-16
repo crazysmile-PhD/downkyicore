@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Presenters;
 using Avalonia.Headless;
 using Avalonia.Input;
 using Avalonia.Media;
@@ -1154,6 +1155,7 @@ public sealed class UiSmokeTests
                     .GetRequiredService<IAppNavigationService>()
                     .Navigate(new AppNavigationRequest(AppRoute.Index, Parameter: "smoke"));
 
+                await AssertEveryTypedInteractionHasPresentationAsync(host.Services).ConfigureAwait(true);
                 Assert.NotNull(DesktopApplication.BuildAvaloniaApp());
                 AssertPrismRuntimeIsNotLoaded();
             }
@@ -1390,6 +1392,46 @@ public sealed class UiSmokeTests
         window.MouseDown(point.Value, MouseButton.Left, modifiers);
         window.MouseUp(point.Value, MouseButton.Left, modifiers);
         window.UpdateLayout();
+    }
+
+    private static async Task AssertEveryTypedInteractionHasPresentationAsync(IServiceProvider services)
+    {
+        // Load compiled production templates without running App.Initialize or starting a second Host.
+        var presentation = new App();
+        await using var presentationScope = presentation.ConfigureAwait(true);
+        presentation.LoadPresentation();
+        var application = Avalonia.Application.Current!;
+        var resources = presentation.Resources;
+        presentation.Resources = new ResourceDictionary();
+        application.Resources.MergedDictionaries.Add(resources);
+        try
+        {
+            var navigationFactory = services.GetRequiredService<NavigationViewModelFactory>();
+            foreach (var route in Enum.GetValues<AppRoute>())
+            {
+                var viewModel = Assert.IsAssignableFrom<ViewModelBase>(navigationFactory.Create(route));
+                Assert.NotSame(viewModel, navigationFactory.Create(route));
+                var template = Assert.Single(presentation.DataTemplates, candidate => candidate.Match(viewModel));
+                var presenter = new ContentPresenter { ContentTemplate = template, Content = viewModel };
+                presenter.UpdateChild();
+                var view = Assert.IsAssignableFrom<UserControl>(presenter.Child);
+                Assert.Same(viewModel, view.DataContext);
+            }
+
+            var dialogFactory = services.GetRequiredService<DialogContentFactory>();
+            foreach (var dialog in Enum.GetValues<AppDialog>())
+            {
+                var first = dialogFactory.Create(dialog);
+                var second = dialogFactory.Create(dialog);
+                Assert.NotSame(first.Content, second.Content);
+                Assert.NotSame(first.ViewModel, second.ViewModel);
+                first.Content.DataContext = first.ViewModel;
+            }
+        }
+        finally
+        {
+            application.Resources.MergedDictionaries.Remove(resources);
+        }
     }
 
     private static async ValueTask DisposeHostAsync(IHost host)

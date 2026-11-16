@@ -25,7 +25,7 @@ public sealed class AvaloniaDialogServiceTests
         services.AddSingleton<IApplicationLifecycle>(new ApplicationLifecycleStub());
         services.AddSingleton<ILogger<UpgradingDialogViewModel>>(
             NullLogger<UpgradingDialogViewModel>.Instance);
-        services.AddTransient<ViewUpgradingDialog>();
+        services.AddTransient<UpgradingDialog>();
         services.AddTransient<UpgradingDialogViewModel>();
         var provider = services.BuildServiceProvider();
         await using var providerScope = provider.ConfigureAwait(true);

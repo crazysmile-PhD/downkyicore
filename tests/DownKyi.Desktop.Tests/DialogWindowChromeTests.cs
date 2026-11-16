@@ -30,9 +30,9 @@ public sealed class DialogWindowChromeTests
         DesktopTestResources.EnsureProductThemeResources();
         var cases = new DialogCase[]
         {
-            new(new ViewAlertDialog(), HasCloseButton: true, UsesTwoColumns: true),
-            new(new ViewDownloadSetter(), HasCloseButton: true, UsesTwoColumns: false),
-            new(new ViewUpgradingDialog(), HasCloseButton: true, UsesTwoColumns: true),
+            new(new AlertDialog(), HasCloseButton: true, UsesTwoColumns: true),
+            new(new DownloadSetterDialog(), HasCloseButton: true, UsesTwoColumns: false),
+            new(new UpgradingDialog(), HasCloseButton: true, UsesTwoColumns: true),
             new(new StartupDiagnosticsDialog(), HasCloseButton: true, UsesTwoColumns: true),
             new(new NewVersionAvailableDialog(), HasCloseButton: true, UsesTwoColumns: false)
         };
@@ -96,7 +96,7 @@ public sealed class DialogWindowChromeTests
         var originalTheme = application.RequestedThemeVariant;
         var cases = new (Control View, string PrimaryName, string SecondaryName)[]
         {
-            (new ViewAlertDialog(), "ConfirmAlertButton", "CancelAlertButton"),
+            (new AlertDialog(), "ConfirmAlertButton", "CancelAlertButton"),
             (new DownloadContentConflictDialog(), "UseAvailableContentButton", "SkipDownloadPageButton"),
             (new DownloadDuplicateBatchDialog(), "RedownloadDuplicateBatchButton", "SkipDuplicateBatchButton"),
             (new DownloadUnavailableBatchDialog(), "SkipUnavailableBatchButton", "CancelUnavailableBatchButton")

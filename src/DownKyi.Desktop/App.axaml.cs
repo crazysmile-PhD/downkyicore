@@ -53,7 +53,7 @@ internal partial class App : Avalonia.Application, IAsyncDisposable
         }
 #endif
 
-        AvaloniaXamlLoader.Load(this);
+        LoadPresentation();
         CreateHost();
         AttachUnhandledExceptionLogging();
         _logger?.LogInformationMessage(
@@ -64,6 +64,11 @@ internal partial class App : Avalonia.Application, IAsyncDisposable
                 _logProvider.FlushAsync(CancellationToken.None),
                 "Application initialization log flush failed.");
         }
+    }
+
+    internal void LoadPresentation()
+    {
+        AvaloniaXamlLoader.Load(this);
     }
 
     public override void OnFrameworkInitializationCompleted()

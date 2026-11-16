@@ -4,9 +4,9 @@ using Avalonia.Markup.Xaml;
 
 namespace DownKyi.Views.Dialogs;
 
-internal partial class ViewAlertDialog : UserControl
+internal partial class AlertDialog : UserControl
 {
-    public ViewAlertDialog()
+    public AlertDialog()
     {
         InitializeComponent();
     }

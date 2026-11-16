@@ -28,7 +28,7 @@ public sealed class DownloadSettingsDialogLayoutTests
         using var fixture = new ViewModelFixture(downloadSubtitle: false);
         var viewModel = fixture.CreateViewModel();
         viewModel.OnDialogOpened(CreateRequest());
-        var view = new ViewDownloadSetter { DataContext = viewModel };
+        var view = new DownloadSetterDialog { DataContext = viewModel };
         var window = new DialogWindow
         {
             Width = 680,
@@ -112,7 +112,7 @@ public sealed class DownloadSettingsDialogLayoutTests
         using var fixture = new ViewModelFixture(downloadSubtitle: true);
         var viewModel = fixture.CreateViewModel();
         viewModel.OnDialogOpened(CreateRequest(subtitleCount: 10));
-        var view = new ViewDownloadSetter { DataContext = viewModel };
+        var view = new DownloadSetterDialog { DataContext = viewModel };
         var window = new DialogWindow
         {
             Width = 670,
@@ -175,7 +175,7 @@ public sealed class DownloadSettingsDialogLayoutTests
         using var fixture = new ViewModelFixture(downloadSubtitle: false);
         var viewModel = fixture.CreateViewModel();
         viewModel.OnDialogOpened(DownloadSettingsDialog.CreateRequest([]));
-        var view = new ViewDownloadSetter { DataContext = viewModel };
+        var view = new DownloadSetterDialog { DataContext = viewModel };
         var window = new DialogWindow { Content = view, DataContext = viewModel, Width = 480, Height = 420, SizeToContent = SizeToContent.Manual };
 
         try
@@ -209,7 +209,7 @@ public sealed class DownloadSettingsDialogLayoutTests
         var longDirectory = "C:\\Videos\\" + string.Join("\\", Enumerable.Repeat("LongDownloadDirectory", 12));
         viewModel.DirectoryList.Add(longDirectory);
         viewModel.Directory = longDirectory;
-        var view = new ViewDownloadSetter { DataContext = viewModel };
+        var view = new DownloadSetterDialog { DataContext = viewModel };
         var window = new DialogWindow { Content = view, SizeToContent = SizeToContent.Manual, Width = 680, Height = 640 };
         try
         {

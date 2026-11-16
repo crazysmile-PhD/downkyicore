@@ -24,6 +24,8 @@ ViewModel 採用 `<概念>ViewModel`，例如 `LoginViewModel`，檔名與型別
 `NetworkViewModel.State.cs`。View 與 ViewModel 的關係由既有 Avalonia
 DataTemplate 和 typed factory 明確指定，不另加依名稱猜測型別的 locator。
 保留能區分領域、協定與 UI projection 的名稱，不能只為縮短檔名而製造歧義。
+對話框 View 位於 `Views/Dialogs`，以 `<概念>Dialog` 命名，例如
+`AlertDialog`、`DownloadSetterDialog`；不再疊加 `View` 前綴。
 
 下載模組位於 `src/DownKyi.Desktop/Services/Download`：`Planning` 保存準備、
 選擇與 admission，`Transfer` 保存 HTTP 傳輸、續傳與換來源，`Artifacts` 保存
@@ -57,6 +59,13 @@ flowchart TD
 Prism、DryIoc、EventAggregator、RegionManager、ContainerLocator、第二個 router／container 或 service locator 都不得重新引入。否則會產生平行生命週期、導航狀態或依賴解析 owner。
 
 ## Composition 與外部協定
+
+Navigation／Dialog 的 enum-to-type mapping 分別只由既有 typed factory 擁有；
+`DesktopInteractionComposition` 枚舉 typed identities，從 factory 取得型別並註冊為
+transient，不再手寫第二份 DI 型別清單。頁面的 ViewModel-to-View mapping 仍由
+`App.axaml` DataTemplates 擁有。Real Host smoke 枚舉全部 route 與 dialog，驗證
+解析、transient instance isolation，以及每個 route 恰有一個可建立的 production
+template；不以字串命名慣例、assembly scanning 或第二個 registry 推測對應關係。
 
 Desktop composition root 只選擇模組；Navigation／Dialog／Download 的實作、生命週期和多介面 alias 由各自 local composition 接合。`DownKyiHost` 預設仍驗證必要依賴與 lifetime；Release 產品啟動只解析當下路徑所需服務，完整 composition 由測試驗證。主視窗先顯示不含功能狀態的最小 shell，第一幀後才解析 `MainWindowViewModel` 並導向首頁；這只縮短 first-visible path，不改變 navigation、diagnostic 或 readiness 的 owner。這些驗證仍不能取代產品組裝與行為測試。
 

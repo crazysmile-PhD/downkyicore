@@ -69,7 +69,7 @@ public sealed class DialogResponsiveLayoutTests
                     new DownloadQualitySubstitutions(new DownloadQualitySubstitution(80, "1080P 高清", 64, "720P 高清"), null)))).ToArray())));
         var cases = new (Control View, BaseDialogViewModel ViewModel, string Confirm)[]
         {
-            (new ViewAlertDialog(), alert, "ConfirmAlertButton"),
+            (new AlertDialog(), alert, "ConfirmAlertButton"),
             (new DownloadDuplicateBatchDialog(), duplicates, "RedownloadDuplicateBatchButton"),
             (new DownloadUnavailableBatchDialog(), unavailable, "SkipUnavailableBatchButton"),
             (new DownloadContentConflictDialog(), conflict, "UseAvailableContentButton")

@@ -444,7 +444,7 @@
     <system:String x:Key="DownloadOutputCollision">The target file name already exists or is used by another download. Choose another folder, or enable “Add a number to duplicate file names automatically” in Settings → Basic, then retry.</system:String>
 
 
-    <!--  ViewDownloadSetter  -->
+    <!--  DownloadSetterDialog  -->
     <system:String x:Key="DownloadSetter">Download settings</system:String>
     <system:String x:Key="Location">Location:</system:String>
     <system:String x:Key="Browse">Browse</system:String>
