@@ -27,7 +27,7 @@ public sealed class DesktopInteractionArchitectureTests
     public void ShellAndSearchUseTypedDesktopInteractions()
     {
         var shellSource = ReadSource("src", "DownKyi.Desktop", "ViewModels", "MainWindowViewModel.cs");
-        var indexSource = ReadSource("src", "DownKyi.Desktop", "ViewModels", "ViewIndexViewModel.cs");
+        var indexSource = ReadSource("src", "DownKyi.Desktop", "ViewModels", "IndexViewModel.cs");
         var searchSource = ReadSource("src", "DownKyi.Desktop", "Services", "SearchService.cs");
 
         Assert.Contains("IUserNotificationService", shellSource, StringComparison.Ordinal);
@@ -110,9 +110,9 @@ public sealed class DesktopInteractionArchitectureTests
             Environment.NewLine,
             new[]
             {
-                ReadSource("src", "DownKyi.Desktop", "Services", "Download", "IAddToDownloadSession.cs"),
-                ReadSource("src", "DownKyi.Desktop", "Services", "Download", "AddToDownloadService.cs"),
-                ReadSource("src", "DownKyi.Desktop", "Services", "Download", "DownloadTaskAdmissionService.cs"),
+                ReadSource("src", "DownKyi.Desktop", "Services", "Download", "Planning", "IAddToDownloadSession.cs"),
+                ReadSource("src", "DownKyi.Desktop", "Services", "Download", "Planning", "AddToDownloadService.cs"),
+                ReadSource("src", "DownKyi.Desktop", "Services", "Download", "Planning", "DownloadTaskAdmissionService.cs"),
                 ReadSource("src", "DownKyi.Desktop", "Services", "Media", "ContentDownloadCoordinator.cs"),
                 ReadSource("src", "DownKyi.Desktop", "Services", "Video", "VideoDetailDownloadCoordinator.cs")
             });
@@ -121,7 +121,7 @@ public sealed class DesktopInteractionArchitectureTests
         Assert.DoesNotContain("IEventAggregator", pageItemSource, StringComparison.Ordinal);
         Assert.DoesNotContain("NavigateToView", pageItemSource, StringComparison.Ordinal);
         var videoDetailSource = ReadSource(
-            "src", "DownKyi.Desktop", "ViewModels", "ViewVideoDetailViewModel.cs");
+            "src", "DownKyi.Desktop", "ViewModels", "VideoDetailViewModel.cs");
         Assert.DoesNotContain("IUserNotificationService", downloadSource, StringComparison.Ordinal);
         Assert.Contains("PublishAddResult", videoDetailSource, StringComparison.Ordinal);
         Assert.Contains(
@@ -174,9 +174,9 @@ public sealed class DesktopInteractionArchitectureTests
             new[]
             {
                 ReadSource("src", "DownKyi.Desktop", "Services", "Download", "DownloadRuntimeFactory.cs"),
-                ReadSource("src", "DownKyi.Desktop", "Services", "Download", "DownloadOrchestrator.cs"),
-                ReadSource("src", "DownKyi.Desktop", "Services", "Download", "DownloadPipeline.cs"),
-                ReadSource("src", "DownKyi.Desktop", "Services", "Download", "BuiltinTransferBackend.cs")
+                ReadSource("src", "DownKyi.Desktop", "Services", "Download", "Runtime", "DownloadOrchestrator.cs"),
+                ReadSource("src", "DownKyi.Desktop", "Services", "Download", "Runtime", "DownloadPipeline.cs"),
+                ReadSource("src", "DownKyi.Desktop", "Services", "Download", "Transfer", "BuiltinTransferBackend.cs")
             });
 
         Assert.Contains("IUserNotificationService", runtimeSource, StringComparison.Ordinal);

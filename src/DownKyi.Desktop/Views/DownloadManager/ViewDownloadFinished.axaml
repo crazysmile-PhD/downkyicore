@@ -3,7 +3,7 @@
              x:Class="DownKyi.Views.DownloadManager.ViewDownloadFinished"
              xmlns:images="clr-namespace:DownKyi.Images"
              xmlns:vmdm="clr-namespace:DownKyi.ViewModels.DownloadManager"
-             x:DataType="vmdm:ViewDownloadFinishedViewModel"
+             x:DataType="vmdm:DownloadFinishedViewModel"
              Background="{DynamicResource SpacePaper}">
     <UserControl.Styles>
         <Style Selector="ComboBox#NameFinishedSort">
@@ -121,7 +121,7 @@
                                         MinWidth="36"
                                         MinHeight="36"
                                         Padding="0"
-                                        Command="{Binding ElementName=DownloadedList,Path=((vmdm:ViewDownloadFinishedViewModel)DataContext).OpenFolderCommand}"
+                                        Command="{Binding ElementName=DownloadedList,Path=((vmdm:DownloadFinishedViewModel)DataContext).OpenFolderCommand}"
                                         CommandParameter="{Binding}"
                                         Theme="{StaticResource DownloadActionButton}"
                                         ToolTip.Tip="{DynamicResource OpenFolder}">
@@ -142,7 +142,7 @@
                                         MinWidth="36"
                                         MinHeight="36"
                                         Padding="0"
-                                        Command="{Binding ElementName=DownloadedList,Path=((vmdm:ViewDownloadFinishedViewModel)DataContext).OpenVideoCommand}"
+                                        Command="{Binding ElementName=DownloadedList,Path=((vmdm:DownloadFinishedViewModel)DataContext).OpenVideoCommand}"
                                         CommandParameter="{Binding}"
                                         Theme="{StaticResource DownloadActionButton}"
                                         ToolTip.Tip="{DynamicResource OpenVideo}">
@@ -163,7 +163,7 @@
                                         MinWidth="36"
                                         MinHeight="36"
                                         Padding="0"
-                                        Command="{Binding ElementName=DownloadedList,Path=((vmdm:ViewDownloadFinishedViewModel)DataContext).RemoveVideoCommand}"
+                                        Command="{Binding ElementName=DownloadedList,Path=((vmdm:DownloadFinishedViewModel)DataContext).RemoveVideoCommand}"
                                         CommandParameter="{Binding}"
                                         Classes="danger"
                                         Foreground="{DynamicResource DownloadWarning}"

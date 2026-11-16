@@ -37,9 +37,9 @@ public sealed class VideoDetailCommandStateTests
         application.Styles.Insert(1, gridStyles);
         using var settings = new SettingsStore(Path.Combine(Path.GetTempPath(), $"video-resize-{Guid.NewGuid():N}.json"));
         using var workflow = new VideoDetailWorkflowCoordinatorStub();
-        using var viewModel = new ViewVideoDetailViewModel(
+        using var viewModel = new VideoDetailViewModel(
             new DesktopInteractionContextStub(), new ClipboardServiceStub(), settings, workflow,
-            new VideoDetailDownloadCoordinatorStub(), NullLogger<ViewVideoDetailViewModel>.Instance);
+            new VideoDetailDownloadCoordinatorStub(), NullLogger<VideoDetailViewModel>.Instance);
         viewModel.UiState.VideoInfoView = new VideoInfoView
         {
             Title = string.Concat(Enumerable.Repeat("很长的影片标题与布局检查", 8)),
@@ -114,13 +114,13 @@ public sealed class VideoDetailCommandStateTests
             $"downkyi-video-detail-command-{Guid.NewGuid():N}.json");
         using var settings = new SettingsStore(settingsPath);
         using var workflow = new VideoDetailWorkflowCoordinatorStub();
-        using var viewModel = new ViewVideoDetailViewModel(
+        using var viewModel = new VideoDetailViewModel(
             new DesktopInteractionContextStub(),
             new ClipboardServiceStub(),
             settings,
             workflow,
             new VideoDetailDownloadCoordinatorStub(),
-            NullLogger<ViewVideoDetailViewModel>.Instance);
+            NullLogger<VideoDetailViewModel>.Instance);
         var commands = new[]
         {
             viewModel.InputCommand,
@@ -161,13 +161,13 @@ public sealed class VideoDetailCommandStateTests
             $"downkyi-video-detail-buttons-{Guid.NewGuid():N}.json");
         using var settings = new SettingsStore(settingsPath);
         using var workflow = new VideoDetailWorkflowCoordinatorStub();
-        using var viewModel = new ViewVideoDetailViewModel(
+        using var viewModel = new VideoDetailViewModel(
             new DesktopInteractionContextStub(),
             new ClipboardServiceStub(),
             settings,
             workflow,
             new VideoDetailDownloadCoordinatorStub(),
-            NullLogger<ViewVideoDetailViewModel>.Instance);
+            NullLogger<VideoDetailViewModel>.Instance);
         var view = new VideoDetailActionsView { DataContext = viewModel };
         var window = new Window { Content = view };
 
@@ -203,12 +203,12 @@ public sealed class VideoDetailCommandStateTests
         using var settings = new SettingsStore(Path.Combine(Path.GetTempPath(), $"download-navigation-{Guid.NewGuid():N}.json"));
         using var workflow = new VideoDetailWorkflowCoordinatorStub();
         var coordinator = new VideoDetailDownloadCoordinatorStub { WaitForRelease = true };
-        ViewVideoDetailViewModel? viewModel = null;
+        VideoDetailViewModel? viewModel = null;
         using var navigation = new AvaloniaNavigationService(
             route => route == AppRoute.VideoDetail ? viewModel! : new object(), action => action());
         var interactions = new DesktopInteractionContextStub { Navigation = navigation };
-        using var ownedViewModel = viewModel = new ViewVideoDetailViewModel(interactions,
-            new ClipboardServiceStub(), settings, workflow, coordinator, NullLogger<ViewVideoDetailViewModel>.Instance);
+        using var ownedViewModel = viewModel = new VideoDetailViewModel(interactions,
+            new ClipboardServiceStub(), settings, workflow, coordinator, NullLogger<VideoDetailViewModel>.Instance);
         navigation.Navigate(new AppNavigationRequest(AppRoute.VideoDetail));
         viewModel.UiState.VideoInfoView = new VideoInfoView();
         var completion = WaitUntilExecutableAfterDisabled(viewModel.AddToDownloadCommand);
@@ -239,13 +239,13 @@ public sealed class VideoDetailCommandStateTests
                 DownloadAddOutcome.Canceled,
                 DownloadAddStopReason.SelectionCanceled)
         };
-        using var viewModel = new ViewVideoDetailViewModel(
+        using var viewModel = new VideoDetailViewModel(
             interactions,
             new ClipboardServiceStub(),
             settings,
             workflow,
             downloadCoordinator,
-            NullLogger<ViewVideoDetailViewModel>.Instance);
+            NullLogger<VideoDetailViewModel>.Instance);
         viewModel.UiState.VideoInfoView = new DownKyi.Presentation.VideoInfoView();
         var completion = WaitUntilExecutableAfterDisabled(viewModel.AddToDownloadCommand);
 
@@ -270,13 +270,13 @@ public sealed class VideoDetailCommandStateTests
         {
             Exception = new HttpRequestException("prepare failed")
         };
-        using var viewModel = new ViewVideoDetailViewModel(
+        using var viewModel = new VideoDetailViewModel(
             new DesktopInteractionContextStub(),
             new ClipboardServiceStub(),
             settings,
             workflow,
             downloadCoordinator,
-            NullLogger<ViewVideoDetailViewModel>.Instance);
+            NullLogger<VideoDetailViewModel>.Instance);
         viewModel.UiState.VideoInfoView = new DownKyi.Presentation.VideoInfoView();
         var completion = WaitUntilExecutableAfterDisabled(viewModel.AddToDownloadCommand);
 
@@ -303,13 +303,13 @@ public sealed class VideoDetailCommandStateTests
         {
             Exception = new OperationCanceledException(unrelatedCancellation.Token)
         };
-        using var viewModel = new ViewVideoDetailViewModel(
+        using var viewModel = new VideoDetailViewModel(
             new DesktopInteractionContextStub(),
             new ClipboardServiceStub(),
             settings,
             workflow,
             downloadCoordinator,
-            NullLogger<ViewVideoDetailViewModel>.Instance);
+            NullLogger<VideoDetailViewModel>.Instance);
         viewModel.UiState.VideoInfoView = new DownKyi.Presentation.VideoInfoView();
         var completion = WaitUntilExecutableAfterDisabled(viewModel.AddToDownloadCommand);
 
@@ -340,13 +340,13 @@ public sealed class VideoDetailCommandStateTests
                 new OperationCanceledException(canceled.Token),
                 canceled.Token)
         };
-        using var viewModel = new ViewVideoDetailViewModel(
+        using var viewModel = new VideoDetailViewModel(
             interactions,
             new ClipboardServiceStub(),
             settings,
             workflow,
             downloadCoordinator,
-            NullLogger<ViewVideoDetailViewModel>.Instance);
+            NullLogger<VideoDetailViewModel>.Instance);
         viewModel.UiState.VideoInfoView = new DownKyi.Presentation.VideoInfoView();
         var completion = WaitUntilExecutableAfterDisabled(viewModel.AddToDownloadCommand);
 
@@ -378,13 +378,13 @@ public sealed class VideoDetailCommandStateTests
                 skippedCount: 0),
             WaitForRelease = true
         };
-        using var viewModel = new ViewVideoDetailViewModel(
+        using var viewModel = new VideoDetailViewModel(
             interactions,
             new ClipboardServiceStub(),
             settings,
             workflow,
             downloadCoordinator,
-            NullLogger<ViewVideoDetailViewModel>.Instance);
+            NullLogger<VideoDetailViewModel>.Instance);
         viewModel.UiState.VideoInfoView = new DownKyi.Presentation.VideoInfoView();
         viewModel.VideoSections.Add(new DownKyi.Presentation.VideoSection
         {
@@ -436,13 +436,13 @@ public sealed class VideoDetailCommandStateTests
                 DownloadAddOutcome.Rejected,
                 DownloadAddStopReason.NoPagesSelected)
         };
-        using var viewModel = new ViewVideoDetailViewModel(
+        using var viewModel = new VideoDetailViewModel(
             interactions,
             new ClipboardServiceStub(),
             settings,
             workflow,
             downloadCoordinator,
-            NullLogger<ViewVideoDetailViewModel>.Instance);
+            NullLogger<VideoDetailViewModel>.Instance);
         viewModel.UiState.VideoInfoView = new DownKyi.Presentation.VideoInfoView();
         viewModel.VideoSections.Add(new DownKyi.Presentation.VideoSection
         {
@@ -489,13 +489,13 @@ public sealed class VideoDetailCommandStateTests
                 new[] { section })
         };
         var downloadCoordinator = new VideoDetailDownloadCoordinatorStub();
-        using var viewModel = new ViewVideoDetailViewModel(
+        using var viewModel = new VideoDetailViewModel(
             new DesktopInteractionContextStub(),
             new ClipboardServiceStub(),
             settings,
             workflow,
             downloadCoordinator,
-            NullLogger<ViewVideoDetailViewModel>.Instance);
+            NullLogger<VideoDetailViewModel>.Instance);
         var completion = WaitUntilExecutableAfterDisabled(viewModel.InputCommand);
 
         viewModel.OnNavigatedTo(new AppNavigationContext(
@@ -554,13 +554,13 @@ public sealed class VideoDetailCommandStateTests
             CancelCurrentOperationBeforeDetailFailure =
                 operationException is OperationCanceledException
         };
-        using var viewModel = new ViewVideoDetailViewModel(
+        using var viewModel = new VideoDetailViewModel(
             new DesktopInteractionContextStub(),
             new ClipboardServiceStub(),
             settings,
             workflow,
             new VideoDetailDownloadCoordinatorStub(),
-            NullLogger<ViewVideoDetailViewModel>.Instance);
+            NullLogger<VideoDetailViewModel>.Instance);
         var completion = WaitUntilExecutableAfterDisabled(viewModel.InputCommand);
         viewModel.UiState.InputText = "https://www.bilibili.com/video/BV1G1421D7mL";
 

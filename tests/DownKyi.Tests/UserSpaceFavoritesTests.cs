@@ -83,7 +83,7 @@ public sealed class UserSpaceFavoritesTests
     public void SelectingFolderUsesTypedPublicFavoritesRoute()
     {
         var navigation = new TestNavigationService();
-        using var viewModel = new ViewFavoritesViewModel(new TestDesktopInteractionContext(navigation));
+        using var viewModel = new FavoritesViewModel(new TestDesktopInteractionContext(navigation));
         var folder = new UserSpaceFavoriteFolder(
             42,
             "cover",

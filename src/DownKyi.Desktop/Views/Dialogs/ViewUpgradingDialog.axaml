@@ -4,7 +4,7 @@
     xmlns:vmd="clr-namespace:DownKyi.ViewModels.Dialogs"
     xmlns:customControl="clr-namespace:DownKyi.CustomControl"
     x:Class="DownKyi.Views.Dialogs.ViewUpgradingDialog"
-    x:DataType="vmd:ViewUpgradingDialogViewModel"
+    x:DataType="vmd:UpgradingDialogViewModel"
     Classes="studio-page studio-dialog">
     <UserControl.Styles>
         <StyleInclude Source="/Themes/Styles/StudioDialog.axaml" />

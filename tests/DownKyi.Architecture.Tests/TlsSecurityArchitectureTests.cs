@@ -34,7 +34,7 @@ public sealed class TlsSecurityArchitectureTests
     public void DownloadRuntimeCannotDowngradeHttpsToHttp()
     {
         var mediaStage = ReadProductionSource(
-            "src", "DownKyi.Desktop", "Services", "Download", "DownloadMediaStage.cs");
+            "src", "DownKyi.Desktop", "Services", "Download", "Runtime", "DownloadMediaStage.cs");
         var settingsView = ReadProductionSource(
             "src", "DownKyi.Desktop", "Views", "Settings", "NetworkGeneralSettingsView.axaml");
 
@@ -70,7 +70,7 @@ public sealed class TlsSecurityArchitectureTests
         var resolver = ReadProductionSource(
             "src", "DownKyi.Infrastructure", "Downloads", "DownloadAddressResolver.cs");
         var downloader = ReadProductionSource(
-            "src", "DownKyi.Desktop", "Services", "Download", "BuiltinRangeDownloader.cs");
+            "src", "DownKyi.Desktop", "Services", "Download", "Transfer", "BuiltinRangeDownloader.cs");
 
         Assert.Contains("CreateHeaders", resolver, StringComparison.Ordinal);
         Assert.Contains("Uri.UriSchemeHttps", resolver, StringComparison.Ordinal);
@@ -89,8 +89,6 @@ public sealed class TlsSecurityArchitectureTests
     {
         var roots = new[]
         {
-            Path.Combine(RepositoryRoot, "DownKyi"),
-            Path.Combine(RepositoryRoot, "DownKyi.Core"),
             Path.Combine(RepositoryRoot, "src"),
             Path.Combine(RepositoryRoot, "script"),
             Path.Combine(RepositoryRoot, ".github", "workflows")

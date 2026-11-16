@@ -24,10 +24,10 @@
                         <TextBlock Text="{Binding Title}" FontSize="14" FontWeight="SemiBold" />
                         <TextBlock Name="DownloadQueueCount" IsVisible="{Binding !Id}"
                                    FontFamily="Cascadia Mono,Consolas,monospace"
-                                   Text="{Binding $parent[UserControl].((vm:ViewDownloadManagerViewModel)DataContext).DownloadLists.Downloading.Count}" />
+                                   Text="{Binding $parent[UserControl].((vm:DownloadManagerViewModel)DataContext).DownloadLists.Downloading.Count}" />
                         <TextBlock Name="DownloadHistoryCount" IsVisible="{Binding Id}"
                                    FontFamily="Cascadia Mono,Consolas,monospace"
-                                   Text="{Binding $parent[UserControl].((vm:ViewDownloadManagerViewModel)DataContext).DownloadLists.Downloaded.Count}" />
+                                   Text="{Binding $parent[UserControl].((vm:DownloadManagerViewModel)DataContext).DownloadLists.Downloaded.Count}" />
                     </StackPanel>
                 </Border>
             </ControlTemplate>

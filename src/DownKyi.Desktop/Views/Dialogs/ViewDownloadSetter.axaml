@@ -3,7 +3,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:vmd="clr-namespace:DownKyi.ViewModels.Dialogs"
     x:Class="DownKyi.Views.Dialogs.ViewDownloadSetter"
-    x:DataType="vmd:ViewDownloadSetterViewModel"
+    x:DataType="vmd:DownloadSetterViewModel"
     Classes="studio-page">
     <UserControl.Styles>
         <StyleInclude Source="/Themes/Styles/Studio.axaml" />

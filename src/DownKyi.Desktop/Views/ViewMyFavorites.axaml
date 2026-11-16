@@ -12,7 +12,7 @@
     mc:Ignorable="d"
     d:DesignWidth="840"
     d:DesignHeight="620"
-    x:DataType="vm:ViewMyFavoritesViewModel">
+    x:DataType="vm:MyFavoritesViewModel">
     <UserControl.Styles>
         <Style Selector="TextBox">
             <Setter Property="CornerRadius" Value="0" />

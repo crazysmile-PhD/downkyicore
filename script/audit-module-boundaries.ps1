@@ -22,18 +22,10 @@ function Test-IsBuildOutput {
 function Get-ProductionFiles {
     param([Parameter(Mandatory)][string[]]$Patterns)
 
-    $roots = @(
-        (Join-Path $repositoryRoot "DownKyi"),
-        (Join-Path $repositoryRoot "DownKyi.Core"),
-        (Join-Path $repositoryRoot "src")
-    )
-
     return @(
-        foreach ($root in $roots) {
-            foreach ($pattern in $Patterns) {
-                Get-ChildItem -LiteralPath $root -Recurse -File -Filter $pattern |
-                    Where-Object { -not (Test-IsBuildOutput $_.FullName) }
-            }
+        foreach ($pattern in $Patterns) {
+            Get-ChildItem -LiteralPath (Join-Path $repositoryRoot "src") -Recurse -File -Filter $pattern |
+                Where-Object { -not (Test-IsBuildOutput $_.FullName) }
         }
     )
 }
@@ -122,16 +114,13 @@ $projects = @(
 )
 
 $sourceRoots = @(
-    "DownKyi",
-    "DownKyi.Core",
-    "src/DownKyi.Domain",
-    "src/DownKyi.Application",
-    "src/DownKyi.Infrastructure",
-    "src/DownKyi.Desktop"
+    Get-ChildItem -LiteralPath (Join-Path $repositoryRoot "src") -Directory |
+        Sort-Object Name |
+        ForEach-Object { Convert-ToRelativePath $_.FullName }
 )
 $sourceMetrics = @($sourceRoots | ForEach-Object { Get-SourceRootMetrics $_ })
 
-$coreRoot = Join-Path $repositoryRoot "DownKyi.Core"
+$coreRoot = Join-Path $repositoryRoot "src/DownKyi.Core"
 $coreUiDependencies = @(
     Get-ChildItem -LiteralPath $coreRoot -Recurse -File |
         Where-Object { -not (Test-IsBuildOutput $_.FullName) } |
@@ -237,11 +226,11 @@ foreach ($file in $downloadSources) {
     $domainTaskReferences += [regex]::Matches($source, '\b(?:DomainDownloadTask|DownloadTaskId)\b').Count
 }
 
-$orchestratorSource = Get-Content -LiteralPath (Join-Path $downloadRoot "DownloadOrchestrator.cs") -Raw
-$pipelinePath = Join-Path $downloadRoot "DownloadPipeline.cs"
+$orchestratorSource = Get-Content -LiteralPath (Join-Path $downloadRoot "Runtime/DownloadOrchestrator.cs") -Raw
+$pipelinePath = Join-Path $downloadRoot "Runtime/DownloadPipeline.cs"
 $pipelineSource = Get-Content -LiteralPath $pipelinePath -Raw
 $bilibiliHttpRoots = @(
-    (Join-Path $repositoryRoot "DownKyi.Core/BiliApi"),
+    (Join-Path $repositoryRoot "src/DownKyi.Core/BiliApi"),
     (Join-Path $repositoryRoot "src/DownKyi.Infrastructure/Bilibili")
 )
 $bilibiliHttpSource = (
@@ -260,7 +249,7 @@ $collectionSource = (
         ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw }
 ) -join "`n"
 $logProviderPath = Join-Path $repositoryRoot "src/DownKyi.Infrastructure/Logging/ApplicationLogProvider.cs"
-$coreLoggingRoot = Join-Path $repositoryRoot "DownKyi.Core/Logging"
+$coreLoggingRoot = Join-Path $repositoryRoot "src/DownKyi.Core/Logging"
 $coreLoggingFiles = @(
     if (Test-Path -LiteralPath $coreLoggingRoot -PathType Container) {
         Get-ChildItem -LiteralPath $coreLoggingRoot -Recurse -File -Filter "*.cs" |

@@ -12,7 +12,7 @@
     mc:Ignorable="d"
     d:DesignWidth="840"
     d:DesignHeight="620"
-    x:DataType="vm:ViewMyBangumiFollowViewModel">
+    x:DataType="vm:MyBangumiFollowViewModel">
     <UserControl.Resources>
         <ControlTheme
             x:Key="MediaListStyle"

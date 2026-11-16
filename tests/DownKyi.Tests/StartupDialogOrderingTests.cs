@@ -362,7 +362,7 @@ public sealed class StartupDialogOrderingTests
                 AppDialogOutcome.Rejected,
                 new Dictionary<string, object?>(StringComparer.Ordinal)
                 {
-                    [ViewUpgradingDialogViewModel.FailureResultParameter] =
+                    [UpgradingDialogViewModel.FailureResultParameter] =
                         new LegacyUpgradeResult(
                             LegacyUpgradeOutcome.Failed,
                             "migration failed",

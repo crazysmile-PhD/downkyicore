@@ -126,10 +126,10 @@ public sealed class StartupDiagnosticsDialogLayoutTests
         var fluentTheme = new FluentTheme();
         application.Styles.Insert(0, fluentTheme);
         var failure = new InvalidOperationException("migration failed");
-        var viewModel = new ViewUpgradingDialogViewModel(
+        var viewModel = new UpgradingDialogViewModel(
             new FailedMigrationCoordinator(failure),
             new ApplicationLifecycleStub(),
-            NullLogger<ViewUpgradingDialogViewModel>.Instance);
+            NullLogger<UpgradingDialogViewModel>.Instance);
         await using var viewModelScope = viewModel.ConfigureAwait(true);
         viewModel.OnDialogOpened(new AppDialogRequest(AppDialog.LegacyUpgrade));
         var view = new ViewUpgradingDialog { DataContext = viewModel };

@@ -3,7 +3,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:vmd="clr-namespace:DownKyi.ViewModels.Dialogs"
     x:Class="DownKyi.Views.Dialogs.ViewAlertDialog"
-    x:DataType="vmd:ViewAlertDialogViewModel"
+    x:DataType="vmd:AlertDialogViewModel"
     Classes="studio-page studio-dialog">
     <UserControl.Styles>
         <StyleInclude Source="/Themes/Styles/StudioDialog.axaml" />

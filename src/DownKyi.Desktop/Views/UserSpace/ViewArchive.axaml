@@ -3,7 +3,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:vmu="clr-namespace:DownKyi.ViewModels.UserSpace"
     x:Class="DownKyi.Views.UserSpace.ViewArchive"
-    x:DataType="vmu:ViewArchiveViewModel"
+    x:DataType="vmu:ArchiveViewModel"
     Classes="studio-page">
     <UserControl.Styles>
         <StyleInclude Source="/Themes/Styles/Studio.axaml" />

@@ -228,10 +228,10 @@ public sealed class ReleaseSafetyRegressionTests
         Assert.Contains("CANONICAL_PUBLISH_DIRECTORY:", linuxPackages, StringComparison.Ordinal);
         Assert.Contains("linux-${{ matrix.cpu }}.canonical-publish.internal.transport.tar", linuxPublish, StringComparison.Ordinal);
         Assert.Contains("linux-${{ matrix.cpu }}.canonical-publish.internal.transport.tar", linuxPackages, StringComparison.Ordinal);
-        Assert.Contains("dotnet publish ./DownKyi/DownKyi.csproj", linuxPublish, StringComparison.Ordinal);
+        Assert.Contains("dotnet publish ./src/DownKyi/DownKyi.csproj", linuxPublish, StringComparison.Ordinal);
         Assert.Contains("cpu: [ x64, arm64 ]", linuxPublish, StringComparison.Ordinal);
         Assert.DoesNotContain("kind: [ AppImage, deb, rpm ]", linuxPublish, StringComparison.Ordinal);
-        Assert.DoesNotContain("dotnet publish ./DownKyi/DownKyi.csproj", linuxPackages, StringComparison.Ordinal);
+        Assert.DoesNotContain("dotnet publish ./src/DownKyi/DownKyi.csproj", linuxPackages, StringComparison.Ordinal);
         Assert.Contains("needs: [changelog, build-linux-publish]", linuxPackages, StringComparison.Ordinal);
         Assert.Contains("ubuntu-22.04-arm", linuxPublish, StringComparison.Ordinal);
         Assert.Contains("tools/linux_arm64/protoc", workflow, StringComparison.Ordinal);

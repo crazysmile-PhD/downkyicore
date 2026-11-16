@@ -30,11 +30,11 @@ public sealed class VideoSettingsPersistenceTests
                 navigation,
                 new DialogStub());
             const string selectedDirectory = "D:/DownKyi/Rejected";
-            using var viewModel = new ViewVideoViewModel(
+            using var viewModel = new VideoViewModel(
                 interactions,
                 new SelectedFolderFilePicker(selectedDirectory),
                 store,
-                NullLogger<ViewVideoViewModel>.Instance);
+                NullLogger<VideoViewModel>.Instance);
             var originalDirectory = store.Current.Video.SaveVideoRootPath;
             viewModel.SaveVideoDirectory = originalDirectory;
 

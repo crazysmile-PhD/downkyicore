@@ -52,7 +52,7 @@ public sealed class ModuleBoundaryBaselineTests
     [Fact]
     public void CoreHasNoUiOrQrRenderingDependencies()
     {
-        var coreRoot = Path.Combine(RepositoryRoot, "DownKyi.Core");
+        var coreRoot = Path.Combine(RepositoryRoot, "src", "DownKyi.Core");
         var actual = Directory
             .EnumerateFiles(coreRoot, "*", SearchOption.AllDirectories)
             .Where(path => !IsBuildOutput(path))
@@ -326,7 +326,7 @@ public sealed class ModuleBoundaryBaselineTests
     {
         var apiRoots = new[]
         {
-            Path.Combine(RepositoryRoot, "DownKyi.Core", "BiliApi"),
+            Path.Combine(RepositoryRoot, "src", "DownKyi.Core", "BiliApi"),
             Path.Combine(RepositoryRoot, "src", "DownKyi.Infrastructure", "Bilibili")
         };
         var markers = new[]
@@ -368,7 +368,7 @@ public sealed class ModuleBoundaryBaselineTests
             RepositoryRoot,
             "src", "DownKyi.Desktop",
             "Services", "Download",
-            "DownloadListState.cs"));
+            "Presentation", "DownloadListState.cs"));
         Assert.Contains(
             "ReadOnlyObservableCollection<DownloadingItem> Downloading",
             stateSource,
@@ -426,13 +426,8 @@ public sealed class ModuleBoundaryBaselineTests
 
     private static IEnumerable<string> EnumerateProductionFiles(string pattern)
     {
-        return new[]
-            {
-                Path.Combine(RepositoryRoot, "DownKyi"),
-                Path.Combine(RepositoryRoot, "DownKyi.Core"),
-                Path.Combine(RepositoryRoot, "src")
-            }
-            .SelectMany(root => Directory.EnumerateFiles(root, pattern, SearchOption.AllDirectories))
+        return Directory.EnumerateFiles(
+                Path.Combine(RepositoryRoot, "src"), pattern, SearchOption.AllDirectories)
             .Where(path => !IsBuildOutput(path));
     }
 

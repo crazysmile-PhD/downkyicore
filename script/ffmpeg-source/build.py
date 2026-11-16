@@ -172,7 +172,7 @@ def main():
         raise FileNotFoundError(f"vcpkg did not install FFmpeg tools in {tools}")
     validate(ffmpeg, ffprobe, args.rid)
 
-    destination = ROOT / "DownKyi.Core" / "Binary" / args.rid / "ffmpeg"
+    destination = ROOT / "src" / "DownKyi.Core" / "Binary" / args.rid / "ffmpeg"
     destination.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="ffmpeg-stage-", dir=destination.parent) as temporary:
         stage = Path(temporary)

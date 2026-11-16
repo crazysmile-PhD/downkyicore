@@ -7,7 +7,7 @@
 */**/bin
 BenchmarkDotNet.Artifacts/
 
-DownKyi.Core/Binary/*
+src/DownKyi.Core/Binary/*
 
 script/downloads
 .ffmpeg-update/
@@ -15,7 +15,7 @@ __pycache__/
 *.pyc
 script/pupnet/output
 .tools/
-artifacts/
+/artifacts/
 script/macos/*.dmg
 script/macos/*.app
 

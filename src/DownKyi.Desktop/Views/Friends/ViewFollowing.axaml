@@ -6,7 +6,7 @@
     xmlns:custom="clr-namespace:DownKyi.CustomControl"
     xmlns:asyncImageLoader="clr-namespace:DownKyi.CustomControl.AsyncImageLoader"
     x:Class="DownKyi.Views.Friends.ViewFollowing"
-    x:DataType="vmf:ViewFollowingViewModel">
+    x:DataType="vmf:FollowingViewModel">
     <UserControl.Resources>
         <ControlTheme
             x:Key="ContentListStyle"

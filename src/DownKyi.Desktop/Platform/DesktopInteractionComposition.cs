@@ -29,45 +29,45 @@ internal static class DesktopInteractionComposition
 
     private static void AddRouteViewModels(IServiceCollection services)
     {
-        services.AddTransient<ViewIndexViewModel>();
-        services.AddTransient<ViewLoginViewModel>();
-        services.AddTransient<ViewVideoDetailViewModel>();
-        services.AddTransient<ViewSettingsViewModel>();
-        services.AddTransient<ViewToolboxViewModel>();
-        services.AddTransient<ViewDownloadManagerViewModel>();
-        services.AddTransient<ViewPublicFavoritesViewModel>();
-        services.AddTransient<ViewUserSpaceViewModel>();
-        services.AddTransient<ViewPublicationViewModel>();
-        services.AddTransient<ViewSeasonsSeriesDetailViewModel>();
-        services.AddTransient<ViewFriendsViewModel>();
-        services.AddTransient<ViewMySpaceViewModel>();
-        services.AddTransient<ViewMyFavoritesViewModel>();
-        services.AddTransient<ViewMyBangumiFollowViewModel>();
-        services.AddTransient<ViewMyToViewVideoViewModel>();
-        services.AddTransient<ViewMyHistoryViewModel>();
-        services.AddTransient<ViewDownloadingViewModel>();
-        services.AddTransient<ViewDownloadFinishedViewModel>();
-        services.AddTransient<ViewFollowingViewModel>();
-        services.AddTransient<ViewFollowerViewModel>();
-        services.AddTransient<ViewBasicViewModel>();
-        services.AddTransient<ViewNetworkViewModel>();
-        services.AddTransient<ViewVideoViewModel>();
-        services.AddTransient<ViewDanmakuViewModel>();
-        services.AddTransient<ViewAboutViewModel>();
-        services.AddTransient<ViewBiliHelperViewModel>();
-        services.AddTransient<ViewDelogoViewModel>();
-        services.AddTransient<ViewExtractMediaViewModel>();
-        services.AddTransient<ViewArchiveViewModel>();
-        services.AddTransient<ViewUserSpaceSeasonsSeriesViewModel>();
-        services.AddTransient<ViewFavoritesViewModel>();
+        services.AddTransient<IndexViewModel>();
+        services.AddTransient<LoginViewModel>();
+        services.AddTransient<VideoDetailViewModel>();
+        services.AddTransient<SettingsViewModel>();
+        services.AddTransient<ToolboxViewModel>();
+        services.AddTransient<DownloadManagerViewModel>();
+        services.AddTransient<PublicFavoritesViewModel>();
+        services.AddTransient<UserSpaceViewModel>();
+        services.AddTransient<PublicationViewModel>();
+        services.AddTransient<SeasonsSeriesDetailViewModel>();
+        services.AddTransient<FriendsViewModel>();
+        services.AddTransient<MySpaceViewModel>();
+        services.AddTransient<MyFavoritesViewModel>();
+        services.AddTransient<MyBangumiFollowViewModel>();
+        services.AddTransient<MyToViewVideoViewModel>();
+        services.AddTransient<MyHistoryViewModel>();
+        services.AddTransient<DownloadingViewModel>();
+        services.AddTransient<DownloadFinishedViewModel>();
+        services.AddTransient<FollowingViewModel>();
+        services.AddTransient<FollowerViewModel>();
+        services.AddTransient<BasicViewModel>();
+        services.AddTransient<NetworkViewModel>();
+        services.AddTransient<VideoViewModel>();
+        services.AddTransient<DanmakuViewModel>();
+        services.AddTransient<AboutViewModel>();
+        services.AddTransient<BiliHelperViewModel>();
+        services.AddTransient<DelogoViewModel>();
+        services.AddTransient<ExtractMediaViewModel>();
+        services.AddTransient<ArchiveViewModel>();
+        services.AddTransient<UserSpaceSeasonsSeriesViewModel>();
+        services.AddTransient<FavoritesViewModel>();
     }
 
     private static void AddDialogViewModelsAndViews(IServiceCollection services)
     {
-        services.AddTransient<ViewAlertDialogViewModel>();
-        services.AddTransient<ViewDownloadSetterViewModel>();
+        services.AddTransient<AlertDialogViewModel>();
+        services.AddTransient<DownloadSetterViewModel>();
         services.AddTransient<NewVersionAvailableDialogViewModel>();
-        services.AddTransient<ViewUpgradingDialogViewModel>();
+        services.AddTransient<UpgradingDialogViewModel>();
         services.AddTransient<StartupDiagnosticsDialogViewModel>();
         services.AddTransient<DownloadContentConflictDialogViewModel>();
         services.AddTransient<DownloadDuplicateBatchDialogViewModel>();

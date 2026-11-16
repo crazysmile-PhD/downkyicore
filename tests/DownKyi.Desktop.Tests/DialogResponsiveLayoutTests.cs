@@ -40,7 +40,7 @@ public sealed class DialogResponsiveLayoutTests
         var originalTheme = application.RequestedThemeVariant;
         var fluent = new FluentTheme();
         application.Styles.Insert(0, fluent);
-        var alert = new ViewAlertDialogViewModel
+        var alert = new AlertDialogViewModel
         {
             Title = "确认操作",
             Message = string.Join(Environment.NewLine, Enumerable.Repeat("长提示文字在小视窗仍应可以完整阅读。", 40)),

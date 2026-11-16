@@ -6,7 +6,7 @@
 
 | Fact | Authoritative owner | Evidence |
 | --- | --- | --- |
-| 固定 endpoint、source path、line | `DownKyi.Core/BiliApi` | `audit-bilibili-api.ps1 -GenerateSourceInventory` |
+| 固定 endpoint、source path、line | `src/DownKyi.Core/BiliApi` | `audit-bilibili-api.ps1 -GenerateSourceInventory` |
 | Envelope、required fields、error semantics | DTO／adapter + deterministic fixtures | Core／Infrastructure contract tests |
 | WBI key validity／refresh | `IWbiKeyProvider` | WBI tests |
 | Optional live status | audit scripts | ignored JSON under `artifacts/bilibili/` |

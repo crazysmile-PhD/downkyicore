@@ -5,8 +5,6 @@ on:
     paths:
       - '.github/workflows/macos-adhoc-package.yml'
       - '.github/actions/build-macos-app/action.yml'
-      - 'DownKyi/**/*.csproj'
-      - 'DownKyi.Core/**/*.csproj'
       - 'src/**/*.csproj'
       - 'src/DownKyi.Desktop/Resources/favicon.ico'
       - 'Directory.Build.*'

@@ -10,26 +10,26 @@ public sealed class SettingsArchitectureTests
         };
 
     [Theory]
-    [InlineData("src", "DownKyi.Desktop", "ViewModels", "ViewVideoDetailViewModel.cs")]
-    [InlineData("src", "DownKyi.Desktop", "ViewModels", "Settings", "ViewAboutViewModel.cs")]
-    [InlineData("src", "DownKyi.Desktop", "ViewModels", "Settings", "ViewBasicViewModel.cs")]
-    [InlineData("src", "DownKyi.Desktop", "ViewModels", "Settings", "ViewDanmakuViewModel.cs")]
+    [InlineData("src", "DownKyi.Desktop", "ViewModels", "VideoDetailViewModel.cs")]
+    [InlineData("src", "DownKyi.Desktop", "ViewModels", "Settings", "AboutViewModel.cs")]
+    [InlineData("src", "DownKyi.Desktop", "ViewModels", "Settings", "BasicViewModel.cs")]
+    [InlineData("src", "DownKyi.Desktop", "ViewModels", "Settings", "DanmakuViewModel.cs")]
     [InlineData("src", "DownKyi.Desktop", "Services", "Settings", "NetworkSettingsCoordinator.cs")]
-    [InlineData("src", "DownKyi.Desktop", "ViewModels", "Settings", "ViewVideoViewModel.cs")]
+    [InlineData("src", "DownKyi.Desktop", "ViewModels", "Settings", "VideoViewModel.cs")]
     [InlineData("src", "DownKyi.Desktop", "Views", "MainWindow.axaml.cs")]
     [InlineData("src", "DownKyi.Desktop", "ViewModels", "MainWindowViewModel.cs")]
-    [InlineData("src", "DownKyi.Desktop", "ViewModels", "ViewIndexViewModel.cs")]
-    [InlineData("src", "DownKyi.Desktop", "ViewModels", "DownloadManager", "ViewDownloadFinishedViewModel.cs")]
+    [InlineData("src", "DownKyi.Desktop", "ViewModels", "IndexViewModel.cs")]
+    [InlineData("src", "DownKyi.Desktop", "ViewModels", "DownloadManager", "DownloadFinishedViewModel.cs")]
     [InlineData("src", "DownKyi.Desktop", "ViewModels", "Dialogs", "NewVersionAvailableDialogViewModel.cs")]
-    [InlineData("src", "DownKyi.Desktop", "ViewModels", "Dialogs", "ViewDownloadSetterViewModel.cs")]
-    [InlineData("src", "DownKyi.Desktop", "ViewModels", "Friends", "ViewFollowerViewModel.cs")]
-    [InlineData("src", "DownKyi.Desktop", "ViewModels", "Friends", "ViewFollowingViewModel.cs")]
+    [InlineData("src", "DownKyi.Desktop", "ViewModels", "Dialogs", "DownloadSetterViewModel.cs")]
+    [InlineData("src", "DownKyi.Desktop", "ViewModels", "Friends", "FollowerViewModel.cs")]
+    [InlineData("src", "DownKyi.Desktop", "ViewModels", "Friends", "FollowingViewModel.cs")]
     [InlineData("src", "DownKyi.Desktop", "Services", "Account", "UserSessionCoordinator.cs")]
     [InlineData("src", "DownKyi.Desktop", "Services", "VideoInfoService.cs")]
     [InlineData("src", "DownKyi.Desktop", "Services", "BangumiInfoService.cs")]
     [InlineData("src", "DownKyi.Desktop", "Services", "CheeseInfoService.cs")]
-    [InlineData("src", "DownKyi.Desktop", "Services", "Download", "AddToDownloadService.cs")]
-    [InlineData("src", "DownKyi.Desktop", "Services", "Download", "AddToDownloadServiceFactory.cs")]
+    [InlineData("src", "DownKyi.Desktop", "Services", "Download", "Planning", "AddToDownloadService.cs")]
+    [InlineData("src", "DownKyi.Desktop", "Services", "Download", "Planning", "AddToDownloadServiceFactory.cs")]
     [InlineData("src", "DownKyi.Desktop", "Services", "Media", "ContentDownloadCoordinator.cs")]
     [InlineData("src", "DownKyi.Desktop", "Services", "Media", "PersonalMediaCoordinator.cs")]
     [InlineData("src", "DownKyi.Desktop", "Services", "FavoritesService.cs")]
@@ -39,12 +39,12 @@ public sealed class SettingsArchitectureTests
     [InlineData("src", "DownKyi.Desktop", "Presentation", "FavoritesMedia.cs")]
     [InlineData("src", "DownKyi.Desktop", "Presentation", "HistoryMedia.cs")]
     [InlineData("src", "DownKyi.Desktop", "Presentation", "ToViewMedia.cs")]
-    [InlineData("src", "DownKyi.Desktop", "ViewModels", "ViewPublicFavoritesViewModel.cs")]
-    [InlineData("src", "DownKyi.Desktop", "ViewModels", "ViewMySpaceViewModel.cs")]
+    [InlineData("src", "DownKyi.Desktop", "ViewModels", "PublicFavoritesViewModel.cs")]
+    [InlineData("src", "DownKyi.Desktop", "ViewModels", "MySpaceViewModel.cs")]
     [InlineData("src", "DownKyi.Infrastructure", "FFmpeg", "FfmpegProcessor.cs")]
     [InlineData("src", "DownKyi.Infrastructure", "Bilibili", "LoginHelper.cs")]
     [InlineData("src", "DownKyi.Desktop", "Services", "UserSpace", "UserSpacePageCoordinator.cs")]
-    [InlineData("src", "DownKyi.Desktop", "ViewModels", "ViewUserSpaceViewModel.cs")]
+    [InlineData("src", "DownKyi.Desktop", "ViewModels", "UserSpaceViewModel.cs")]
     public void MigratedApplicationOwnersDoNotReachIntoTheSettingsSingleton(params string[] pathParts)
     {
         var source = File.ReadAllText(Path.Combine([RepositoryRoot, .. pathParts]));
@@ -99,12 +99,12 @@ public sealed class SettingsArchitectureTests
             "src", "DownKyi.Desktop",
             "ViewModels",
             "Settings",
-            "ViewNetworkViewModel.cs");
+            "NetworkViewModel.cs");
         var stateSource = ReadSource(
             "src", "DownKyi.Desktop",
             "ViewModels",
             "Settings",
-            "ViewNetworkViewModel.State.cs");
+            "NetworkViewModel.State.cs");
         var allViewModelSources = string.Concat(viewModelSource, stateSource);
         var coordinatorSource = ReadSource(
             "src", "DownKyi.Desktop",
@@ -135,17 +135,17 @@ public sealed class SettingsArchitectureTests
             "src", "DownKyi.Desktop",
             "ViewModels",
             "Settings",
-            "ViewVideoViewModel.cs");
+            "VideoViewModel.cs");
         var stateSource = ReadSource(
             "src", "DownKyi.Desktop",
             "ViewModels",
             "Settings",
-            "ViewVideoViewModel.State.cs");
+            "VideoViewModel.State.cs");
         var contentNamingSource = ReadSource(
             "src", "DownKyi.Desktop",
             "ViewModels",
             "Settings",
-            "ViewVideoViewModel.ContentNamingCommands.cs");
+            "VideoViewModel.ContentNamingCommands.cs");
 
         Assert.Contains("ISettingsStore settingsStore", viewModelSource, StringComparison.Ordinal);
         Assert.Contains("OnNavigatedTo", viewModelSource, StringComparison.Ordinal);
@@ -179,8 +179,6 @@ public sealed class SettingsArchitectureTests
     {
         var sourceRoots = new[]
         {
-            Path.Combine(RepositoryRoot, "DownKyi"),
-            Path.Combine(RepositoryRoot, "DownKyi.Core"),
             Path.Combine(RepositoryRoot, "src")
         };
         var violations = sourceRoots
@@ -234,26 +232,26 @@ public sealed class SettingsArchitectureTests
             "src", "DownKyi.Desktop",
             "Services", "Video",
             "VideoPagePlaybackMapper.cs");
-        var addSource = ReadSource("src", "DownKyi.Desktop", "Services", "Download", "AddToDownloadService.cs");
+        var addSource = ReadSource("src", "DownKyi.Desktop", "Services", "Download", "Planning", "AddToDownloadService.cs");
         var admissionSource = ReadSource(
             "src", "DownKyi.Desktop",
             "Services", "Download",
-            "DownloadTaskAdmissionService.cs");
+            "Planning", "DownloadTaskAdmissionService.cs");
         var draftSource = ReadSource(
             "src", "DownKyi.Desktop",
             "Services", "Download",
-            "DownloadTaskDraftFactory.cs");
+            "Planning", "DownloadTaskDraftFactory.cs");
         var metadataSource = ReadSource(
             "src", "DownKyi.Desktop",
             "Services", "Download",
-            "DownloadMovieMetadataBuilder.cs");
+            "Artifacts", "DownloadMovieMetadataBuilder.cs");
         var contextFactorySource = ReadSource(
             "src", "DownKyi.Desktop",
             "Services",
             "Download",
-            "DownloadExecutionContextFactory.cs");
-        var artifactSource = string.Join("\n", sourceArray.Select(file => ReadSource("src", "DownKyi.Desktop", "Services", "Download", file)));
-        var diagnosticSource = ReadSource("src", "DownKyi.Desktop", "Services", "Download", "DownloadDiagnosticLogger.cs");
+            "Runtime", "DownloadExecutionContextFactory.cs");
+        var artifactSource = string.Join("\n", sourceArray.Select(file => ReadSource("src", "DownKyi.Desktop", "Services", "Download", "Artifacts", file)));
+        var diagnosticSource = ReadSource("src", "DownKyi.Desktop", "Services", "Download", "Transfer", "DownloadDiagnosticLogger.cs");
         var ffmpegSource = ReadSource("src", "DownKyi.Infrastructure", "FFmpeg", "FfmpegProcessor.cs");
 
         Assert.Contains("ApplicationSettings settings", utilitySource, StringComparison.Ordinal);
@@ -276,8 +274,6 @@ public sealed class SettingsArchitectureTests
     {
         var sourceRoots = new[]
         {
-            Path.Combine(RepositoryRoot, "DownKyi"),
-            Path.Combine(RepositoryRoot, "DownKyi.Core"),
             Path.Combine(RepositoryRoot, "src")
         };
         var violations = sourceRoots

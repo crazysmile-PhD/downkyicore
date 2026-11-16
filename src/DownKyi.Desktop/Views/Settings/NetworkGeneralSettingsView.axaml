@@ -4,7 +4,7 @@
     xmlns:settings="clr-namespace:DownKyi.Application.Settings;assembly=DownKyi.Application"
     xmlns:vms="clr-namespace:DownKyi.ViewModels.Settings"
     x:Class="DownKyi.Views.Settings.NetworkGeneralSettingsView"
-    x:DataType="vms:ViewNetworkViewModel"
+    x:DataType="vms:NetworkViewModel"
     Classes="studio-page">
     <UserControl.Styles>
         <StyleInclude Source="/Themes/Styles/Studio.axaml" />

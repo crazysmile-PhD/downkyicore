@@ -31,12 +31,12 @@ runs:
       id: publish-output
       shell: bash
       run: |
-        dotnet restore DownKyi/DownKyi.csproj -r osx-${{ inputs.cpu }}
-        dotnet publish DownKyi/DownKyi.csproj --no-restore --self-contained -r osx-${{ inputs.cpu }} -c Release -p:DebugType=None -p:DebugSymbols=false
-        target_framework="$(dotnet msbuild DownKyi/DownKyi.csproj -nologo -verbosity:quiet -getProperty:TargetFramework -p:Configuration=Release)"
+        dotnet restore src/DownKyi/DownKyi.csproj -r osx-${{ inputs.cpu }}
+        dotnet publish src/DownKyi/DownKyi.csproj --no-restore --self-contained -r osx-${{ inputs.cpu }} -c Release -p:DebugType=None -p:DebugSymbols=false
+        target_framework="$(dotnet msbuild src/DownKyi/DownKyi.csproj -nologo -verbosity:quiet -getProperty:TargetFramework -p:Configuration=Release)"
         test -n "$target_framework"
         test "${target_framework#*$'\n'}" = "$target_framework"
-        printf 'directory=DownKyi/bin/Release/%s/osx-%s/publish\n' "$target_framework" '${{ inputs.cpu }}' >> "$GITHUB_OUTPUT"
+        printf 'directory=src/DownKyi/bin/Release/%s/osx-%s/publish\n' "$target_framework" '${{ inputs.cpu }}' >> "$GITHUB_OUTPUT"
     - name: Package app bundle
       shell: bash
       working-directory: ./script/macos

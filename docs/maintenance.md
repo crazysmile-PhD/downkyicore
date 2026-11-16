@@ -169,7 +169,7 @@ cross-platform stress proof，不得移除。
 
 | Location | 只允許用途 | Removal gate |
 | --- | --- | --- |
-| `DownKyi.Core/BiliApi/Sign/WbiSign.cs` | Bilibili WBI protocol MD5 | Bilibili 取代 WBI |
+| `src/DownKyi.Core/BiliApi/Sign/WbiSign.cs` | Bilibili WBI protocol MD5 | Bilibili 取代 WBI |
 | `src/DownKyi.Infrastructure/Settings/LegacySettingsDecryptor.cs` | read-only legacy migration | 有 telemetry、recovery guidance 的 migration-window 決策 |
 
 <a id="external-binary"></a>

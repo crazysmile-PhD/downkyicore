@@ -455,7 +455,7 @@ public sealed class ReleaseWorkflowArchitectureTests
     [Fact]
     public void CoreDoesNotOwnRuntimeSpecificPackageAssets()
     {
-        var projectPath = Path.Combine(RepositoryRoot, "DownKyi.Core", "DownKyi.Core.csproj");
+        var projectPath = Path.Combine(RepositoryRoot, "src", "DownKyi.Core", "DownKyi.Core.csproj");
         var project = XDocument.Load(projectPath);
 
         Assert.DoesNotContain(
@@ -472,7 +472,7 @@ public sealed class ReleaseWorkflowArchitectureTests
     public void ExecutableOwnsTargetRuntimeAssetSelection()
     {
         var executable = File.ReadAllText(
-            Path.Combine(RepositoryRoot, "DownKyi", "DownKyi.csproj"));
+            Path.Combine(RepositoryRoot, "src", "DownKyi", "DownKyi.csproj"));
         var desktop = File.ReadAllText(
             Path.Combine(
                 RepositoryRoot,
@@ -567,16 +567,16 @@ public sealed class ReleaseWorkflowArchitectureTests
         foreach (var workflow in new[] { releaseWorkflow, adHocWorkflow })
         {
             Assert.Contains("uses: ./.github/actions/build-macos-app", workflow, StringComparison.Ordinal);
-            Assert.DoesNotContain("dotnet publish DownKyi/DownKyi.csproj", workflow, StringComparison.Ordinal);
+            Assert.DoesNotContain("dotnet publish src/DownKyi/DownKyi.csproj", workflow, StringComparison.Ordinal);
             Assert.DoesNotContain("./ffmpeg.sh mac ${{ matrix.cpu }}", workflow, StringComparison.Ordinal);
         }
 
         Assert.Contains(
-            "dotnet restore DownKyi/DownKyi.csproj -r osx-${{ inputs.cpu }}",
+            "dotnet restore src/DownKyi/DownKyi.csproj -r osx-${{ inputs.cpu }}",
             action,
             StringComparison.Ordinal);
         Assert.Contains(
-            "dotnet publish DownKyi/DownKyi.csproj --no-restore --self-contained -r osx-${{ inputs.cpu }}",
+            "dotnet publish src/DownKyi/DownKyi.csproj --no-restore --self-contained -r osx-${{ inputs.cpu }}",
             action,
             StringComparison.Ordinal);
     }
@@ -805,8 +805,6 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.Contains("MACOS_ADHOC_SIGNING: 'true'", workflow, StringComparison.Ordinal);
         foreach (var packageInput in new[]
                  {
-                     "DownKyi/**/*.csproj",
-                     "DownKyi.Core/**/*.csproj",
                      "src/**/*.csproj",
                      "src/DownKyi.Desktop/Resources/favicon.ico",
                      "THIRD-PARTY-NOTICES.md",
@@ -820,8 +818,8 @@ public sealed class ReleaseWorkflowArchitectureTests
 
         foreach (var broadOrDuplicateInput in new[]
                  {
-                     "DownKyi/**",
-                     "DownKyi.Core/**",
+                     "src/DownKyi/**",
+                     "src/DownKyi.Core/**",
                      "src/**",
                      "script/test-project.ps1",
                      "script/test-project-runner.ps1",

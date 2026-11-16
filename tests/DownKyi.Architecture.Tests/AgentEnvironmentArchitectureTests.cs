@@ -13,8 +13,8 @@ public sealed class AgentEnvironmentArchitectureTests
     public void RepositoryStructureSeparatesSourceTestsDocumentationConfigurationAndScripts()
     {
         AssertPathsExist(
-            "DownKyi",
-            "DownKyi.Core",
+            "src/DownKyi",
+            "src/DownKyi.Core",
             "src",
             "tests",
             "docs",

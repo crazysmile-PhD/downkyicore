@@ -24,8 +24,8 @@ public sealed class LoginResponsiveLayoutTests
         var fluent = new FluentTheme();
         application.Styles.Insert(0, fluent);
         using var coordinator = new LoginCoordinatorStub();
-        using var viewModel = new ViewLoginViewModel(
-            new InteractionStub(), coordinator, new LoginQrCodeRenderer(), NullLogger<ViewLoginViewModel>.Instance)
+        using var viewModel = new LoginViewModel(
+            new InteractionStub(), coordinator, new LoginQrCodeRenderer(), NullLogger<LoginViewModel>.Instance)
         {
             LoginQrCode = new LoginQrCodeRenderer().Render(new Uri("https://example.invalid/qr-layout-test")),
             LoginQrCodeOpacity = 1

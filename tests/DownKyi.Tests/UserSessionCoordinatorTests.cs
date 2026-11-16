@@ -17,12 +17,12 @@ public sealed class UserSessionCoordinatorTests
         var coordinator = new RecordingUserSessionCoordinator();
         var navigation = new StubNavigationService();
         var searchService = new SearchService(settings.Store, navigation);
-        using var viewModel = new ViewIndexViewModel(
+        using var viewModel = new IndexViewModel(
             new TestDesktopInteractionContext(navigation),
             coordinator,
             settings.Store,
             searchService,
-            NullLogger<ViewIndexViewModel>.Instance);
+            NullLogger<IndexViewModel>.Instance);
 
         Assert.Equal(0, coordinator.RefreshCount);
     }
@@ -34,12 +34,12 @@ public sealed class UserSessionCoordinatorTests
         var coordinator = new RecordingUserSessionCoordinator();
         var navigation = new StubNavigationService();
         var searchService = new SearchService(settings.Store, navigation);
-        using var viewModel = new ViewIndexViewModel(
+        using var viewModel = new IndexViewModel(
             new TestDesktopInteractionContext(navigation),
             coordinator,
             settings.Store,
             searchService,
-            NullLogger<ViewIndexViewModel>.Instance)
+            NullLogger<IndexViewModel>.Instance)
         {
             InputText = "BV1G1421D7mL"
         };
@@ -65,12 +65,12 @@ public sealed class UserSessionCoordinatorTests
         var searchService = new SearchService(settings.Store, navigation);
         string? notification = null;
         interactions.Notifications.NotificationRaised += (_, e) => notification = e.Message;
-        using var viewModel = new ViewIndexViewModel(
+        using var viewModel = new IndexViewModel(
             interactions,
             coordinator,
             settings.Store,
             searchService,
-            NullLogger<ViewIndexViewModel>.Instance)
+            NullLogger<IndexViewModel>.Instance)
         {
             InputText = "not-a-bilibili-id"
         };

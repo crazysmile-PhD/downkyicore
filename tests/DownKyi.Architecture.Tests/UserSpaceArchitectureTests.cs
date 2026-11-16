@@ -11,7 +11,7 @@ public sealed class UserSpaceArchitectureTests
             RepositoryRoot,
             "src", "DownKyi.Desktop",
             "ViewModels",
-            "ViewUserSpaceViewModel.cs"));
+            "UserSpaceViewModel.cs"));
 
         Assert.DoesNotContain("Task.Run", source, StringComparison.Ordinal);
         Assert.Contains("IUserSpaceLoadCoordinator", source, StringComparison.Ordinal);
@@ -29,8 +29,8 @@ public sealed class UserSpaceArchitectureTests
             RepositoryRoot,
             "src", "DownKyi.Desktop",
             "ViewModels");
-        var workflowPath = Path.Combine(viewModelDirectory, "ViewUserSpaceViewModel.cs");
-        var statePath = Path.Combine(viewModelDirectory, "ViewUserSpaceViewModel.State.cs");
+        var workflowPath = Path.Combine(viewModelDirectory, "UserSpaceViewModel.cs");
+        var statePath = Path.Combine(viewModelDirectory, "UserSpaceViewModel.State.cs");
         var workflowSource = File.ReadAllText(workflowPath);
         var stateSource = File.ReadAllText(statePath);
 
@@ -38,7 +38,7 @@ public sealed class UserSpaceArchitectureTests
         Assert.Contains("ISettingsStore", workflowSource, StringComparison.Ordinal);
         Assert.Contains("CancellationTokenSource", workflowSource, StringComparison.Ordinal);
         Assert.Contains("AppNavigationContext", workflowSource, StringComparison.Ordinal);
-        Assert.Contains("ILogger<ViewUserSpaceViewModel>", workflowSource, StringComparison.Ordinal);
+        Assert.Contains("ILogger<UserSpaceViewModel>", workflowSource, StringComparison.Ordinal);
 
         foreach (var property in new[]
         {
@@ -88,8 +88,8 @@ public sealed class UserSpaceArchitectureTests
             RepositoryRoot,
             "src", "DownKyi.Desktop",
             "ViewModels");
-        var workflowPath = Path.Combine(viewModelDirectory, "ViewMyBangumiFollowViewModel.cs");
-        var statePath = Path.Combine(viewModelDirectory, "ViewMyBangumiFollowViewModel.State.cs");
+        var workflowPath = Path.Combine(viewModelDirectory, "MyBangumiFollowViewModel.cs");
+        var statePath = Path.Combine(viewModelDirectory, "MyBangumiFollowViewModel.State.cs");
         var workflowSource = File.ReadAllText(workflowPath);
         var stateSource = File.ReadAllText(statePath);
 
@@ -98,7 +98,7 @@ public sealed class UserSpaceArchitectureTests
         Assert.Contains("CancellationTokenSource", workflowSource, StringComparison.Ordinal);
         Assert.Contains("AppNavigationContext", workflowSource, StringComparison.Ordinal);
         Assert.Contains("CustomPagerViewModel", workflowSource, StringComparison.Ordinal);
-        Assert.Contains("ILogger<ViewMyBangumiFollowViewModel>", workflowSource, StringComparison.Ordinal);
+        Assert.Contains("ILogger<MyBangumiFollowViewModel>", workflowSource, StringComparison.Ordinal);
 
         foreach (var property in new[]
         {
@@ -143,7 +143,7 @@ public sealed class UserSpaceArchitectureTests
             "src", "DownKyi.Desktop",
             "ViewModels",
             "UserSpace",
-            "ViewFavoritesViewModel.cs"));
+            "FavoritesViewModel.cs"));
         var view = File.ReadAllText(Path.Combine(
             RepositoryRoot,
             "src", "DownKyi.Desktop",

@@ -1,15 +1,14 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DownKyi", "DownKyi\DownKyi.csproj", "{545334D8-F429-47C1-99A7-A25EAC17D76A}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DownKyi", "src\DownKyi\DownKyi.csproj", "{545334D8-F429-47C1-99A7-A25EAC17D76A}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DownKyi.Core", "DownKyi.Core\DownKyi.Core.csproj", "{153A9B2C-7494-411C-BA0A-121A1024C08E}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DownKyi.Core", "src\DownKyi.Core\DownKyi.Core.csproj", "{153A9B2C-7494-411C-BA0A-121A1024C08E}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{0C40188E-3DE3-4D14-8838-5D2931466DE0}"
 	ProjectSection(SolutionItems) = preProject
 		.gitignore = .gitignore
 		CHANGELOG.md = CHANGELOG.md
 		Directory.Build.props = Directory.Build.props
-		Directory.Build.targets = Directory.Build.targets
 		README.md = README.md
 		version.txt = version.txt
 		Directory.Packages.props = Directory.Packages.props
@@ -344,6 +343,8 @@ Global
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
+		{545334D8-F429-47C1-99A7-A25EAC17D76A} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{153A9B2C-7494-411C-BA0A-121A1024C08E} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{7BD62070-19F7-432E-983C-777D44E20665} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{B79854FE-E90D-4E4C-A71E-0C4C04E64DAB} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{69D979C6-C967-4285-B3B6-738DA5CFB4C4} = {0AB3BF05-4346-4AA6-1389-037BE0695223}

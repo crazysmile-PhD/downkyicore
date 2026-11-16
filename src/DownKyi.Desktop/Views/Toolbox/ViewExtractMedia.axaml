@@ -3,7 +3,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:vm="clr-namespace:DownKyi.ViewModels.Toolbox"
     x:Class="DownKyi.Views.Toolbox.ViewExtractMedia"
-    x:DataType="vm:ViewExtractMediaViewModel"
+    x:DataType="vm:ExtractMediaViewModel"
     Background="{DynamicResource SpacePaper}"
     Foreground="{DynamicResource SpaceInk}"
     Classes="studio-page">

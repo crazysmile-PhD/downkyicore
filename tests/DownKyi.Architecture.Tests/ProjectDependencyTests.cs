@@ -186,7 +186,7 @@ public sealed class ProjectDependencyTests
     [Fact]
     public void PrismPackagesAndLegacyCompositionBridgesAreRemoved()
     {
-        var projectSource = File.ReadAllText(Path.Combine(RepositoryRoot, "DownKyi", "DownKyi.csproj"));
+        var projectSource = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "DownKyi", "DownKyi.csproj"));
         var desktopRoot = Path.Combine(RepositoryRoot, "src", "DownKyi.Desktop");
         var packageSource = File.ReadAllText(Path.Combine(RepositoryRoot, "Directory.Packages.props"));
 
@@ -205,7 +205,7 @@ public sealed class ProjectDependencyTests
     [Fact]
     public void ExecutableProjectIsOnlyTheDesktopBootstrap()
     {
-        var executableRoot = Path.Combine(RepositoryRoot, "DownKyi");
+        var executableRoot = Path.Combine(RepositoryRoot, "src", "DownKyi");
         var projectPath = Path.Combine(executableRoot, "DownKyi.csproj");
         var sourceFiles = Directory
             .EnumerateFiles(executableRoot, "*.cs", SearchOption.AllDirectories)

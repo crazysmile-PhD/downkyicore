@@ -5,7 +5,7 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:vm="clr-namespace:DownKyi.ViewModels"
     x:Class="DownKyi.Views.VideoDetailActionsView"
-    x:DataType="vm:ViewVideoDetailViewModel"
+    x:DataType="vm:VideoDetailViewModel"
     mc:Ignorable="d"
     Classes="studio-page">
     <UserControl.Styles>

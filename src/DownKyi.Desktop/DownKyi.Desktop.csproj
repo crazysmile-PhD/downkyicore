@@ -28,7 +28,7 @@
     <PackageReference Include="Xaml.Behaviors" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\DownKyi.Core\DownKyi.Core.csproj" />
+    <ProjectReference Include="..\DownKyi.Core\DownKyi.Core.csproj" />
     <ProjectReference Include="..\DownKyi.Application\DownKyi.Application.csproj" />
     <ProjectReference Include="..\DownKyi.Domain\DownKyi.Domain.csproj" />
     <ProjectReference Include="..\DownKyi.Infrastructure\DownKyi.Infrastructure.csproj" />

@@ -98,7 +98,7 @@ public sealed class DownloadFinishedHistoryLoadingTests
         Assert.Equal(1, coordinator.HistoryReads);
     }
 
-    private static ViewDownloadFinishedViewModel CreateViewModel(
+    private static DownloadFinishedViewModel CreateViewModel(
         IDesktopInteractionContext desktopInteractions,
         DownloadListState state,
         ISettingsStore settingsStore,
@@ -108,7 +108,7 @@ public sealed class DownloadFinishedHistoryLoadingTests
             state,
             settingsStore,
             coordinator,
-            NullLogger<ViewDownloadFinishedViewModel>.Instance);
+            NullLogger<DownloadFinishedViewModel>.Instance);
 
     private static AppNavigationContext CreateNavigationContext() =>
         new(

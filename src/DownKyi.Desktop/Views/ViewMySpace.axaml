@@ -6,7 +6,7 @@
     xmlns:vmp="clr-namespace:DownKyi.Presentation"
     xmlns:asyncImageLoader="clr-namespace:DownKyi.CustomControl.AsyncImageLoader"
     x:Class="DownKyi.Views.ViewMySpace"
-    x:DataType="vm:ViewMySpaceViewModel"
+    x:DataType="vm:MySpaceViewModel"
     Background="{DynamicResource SpacePaper}">
     <UserControl.Resources>
         <ResourceDictionary>
