@@ -123,10 +123,10 @@
       "rationale": "The reported depth comes from a shared Avalonia framework inheritance chain, not a DownKyi-owned hierarchy."
     },
     {
-      "identity": "CA1501|src/DownKyi.Desktop/Views/Dialogs/ViewAlertDialog.axaml.cs|ViewAlertDialog",
+      "identity": "CA1501|src/DownKyi.Desktop/Views/Dialogs/AlertDialog.axaml.cs|AlertDialog",
       "rule": "CA1501",
-      "path": "src/DownKyi.Desktop/Views/Dialogs/ViewAlertDialog.axaml.cs",
-      "symbol": "ViewAlertDialog",
+      "path": "src/DownKyi.Desktop/Views/Dialogs/AlertDialog.axaml.cs",
+      "symbol": "AlertDialog",
       "observedMetric": 11,
       "groupId": "ca1501-framework-9be27076938f8461",
       "groupTitle": "Avalonia framework inheritance rooted at UserControl",
@@ -135,10 +135,10 @@
       "rationale": "The reported depth comes from a shared Avalonia framework inheritance chain, not a DownKyi-owned hierarchy."
     },
     {
-      "identity": "CA1501|src/DownKyi.Desktop/Views/Dialogs/ViewDownloadSetter.axaml.cs|ViewDownloadSetter",
+      "identity": "CA1501|src/DownKyi.Desktop/Views/Dialogs/DownloadSetterDialog.axaml.cs|DownloadSetterDialog",
       "rule": "CA1501",
-      "path": "src/DownKyi.Desktop/Views/Dialogs/ViewDownloadSetter.axaml.cs",
-      "symbol": "ViewDownloadSetter",
+      "path": "src/DownKyi.Desktop/Views/Dialogs/DownloadSetterDialog.axaml.cs",
+      "symbol": "DownloadSetterDialog",
       "observedMetric": 11,
       "groupId": "ca1501-framework-9be27076938f8461",
       "groupTitle": "Avalonia framework inheritance rooted at UserControl",
@@ -159,10 +159,10 @@
       "rationale": "The reported depth comes from a shared Avalonia framework inheritance chain, not a DownKyi-owned hierarchy."
     },
     {
-      "identity": "CA1501|src/DownKyi.Desktop/Views/Dialogs/ViewUpgradingDialog.axaml.cs|ViewUpgradingDialog",
+      "identity": "CA1501|src/DownKyi.Desktop/Views/Dialogs/UpgradingDialog.axaml.cs|UpgradingDialog",
       "rule": "CA1501",
-      "path": "src/DownKyi.Desktop/Views/Dialogs/ViewUpgradingDialog.axaml.cs",
-      "symbol": "ViewUpgradingDialog",
+      "path": "src/DownKyi.Desktop/Views/Dialogs/UpgradingDialog.axaml.cs",
+      "symbol": "UpgradingDialog",
       "observedMetric": 11,
       "groupId": "ca1501-framework-9be27076938f8461",
       "groupTitle": "Avalonia framework inheritance rooted at UserControl",

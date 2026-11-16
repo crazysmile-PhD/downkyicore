@@ -444,7 +444,7 @@
     <system:String x:Key="DownloadOutputCollision">目標檔名已存在，或正由其他下載任務使用。請選擇其他下載資料夾，或在「設定 → 基本」啟用「檔名重複時自動加上數字序號」，再重試。</system:String>
 
 
-    <!--  ViewDownloadSetter  -->
+    <!--  DownloadSetterDialog  -->
     <system:String x:Key="DownloadSetter">下載設定</system:String>
     <system:String x:Key="Location">位置：</system:String>
     <system:String x:Key="Browse">瀏覽</system:String>

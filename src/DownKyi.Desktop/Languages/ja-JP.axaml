@@ -444,7 +444,7 @@
     <system:String x:Key="DownloadOutputCollision">同じ名前のファイルが存在するか、別のダウンロードで使用中です。別のフォルダーを選ぶか、「設定 → 基本」で「ファイル名が重複した場合は自動で番号を追加」を有効にして再試行してください。</system:String>
 
 
-    <!--  ViewDownloadSetter  -->
+    <!--  DownloadSetterDialog  -->
     <system:String x:Key="DownloadSetter">ダウンロード設定</system:String>
     <system:String x:Key="Location">位置：</system:String>
     <system:String x:Key="Browse">参照</system:String>

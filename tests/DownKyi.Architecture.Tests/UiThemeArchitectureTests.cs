@@ -434,7 +434,7 @@ public sealed class UiThemeArchitectureTests
 
         Assert.Equal(
             [
-                "src/DownKyi.Desktop/Views/Dialogs/ViewAlertDialog.axaml",
+                "src/DownKyi.Desktop/Views/Dialogs/AlertDialog.axaml",
                 "src/DownKyi.Desktop/Views/VideoDetailOperationStatusView.axaml"
             ],
             fillBindingOwners);

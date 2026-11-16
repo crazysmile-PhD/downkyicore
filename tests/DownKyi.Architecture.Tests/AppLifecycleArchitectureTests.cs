@@ -178,7 +178,7 @@ public sealed class AppLifecycleArchitectureTests
         var productionGuard = initialize.IndexOf("#if !DEBUG", StringComparison.Ordinal);
         var acquire = initialize.IndexOf("SingleInstanceGuard.TryAcquire", StringComparison.Ordinal);
         var exit = initialize.IndexOf("Environment.Exit(0)", StringComparison.Ordinal);
-        var loadXaml = initialize.IndexOf("AvaloniaXamlLoader.Load", StringComparison.Ordinal);
+        var loadXaml = initialize.IndexOf("LoadPresentation()", StringComparison.Ordinal);
         var createHost = initialize.IndexOf("CreateHost()", StringComparison.Ordinal);
 
         Assert.True(productionGuard >= 0 && productionGuard < acquire);

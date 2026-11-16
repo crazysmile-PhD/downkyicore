@@ -2,7 +2,7 @@
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:vmd="clr-namespace:DownKyi.ViewModels.Dialogs"
-    x:Class="DownKyi.Views.Dialogs.ViewAlertDialog"
+    x:Class="DownKyi.Views.Dialogs.AlertDialog"
     x:DataType="vmd:AlertDialogViewModel"
     Classes="studio-page studio-dialog">
     <UserControl.Styles>

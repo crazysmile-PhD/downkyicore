@@ -4,9 +4,9 @@ using Avalonia.Markup.Xaml;
 
 namespace DownKyi.Views.Dialogs;
 
-internal partial class ViewUpgradingDialog : UserControl
+internal partial class DownloadSetterDialog : UserControl
 {
-    public ViewUpgradingDialog()
+    public DownloadSetterDialog()
     {
         InitializeComponent();
     }

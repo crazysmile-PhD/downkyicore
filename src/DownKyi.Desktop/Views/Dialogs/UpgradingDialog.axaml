@@ -3,7 +3,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:vmd="clr-namespace:DownKyi.ViewModels.Dialogs"
     xmlns:customControl="clr-namespace:DownKyi.CustomControl"
-    x:Class="DownKyi.Views.Dialogs.ViewUpgradingDialog"
+    x:Class="DownKyi.Views.Dialogs.UpgradingDialog"
     x:DataType="vmd:UpgradingDialogViewModel"
     Classes="studio-page studio-dialog">
     <UserControl.Styles>

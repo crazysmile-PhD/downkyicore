@@ -27,12 +27,12 @@ internal sealed class DialogContentFactory(IServiceProvider services)
     {
         return dialog switch
         {
-            AppDialog.Alert => (typeof(ViewAlertDialog), typeof(AlertDialogViewModel)),
-            AppDialog.DownloadSettings => (typeof(ViewDownloadSetter), typeof(DownloadSetterViewModel)),
+            AppDialog.Alert => (typeof(AlertDialog), typeof(AlertDialogViewModel)),
+            AppDialog.DownloadSettings => (typeof(DownloadSetterDialog), typeof(DownloadSetterViewModel)),
             AppDialog.NewVersionAvailable => (
                 typeof(NewVersionAvailableDialog),
                 typeof(NewVersionAvailableDialogViewModel)),
-            AppDialog.LegacyUpgrade => (typeof(ViewUpgradingDialog), typeof(UpgradingDialogViewModel)),
+            AppDialog.LegacyUpgrade => (typeof(UpgradingDialog), typeof(UpgradingDialogViewModel)),
             AppDialog.StartupDiagnostics => (
                 typeof(StartupDiagnosticsDialog),
                 typeof(StartupDiagnosticsDialogViewModel)),
