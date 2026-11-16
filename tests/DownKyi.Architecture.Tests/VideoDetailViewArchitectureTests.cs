@@ -27,7 +27,7 @@ public sealed class VideoDetailViewArchitectureTests
         {
             var source = Read(name);
             Assert.Contains(
-                "x:DataType=\"vm:ViewVideoDetailViewModel\"",
+                "x:DataType=\"vm:VideoDetailViewModel\"",
                 source,
                 StringComparison.Ordinal);
         }

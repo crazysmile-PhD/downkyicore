@@ -4,7 +4,7 @@
     xmlns:vm="clr-namespace:DownKyi.ViewModels.Toolbox"
     xmlns:customControl="clr-namespace:DownKyi.CustomControl"
     x:Class="DownKyi.Views.Toolbox.ViewDelogo"
-    x:DataType="vm:ViewDelogoViewModel"
+    x:DataType="vm:DelogoViewModel"
     Background="{DynamicResource SpacePaper}"
     Foreground="{DynamicResource SpaceInk}"
     Classes="studio-page">

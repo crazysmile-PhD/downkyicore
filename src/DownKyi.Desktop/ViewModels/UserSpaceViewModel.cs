@@ -1,0 +1,407 @@
+using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Threading;
+using System.Threading.Tasks;
+using CommunityToolkit.Mvvm.Input;
+using DownKyi.Application.Desktop;
+using DownKyi.Application.Settings;
+using DownKyi.Core.BiliApi.Users;
+using DownKyi.Core.BiliApi.Users.Models;
+using DownKyi.Core.Utils;
+using DownKyi.Images;
+using DownKyi.Services.UserSpace;
+using DownKyi.Utils;
+using DownKyi.ViewModels.UserSpace;
+using Microsoft.Extensions.Logging;
+
+namespace DownKyi.ViewModels;
+
+internal partial class UserSpaceViewModel : ViewModelBase
+{
+    public const string Tag = "PageUserSpace";
+
+    private readonly ILogger<UserSpaceViewModel> _logger;
+    private readonly ISettingsStore _settingsStore;
+    private readonly IUserSpaceLoadCoordinator _loadCoordinator;
+    private CancellationTokenSource? _loadCancellation;
+    private long? _loadedMid;
+
+    // mid
+    private long mid = -1;
+
+    public UserSpaceViewModel(
+        IDesktopInteractionContext desktopInteractions,
+        ISettingsStore settingsStore,
+        IUserSpaceLoadCoordinator loadCoordinator,
+        ILogger<UserSpaceViewModel> logger) : base(desktopInteractions)
+    {
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _loadCoordinator = loadCoordinator ?? throw new ArgumentNullException(nameof(loadCoordinator));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        ObserveRegion(AppNavigationRegion.UserSpace);
+
+        #region 属性初始化
+
+        // 返回按钮
+        ArrowBack = NavigationIcon.CreateArrowBack();
+
+        // 初始化loading
+        Loading = true;
+
+        TabLeftBanners = new ObservableCollection<TabLeftBanner>();
+        TabRightBanners = new ObservableCollection<TabRightBanner>();
+
+        #endregion
+    }
+
+    #region 命令申明
+
+    // 返回事件
+    private RelayCommand? _backSpaceCommand;
+
+    public RelayCommand BackSpaceCommand => _backSpaceCommand ??= new RelayCommand(ExecuteBackSpace);
+
+    /// <summary>
+    /// 返回事件
+    /// </summary>
+    protected internal override void ExecuteBackSpace()
+    {
+        if (TryNavigateBack())
+        {
+            return;
+        }
+
+        NavigateToParent();
+    }
+
+    // 左侧tab点击事件
+    private RelayCommand<object>? _tabLeftBannersCommand;
+
+    public RelayCommand<object> TabLeftBannersCommand => _tabLeftBannersCommand ??= RequiredParameterCommand.Create<object>(ExecuteTabLeftBannersCommand);
+
+    /// <summary>
+    /// 左侧tab点击事件
+    /// </summary>
+    /// <param name="parameter"></param>
+    private void ExecuteTabLeftBannersCommand(object parameter)
+    {
+        if (parameter is not TabLeftBanner banner)
+        {
+            return;
+        }
+
+        if (banner.Id == 1)
+        {
+            banner.IsSelected = false;
+            Navigation.Navigate(new AppNavigationRequest(
+                AppRoute.Publication,
+                AppRoute.UserSpace,
+                new DynamicVideoNavigationPayload(mid)));
+            return;
+        }
+
+        var parameters = new Dictionary<string, object?>
+        {
+            ["object"] = banner.NavigationData,
+            ["mid"] = mid
+        };
+
+        var route = banner.Id switch
+        {
+            0 => AppRoute.Archive,
+            2 => AppRoute.UserSpaceSeasonsSeries,
+            3 => AppRoute.UserSpaceFavorites,
+            _ => (AppRoute?)null
+        };
+        if (route != null)
+        {
+            Navigation.NavigateRegion(AppNavigationRegion.UserSpace, route.Value, parameters);
+        }
+    }
+
+    // 右侧tab点击事件
+    private RelayCommand<object>? _tabRightBannersCommand;
+
+    public RelayCommand<object> TabRightBannersCommand => _tabRightBannersCommand ??= RequiredParameterCommand.Create<object>(ExecuteTabRightBannersCommand);
+
+    /// <summary>
+    /// 右侧tab点击事件
+    /// </summary>
+    private void ExecuteTabRightBannersCommand(object parameter)
+    {
+        if (!(parameter is TabRightBanner banner))
+        {
+            return;
+        }
+
+        var data = new Dictionary<string, object>
+        {
+            { "mid", mid },
+            { "friendId", 0 }
+        };
+
+        var parentRoute = ParentRoute == AppRoute.Friends
+            ? AppRoute.Index
+            : AppRoute.UserSpace;
+
+        switch (banner.Id)
+        {
+            case 0:
+                data["friendId"] = 0;
+                Navigation.Navigate(new AppNavigationRequest(
+                    AppRoute.Friends,
+                    parentRoute,
+                    data));
+                break;
+            case 1:
+                data["friendId"] = 1;
+                Navigation.Navigate(new AppNavigationRequest(
+                    AppRoute.Friends,
+                    parentRoute,
+                    data));
+                break;
+        }
+
+        SelectedRightBanner = -1;
+    }
+
+    #endregion
+
+    /// <summary>
+    /// 初始化页面
+    /// </summary>
+    private void InitView()
+    {
+        Background = null;
+
+        Header = null;
+        UserName = "";
+        Sex = null;
+        Level = null;
+        VipTypeVisibility = false;
+        VipType = "";
+        Sign = "";
+
+        TabLeftBanners.Clear();
+        TabRightBanners.Clear();
+
+        SelectedRightBanner = -1;
+
+        // 将内容置空，使其不指向任何页面
+        Navigation.ClearRegion(AppNavigationRegion.UserSpace);
+
+        ContentVisibility = false;
+        ViewVisibility = false;
+        LoadingVisibility = true;
+        NoDataVisibility = false;
+    }
+
+    /// <summary>
+    /// 更新用户信息
+    /// </summary>
+    private async Task UpdateSpaceInfoAsync()
+    {
+        var cancellationToken = ResetLoadCancellation();
+        UserSpaceSnapshot snapshot;
+        try
+        {
+            snapshot = await _loadCoordinator
+                .LoadAsync(mid, cancellationToken)
+                .ConfigureAwait(true);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+
+        var userInfo = snapshot.User;
+
+        // 是否获取到数据
+        if (userInfo == null)
+        {
+            Background = null;
+
+            ViewVisibility = false;
+            LoadingVisibility = false;
+            NoDataVisibility = true;
+            _loadedMid = mid;
+            return;
+        }
+        else
+        {
+            // 头像
+            Header = userInfo.Face;
+            UserName = userInfo.Name;
+            var sexUri = userInfo.Sex switch
+            {
+                "男" => new Uri("avares://DownKyi.Desktop/Resources/sex/male.png"),
+                "女" => new Uri("avares://DownKyi.Desktop/Resources/sex/female.png"),
+                _ => null
+            };
+            // 性别
+            Sex = sexUri == null ? null : ImageHelper.LoadFromResource(sexUri);
+            // 等级
+            Level = ImageHelper.LoadFromResource(new Uri($"avares://DownKyi.Desktop/Resources/level/lv{userInfo.Level}.png"));
+            VipType = userInfo.Vip?.Label?.Text ?? string.Empty;
+            VipTypeVisibility = !string.IsNullOrEmpty(VipType);
+            Sign = userInfo.Sign;
+            IsFollowed = userInfo.IsFollowed
+                ? DictionaryResource.GetString("Followed")
+                : DictionaryResource.GetString("NotFollowed");
+
+            Background = snapshot.Background;
+
+            ViewVisibility = true;
+            LoadingVisibility = false;
+            NoDataVisibility = false;
+        }
+
+        ContentVisibility = true;
+
+        // 投稿视频
+        var publicationTypes = snapshot.PublicationTypes;
+        if (publicationTypes is { Count: > 0 })
+        {
+            TabLeftBanners.Add(new TabLeftBanner
+            {
+                NavigationData = publicationTypes,
+                Id = 0,
+                Icon = NormalIcon.Current.VideoUp,
+                IconColor = "#FF02B5DA",
+                Title = DictionaryResource.GetString("Publication"),
+                IsSelected = true
+            });
+        }
+
+        TabLeftBanners.Add(new TabLeftBanner
+        {
+            Id = 1,
+            Icon = NormalIcon.Current.Channel1,
+            IconColor = "#FF7B61FF",
+            Title = DictionaryResource.GetString("DynamicVideos")
+        });
+
+        // 合集和列表
+        var seasonsSeries = snapshot.SeasonsSeries;
+        if (seasonsSeries is { Page.Total: > 0 })
+        {
+            TabLeftBanners.Add(new TabLeftBanner
+            {
+                NavigationData = seasonsSeries,
+                Id = 2,
+                Icon = NormalIcon.Current.Channel,
+                IconColor = "#FF23C9ED",
+                Title = DictionaryResource.GetString("SeasonsSeries")
+            });
+        }
+
+        AddFavoriteFolders(snapshot.FavoriteFolders);
+
+        // 订阅
+
+        // 关系状态数
+        var relationStat = snapshot.Relation;
+        if (relationStat != null)
+        {
+            TabRightBanners.Add(new TabRightBanner
+            {
+                Id = 0,
+                IsEnabled = true,
+                Label = DictionaryResource.GetString("FollowingCount"),
+                Count = Format.FormatNumber(relationStat.Following)
+            });
+            TabRightBanners.Add(new TabRightBanner
+            {
+                Id = 1,
+                IsEnabled = true,
+                Label = DictionaryResource.GetString("FollowerCount"),
+                Count = Format.FormatNumber(relationStat.Follower)
+            });
+        }
+
+        // UP主状态数，需要任意用户登录，否则不会返回任何数据
+        var upStat = snapshot.Statistics;
+        if (upStat is { Archive: not null, Article: not null })
+        {
+            TabRightBanners.Add(new TabRightBanner
+            {
+                Id = 2,
+                IsEnabled = false,
+                Label = DictionaryResource.GetString("LikesCount"),
+                Count = Format.FormatNumber(upStat.Likes)
+            });
+
+            TabRightBanners.Add(new TabRightBanner
+            {
+                Id = 3,
+                IsEnabled = false,
+                Label = DictionaryResource.GetString("ArchiveViewCount"),
+                Count = Format.FormatNumber(upStat.Archive.View)
+            });
+
+            TabRightBanners.Add(new TabRightBanner
+            {
+                Id = 4,
+                IsEnabled = false,
+                Label = DictionaryResource.GetString("ArticleViewCount"),
+                Count = Format.FormatNumber(upStat.Article.View)
+            });
+        }
+
+        _loadedMid = mid;
+    }
+
+    /// <summary>
+    /// 接收mid参数
+    /// </summary>
+    /// <param name="navigationContext"></param>
+    public override void OnNavigatedTo(AppNavigationContext navigationContext)
+    {
+        ArgumentNullException.ThrowIfNull(navigationContext);
+        base.OnNavigatedTo(navigationContext);
+
+        // 根据传入参数不同执行不同任务
+        var parameter = navigationContext.Parameters.GetValue<long>("Parameter");
+        if (parameter == 0)
+        {
+            return;
+        }
+
+        if (_loadedMid == parameter)
+        {
+            return;
+        }
+
+        mid = parameter;
+
+        InitView();
+        RunFireAndForget(UpdateSpaceInfoAsync(), nameof(UpdateSpaceInfoAsync), _logger);
+    }
+
+    public override void OnNavigatedFrom(AppNavigationContext navigationContext)
+    {
+        _loadCancellation?.Cancel();
+        base.OnNavigatedFrom(navigationContext);
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing && !IsDisposed)
+        {
+            _loadCancellation?.Cancel();
+            _loadCancellation?.Dispose();
+            _loadCancellation = null;
+        }
+
+        base.Dispose(disposing);
+    }
+
+    private CancellationToken ResetLoadCancellation()
+    {
+        _loadCancellation?.Cancel();
+        _loadCancellation?.Dispose();
+        _loadCancellation = new CancellationTokenSource();
+        return _loadCancellation.Token;
+    }
+}

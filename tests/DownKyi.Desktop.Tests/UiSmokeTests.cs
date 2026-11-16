@@ -56,7 +56,7 @@ public sealed class UiSmokeTests
         await AvaloniaTestDispatcher.RunAsync(() =>
         {
             DesktopTestResources.EnsureProductThemeResources();
-            ViewPublicationViewModel? publication = null;
+            PublicationViewModel? publication = null;
             using var navigation = new AvaloniaNavigationService(
                 route => route switch
                 {
@@ -66,11 +66,11 @@ public sealed class UiSmokeTests
                 },
                 static action => action());
             var coordinator = new PublicationPageCoordinatorStub(navigation);
-            publication = new ViewPublicationViewModel(
+            publication = new PublicationViewModel(
                 new DesktopInteractionContextStub(navigation),
                 new ContentDownloadCoordinatorStub(),
                 coordinator,
-                NullLogger<ViewPublicationViewModel>.Instance);
+                NullLogger<PublicationViewModel>.Instance);
             var payload = PublicationNavigationPayload.All(42);
 
             navigation.Navigate(new AppNavigationRequest(AppRoute.Publication, AppRoute.Index, payload));
@@ -100,18 +100,18 @@ public sealed class UiSmokeTests
         await AvaloniaTestDispatcher.RunAsync(() =>
         {
             DesktopTestResources.EnsureProductThemeResources();
-            ViewPublicationViewModel? publication = null;
+            PublicationViewModel? publication = null;
             using var navigation = new AvaloniaNavigationService(
                 route => route == AppRoute.Publication
                     ? publication!
                     : throw new InvalidOperationException($"Unexpected route {route}."),
                 static action => action());
             var coordinator = new PublicationPageCoordinatorStub(navigation);
-            publication = new ViewPublicationViewModel(
+            publication = new PublicationViewModel(
                 new DesktopInteractionContextStub(navigation),
                 new ContentDownloadCoordinatorStub(),
                 coordinator,
-                NullLogger<ViewPublicationViewModel>.Instance);
+                NullLogger<PublicationViewModel>.Instance);
 
             navigation.Navigate(new AppNavigationRequest(
                 AppRoute.Publication,
@@ -145,7 +145,7 @@ public sealed class UiSmokeTests
             try
             {
                 using var settings = new SettingsStore(Path.Combine(directory, "settings.json"));
-                ViewUserSpaceViewModel? userSpace = null;
+                UserSpaceViewModel? userSpace = null;
                 var dynamicPage = new NavigationProbe(AppRoute.Publication);
                 using var navigation = new AvaloniaNavigationService(
                     route => route switch
@@ -155,11 +155,11 @@ public sealed class UiSmokeTests
                         _ => throw new InvalidOperationException($"Unexpected route {route}.")
                     },
                     static action => action());
-                userSpace = new ViewUserSpaceViewModel(
+                userSpace = new UserSpaceViewModel(
                     new DesktopInteractionContextStub(navigation),
                     settings,
                     new UserSpaceLoadCoordinatorStub(),
-                    NullLogger<ViewUserSpaceViewModel>.Instance);
+                    NullLogger<UserSpaceViewModel>.Instance);
 
                 navigation.Navigate(new AppNavigationRequest(
                     AppRoute.UserSpace,
@@ -191,17 +191,17 @@ public sealed class UiSmokeTests
         await AvaloniaTestDispatcher.RunAsync(() =>
         {
             DesktopTestResources.EnsureProductThemeResources();
-            ViewSeasonsSeriesDetailViewModel? series = null;
+            SeasonsSeriesDetailViewModel? series = null;
             using var navigation = new AvaloniaNavigationService(
                 route => route == AppRoute.SeasonsSeries
                     ? series!
                     : throw new InvalidOperationException($"Unexpected route {route}."),
                 static action => action());
             var coordinator = new SeriesPageCoordinatorStub();
-            series = new ViewSeasonsSeriesDetailViewModel(
+            series = new SeasonsSeriesDetailViewModel(
                 new DesktopInteractionContextStub(navigation),
                 coordinator,
-                NullLogger<ViewSeasonsSeriesDetailViewModel>.Instance);
+                NullLogger<SeasonsSeriesDetailViewModel>.Instance);
 
             navigation.Navigate(new AppNavigationRequest(
                 AppRoute.SeasonsSeries,
@@ -225,17 +225,17 @@ public sealed class UiSmokeTests
         await AvaloniaTestDispatcher.RunAsync(() =>
         {
             DesktopTestResources.EnsureProductThemeResources();
-            ViewSeasonsSeriesDetailViewModel? series = null;
+            SeasonsSeriesDetailViewModel? series = null;
             using var navigation = new AvaloniaNavigationService(
                 route => route == AppRoute.SeasonsSeries
                     ? series!
                     : throw new InvalidOperationException($"Unexpected route {route}."),
                 static action => action());
             var coordinator = new ContinuousSeriesPageCoordinatorStub(totalCount: 5, itemsPerPage: 2);
-            series = new ViewSeasonsSeriesDetailViewModel(
+            series = new SeasonsSeriesDetailViewModel(
                 new DesktopInteractionContextStub(navigation),
                 coordinator,
-                NullLogger<ViewSeasonsSeriesDetailViewModel>.Instance);
+                NullLogger<SeasonsSeriesDetailViewModel>.Instance);
 
             navigation.Navigate(new AppNavigationRequest(
                 AppRoute.SeasonsSeries,
@@ -271,7 +271,7 @@ public sealed class UiSmokeTests
         {
             DesktopTestResources.EnsureProductThemeResources();
             DesktopTestResources.EnsureDownloadProjectionResources();
-            ViewSeasonsSeriesDetailViewModel? series = null;
+            SeasonsSeriesDetailViewModel? series = null;
             using var navigation = new AvaloniaNavigationService(
                 route => route == AppRoute.SeasonsSeries
                     ? series!
@@ -280,10 +280,10 @@ public sealed class UiSmokeTests
             var coordinator = new StreamingSeriesDownloadCoordinatorStub(
                 totalCount: 5,
                 itemsPerPage: 2);
-            series = new ViewSeasonsSeriesDetailViewModel(
+            series = new SeasonsSeriesDetailViewModel(
                 new DesktopInteractionContextStub(navigation),
                 coordinator,
-                NullLogger<ViewSeasonsSeriesDetailViewModel>.Instance);
+                NullLogger<SeasonsSeriesDetailViewModel>.Instance);
             navigation.Navigate(new AppNavigationRequest(
                 AppRoute.SeasonsSeries,
                 AppRoute.Index,
@@ -351,7 +351,7 @@ public sealed class UiSmokeTests
         {
             DesktopTestResources.EnsureProductThemeResources();
             DesktopTestResources.EnsureDownloadProjectionResources();
-            ViewSeasonsSeriesDetailViewModel? series = null;
+            SeasonsSeriesDetailViewModel? series = null;
             using var navigation = new AvaloniaNavigationService(
                 route => route == AppRoute.SeasonsSeries
                     ? series!
@@ -361,10 +361,10 @@ public sealed class UiSmokeTests
                 totalCount: 4,
                 itemsPerPage: 2,
                 pauseAdditionalPageLoads: true);
-            series = new ViewSeasonsSeriesDetailViewModel(
+            series = new SeasonsSeriesDetailViewModel(
                 new DesktopInteractionContextStub(navigation),
                 coordinator,
-                NullLogger<ViewSeasonsSeriesDetailViewModel>.Instance);
+                NullLogger<SeasonsSeriesDetailViewModel>.Instance);
             navigation.Navigate(new AppNavigationRequest(
                 AppRoute.SeasonsSeries,
                 AppRoute.Index,
@@ -436,17 +436,17 @@ public sealed class UiSmokeTests
         await AvaloniaTestDispatcher.RunAsync(() =>
         {
             DesktopTestResources.EnsureProductThemeResources();
-            ViewSeasonsSeriesDetailViewModel? series = null;
+            SeasonsSeriesDetailViewModel? series = null;
             using var navigation = new AvaloniaNavigationService(
                 route => route == AppRoute.SeasonsSeries
                     ? series!
                     : throw new InvalidOperationException($"Unexpected route {route}."),
                 static action => action());
             var coordinator = new ContinuousSeriesPageCoordinatorStub(totalCount: 4, itemsPerPage: 2);
-            series = new ViewSeasonsSeriesDetailViewModel(
+            series = new SeasonsSeriesDetailViewModel(
                 new DesktopInteractionContextStub(navigation),
                 coordinator,
-                NullLogger<ViewSeasonsSeriesDetailViewModel>.Instance);
+                NullLogger<SeasonsSeriesDetailViewModel>.Instance);
             navigation.Navigate(new AppNavigationRequest(
                 AppRoute.SeasonsSeries,
                 AppRoute.Index,
@@ -505,7 +505,7 @@ public sealed class UiSmokeTests
             var settings = new SettingsStore(Path.Combine(directory, "settings.json"));
             try
             {
-                ViewMyFavoritesViewModel? favorites = null;
+                MyFavoritesViewModel? favorites = null;
                 using var navigation = new AvaloniaNavigationService(
                     route => route switch
                     {
@@ -515,11 +515,11 @@ public sealed class UiSmokeTests
                     },
                     static action => action());
                 var coordinator = new FavoritesCoordinatorStub(navigation, settings);
-                favorites = new ViewMyFavoritesViewModel(
+                favorites = new MyFavoritesViewModel(
                     new DesktopInteractionContextStub(navigation),
                     new ContentDownloadCoordinatorStub(),
                     coordinator,
-                    NullLogger<ViewMyFavoritesViewModel>.Instance);
+                    NullLogger<MyFavoritesViewModel>.Instance);
 
                 navigation.Navigate(new AppNavigationRequest(AppRoute.MyFavorites, AppRoute.Index, 42L));
                 favorites.InputSearchText = "needle";
@@ -576,11 +576,11 @@ public sealed class UiSmokeTests
                 var conflictNotification = new TaskCompletionSource<string>(
                     TaskCreationOptions.RunContinuationsAsynchronously);
                 notifications.NotificationRaised += (_, args) => conflictNotification.TrySetResult(args.Message);
-                using var favorites = new ViewMyFavoritesViewModel(
+                using var favorites = new MyFavoritesViewModel(
                     interactions,
                     downloadCoordinator,
                     new FavoritesCoordinatorStub(navigation, settings),
-                    NullLogger<ViewMyFavoritesViewModel>.Instance);
+                    NullLogger<MyFavoritesViewModel>.Instance);
                 var view = new ViewMyFavorites { DataContext = favorites };
                 var window = new Window { Content = view };
 
@@ -742,13 +742,13 @@ public sealed class UiSmokeTests
             using var navigation = new AvaloniaNavigationService(
                 _ => new NavigationProbe(AppRoute.PublicFavorites),
                 static action => action());
-            using var favorites = new ViewPublicFavoritesViewModel(
+            using var favorites = new PublicFavoritesViewModel(
                 new DesktopInteractionContextStub(navigation),
                 new ClipboardServiceStub(),
                 new ContentDownloadCoordinatorStub(),
                 new FavoritesCoordinatorStub(navigation, settings),
                 settings,
-                NullLogger<ViewPublicFavoritesViewModel>.Instance)
+                NullLogger<PublicFavoritesViewModel>.Instance)
             {
                 Favorites = new FavoritesPageItem
                 {
@@ -892,7 +892,7 @@ public sealed class UiSmokeTests
                 {
                     if (route == AppRoute.Friends)
                     {
-                        return new ViewFriendsViewModel(desktopInteractions);
+                        return new FriendsViewModel(desktopInteractions);
                     }
 
                     var probe = new NavigationProbe(route);
@@ -913,7 +913,7 @@ public sealed class UiSmokeTests
                 payload));
             await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(static () => { });
 
-            var originalFriends = Assert.IsType<ViewFriendsViewModel>(
+            var originalFriends = Assert.IsType<FriendsViewModel>(
                 navigation.GetActiveView(AppNavigationRegion.Main));
             var originalFollowing = Assert.IsType<NavigationProbe>(
                 navigation.GetActiveView(AppNavigationRegion.Friends));
@@ -957,7 +957,7 @@ public sealed class UiSmokeTests
                 {
                     if (route == AppRoute.Friends)
                     {
-                        return new ViewFriendsViewModel(desktopInteractions);
+                        return new FriendsViewModel(desktopInteractions);
                     }
 
                     var probe = new NavigationProbe(route);
@@ -977,7 +977,7 @@ public sealed class UiSmokeTests
                 }));
             await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(static () => { });
 
-            var originalFriends = Assert.IsType<ViewFriendsViewModel>(
+            var originalFriends = Assert.IsType<FriendsViewModel>(
                 navigation.GetActiveView(AppNavigationRegion.Main));
             originalFriends.SelectTabId = 1;
             originalFriends.TabHeadersCommand.Execute(originalFriends.TabHeaders[1]);
@@ -1102,20 +1102,20 @@ public sealed class UiSmokeTests
                 Assert.Equal("startup clipboard text", window.StartupIndex.InputText);
                 window.ActivateContent();
                 Assert.Same(mainViewModel, window.DataContext);
-                Assert.IsType<ViewIndexViewModel>(mainViewModel.MainContent);
+                Assert.IsType<IndexViewModel>(mainViewModel.MainContent);
                 Assert.Equal(
                     "startup clipboard text",
-                    Assert.IsType<ViewIndexViewModel>(mainViewModel.MainContent).InputText);
+                    Assert.IsType<IndexViewModel>(mainViewModel.MainContent).InputText);
                 Assert.Equal(1, clipboardMonitor.SubscriptionCount);
                 Assert.False(startupIndicator.IsVisible);
                 Assert.IsType<DiskCachedWebImageLoader>(imageLoader);
-                Assert.NotNull(host.Services.GetRequiredService<ViewIndexViewModel>());
-                var videoDetailViewModel = host.Services.GetRequiredService<ViewVideoDetailViewModel>();
+                Assert.NotNull(host.Services.GetRequiredService<IndexViewModel>());
+                var videoDetailViewModel = host.Services.GetRequiredService<VideoDetailViewModel>();
                 Assert.NotNull(videoDetailViewModel);
-                Assert.NotNull(host.Services.GetRequiredService<ViewDownloadManagerViewModel>());
-                var networkViewModel = host.Services.GetRequiredService<ViewNetworkViewModel>();
+                Assert.NotNull(host.Services.GetRequiredService<DownloadManagerViewModel>());
+                var networkViewModel = host.Services.GetRequiredService<NetworkViewModel>();
                 Assert.NotNull(networkViewModel);
-                Assert.NotNull(host.Services.GetRequiredService<DownKyi.ViewModels.UserSpace.ViewFavoritesViewModel>());
+                Assert.NotNull(host.Services.GetRequiredService<DownKyi.ViewModels.UserSpace.FavoritesViewModel>());
 
                 var networkView = new ViewNetwork { DataContext = networkViewModel };
                 var networkScroll = Assert.IsType<ScrollViewer>(networkView.Content);

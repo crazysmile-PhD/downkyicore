@@ -6,6 +6,13 @@ public sealed class LegacyPatternArchitectureTests
 {
     private static readonly string RepositoryRoot = FindRepositoryRoot();
     private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(2);
+    private static readonly string[] ApplicationLayerProjects =
+    [
+        "DownKyi.Domain",
+        "DownKyi.Application",
+        "DownKyi.Infrastructure",
+        "DownKyi.Desktop"
+    ];
 
     [Fact]
     public void ProductionSourceCannotRestoreLegacyOrBlockingPatterns()
@@ -44,7 +51,10 @@ public sealed class LegacyPatternArchitectureTests
     [Fact]
     public void NewArchitectureCannotSynchronouslyReadTaskResult()
     {
-        var violations = EnumerateSourceFiles(Path.Combine(RepositoryRoot, "src"))
+        // Core has wire DTO properties named Result; this guard targets the four
+        // application layers, as it did before all product projects moved to src.
+        var violations = ApplicationLayerProjects
+            .SelectMany(project => EnumerateSourceFiles(Path.Combine(RepositoryRoot, "src", project)))
             .Where(path => Regex.IsMatch(
                 File.ReadAllText(path),
                 @"\.Result\b",
@@ -111,7 +121,7 @@ public sealed class LegacyPatternArchitectureTests
     {
         var expectedPragmas = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            ["DownKyi.Core/BiliApi/Sign/WbiSign.cs"] = "CA5351",
+            ["src/DownKyi.Core/BiliApi/Sign/WbiSign.cs"] = "CA5351",
             ["src/DownKyi.Infrastructure/Settings/LegacySettingsDecryptor.cs"] = "CA5351"
         };
         var sourceFiles = EnumerateProductionSourceFiles().ToArray();
@@ -197,13 +207,7 @@ public sealed class LegacyPatternArchitectureTests
 
     private static IEnumerable<string> EnumerateProductionSourceFiles()
     {
-        return new[]
-            {
-                Path.Combine(RepositoryRoot, "DownKyi"),
-                Path.Combine(RepositoryRoot, "DownKyi.Core"),
-                Path.Combine(RepositoryRoot, "src")
-            }
-            .SelectMany(EnumerateSourceFiles);
+        return EnumerateSourceFiles(Path.Combine(RepositoryRoot, "src"));
     }
 
     private static IEnumerable<string> EnumerateSourceFiles(string root)

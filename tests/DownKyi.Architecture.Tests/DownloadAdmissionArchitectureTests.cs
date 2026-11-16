@@ -41,7 +41,7 @@ public sealed class DownloadAdmissionArchitectureTests
         var storeContract = ReadSource(
             "src", "DownKyi.Application", "Downloads", "IDownloadTaskStore.cs");
         var admissionService = ReadSource(
-            "src", "DownKyi.Desktop", "Services", "Download", "DownloadTaskAdmissionService.cs");
+            "src", "DownKyi.Desktop", "Services", "Download", "Planning", "DownloadTaskAdmissionService.cs");
         var reservations = ReadSource(
             "src", "DownKyi.Infrastructure", "Downloads", "SqliteDownloadStoreOutputReservations.cs");
         var presenterPath = Path.Combine(
@@ -71,17 +71,17 @@ public sealed class DownloadAdmissionArchitectureTests
     public void AddFlowRequiresExplicitSelectionPreparationAndFinalization()
     {
         var contract = ReadSource(
-            "src", "DownKyi.Desktop", "Services", "Download", "IAddToDownloadSession.cs");
+            "src", "DownKyi.Desktop", "Services", "Download", "Planning", "IAddToDownloadSession.cs");
         var service = ReadSource(
-            "src", "DownKyi.Desktop", "Services", "Download", "AddToDownloadService.cs");
+            "src", "DownKyi.Desktop", "Services", "Download", "Planning", "AddToDownloadService.cs");
         var selection = ReadSource(
             "src", "DownKyi.Application", "Downloads", "DownloadAddSelection.cs");
         var prepared = ReadSource(
-            "src", "DownKyi.Desktop", "Services", "Download", "PreparedDownload.cs");
+            "src", "DownKyi.Desktop", "Services", "Download", "Planning", "PreparedDownload.cs");
         var resolver = ReadSource(
-            "src", "DownKyi.Desktop", "Services", "Download", "DownloadContentConflictResolver.cs");
+            "src", "DownKyi.Desktop", "Services", "Download", "Planning", "DownloadContentConflictResolver.cs");
         var planner = ReadSource(
-            "src", "DownKyi.Desktop", "Services", "Download", "DownloadActionPlanner.cs");
+            "src", "DownKyi.Desktop", "Services", "Download", "Planning", "DownloadActionPlanner.cs");
         var content = ReadSource(
             "src", "DownKyi.Desktop", "Services", "Media", "ContentDownloadCoordinator.cs");
         var video = ReadSource(
@@ -124,9 +124,9 @@ public sealed class DownloadAdmissionArchitectureTests
         var contract = ReadSource(
             "src", "DownKyi.Domain", "Downloads", "DownloadContentSelection.cs");
         var outputResolver = ReadSource(
-            "src", "DownKyi.Desktop", "Services", "Download", "DownloadOutputPathResolver.cs");
+            "src", "DownKyi.Desktop", "Services", "Download", "Artifacts", "DownloadOutputPathResolver.cs");
         var outputLayout = ReadSource(
-            "src", "DownKyi.Desktop", "Services", "Download", "DownloadOutputLayout.cs");
+            "src", "DownKyi.Desktop", "Services", "Download", "Artifacts", "DownloadOutputLayout.cs");
         var reservations = ReadSource(
             "src", "DownKyi.Infrastructure", "Downloads", "SqliteDownloadStoreOutputReservations.cs");
         var store = ReadSource(

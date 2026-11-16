@@ -9,7 +9,7 @@
              d:DesignHeight="620"
              xmlns:vm="clr-namespace:DownKyi.ViewModels"
              xmlns:vmp="clr-namespace:DownKyi.Presentation"
-             x:DataType="vm:ViewFriendsViewModel">
+             x:DataType="vm:FriendsViewModel">
     <Grid RowDefinitions="Auto,Auto,*" Margin="24,18,24,20" Background="{DynamicResource SpacePaper}">
         <Grid Grid.Row="0" Name="PersonalPageHeader" ColumnDefinitions="Auto,*,Auto" MinHeight="124" Background="{DynamicResource SpaceAccent}">
             <ContentControl Grid.Column="1" Grid.ColumnSpan="2" Width="240"

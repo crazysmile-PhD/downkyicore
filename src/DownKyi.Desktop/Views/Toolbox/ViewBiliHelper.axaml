@@ -3,7 +3,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:vm="clr-namespace:DownKyi.ViewModels.Toolbox"
     x:Class="DownKyi.Views.Toolbox.ViewBiliHelper"
-    x:DataType="vm:ViewBiliHelperViewModel"
+    x:DataType="vm:BiliHelperViewModel"
     Background="{DynamicResource SpacePaper}"
     Foreground="{DynamicResource SpaceInk}"
     Classes="studio-page">

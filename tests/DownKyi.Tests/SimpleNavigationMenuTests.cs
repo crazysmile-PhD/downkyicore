@@ -20,7 +20,7 @@ public sealed class SimpleNavigationMenuTests
         AppRoute expectedRoute)
     {
         var navigation = new TestNavigationService();
-        using var viewModel = new ViewSettingsViewModel(new TestDesktopInteractionContext(navigation));
+        using var viewModel = new SettingsViewModel(new TestDesktopInteractionContext(navigation));
         Assert.Equal(5, viewModel.TabHeaders.Count);
         var menuItem = viewModel.TabHeaders[menuIndex];
         Assert.Equal(expectedMenuId, menuItem.Id);
@@ -44,8 +44,8 @@ public sealed class SimpleNavigationMenuTests
         var state = new DownloadListState();
         var coordinator = new DownloadFinishedHistoryLoadingTests.RecordingCoordinator(
             state, () => Task.FromResult<IReadOnlyList<DownloadedItem>>([]));
-        using var viewModel = new ViewDownloadManagerViewModel(new TestDesktopInteractionContext(navigation),
-            state, coordinator, NullLogger<ViewDownloadManagerViewModel>.Instance);
+        using var viewModel = new DownloadManagerViewModel(new TestDesktopInteractionContext(navigation),
+            state, coordinator, NullLogger<DownloadManagerViewModel>.Instance);
         Assert.Equal(2, viewModel.TabHeaders.Count);
         var menuItem = viewModel.TabHeaders[menuIndex];
         Assert.Equal(expectedMenuId, menuItem.Id);
@@ -67,7 +67,7 @@ public sealed class SimpleNavigationMenuTests
         AppRoute expectedRoute)
     {
         var navigation = new TestNavigationService();
-        using var viewModel = new ViewToolboxViewModel(new TestDesktopInteractionContext(navigation));
+        using var viewModel = new ToolboxViewModel(new TestDesktopInteractionContext(navigation));
         Assert.Equal(3, viewModel.TabHeaders.Count);
         var menuItem = viewModel.TabHeaders[menuIndex];
         Assert.Equal(expectedMenuId, menuItem.Id);

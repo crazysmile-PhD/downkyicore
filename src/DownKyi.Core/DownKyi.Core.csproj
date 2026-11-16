@@ -1,0 +1,23 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    </PropertyGroup>
+    <ItemGroup>
+        <PackageReference Include="Google.Protobuf"/>
+        <PackageReference Include="Grpc.Tools" PrivateAssets="All"/>
+        <PackageReference Include="Microsoft.Extensions.Logging"/>
+        <PackageReference Include="Newtonsoft.Json"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\DownKyi.Application\DownKyi.Application.csproj"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <Protobuf Include="BiliApi/protobuf/bilibili/community/service/dm/v1/dm.proto" GrpcServices="None"/>
+    </ItemGroup>
+
+</Project>

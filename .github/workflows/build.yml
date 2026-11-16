@@ -187,7 +187,7 @@ jobs:
         working-directory: ./script
       - name: Build canonical publish
         run: >
-          dotnet publish ./DownKyi/DownKyi.csproj
+          dotnet publish ./src/DownKyi/DownKyi.csproj
           -c Release
           -r win-${{ matrix.cpu }}
           --self-contained
@@ -264,7 +264,7 @@ jobs:
         working-directory: ./script
       - name: Build canonical publish
         run: >
-          dotnet publish ./DownKyi/DownKyi.csproj
+          dotnet publish ./src/DownKyi/DownKyi.csproj
           -c Release
           -r linux-${{ matrix.cpu }}
           --self-contained
@@ -285,7 +285,7 @@ jobs:
         if: ${{ matrix.cpu == 'arm64' }}
         run: |
           test "$(uname -m)" = aarch64
-          grpc_tools_path="$(dotnet msbuild DownKyi.Core/DownKyi.Core.csproj -nologo -verbosity:quiet -getProperty:PkgGrpc_Tools -p:Configuration=Release)"
+          grpc_tools_path="$(dotnet msbuild src/DownKyi.Core/DownKyi.Core.csproj -nologo -verbosity:quiet -getProperty:PkgGrpc_Tools -p:Configuration=Release)"
           test -n "$grpc_tools_path"
           protoc="$grpc_tools_path/tools/linux_arm64/protoc"
           test -x "$protoc"

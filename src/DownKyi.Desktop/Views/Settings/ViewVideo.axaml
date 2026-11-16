@@ -3,7 +3,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:vms="clr-namespace:DownKyi.ViewModels.Settings"
     x:Class="DownKyi.Views.Settings.ViewVideo"
-    x:DataType="vms:ViewVideoViewModel"
+    x:DataType="vms:VideoViewModel"
     Classes="studio-page">
     <UserControl.Styles>
         <StyleInclude Source="/Themes/Styles/Studio.axaml" />

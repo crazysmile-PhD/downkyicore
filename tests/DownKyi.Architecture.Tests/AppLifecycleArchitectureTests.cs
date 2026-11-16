@@ -7,7 +7,7 @@ public sealed class AppLifecycleArchitectureTests
     [Fact]
     public void WindowsDesktopStartupHasOneExplicitStaUiThreadOwner()
     {
-        var programSource = ReadSource("DownKyi", "Program.cs");
+        var programSource = ReadSource("src", "DownKyi", "Program.cs");
         var desktopSource = ReadSource("src", "DownKyi.Desktop", "DesktopApplication.cs");
 
         Assert.Contains("public static Task Main", programSource, StringComparison.Ordinal);
@@ -105,7 +105,7 @@ public sealed class AppLifecycleArchitectureTests
             "src", "DownKyi.Desktop",
             "ViewModels",
             "Settings",
-            "ViewNetworkViewModel.cs");
+            "NetworkViewModel.cs");
         var coordinatorSource = ReadSource(
             "src", "DownKyi.Desktop",
             "Services",
@@ -252,7 +252,7 @@ public sealed class AppLifecycleArchitectureTests
             "src", "DownKyi.Desktop",
             "ViewModels",
             "Settings",
-            "ViewAboutViewModel.cs"));
+            "AboutViewModel.cs"));
         var compositionSource = File.ReadAllText(Path.Combine(
             RepositoryRoot,
             "src", "DownKyi.Desktop",
@@ -305,13 +305,13 @@ public sealed class AppLifecycleArchitectureTests
 
         foreach (var fileName in new[]
                  {
-                     "ViewMyBangumiFollowViewModel.cs",
-                     "ViewMyFavoritesViewModel.cs",
-                     "ViewMyHistoryViewModel.cs",
-                     "ViewMyToViewVideoViewModel.cs",
-                     "ViewPublicationViewModel.cs",
-                     "ViewPublicFavoritesViewModel.cs",
-                     "ViewSeasonsSeriesDetailViewModel.cs"
+                     "MyBangumiFollowViewModel.cs",
+                     "MyFavoritesViewModel.cs",
+                     "MyHistoryViewModel.cs",
+                     "MyToViewVideoViewModel.cs",
+                     "PublicationViewModel.cs",
+                     "PublicFavoritesViewModel.cs",
+                     "SeasonsSeriesDetailViewModel.cs"
                  })
         {
             var source = ReadSource(

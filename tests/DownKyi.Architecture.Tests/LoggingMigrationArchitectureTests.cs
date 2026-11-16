@@ -2,13 +2,13 @@ namespace DownKyi.Architecture.Tests;
 
 public sealed class LoggingMigrationArchitectureTests
 {
-    private static readonly string[] ProductionRoots = ["DownKyi", "DownKyi.Core", "src"];
+    private static readonly string[] ProductionRoots = ["src"];
     private static readonly string[] LegacyLoggingFiles =
     [
-        "DownKyi.Core/Logging/LogManager.cs",
-        "DownKyi.Core/Logging/LogInfo.cs",
-        "DownKyi.Core/Logging/LogLevel.cs",
-        "DownKyi.Core/Utils/Debugging/Console.cs"
+        "src/DownKyi.Core/Logging/LogManager.cs",
+        "src/DownKyi.Core/Logging/LogInfo.cs",
+        "src/DownKyi.Core/Logging/LogLevel.cs",
+        "src/DownKyi.Core/Utils/Debugging/Console.cs"
     ];
     private static readonly string RepositoryRoot = FindRepositoryRoot();
 
@@ -67,7 +67,7 @@ public sealed class LoggingMigrationArchitectureTests
             "Logging",
             "NLogAsyncRollingFileSink.cs")));
 
-        var coreLoggingRoot = Path.Combine(RepositoryRoot, "DownKyi.Core", "Logging");
+        var coreLoggingRoot = Path.Combine(RepositoryRoot, "src", "DownKyi.Core", "Logging");
         var coreImplementations = Directory.Exists(coreLoggingRoot)
             ? Directory.EnumerateFiles(coreLoggingRoot, "*.cs", SearchOption.AllDirectories).ToArray()
             : [];
@@ -125,9 +125,9 @@ public sealed class LoggingMigrationArchitectureTests
     [Theory]
     [InlineData("src/DownKyi.Desktop/CustomAction/ScrollIntoViewBehavior.cs")]
     [InlineData("src/DownKyi.Infrastructure/Versioning/VersionCheckerService.cs")]
-    [InlineData("src/DownKyi.Desktop/ViewModels/Dialogs/ViewDownloadSetterViewModel.cs")]
+    [InlineData("src/DownKyi.Desktop/ViewModels/Dialogs/DownloadSetterViewModel.cs")]
     [InlineData("src/DownKyi.Desktop/ViewModels/MainWindowViewModel.cs")]
-    [InlineData("src/DownKyi.Desktop/ViewModels/Toolbox/ViewBiliHelperViewModel.cs")]
+    [InlineData("src/DownKyi.Desktop/ViewModels/Toolbox/BiliHelperViewModel.cs")]
     public void MigratedRuntimeFilesCannotRestoreStaticOrTerminalLogging(string relativePath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(relativePath);

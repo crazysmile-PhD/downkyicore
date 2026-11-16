@@ -178,7 +178,7 @@ internal sealed class MainWindowViewModel : ObservableObject, IDisposable
         _navigationService.Navigate(pendingStartupNavigation
             ?? new AppNavigationRequest(AppRoute.Index, Parameter: "start"));
         if (!string.IsNullOrWhiteSpace(pendingStartupInput)
-            && MainContent is ViewIndexViewModel index)
+            && MainContent is IndexViewModel index)
         {
             index.InputText = pendingStartupInput;
         }
@@ -359,7 +359,7 @@ internal sealed class MainWindowViewModel : ObservableObject, IDisposable
                 .ShowAsync(new AppDialogRequest(AppDialog.LegacyUpgrade), _lifetimeToken)
                 .ConfigureAwait(true);
             if (result.Parameters.TryGetValue(
-                    ViewUpgradingDialogViewModel.FailureResultParameter,
+                    UpgradingDialogViewModel.FailureResultParameter,
                     out var value)
                 && value is LegacyUpgradeResult { Failure: { } failure } upgradeFailure)
             {

@@ -23,10 +23,10 @@ public sealed class AvaloniaDialogServiceTests
         services.AddSingleton<ILegacyUpgradeCoordinator>(
             new FailedMigrationCoordinator(failure));
         services.AddSingleton<IApplicationLifecycle>(new ApplicationLifecycleStub());
-        services.AddSingleton<ILogger<ViewUpgradingDialogViewModel>>(
-            NullLogger<ViewUpgradingDialogViewModel>.Instance);
+        services.AddSingleton<ILogger<UpgradingDialogViewModel>>(
+            NullLogger<UpgradingDialogViewModel>.Instance);
         services.AddTransient<ViewUpgradingDialog>();
-        services.AddTransient<ViewUpgradingDialogViewModel>();
+        services.AddTransient<UpgradingDialogViewModel>();
         var provider = services.BuildServiceProvider();
         await using var providerScope = provider.ConfigureAwait(true);
         var context = new AvaloniaDesktopContext();
@@ -46,7 +46,7 @@ public sealed class AvaloniaDialogServiceTests
 
             Assert.Equal(AppDialogOutcome.Rejected, result.Outcome);
             var failureResult = Assert.IsType<LegacyUpgradeResult>(
-                result.Parameters[ViewUpgradingDialogViewModel.FailureResultParameter]);
+                result.Parameters[UpgradingDialogViewModel.FailureResultParameter]);
             Assert.Same(failure, failureResult.Failure);
         }
         finally

@@ -3,7 +3,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:vms="clr-namespace:DownKyi.ViewModels.Settings"
     x:Class="DownKyi.Views.Settings.ViewAbout"
-    x:DataType="vms:ViewAboutViewModel"
+    x:DataType="vms:AboutViewModel"
     Classes="studio-page">
     <UserControl.Styles>
         <StyleInclude Source="/Themes/Styles/Studio.axaml" />

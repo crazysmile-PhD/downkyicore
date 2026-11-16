@@ -13,10 +13,10 @@ public sealed class LegacyUpgradeViewModelTests
     public async Task ClosingDialogAwaitsActiveMigrationTermination()
     {
         var coordinator = new BlockingLegacyUpgradeCoordinator();
-        var viewModel = new ViewUpgradingDialogViewModel(
+        var viewModel = new UpgradingDialogViewModel(
             coordinator,
             new StubApplicationLifecycle(),
-            NullLogger<ViewUpgradingDialogViewModel>.Instance);
+            NullLogger<UpgradingDialogViewModel>.Instance);
         await using var viewModelScope = viewModel.ConfigureAwait(true);
 
         Assert.Equal("数据迁移中；如需停止，请使用“取消迁移”", viewModel.Message);
@@ -74,13 +74,13 @@ public sealed class LegacyUpgradeViewModelTests
             TaskCreationOptions.RunContinuationsAsynchronously);
         viewModel.PropertyChanged += (_, args) =>
         {
-            if (args.PropertyName == nameof(ViewUpgradingDialogViewModel.Message)
+            if (args.PropertyName == nameof(UpgradingDialogViewModel.Message)
                 && viewModel.Message == "正在讀取舊資料")
             {
                 unknownProgressApplied.TrySetResult();
             }
 
-            if (args.PropertyName == nameof(ViewUpgradingDialogViewModel.IsProgressVisible)
+            if (args.PropertyName == nameof(UpgradingDialogViewModel.IsProgressVisible)
                 && viewModel.IsProgressVisible)
             {
                 determinateProgressApplied.TrySetResult();
@@ -175,10 +175,10 @@ public sealed class LegacyUpgradeViewModelTests
     [Fact]
     public async Task CompletedMigrationLeavesHistoryForOnDemandPage()
     {
-        var viewModel = new ViewUpgradingDialogViewModel(
+        var viewModel = new UpgradingDialogViewModel(
             new CompletedLegacyUpgradeCoordinator(),
             new StubApplicationLifecycle(),
-            NullLogger<ViewUpgradingDialogViewModel>.Instance);
+            NullLogger<UpgradingDialogViewModel>.Instance);
         await using var viewModelScope = viewModel.ConfigureAwait(true);
 
         viewModel.OnDialogOpened(new AppDialogRequest(AppDialog.LegacyUpgrade));
@@ -204,23 +204,23 @@ public sealed class LegacyUpgradeViewModelTests
     {
         var lifecycle = new StubApplicationLifecycle(
             new TimeoutException("Restart cleanup timed out."));
-        var viewModel = new ViewUpgradingDialogViewModel(
+        var viewModel = new UpgradingDialogViewModel(
             new CompletedLegacyUpgradeCoordinator(),
             lifecycle,
-            NullLogger<ViewUpgradingDialogViewModel>.Instance);
+            NullLogger<UpgradingDialogViewModel>.Instance);
         await using var viewModelScope = viewModel.ConfigureAwait(true);
         var sawRestartingState = false;
         var failureVisible = new TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously);
         viewModel.PropertyChanged += (_, args) =>
         {
-            if (args.PropertyName == nameof(ViewUpgradingDialogViewModel.Message)
+            if (args.PropertyName == nameof(UpgradingDialogViewModel.Message)
                 && viewModel.Message == "正在重新启动应用")
             {
                 sawRestartingState = true;
             }
 
-            if (args.PropertyName == nameof(ViewUpgradingDialogViewModel.RestartVisible)
+            if (args.PropertyName == nameof(UpgradingDialogViewModel.RestartVisible)
                 && viewModel.RestartVisible
                 && viewModel.Message == "无法重新启动应用，请查看日志")
             {
@@ -265,7 +265,7 @@ public sealed class LegacyUpgradeViewModelTests
         Assert.Equal("legacy backup preserved", viewModel.Message);
         Assert.Equal(AppDialogOutcome.Rejected, result.Outcome);
         var failureResult = Assert.IsType<LegacyUpgradeResult>(
-            result.Parameters[ViewUpgradingDialogViewModel.FailureResultParameter]);
+            result.Parameters[UpgradingDialogViewModel.FailureResultParameter]);
         Assert.Same(failure, failureResult.Failure);
 
         await viewModel.OnDialogClosedAsync().ConfigureAwait(true);
@@ -275,10 +275,10 @@ public sealed class LegacyUpgradeViewModelTests
     public async Task UnexpectedMigrationFailureIsLoggedAndReturnedInsteadOfHanging()
     {
         var coordinator = new FaultingLegacyUpgradeCoordinator();
-        var viewModel = new ViewUpgradingDialogViewModel(
+        var viewModel = new UpgradingDialogViewModel(
             coordinator,
             new StubApplicationLifecycle(),
-            NullLogger<ViewUpgradingDialogViewModel>.Instance);
+            NullLogger<UpgradingDialogViewModel>.Instance);
         await using var viewModelScope = viewModel.ConfigureAwait(true);
 
         viewModel.OnDialogOpened(new AppDialogRequest(AppDialog.LegacyUpgrade));
@@ -296,7 +296,7 @@ public sealed class LegacyUpgradeViewModelTests
         Assert.Equal(AppDialogOutcome.Rejected, result.Outcome);
         Assert.False(viewModel.IsMigrationActive);
         var failureResult = Assert.IsType<LegacyUpgradeResult>(
-            result.Parameters[ViewUpgradingDialogViewModel.FailureResultParameter]);
+            result.Parameters[UpgradingDialogViewModel.FailureResultParameter]);
         Assert.IsType<NullReferenceException>(failureResult.Failure);
     }
 
@@ -341,17 +341,17 @@ public sealed class LegacyUpgradeViewModelTests
         }
     }
 
-    private static ViewUpgradingDialogViewModel CreateViewModel(
+    private static UpgradingDialogViewModel CreateViewModel(
         ILegacyUpgradeCoordinator coordinator)
     {
-        return new ViewUpgradingDialogViewModel(
+        return new UpgradingDialogViewModel(
             coordinator,
             new StubApplicationLifecycle(),
-            NullLogger<ViewUpgradingDialogViewModel>.Instance);
+            NullLogger<UpgradingDialogViewModel>.Instance);
     }
 
     private static async Task StopMigrationAsync(
-        ViewUpgradingDialogViewModel viewModel,
+        UpgradingDialogViewModel viewModel,
         BlockingLegacyUpgradeCoordinator coordinator)
     {
         var closeTask = viewModel.OnDialogClosedAsync();

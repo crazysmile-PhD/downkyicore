@@ -16,8 +16,8 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
     public void CoreDanmakuConversionDoesNotOpenPhysicalOutputFiles()
     {
         var sources = Directory.EnumerateFiles(
-                Path.Combine(RepositoryRoot, "DownKyi.Core", "Danmaku2Ass"), "*.cs")
-            .Append(Path.Combine(RepositoryRoot, "DownKyi.Core", "BiliApi", "DanmakuApi",
+                Path.Combine(RepositoryRoot, "src", "DownKyi.Core", "Danmaku2Ass"), "*.cs")
+            .Append(Path.Combine(RepositoryRoot, "src", "DownKyi.Core", "BiliApi", "DanmakuApi",
                 "BilibiliDanmakuXmlWriter.cs"))
             .Select(File.ReadAllText);
 
@@ -47,7 +47,7 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
             "src", "DownKyi.Desktop",
             "Services",
             "Download",
-            "DownloadMovieMetadataBuilder.cs"));
+            "Artifacts", "DownloadMovieMetadataBuilder.cs"));
 
         Assert.DoesNotContain("LazyTags", videoInfoSource, StringComparison.Ordinal);
         Assert.DoesNotContain("_cancellationToken", videoInfoSource, StringComparison.Ordinal);
@@ -66,17 +66,17 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
             "src", "DownKyi.Desktop",
             "Services",
             "Download");
-        var sessionPath = Path.Combine(downloadDirectory, "AddToDownloadService.cs");
+        var sessionPath = Path.Combine(downloadDirectory, "Planning", "AddToDownloadService.cs");
         var sessionSource = File.ReadAllText(sessionPath);
         var admissionSource = File.ReadAllText(Path.Combine(
             downloadDirectory,
-            "DownloadTaskAdmissionService.cs"));
+            "Planning", "DownloadTaskAdmissionService.cs"));
         var draftSource = File.ReadAllText(Path.Combine(
             downloadDirectory,
-            "DownloadTaskDraftFactory.cs"));
+            "Planning", "DownloadTaskDraftFactory.cs"));
         var metadataSource = File.ReadAllText(Path.Combine(
             downloadDirectory,
-            "DownloadMovieMetadataBuilder.cs"));
+            "Artifacts", "DownloadMovieMetadataBuilder.cs"));
 
         Assert.Contains("DownloadTaskAdmissionService", sessionSource, StringComparison.Ordinal);
         Assert.Contains("DownloadTaskDraftFactory.Create", sessionSource, StringComparison.Ordinal);
@@ -188,7 +188,7 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
     [Fact]
     public void BilibiliCoreLeavesSanitizedDiagnosticsToInjectedCoordinators()
     {
-        var apiDirectory = Path.Combine(RepositoryRoot, "DownKyi.Core", "BiliApi");
+        var apiDirectory = Path.Combine(RepositoryRoot, "src", "DownKyi.Core", "BiliApi");
         var violations = Directory
             .EnumerateFiles(apiDirectory, "*.cs", SearchOption.AllDirectories)
             .Where(path =>
@@ -232,6 +232,7 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
     {
         var source = File.ReadAllText(Path.Combine(
             RepositoryRoot,
+            "src",
             "DownKyi.Core",
             "BiliApi",
             "BiliApiRequest.cs"));
@@ -246,16 +247,17 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
     {
         var signSource = File.ReadAllText(Path.Combine(
             RepositoryRoot,
+            "src",
             "DownKyi.Core",
             "BiliApi",
             "Sign",
             "WbiSign.cs"));
         var endpointPaths = new[]
         {
-            Path.Combine(RepositoryRoot, "DownKyi.Core", "BiliApi", "Video", "VideoInfo.cs"),
-            Path.Combine(RepositoryRoot, "DownKyi.Core", "BiliApi", "VideoStream", "VideoStreamApi.cs"),
-            Path.Combine(RepositoryRoot, "DownKyi.Core", "BiliApi", "Users", "UserInfo.cs"),
-            Path.Combine(RepositoryRoot, "DownKyi.Core", "BiliApi", "Users", "UserSpace.cs")
+            Path.Combine(RepositoryRoot, "src", "DownKyi.Core", "BiliApi", "Video", "VideoInfo.cs"),
+            Path.Combine(RepositoryRoot, "src", "DownKyi.Core", "BiliApi", "VideoStream", "VideoStreamApi.cs"),
+            Path.Combine(RepositoryRoot, "src", "DownKyi.Core", "BiliApi", "Users", "UserInfo.cs"),
+            Path.Combine(RepositoryRoot, "src", "DownKyi.Core", "BiliApi", "Users", "UserSpace.cs")
         };
 
         Assert.DoesNotContain("ISettingsStore", signSource, StringComparison.Ordinal);
@@ -269,6 +271,7 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
 
         var navigationModel = File.ReadAllText(Path.Combine(
             RepositoryRoot,
+            "src",
             "DownKyi.Core",
             "BiliApi",
             "Users",
@@ -283,7 +286,7 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
         const string defaultEnvelopePattern =
             @"\[JsonProperty(?:Name)?\(\""(?:data|result|error|payload)\""\)\]\s*" +
             @"public[^\{\r\n]+\{\s*get;\s*set;\s*\}\s*=\s*(?:new\b|Array\.Empty)";
-        var roots = new[] { Path.Combine(RepositoryRoot, "DownKyi.Core", "BiliApi") };
+        var roots = new[] { Path.Combine(RepositoryRoot, "src", "DownKyi.Core", "BiliApi") };
         var violations = roots
             .SelectMany(root => Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories))
             .Where(path => Regex.IsMatch(
@@ -303,7 +306,7 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
     {
         var paths = new[]
         {
-            Path.Combine(RepositoryRoot, "src", "DownKyi.Desktop", "ViewModels", "ViewVideoDetailViewModel.cs"),
+            Path.Combine(RepositoryRoot, "src", "DownKyi.Desktop", "ViewModels", "VideoDetailViewModel.cs"),
             Path.Combine(RepositoryRoot, "src", "DownKyi.Desktop", "Presentation", "VideoSection.cs"),
             Path.Combine(RepositoryRoot, "src", "DownKyi.Desktop", "Presentation", "VideoPage.cs"),
             Path.Combine(RepositoryRoot, "src", "DownKyi.Desktop", "Presentation", "VideoQuality.cs"),
@@ -323,7 +326,7 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
             RepositoryRoot,
             "src", "DownKyi.Desktop",
             "ViewModels",
-            "ViewVideoDetailViewModel.cs"));
+            "VideoDetailViewModel.cs"));
         var viewSource = File.ReadAllText(Path.Combine(
             RepositoryRoot,
             "src", "DownKyi.Desktop",
@@ -344,7 +347,7 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
             RepositoryRoot,
             "src", "DownKyi.Desktop",
             "ViewModels",
-            "ViewVideoDetailViewModel.cs");
+            "VideoDetailViewModel.cs");
         var viewModelSource = File.ReadAllText(viewModelPath);
         var workflowSource = File.ReadAllText(Path.Combine(
             RepositoryRoot,
@@ -401,7 +404,7 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
             RepositoryRoot,
             "src", "DownKyi.Desktop",
             "ViewModels",
-            "ViewVideoDetailViewModel.cs"));
+            "VideoDetailViewModel.cs"));
         Assert.Contains("LoadDetailAsync", viewModelSource, StringComparison.Ordinal);
         Assert.Contains("UiDispatcher.InvokeAsync", viewModelSource, StringComparison.Ordinal);
     }
@@ -414,7 +417,7 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
             "src", "DownKyi.Desktop",
             "ViewModels",
             "Toolbox",
-            "ViewBiliHelperViewModel.cs"));
+            "BiliHelperViewModel.cs"));
         var coordinatorSource = File.ReadAllText(Path.Combine(
             RepositoryRoot,
             "src", "DownKyi.Desktop",
@@ -423,6 +426,7 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
             "BiliHelperCoordinator.cs"));
         var coreSource = File.ReadAllText(Path.Combine(
             RepositoryRoot,
+            "src",
             "DownKyi.Core",
             "BiliApi",
             "BiliUtils",
@@ -440,8 +444,8 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
     {
         var viewModelPaths = new[]
         {
-            Path.Combine(RepositoryRoot, "src", "DownKyi.Desktop", "ViewModels", "ViewIndexViewModel.cs"),
-            Path.Combine(RepositoryRoot, "src", "DownKyi.Desktop", "ViewModels", "ViewLoginViewModel.cs")
+            Path.Combine(RepositoryRoot, "src", "DownKyi.Desktop", "ViewModels", "IndexViewModel.cs"),
+            Path.Combine(RepositoryRoot, "src", "DownKyi.Desktop", "ViewModels", "LoginViewModel.cs")
         };
         var coordinatorPaths = new[]
         {
@@ -470,8 +474,8 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
     {
         var viewModelPaths = new[]
         {
-            Path.Combine(RepositoryRoot, "src", "DownKyi.Desktop", "ViewModels", "Friends", "ViewFollowingViewModel.cs"),
-            Path.Combine(RepositoryRoot, "src", "DownKyi.Desktop", "ViewModels", "Friends", "ViewFollowerViewModel.cs")
+            Path.Combine(RepositoryRoot, "src", "DownKyi.Desktop", "ViewModels", "Friends", "FollowingViewModel.cs"),
+            Path.Combine(RepositoryRoot, "src", "DownKyi.Desktop", "ViewModels", "Friends", "FollowerViewModel.cs")
         };
         var viewModelSource = string.Join(
             Environment.NewLine,
@@ -503,7 +507,7 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
             RepositoryRoot,
             "src", "DownKyi.Desktop",
             "ViewModels",
-            "ViewSeasonsSeriesDetailViewModel.cs"));
+            "SeasonsSeriesDetailViewModel.cs"));
         var coordinatorSource = File.ReadAllText(Path.Combine(
             RepositoryRoot,
             "src", "DownKyi.Desktop",
@@ -534,8 +538,8 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
     {
         var viewModelPaths = new[]
         {
-            Path.Combine(RepositoryRoot, "src", "DownKyi.Desktop", "ViewModels", "ViewMyFavoritesViewModel.cs"),
-            Path.Combine(RepositoryRoot, "src", "DownKyi.Desktop", "ViewModels", "ViewPublicFavoritesViewModel.cs")
+            Path.Combine(RepositoryRoot, "src", "DownKyi.Desktop", "ViewModels", "MyFavoritesViewModel.cs"),
+            Path.Combine(RepositoryRoot, "src", "DownKyi.Desktop", "ViewModels", "PublicFavoritesViewModel.cs")
         };
         var viewModelSource = string.Join(Environment.NewLine, viewModelPaths.Select(File.ReadAllText));
         var favoritesServiceSource = File.ReadAllText(Path.Combine(
@@ -595,8 +599,8 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
     {
         var viewModelPaths = new[]
         {
-            Path.Combine(RepositoryRoot, "src", "DownKyi.Desktop", "ViewModels", "ViewMyToViewVideoViewModel.cs"),
-            Path.Combine(RepositoryRoot, "src", "DownKyi.Desktop", "ViewModels", "ViewMyHistoryViewModel.cs")
+            Path.Combine(RepositoryRoot, "src", "DownKyi.Desktop", "ViewModels", "MyToViewVideoViewModel.cs"),
+            Path.Combine(RepositoryRoot, "src", "DownKyi.Desktop", "ViewModels", "MyHistoryViewModel.cs")
         };
         var viewModelSource = string.Join(Environment.NewLine, viewModelPaths.Select(File.ReadAllText));
         var coordinatorSource = File.ReadAllText(Path.Combine(
@@ -607,6 +611,7 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
             "PersonalMediaCoordinator.cs"));
         var toViewApiSource = File.ReadAllText(Path.Combine(
             RepositoryRoot,
+            "src",
             "DownKyi.Core",
             "BiliApi",
             "History",
@@ -645,22 +650,22 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
             RepositoryRoot,
             "src", "DownKyi.Desktop",
             "ViewModels",
-            "ViewPublicationViewModel.cs");
+            "PublicationViewModel.cs");
         var publicationSearchPath = Path.Combine(
             RepositoryRoot,
             "src", "DownKyi.Desktop",
             "ViewModels",
-            "ViewPublicationViewModel.Search.cs");
+            "PublicationViewModel.Search.cs");
         var mySpacePath = Path.Combine(
             RepositoryRoot,
             "src", "DownKyi.Desktop",
             "ViewModels",
-            "ViewMySpaceViewModel.cs");
+            "MySpaceViewModel.cs");
         var bangumiPath = Path.Combine(
             RepositoryRoot,
             "src", "DownKyi.Desktop",
             "ViewModels",
-            "ViewMyBangumiFollowViewModel.cs");
+            "MyBangumiFollowViewModel.cs");
         var publicationSource = string.Join(
             Environment.NewLine,
             File.ReadAllText(publicationPath),
@@ -713,9 +718,9 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
 
         foreach (var apiPath in new[]
                  {
-                     Path.Combine(RepositoryRoot, "DownKyi.Core", "BiliApi", "Users", "UserSpace.cs"),
-                     Path.Combine(RepositoryRoot, "DownKyi.Core", "BiliApi", "Users", "UserInfo.cs"),
-                     Path.Combine(RepositoryRoot, "DownKyi.Core", "BiliApi", "Users", "UserStatus.cs")
+                     Path.Combine(RepositoryRoot, "src", "DownKyi.Core", "BiliApi", "Users", "UserSpace.cs"),
+                     Path.Combine(RepositoryRoot, "src", "DownKyi.Core", "BiliApi", "Users", "UserInfo.cs"),
+                     Path.Combine(RepositoryRoot, "src", "DownKyi.Core", "BiliApi", "Users", "UserStatus.cs")
                  })
         {
             Assert.Contains("CancellationToken cancellationToken = default", File.ReadAllText(apiPath), StringComparison.Ordinal);
@@ -729,12 +734,12 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
             RepositoryRoot,
             "src", "DownKyi.Desktop",
             "ViewModels",
-            "ViewMySpaceViewModel.cs"));
+            "MySpaceViewModel.cs"));
         var stateSource = File.ReadAllText(Path.Combine(
             RepositoryRoot,
             "src", "DownKyi.Desktop",
             "ViewModels",
-            "ViewMySpaceViewModel.State.cs"));
+            "MySpaceViewModel.State.cs"));
 
         Assert.Contains("IUserSpacePageCoordinator", viewModelSource, StringComparison.Ordinal);
         Assert.Contains("ISettingsStore", viewModelSource, StringComparison.Ordinal);
@@ -765,7 +770,7 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
             "src", "DownKyi.Desktop",
             "ViewModels",
             "Dialogs",
-            "ViewUpgradingDialogViewModel.cs"));
+            "UpgradingDialogViewModel.cs"));
         var coordinatorSource = File.ReadAllText(Path.Combine(
             RepositoryRoot,
             "src", "DownKyi.Desktop",

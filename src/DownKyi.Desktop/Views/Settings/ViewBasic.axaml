@@ -4,7 +4,7 @@
     xmlns:vms="clr-namespace:DownKyi.ViewModels.Settings"
     xmlns:settings="clr-namespace:DownKyi.Application.Settings;assembly=DownKyi.Application"
     x:Class="DownKyi.Views.Settings.ViewBasic"
-    x:DataType="vms:ViewBasicViewModel"
+    x:DataType="vms:BasicViewModel"
     Classes="studio-page">
     <UserControl.Styles>
         <StyleInclude Source="/Themes/Styles/Studio.axaml" />

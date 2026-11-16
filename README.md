@@ -78,7 +78,7 @@ Windows ZIP 必须完整解压到新目录后再运行。`DownKyi.exe` 旁必须
 本机运行：
 
 ```powershell
-dotnet run --project .\DownKyi\DownKyi.csproj
+dotnet run --project .\src\DownKyi\DownKyi.csproj
 ```
 
 ## 免责声明

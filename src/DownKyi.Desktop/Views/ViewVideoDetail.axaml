@@ -4,7 +4,7 @@
     xmlns:vm="clr-namespace:DownKyi.ViewModels"
     xmlns:views="clr-namespace:DownKyi.Views"
     x:Class="DownKyi.Views.ViewVideoDetail"
-    x:DataType="vm:ViewVideoDetailViewModel"
+    x:DataType="vm:VideoDetailViewModel"
     Classes="studio-page">
     <UserControl.Styles>
         <StyleInclude Source="/Themes/Styles/Studio.axaml" />

@@ -63,7 +63,7 @@ public sealed class LocalModuleWiringArchitectureTests
         var navigationFactory = RequireType("DownKyi.Platform.NavigationViewModelFactory");
         var queueGateway = RequireType("DownKyi.Services.Download.DownloadTaskQueueGateway");
 
-        Assert.False(IsAllowedDependency("DownKyi.ViewModels.ViewIndexViewModel", navigationFactory));
+        Assert.False(IsAllowedDependency("DownKyi.ViewModels.IndexViewModel", navigationFactory));
         Assert.False(IsAllowedDependency("DownKyi.Services.Media.ContentDownloadCoordinator", queueGateway));
         Assert.True(IsAllowedDependency("DownKyi.Platform.AvaloniaNavigationService", navigationFactory));
         Assert.True(IsAllowedDependency("DownKyi.Services.Download.DownloadTaskAdmissionService", queueGateway));

@@ -2,7 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:DownKyi.ViewModels"
              x:Class="DownKyi.Views.ViewSettings"
-             x:DataType="vm:ViewSettingsViewModel" Classes="studio-page">
+             x:DataType="vm:SettingsViewModel" Classes="studio-page">
     <UserControl.Styles>
         <StyleInclude Source="/Themes/Styles/Studio.axaml" />
         <Style Selector="ListBox#NameLeftTabHeaders">

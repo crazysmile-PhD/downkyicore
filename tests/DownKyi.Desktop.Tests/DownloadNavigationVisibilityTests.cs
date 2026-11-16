@@ -33,15 +33,15 @@ public sealed class DownloadNavigationVisibilityTests
         DesktopInteractionContext? interactions = null;
         using var navigation = new AvaloniaNavigationService(route => route switch
         {
-            AppRoute.Downloading => new ViewDownloadingViewModel(interactions!, state, coordinator, NullLogger<ViewDownloadingViewModel>.Instance),
-            AppRoute.DownloadFinished => new ViewDownloadFinishedViewModel(interactions!, state, settings, coordinator, NullLogger<ViewDownloadFinishedViewModel>.Instance),
+            AppRoute.Downloading => new DownloadingViewModel(interactions!, state, coordinator, NullLogger<DownloadingViewModel>.Instance),
+            AppRoute.DownloadFinished => new DownloadFinishedViewModel(interactions!, state, settings, coordinator, NullLogger<DownloadFinishedViewModel>.Instance),
             _ => throw new InvalidOperationException($"Unexpected route {route}")
         }, action => action());
         interactions = new DesktopInteractionContext(new Notifications(), navigation, new Dialogs());
-        using var viewModel = new ViewDownloadManagerViewModel(interactions, state, coordinator, NullLogger<ViewDownloadManagerViewModel>.Instance);
+        using var viewModel = new DownloadManagerViewModel(interactions, state, coordinator, NullLogger<DownloadManagerViewModel>.Instance);
         var view = new ViewDownloadManager { DataContext = viewModel };
-        view.DataTemplates.Add(new FuncDataTemplate<ViewDownloadingViewModel>((vm, _) => new ViewDownloading { DataContext = vm }));
-        view.DataTemplates.Add(new FuncDataTemplate<ViewDownloadFinishedViewModel>((vm, _) => new ViewDownloadFinished { DataContext = vm }));
+        view.DataTemplates.Add(new FuncDataTemplate<DownloadingViewModel>((vm, _) => new ViewDownloading { DataContext = vm }));
+        view.DataTemplates.Add(new FuncDataTemplate<DownloadFinishedViewModel>((vm, _) => new ViewDownloadFinished { DataContext = vm }));
         var window = new Window { Content = view, Width = 800, Height = 550 };
         try
         {

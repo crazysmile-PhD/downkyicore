@@ -18,7 +18,7 @@ public sealed partial class BilibiliApiInventoryArchitectureTests
         using var document = JsonDocument.Parse(inventory);
         var root = document.RootElement;
         Assert.Equal(1, root.GetProperty("SchemaVersion").GetInt32());
-        Assert.Equal("DownKyi.Core/BiliApi", root.GetProperty("SourceRoot").GetString());
+        Assert.Equal("src/DownKyi.Core/BiliApi", root.GetProperty("SourceRoot").GetString());
 
         var generatedEndpoints = root.GetProperty("Endpoints")
             .EnumerateArray()
@@ -45,7 +45,7 @@ public sealed partial class BilibiliApiInventoryArchitectureTests
 
         var sourceEndpoints = Directory
             .EnumerateFiles(
-                Path.Combine(RepositoryRoot, "DownKyi.Core", "BiliApi"),
+                Path.Combine(RepositoryRoot, "src", "DownKyi.Core", "BiliApi"),
                 "*.cs",
                 SearchOption.AllDirectories)
             .Where(path => !path.Contains(
@@ -64,7 +64,7 @@ public sealed partial class BilibiliApiInventoryArchitectureTests
     {
         var usages = Directory
             .EnumerateFiles(
-                Path.Combine(RepositoryRoot, "DownKyi.Core"),
+                Path.Combine(RepositoryRoot, "src", "DownKyi.Core"),
                 "*.cs",
                 SearchOption.AllDirectories)
             .Where(path => File.ReadAllText(path).Contains(
@@ -76,8 +76,8 @@ public sealed partial class BilibiliApiInventoryArchitectureTests
 
         Assert.Equal(
             [
-                "DownKyi.Core/BiliApi/BiliApiRequest.cs",
-                "DownKyi.Core/BiliApi/Users/UserInfo.cs"
+                "src/DownKyi.Core/BiliApi/BiliApiRequest.cs",
+                "src/DownKyi.Core/BiliApi/Users/UserInfo.cs"
             ],
             usages);
     }
@@ -87,7 +87,7 @@ public sealed partial class BilibiliApiInventoryArchitectureTests
     {
         var violations = new List<string>();
         foreach (var path in Directory.EnumerateFiles(
-                     Path.Combine(RepositoryRoot, "DownKyi.Core", "BiliApi"),
+                     Path.Combine(RepositoryRoot, "src", "DownKyi.Core", "BiliApi"),
                      "*.cs",
                      SearchOption.AllDirectories))
         {

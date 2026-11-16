@@ -4,7 +4,7 @@
     xmlns:vmu="clr-namespace:DownKyi.ViewModels.UserSpace"
     xmlns:asyncImageLoader="clr-namespace:DownKyi.CustomControl.AsyncImageLoader"
     x:Class="DownKyi.Views.UserSpace.ViewUserSpaceSeasonsSeries"
-    x:DataType="vmu:ViewUserSpaceSeasonsSeriesViewModel"
+    x:DataType="vmu:UserSpaceSeasonsSeriesViewModel"
     Classes="studio-page">
     <UserControl.Styles>
         <StyleInclude Source="/Themes/Styles/Studio.axaml" />

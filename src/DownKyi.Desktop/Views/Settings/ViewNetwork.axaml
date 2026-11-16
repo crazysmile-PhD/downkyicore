@@ -6,7 +6,7 @@
     xmlns:views="clr-namespace:DownKyi.Views.Settings"
     xmlns:vms="clr-namespace:DownKyi.ViewModels.Settings"
     x:Class="DownKyi.Views.Settings.ViewNetwork"
-    x:DataType="vms:ViewNetworkViewModel"
+    x:DataType="vms:NetworkViewModel"
     mc:Ignorable="d"
     d:DesignWidth="800"
     d:DesignHeight="1200"

@@ -13,7 +13,7 @@
     mc:Ignorable="d"
     d:DesignWidth="840"
     d:DesignHeight="620"
-    x:DataType="vm:ViewMyHistoryViewModel">
+    x:DataType="vm:MyHistoryViewModel">
     <UserControl.Resources>
         <ControlTheme
             x:Key="MediaListStyle"

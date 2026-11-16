@@ -23,7 +23,7 @@ public sealed class NetworkSettingsViewArchitectureTests
         {
             var source = Read(name);
             Assert.Contains(
-                "x:DataType=\"vms:ViewNetworkViewModel\"",
+                "x:DataType=\"vms:NetworkViewModel\"",
                 source,
                 StringComparison.Ordinal);
         }

@@ -6,7 +6,7 @@
     xmlns:custom="clr-namespace:DownKyi.CustomControl"
     xmlns:vm="clr-namespace:DownKyi.ViewModels"
     x:Class="DownKyi.Views.VideoDetailOperationStatusView"
-    x:DataType="vm:ViewVideoDetailViewModel"
+    x:DataType="vm:VideoDetailViewModel"
     mc:Ignorable="d"
     Classes="studio-page">
     <UserControl.Styles>

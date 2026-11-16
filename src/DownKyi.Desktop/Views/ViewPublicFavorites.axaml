@@ -11,7 +11,7 @@
     mc:Ignorable="d"
     d:DesignWidth="840"
     d:DesignHeight="620"
-    x:DataType="vm:ViewPublicFavoritesViewModel"
+    x:DataType="vm:PublicFavoritesViewModel"
     Classes="studio-page">
     <UserControl.Styles>
         <StyleInclude Source="/Themes/Styles/Studio.axaml" />

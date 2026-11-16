@@ -14,7 +14,7 @@ if ($ConfirmLive -and $GenerateSourceInventory) {
 
 if ($GenerateSourceInventory) {
     $repositoryRoot = Split-Path -Parent $PSScriptRoot
-    $sourceRoot = Join-Path $repositoryRoot 'DownKyi.Core/BiliApi'
+    $sourceRoot = Join-Path $repositoryRoot 'src/DownKyi.Core/BiliApi'
     $endpointPattern = [regex]'https://(?<host>(?:api|passport|space)\.bilibili\.com)(?<path>/(?:x|pgc|pugv|ajax)/[^"?]*)'
     $endpointLocations = @{}
 
@@ -46,7 +46,7 @@ if ($GenerateSourceInventory) {
 
     $inventory = [ordered]@{
         SchemaVersion = 1
-        SourceRoot = 'DownKyi.Core/BiliApi'
+        SourceRoot = 'src/DownKyi.Core/BiliApi'
         Endpoints = @(
             foreach ($endpoint in ($endpointLocations.Keys | Sort-Object)) {
                 [pscustomobject][ordered]@{

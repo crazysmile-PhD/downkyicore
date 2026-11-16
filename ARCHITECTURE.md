@@ -11,6 +11,27 @@
 
 領域路由見 `docs/maintenance.md`；仍有效的設計理由見 `docs/design-docs/README.md`。
 
+## 目錄與命名
+
+產品專案統一位於 `src/`；`tests/`、`benchmarks/`、`tools/`、`script/` 與
+`docs/` 分別保存測試、效能實驗、開發工具、建置／維護腳本與文件。
+根目錄保存 solution、共用建置設定與專案入口文件。搬移原始碼不改變 assembly
+名稱、使用者資料位置或發布包內的路徑；historical rebuild 仍以舊 checkout 的
+目錄結構為準。
+
+ViewModel 採用 `<概念>ViewModel`，例如 `LoginViewModel`，檔名與型別同名；
+不再疊加 `View` 前綴。Partial 檔案保留相同主名並以職責作後綴，例如
+`NetworkViewModel.State.cs`。View 與 ViewModel 的關係由既有 Avalonia
+DataTemplate 和 typed factory 明確指定，不另加依名稱猜測型別的 locator。
+保留能區分領域、協定與 UI projection 的名稱，不能只為縮短檔名而製造歧義。
+
+下載模組位於 `src/DownKyi.Desktop/Services/Download`：`Planning` 保存準備、
+選擇與 admission，`Transfer` 保存 HTTP 傳輸、續傳與換來源，`Artifacts` 保存
+產物轉換、輸出路徑與檔案發布，`Presentation` 保存 UI 投影與對話框適配，
+`Runtime` 保存排程、pipeline 與啟停。模組根目錄保留 composition 與 runtime
+factory，供維護者從組裝入口跟進對應責任。這些目錄沿用既有 namespace、
+型別與 assembly；狀態、取消、重試與實體檔案的 owner 仍由下述 invariant 約束。
+
 ## Current owner map
 
 ```mermaid
@@ -39,7 +60,7 @@ Prism、DryIoc、EventAggregator、RegionManager、ContainerLocator、第二個 
 
 Desktop composition root 只選擇模組；Navigation／Dialog／Download 的實作、生命週期和多介面 alias 由各自 local composition 接合。`DownKyiHost` 預設仍驗證必要依賴與 lifetime；Release 產品啟動只解析當下路徑所需服務，完整 composition 由測試驗證。主視窗先顯示不含功能狀態的最小 shell，第一幀後才解析 `MainWindowViewModel` 並導向首頁；這只縮短 first-visible path，不改變 navigation、diagnostic 或 readiness 的 owner。這些驗證仍不能取代產品組裝與行為測試。
 
-Bilibili endpoint adapters 留在 `DownKyi.Core/BiliApi` 以維持 DTO 與協定相容。所有 production 呼叫必須使用注入的 async port：普通 API 經 `IBilibiliApiClient`；QR 登入由同一個隔離 `IBilibiliLoginSession` 貫穿 generate、poll 與 trusted callback，以保留 response cookies。Host 是 client、session factory、cookie、buvid 與 network settings 的唯一組合點；不得恢復 static client、global `Configure()` 或同步 HTTP compatibility path。
+Bilibili endpoint adapters 留在 `src/DownKyi.Core/BiliApi` 以維持 DTO 與協定相容。所有 production 呼叫必須使用注入的 async port：普通 API 經 `IBilibiliApiClient`；QR 登入由同一個隔離 `IBilibiliLoginSession` 貫穿 generate、poll 與 trusted callback，以保留 response cookies。Host 是 client、session factory、cookie、buvid 與 network settings 的唯一組合點；不得恢復 static client、global `Configure()` 或同步 HTTP compatibility path。
 
 GitHub release 的 HTTP、JSON contract 與解析由 Infrastructure 擁有；Desktop composition 提供 repository identity 與 HttpClient 設定，Desktop 決定何時檢查及顯示更新提示。版本比較與 skip-version 等價性共用 Application 的 `SemanticVersionPolicy`；HTTP service 不保存目前應用版本。
 

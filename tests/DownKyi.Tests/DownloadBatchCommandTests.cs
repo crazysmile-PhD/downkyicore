@@ -12,11 +12,11 @@ public sealed class DownloadBatchCommandTests
     [Fact]
     public void FailureDetailsAreExpandedOnlyWhenRequestedByTheUser()
     {
-        using var viewModel = new ViewDownloadingViewModel(
+        using var viewModel = new DownloadingViewModel(
             new TestDesktopInteractionContext(),
             new DownloadListState(),
             new BlockingCoordinator(),
-            NullLogger<ViewDownloadingViewModel>.Instance);
+            NullLogger<DownloadingViewModel>.Instance);
         var item = new DownloadingItem
         {
             Failure = new DownloadFailure("download.transfer.http-403", "下载失败", true),
@@ -36,11 +36,11 @@ public sealed class DownloadBatchCommandTests
     public void PauseResumePauseClicksAreAllForwardedWhileEarlierBatchesRun()
     {
         var coordinator = new BlockingCoordinator();
-        using var viewModel = new ViewDownloadingViewModel(
+        using var viewModel = new DownloadingViewModel(
             new TestDesktopInteractionContext(),
             new DownloadListState(),
             coordinator,
-            NullLogger<ViewDownloadingViewModel>.Instance);
+            NullLogger<DownloadingViewModel>.Instance);
 
         viewModel.PauseAllDownloadingCommand.Execute(null);
         viewModel.ContinueAllDownloadingCommand.Execute(null);

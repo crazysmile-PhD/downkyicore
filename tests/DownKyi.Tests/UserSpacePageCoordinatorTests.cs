@@ -125,7 +125,7 @@ public sealed class UserSpacePageCoordinatorTests
             Bvid = "BV17x411w7KC",
             IsSelected = true
         };
-        var downloadItem = Assert.Single(ViewPublicationViewModel.CreateDownloadItems(
+        var downloadItem = Assert.Single(PublicationViewModel.CreateDownloadItems(
             [media, directVideo]));
         Assert.Equal(
             "BV17x411w7KC",

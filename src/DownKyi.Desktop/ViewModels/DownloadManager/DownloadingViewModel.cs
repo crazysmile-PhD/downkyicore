@@ -1,0 +1,154 @@
+using System;
+using System.Collections.ObjectModel;
+using System.Threading.Tasks;
+using CommunityToolkit.Mvvm.Input;
+using DownKyi.Application.Desktop;
+using DownKyi.Commands;
+using DownKyi.Services;
+using DownKyi.Services.Download;
+using DownKyi.Utils;
+using Microsoft.Extensions.Logging;
+
+namespace DownKyi.ViewModels.DownloadManager
+{
+    internal class DownloadingViewModel : ViewModelBase
+    {
+        public const string Tag = "PageDownloadManagerDownloading";
+
+        private readonly IDownloadManagerCoordinator _downloadManagerCoordinator;
+        private readonly ILogger<DownloadingViewModel> _logger;
+
+        #region 页面属性申明
+
+        public ReadOnlyObservableCollection<DownloadingItem> DownloadingList { get; }
+
+        #endregion
+
+        public DownloadingViewModel(
+            IDesktopInteractionContext desktopInteractions,
+            DownloadListState downloadLists,
+            IDownloadManagerCoordinator downloadManagerCoordinator,
+            ILogger<DownloadingViewModel> logger) : base(desktopInteractions)
+        {
+            _downloadManagerCoordinator = downloadManagerCoordinator
+                ?? throw new ArgumentNullException(nameof(downloadManagerCoordinator));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            // 初始化DownloadingList
+            DownloadingList = (downloadLists ?? throw new ArgumentNullException(nameof(downloadLists))).Downloading;
+        }
+
+        #region 命令申明
+
+        // 暂停所有下载事件
+        private RelayCommand? _pauseAllDownloadingCommand;
+
+        public RelayCommand PauseAllDownloadingCommand =>
+            _pauseAllDownloadingCommand ??= new RelayCommand(ExecutePauseAllDownloadingCommand);
+
+        /// <summary>
+        /// 暂停所有下载事件
+        /// </summary>
+        private void ExecutePauseAllDownloadingCommand()
+        {
+            RunFireAndForget(
+                _downloadManagerCoordinator.PauseAllAsync(DownloadingList),
+                nameof(ExecutePauseAllDownloadingCommand),
+                _logger);
+        }
+
+        // 继续所有下载事件
+        private RelayCommand? _continueAllDownloadingCommand;
+
+        public RelayCommand ContinueAllDownloadingCommand =>
+            _continueAllDownloadingCommand ??= new RelayCommand(ExecuteContinueAllDownloadingCommand);
+
+        /// <summary>
+        /// 继续所有下载事件
+        /// </summary>
+        private void ExecuteContinueAllDownloadingCommand()
+        {
+            RunFireAndForget(
+                _downloadManagerCoordinator.ResumeAllAsync(DownloadingList),
+                nameof(ExecuteContinueAllDownloadingCommand),
+                _logger);
+        }
+
+        private DownKyiAsyncDelegateCommand<DownloadingItem>? _toggleDownloadingCommand;
+
+        public DownKyiAsyncDelegateCommand<DownloadingItem> ToggleDownloadingCommand =>
+            _toggleDownloadingCommand ??= new DownKyiAsyncDelegateCommand<DownloadingItem>(
+                ExecuteToggleDownloadingCommand,
+                _logger);
+
+        private Task ExecuteToggleDownloadingCommand(DownloadingItem? downloadingItem)
+        {
+            return downloadingItem == null
+                ? Task.CompletedTask
+                : _downloadManagerCoordinator.ToggleAsync(downloadingItem);
+        }
+
+        private RelayCommand<DownloadingItem>? _toggleFailureDetailsCommand;
+
+        public RelayCommand<DownloadingItem> ToggleFailureDetailsCommand =>
+            _toggleFailureDetailsCommand ??= new RelayCommand<DownloadingItem>(
+                ExecuteToggleFailureDetailsCommand);
+
+        private static void ExecuteToggleFailureDetailsCommand(DownloadingItem? downloadingItem)
+        {
+            if (downloadingItem?.HasFailureDetails == true)
+            {
+                downloadingItem.IsFailureDetailsExpanded =
+                    !downloadingItem.IsFailureDetailsExpanded;
+            }
+        }
+
+        // 删除所有下载事件
+        private DownKyiAsyncDelegateCommand? _deleteAllDownloadingCommand;
+
+        public DownKyiAsyncDelegateCommand DeleteAllDownloadingCommand => _deleteAllDownloadingCommand ??= new DownKyiAsyncDelegateCommand(ExecuteDeleteAllDownloadingCommand, _logger);
+
+        /// <summary>
+        /// 删除所有下载事件
+        /// </summary>
+        private async Task ExecuteDeleteAllDownloadingCommand()
+        {
+            var alertService = new AlertService(AppDialogs);
+            var result = await alertService
+                .ShowWarning(DictionaryResource.GetString("ConfirmDelete"), 2)
+                .ConfigureAwait(true);
+            if (result != AppDialogOutcome.Accepted)
+            {
+                return;
+            }
+
+            await _downloadManagerCoordinator.DeleteAllAsync(DownloadingList).ConfigureAwait(true);
+        }
+
+
+        // 下载列表删除事件
+        private DownKyiAsyncDelegateCommand<DownloadingItem>? _deleteCommand;
+        public DownKyiAsyncDelegateCommand<DownloadingItem> DeleteCommand => _deleteCommand ??= new DownKyiAsyncDelegateCommand<DownloadingItem>(ExecuteDeleteCommand, _logger);
+
+        /// <summary>
+        /// 下载列表删除事件
+        /// </summary>
+        private async Task ExecuteDeleteCommand(DownloadingItem? downloadingItem)
+        {
+            if (downloadingItem == null)
+            {
+                return;
+            }
+
+            var alertService = new AlertService(AppDialogs);
+            var result = await alertService.ShowWarning(DictionaryResource.GetString("ConfirmDelete"), 2).ConfigureAwait(true);
+            if (result != AppDialogOutcome.Accepted)
+            {
+                return;
+            }
+
+            await _downloadManagerCoordinator.DeleteAsync(downloadingItem).ConfigureAwait(true);
+        }
+
+        #endregion
+    }
+}
