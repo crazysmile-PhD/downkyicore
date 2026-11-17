@@ -25,10 +25,12 @@ namespace DownKyi.Tests;
 
 public sealed class VideoTagLoadingTests : IDisposable
 {
-    private readonly string _directory = Path.Combine(
-        Path.GetTempPath(),
-        "downkyi-video-tag-tests",
-        Guid.NewGuid().ToString("N"));
+    // Admission stores physical paths; temp directories can have aliased ancestors.
+    private readonly string _directory = new FileSystemPhysicalOutputPathResolver()
+        .ResolvePhysicalBasePath(Path.Combine(
+            Path.GetTempPath(),
+            "downkyi-video-tag-tests",
+            Guid.NewGuid().ToString("N")));
 
     [Fact]
     public async Task VideoPageUsesCurrentOperationAfterOriginalParseWasCanceled()
