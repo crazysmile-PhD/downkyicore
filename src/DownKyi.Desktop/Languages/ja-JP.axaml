@@ -257,7 +257,6 @@
     <system:String x:Key="AfterDownloadOperationCloseApp">アプリを終了</system:String>
     <system:String x:Key="AfterDownloadOperationCloseSystem">コンピューターをシャットダウン</system:String>
     <system:String x:Key="ListenClipboard">クリップボードを監視</system:String>
-    <system:String x:Key="RepeatFileAutoAddNumberSuffix">ファイル名が重複した場合は自動で番号を追加</system:String>
     <system:String x:Key="Network">ネットワーク</system:String>
     <system:String x:Key="DownloadTlsUntrusted">ダウンロードに失敗しました: サーバー証明書が信頼されていません</system:String>
     <system:String x:Key="DownloadTlsExpired">ダウンロードに失敗しました: サーバー証明書の有効期限が切れています</system:String>
@@ -441,7 +440,7 @@
     <system:String x:Key="ConfirmDelete">削除してもよろしいですか?</system:String>
     <system:String x:Key="SelectDirectory">フォルダーを選択してください</system:String>
     <system:String x:Key="DirectoryError">パスが無効です。</system:String>
-    <system:String x:Key="DownloadOutputCollision">同じ名前のファイルが存在するか、別のダウンロードで使用中です。別のフォルダーを選ぶか、「設定 → 基本」で「ファイル名が重複した場合は自動で番号を追加」を有効にして再試行してください。</system:String>
+    <system:String x:Key="DownloadOutputCollision">出力先を確保できませんでした。別のダウンロードフォルダーを選んで再試行してください。</system:String>
 
 
     <!--  DownloadSetterDialog  -->
@@ -486,7 +485,7 @@
 
     <system:String x:Key="DownloadContentConflictTitle">ダウンロードの選択には確認が必要です</system:String>
     <system:String x:Key="DownloadDuplicateBatchTitle">再ダウンロードの確認</system:String>
-    <system:String x:Key="DownloadDuplicateBatchMessage">このダウンロード一覧には、以前にダウンロードした動画が {0} 本含まれています。スキップするか、再ダウンロードするかを選んでください。</system:String>
+    <system:String x:Key="DownloadDuplicateBatchMessage">このダウンロードリストにはダウンロード済みの動画が {0} 件あります。スキップするか、再ダウンロードしてください。再ダウンロードは新しいフォルダーに保存され、元のファイルは保持されます。</system:String>
     <system:String x:Key="DownloadDuplicateBatchActiveMessage">さらに {0} 本の動画がすでにダウンロードキューにあるため、スキップされます。</system:String>
     <system:String x:Key="DownloadDuplicateBatchAffectedItems">ダウンロードした {0} 本の動画を表示</system:String>
     <system:String x:Key="RedownloadDuplicateBatch">この {0} 本を再ダウンロード</system:String>

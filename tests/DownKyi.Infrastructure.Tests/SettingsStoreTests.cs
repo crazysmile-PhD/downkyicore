@@ -33,14 +33,16 @@ public sealed class SettingsStoreTests
         }
     }
 
-    [Fact]
-    public async Task RemovedParsingSettingsAreIgnoredWhenLegacyJsonIsSaved()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RemovedSettingsAreIgnoredWhenLegacyJsonIsSaved(bool legacySuffixSetting)
     {
         var directory = CreateTestDirectory();
         var settingsPath = Path.Combine(directory, "settings.json");
-        const string source =
-            """
-            {"SchemaVersion":1,"Basic":{"IsAutoParseVideo":2,"IsAutoDownloadAll":2,"ParseScope":2,"IsListenClipboard":2}}
+        var source =
+            $$$"""
+            {"SchemaVersion":1,"Basic":{"IsAutoParseVideo":2,"IsAutoDownloadAll":2,"ParseScope":2,"RepeatFileAutoAddNumberSuffix":{{{(legacySuffixSetting ? "true" : "false")}}},"IsListenClipboard":2}}
             """;
 
         try
@@ -65,6 +67,7 @@ public sealed class SettingsStoreTests
             Assert.False(basic.TryGetProperty("IsAutoParseVideo", out _));
             Assert.False(basic.TryGetProperty("IsAutoDownloadAll", out _));
             Assert.False(basic.TryGetProperty("ParseScope", out _));
+            Assert.False(basic.TryGetProperty("RepeatFileAutoAddNumberSuffix", out _));
             Assert.Equal((int)AllowStatus.No, basic.GetProperty("IsListenClipboard").GetInt32());
         }
         finally

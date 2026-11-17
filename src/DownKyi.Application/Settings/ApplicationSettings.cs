@@ -38,8 +38,7 @@ public sealed record BasicApplicationSettings(
     ThemeMode ThemeMode,
     AfterDownloadOperation AfterDownload,
     AllowStatus IsListenClipboard,
-    DownloadFinishedSort DownloadFinishedSort,
-    bool RepeatFileAutoAddNumberSuffix)
+    DownloadFinishedSort DownloadFinishedSort)
 {
     public UiLanguage UiLanguage { get; init; }
 }

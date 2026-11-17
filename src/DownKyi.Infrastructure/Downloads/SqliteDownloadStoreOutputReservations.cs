@@ -160,6 +160,54 @@ internal sealed class SqliteDownloadStoreOutputReservations(SqliteDownloadStoreD
         return [.. keys];
     }
 
+    public async Task<bool> IsOutputDirectoryReservedAsync(
+        string directory,
+        bool ignoreCase,
+        CancellationToken cancellationToken)
+    {
+        var key = DownloadOutputPathKey.Create(directory, ignoreCase);
+        if (ignoreCase != DownloadOutputPathKey.UsesCaseInsensitiveComparison)
+        {
+            var keys = await GetActiveOutputReservationKeysAsync(ignoreCase, cancellationToken)
+                .ConfigureAwait(false);
+            return keys.Any(candidate => DownloadOutputPathKey.IsSameOrDescendant(candidate, directory, ignoreCase));
+        }
+
+        var prefix = Path.EndsInDirectorySeparator(key) ? key : key + Path.DirectorySeparatorChar;
+        // The next separator character bounds precisely this directory's descendants.
+        var prefixEnd = prefix[..^1] + (char)(prefix[^1] + 1);
+        using var connection = await _database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT 1, NULL
+            FROM download_base db
+            INNER JOIN downloading dl ON dl.id = db.id
+            WHERE (db.output_reservation_key = @key
+                   OR (db.output_reservation_key >= @prefix AND db.output_reservation_key < @prefix_end))
+              AND {SqliteDownloadStoreQuarantine.ExcludeDownloadingRecordSql}
+            UNION ALL
+            SELECT 0, db.file_path
+            FROM download_base db
+            INNER JOIN downloading dl ON dl.id = db.id
+            WHERE db.output_reservation_key IS NULL
+              AND {SqliteDownloadStoreQuarantine.ExcludeDownloadingRecordSql}
+            """;
+        command.Parameters.AddWithValue("@key", key);
+        command.Parameters.AddWithValue("@prefix", prefix);
+        command.Parameters.AddWithValue("@prefix_end", prefixEnd);
+        using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            if (reader.GetInt32(0) == 1
+                || DownloadOutputPathKey.IsSameOrDescendant(reader.GetString(1), directory, ignoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public async Task<bool> HasOutputClaimConflictAsync(
         string basePath,
         long requestedCid,

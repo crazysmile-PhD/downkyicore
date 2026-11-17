@@ -15,4 +15,14 @@ public static class DownloadOutputPathKey
             .Normalize(NormalizationForm.FormC);
         return ignoreCase ? normalized.ToUpperInvariant() : normalized;
     }
+
+    public static bool IsSameOrDescendant(string basePath, string directory, bool ignoreCase)
+    {
+        var key = Create(basePath, ignoreCase);
+        var directoryKey = Create(directory, ignoreCase);
+        var prefix = Path.EndsInDirectorySeparator(directoryKey)
+            ? directoryKey : directoryKey + Path.DirectorySeparatorChar;
+        return string.Equals(key, directoryKey, StringComparison.Ordinal)
+               || key.StartsWith(prefix, StringComparison.Ordinal);
+    }
 }

@@ -257,7 +257,6 @@
     <system:String x:Key="AfterDownloadOperationCloseApp">Exit app</system:String>
     <system:String x:Key="AfterDownloadOperationCloseSystem">Shut down computer</system:String>
     <system:String x:Key="ListenClipboard">Monitor clipboard</system:String>
-    <system:String x:Key="RepeatFileAutoAddNumberSuffix">Add a number to duplicate file names automatically</system:String>
     <system:String x:Key="Network">Network</system:String>
     <system:String x:Key="DownloadTlsUntrusted">Download failed: Server certificate is not trusted</system:String>
     <system:String x:Key="DownloadTlsExpired">Download failed: Server certificate has expired</system:String>
@@ -441,7 +440,7 @@
     <system:String x:Key="ConfirmDelete">Are you sure you want to delete it?</system:String>
     <system:String x:Key="SelectDirectory">Please select a folder</system:String>
     <system:String x:Key="DirectoryError">Invalid path.</system:String>
-    <system:String x:Key="DownloadOutputCollision">The target file name already exists or is used by another download. Choose another folder, or enable “Add a number to duplicate file names automatically” in Settings → Basic, then retry.</system:String>
+    <system:String x:Key="DownloadOutputCollision">The output path could not be reserved. Choose another download folder and retry.</system:String>
 
 
     <!--  DownloadSetterDialog  -->
@@ -486,7 +485,7 @@
 
     <system:String x:Key="DownloadContentConflictTitle">Download selection requires confirmation</system:String>
     <system:String x:Key="DownloadDuplicateBatchTitle">Confirm repeat downloads</system:String>
-    <system:String x:Key="DownloadDuplicateBatchMessage">This download list includes {0} previously downloaded videos. Choose to skip or download them again.</system:String>
+    <system:String x:Key="DownloadDuplicateBatchMessage">This download list includes {0} previously downloaded videos. Choose to skip or download them again. Repeat downloads use a new folder and keep the existing files.</system:String>
     <system:String x:Key="DownloadDuplicateBatchActiveMessage">Another {0} videos are already in the download queue and will be skipped.</system:String>
     <system:String x:Key="DownloadDuplicateBatchAffectedItems">View {0} previously downloaded videos</system:String>
     <system:String x:Key="RedownloadDuplicateBatch">Download these {0} again</system:String>

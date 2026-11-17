@@ -101,14 +101,6 @@ internal class BasicViewModel : ViewModelBase
         set => SetProperty(ref _listenClipboard, value);
     }
 
-    private bool _repeatFileAutoAddNumberSuffix;
-
-    public bool RepeatFileAutoAddNumberSuffix
-    {
-        get => _repeatFileAutoAddNumberSuffix;
-        set => SetProperty(ref _repeatFileAutoAddNumberSuffix, value);
-    }
-
     #endregion
 
     public BasicViewModel(
@@ -159,10 +151,6 @@ internal class BasicViewModel : ViewModelBase
         // 是否监听剪贴板
         var isListenClipboard = basic.IsListenClipboard;
         ListenClipboard = isListenClipboard == AllowStatus.Yes;
-
-        // 重复下载文件自动添加数字后缀
-        var repeatFileAutoAddNumberSuffix = basic.RepeatFileAutoAddNumberSuffix;
-        RepeatFileAutoAddNumberSuffix = repeatFileAutoAddNumberSuffix;
 
         _isOnNavigatedTo = false;
     }
@@ -241,19 +229,6 @@ internal class BasicViewModel : ViewModelBase
         var isListenClipboard = ListenClipboard ? AllowStatus.Yes : AllowStatus.No;
 
         var isSucceed = UpdateBasic(settings => settings with { IsListenClipboard = isListenClipboard }).IsListenClipboard == isListenClipboard;
-        PublishTip(isSucceed);
-    }
-
-    private RelayCommand? _repeatFileAutoAddNumberSuffixCommand;
-
-    public RelayCommand RepeatFileAutoAddNumberSuffixCommand => _repeatFileAutoAddNumberSuffixCommand ??= new RelayCommand(ExecuteRepeatFileAutoAddNumberSuffixCommand);
-
-    private void ExecuteRepeatFileAutoAddNumberSuffixCommand()
-    {
-        var isSucceed = UpdateBasic(settings => settings with
-        {
-            RepeatFileAutoAddNumberSuffix = RepeatFileAutoAddNumberSuffix
-        }).RepeatFileAutoAddNumberSuffix == RepeatFileAutoAddNumberSuffix;
         PublishTip(isSucceed);
     }
 

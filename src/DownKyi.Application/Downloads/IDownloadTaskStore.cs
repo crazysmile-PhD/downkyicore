@@ -54,6 +54,13 @@ public interface IDownloadTaskStore
         bool ignoreCase,
         CancellationToken cancellationToken);
 
+    async Task<bool> IsOutputDirectoryReservedAsync(
+        string directory,
+        bool ignoreCase,
+        CancellationToken cancellationToken) =>
+        (await GetActiveOutputReservationKeysAsync(ignoreCase, cancellationToken).ConfigureAwait(false))
+        .Any(key => DownloadOutputPathKey.IsSameOrDescendant(key, directory, ignoreCase));
+
     async Task<bool> HasOutputClaimConflictAsync(
         string basePath,
         long requestedCid,

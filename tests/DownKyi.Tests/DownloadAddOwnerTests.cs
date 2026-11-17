@@ -1,4 +1,5 @@
 using DownKyi.Application.Downloads;
+using DownKyi.Application.FileName;
 using DownKyi.Core.BiliApi.VideoStream.Models;
 using DownKyi.Domain.Downloads;
 using DownKyi.Models;
@@ -85,13 +86,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
         Directory.CreateDirectory(_directory);
         using var settingsStore = new DownKyi.Infrastructure.Settings.SettingsStore(
             Path.Combine(_directory, "settings.json"));
-        var settings = settingsStore.Current with
-        {
-            Basic = settingsStore.Current.Basic with
-            {
-                RepeatFileAutoAddNumberSuffix = true
-            }
-        };
+        var settings = settingsStore.Current;
         var page = CreatePage();
         page.AudioQualityFormat = "高质量";
         var video = new VideoInfoView
@@ -127,6 +122,44 @@ public sealed class DownloadAddOwnerTests : IDisposable
             DownloadContentSelection.All);
 
         Assert.Equal(first.DownloadBase.FilePath, second.DownloadBase.FilePath);
+    }
+
+    [Fact]
+    public void FlatFileNameTemplateStillUsesATitlePackage()
+    {
+        Directory.CreateDirectory(_directory);
+        using var settingsStore = new DownKyi.Infrastructure.Settings.SettingsStore(
+            Path.Combine(_directory, "settings.json"));
+        var settings = settingsStore.Current with
+        {
+            Video = settingsStore.Current.Video with { FileNameParts = [FileNamePart.PageTitle] }
+        };
+        var page = CreatePage();
+        var video = new VideoInfoView { Title = "main", VideoZone = "Technology" };
+        var section = new VideoSection { VideoPages = [page] };
+
+        var draft = CreateDraft(_directory, video, section, 1, page,
+            CreateVideoQuality(), settings, DownloadContentSelection.None with { Video = true });
+
+        Assert.Equal(Path.Combine(_directory, "main", "page"), draft.DownloadBase.FilePath);
+    }
+
+    [Fact]
+    public void DefaultTemplateUsesOneTitleDirectoryAboveSections()
+    {
+        Directory.CreateDirectory(_directory);
+        using var settingsStore = new DownKyi.Infrastructure.Settings.SettingsStore(
+            Path.Combine(_directory, "settings.json"));
+        var page = CreatePage();
+        var video = new VideoInfoView { Title = "main", VideoZone = "Technology" };
+        var section = new VideoSection { Title = "section", VideoPages = [page] };
+
+        var draft = CreateDraft(_directory, video, section, 2, page,
+            CreateVideoQuality(), settingsStore.Current,
+            DownloadContentSelection.None with { Video = true });
+
+        Assert.Equal(Path.Combine(_directory, "main", "section", "1-page-1080P-AVC"),
+            Path.GetFullPath(draft.DownloadBase.FilePath));
     }
 
     [Fact]
