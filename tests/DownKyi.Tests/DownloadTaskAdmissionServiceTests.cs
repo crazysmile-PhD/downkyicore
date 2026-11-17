@@ -38,8 +38,8 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         var second = CreateItem("second", basePath, cid: 2002);
 
         await Task.WhenAll(
-            admission.AdmitAsync(first, true, TestContext.Current.CancellationToken),
-            admission.AdmitAsync(second, true, TestContext.Current.CancellationToken)).ConfigureAwait(true);
+            admission.AdmitAsync(first, TestContext.Current.CancellationToken),
+            admission.AdmitAsync(second, TestContext.Current.CancellationToken)).ConfigureAwait(true);
 
         var persisted = await tasks
             .GetUnfinishedAsync(TestContext.Current.CancellationToken)
@@ -80,8 +80,8 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         second.DownloadBase.VideoCodecName = "AV1";
 
         var admitted = await Task.WhenAll(
-            admission.AdmitAsync(first, true, TestContext.Current.CancellationToken),
-            admission.AdmitAsync(second, true, TestContext.Current.CancellationToken)).ConfigureAwait(true);
+            admission.AdmitAsync(first, TestContext.Current.CancellationToken),
+            admission.AdmitAsync(second, TestContext.Current.CancellationToken)).ConfigureAwait(true);
 
         Assert.Single(admitted, result => result);
         Assert.Single(await tasks.GetUnfinishedAsync(TestContext.Current.CancellationToken));
@@ -131,7 +131,6 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         sameIdentity.DownloadBase.VideoCodecName = "AV1";
         Assert.False(await admission.AdmitAsync(
             sameIdentity,
-            autoAddNumberSuffix: true,
             TestContext.Current.CancellationToken));
 
         var audioOnly = CreateItem("audio", Path.Combine(_directory, "audio"), cid);
@@ -139,14 +138,12 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
             DownloadContentSelection.None with { Audio = true };
         Assert.True(await admission.AdmitAsync(
             audioOnly,
-            autoAddNumberSuffix: true,
             TestContext.Current.CancellationToken));
 
         var redownload = CreateItem("redownload", Path.Combine(_directory, "redownload"), cid);
         redownload.DownloadBase.NeedDownloadContent = sameIdentity.DownloadBase.NeedDownloadContent;
         Assert.True(await admission.AdmitAsync(
             redownload,
-            autoAddNumberSuffix: true,
             TestContext.Current.CancellationToken,
             redownloadCompleted: true));
 
@@ -185,7 +182,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         }
         else
         {
-            Assert.False(await admission.AdmitAsync(duplicate, true, TestContext.Current.CancellationToken));
+            Assert.False(await admission.AdmitAsync(duplicate, TestContext.Current.CancellationToken));
         }
 
         Assert.Single(await tasks.GetUnfinishedAsync(TestContext.Current.CancellationToken));
@@ -221,7 +218,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         }
         else
         {
-            Assert.False(await admission.AdmitAsync(duplicate, true, TestContext.Current.CancellationToken));
+            Assert.False(await admission.AdmitAsync(duplicate, TestContext.Current.CancellationToken));
         }
 
         Assert.Equal(DownloadContentSelection.All,
@@ -247,7 +244,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         var media = CreateItem("cross-cid-media", basePath, cid: 1001);
         media.DownloadBase.NeedDownloadContent =
             DownloadContentSelection.None with { Video = true };
-        await admission.AdmitAsync(media, true, TestContext.Current.CancellationToken);
+        await admission.AdmitAsync(media, TestContext.Current.CancellationToken);
         var subtitle = CreateItem("cross-cid-subtitle", basePath, cid: 2002);
         subtitle.DownloadBase.NeedDownloadContent = DownloadContentSelection.None with
         {
@@ -262,7 +259,6 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
 
         await admission.AdmitAsync(
             subtitle,
-            autoAddNumberSuffix: true,
             cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(basePath, media.DownloadBase.FilePath);
@@ -274,7 +270,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task DifferentCidDisjointActionWithoutAutoSuffixHasNoAdmissionSideEffects()
+    public async Task DifferentCidDisjointActionAlwaysGetsANumberedPath()
     {
         Directory.CreateDirectory(_directory);
         using var innerStore = CreateStore();
@@ -290,7 +286,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         var media = CreateItem("cross-cid-existing", basePath, cid: 1001);
         media.DownloadBase.NeedDownloadContent =
             DownloadContentSelection.None with { Video = true };
-        await admission.AdmitAsync(media, true, TestContext.Current.CancellationToken);
+        await admission.AdmitAsync(media, TestContext.Current.CancellationToken);
         var subtitle = CreateItem("cross-cid-rejected", basePath, cid: 2002);
         subtitle.DownloadBase.NeedDownloadContent = DownloadContentSelection.None with
         {
@@ -298,16 +294,15 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
             SelectedSubtitleTrackIds = [11]
         };
 
-        await Assert.ThrowsAsync<DownloadOutputCollisionException>(() => admission.AdmitAsync(
+        Assert.True(await admission.AdmitAsync(
             subtitle,
-            autoAddNumberSuffix: false,
             cancellationToken: TestContext.Current.CancellationToken));
 
-        Assert.Equal(basePath, subtitle.DownloadBase.FilePath);
-        Assert.Single(await tasks.GetUnfinishedAsync(TestContext.Current.CancellationToken));
-        Assert.Single(list.Downloading);
-        Assert.Single(queue.Enqueued);
-        Assert.Equal(1, store.AddCallCount);
+        Assert.Equal(basePath + "(1)", subtitle.DownloadBase.FilePath);
+        Assert.Equal(2, (await tasks.GetUnfinishedAsync(TestContext.Current.CancellationToken)).Count);
+        Assert.Equal(2, list.Downloading.Count);
+        Assert.Equal(2, queue.Enqueued.Count);
+        Assert.Equal(2, store.AddCallCount);
     }
 
     [Fact]
@@ -334,9 +329,9 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
             DownloadContentSelection.None with { Video = true };
 
         Assert.True(await admission.AdmitAsync(
-            first, true, TestContext.Current.CancellationToken));
+            first, TestContext.Current.CancellationToken));
         Assert.False(await admission.AdmitAsync(
-            second, true, TestContext.Current.CancellationToken));
+            second, TestContext.Current.CancellationToken));
 
         Assert.Equal(basePath, second.DownloadBase.FilePath);
         Assert.Single(await tasks.GetUnfinishedAsync(TestContext.Current.CancellationToken));
@@ -362,7 +357,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
             new RecordingDownloadTaskQueue());
         var basePath = Path.Combine(_directory, "retryable-output");
         var first = CreateItem("failed", basePath);
-        await admission.AdmitAsync(first, true, TestContext.Current.CancellationToken).ConfigureAwait(true);
+        await admission.AdmitAsync(first, TestContext.Current.CancellationToken).ConfigureAwait(true);
         var taskId = new DownloadTaskId(first.DownloadBase.Id);
         Assert.True((await tasks
             .StartAsync(taskId, TestContext.Current.CancellationToken)
@@ -375,7 +370,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
             .ConfigureAwait(true)).IsSuccess);
 
         var second = CreateItem("second", basePath);
-        await admission.AdmitAsync(second, true, TestContext.Current.CancellationToken).ConfigureAwait(true);
+        await admission.AdmitAsync(second, TestContext.Current.CancellationToken).ConfigureAwait(true);
 
         Assert.Equal($"{basePath}(1)", second.DownloadBase.FilePath);
     }
@@ -400,13 +395,13 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
             new RecordingDownloadTaskQueue());
         var basePath = Path.Combine(_directory, "canceled-output");
         var first = CreateItem("canceled", basePath);
-        await admission.AdmitAsync(first, true, TestContext.Current.CancellationToken).ConfigureAwait(true);
+        await admission.AdmitAsync(first, TestContext.Current.CancellationToken).ConfigureAwait(true);
         Assert.True((await tasks
             .CancelAsync(new DownloadTaskId(first.DownloadBase.Id), TestContext.Current.CancellationToken)
             .ConfigureAwait(true)).IsSuccess);
 
         var second = CreateItem("replacement", basePath);
-        await admission.AdmitAsync(second, true, TestContext.Current.CancellationToken).ConfigureAwait(true);
+        await admission.AdmitAsync(second, TestContext.Current.CancellationToken).ConfigureAwait(true);
 
         Assert.Equal($"{basePath}(1)", second.DownloadBase.FilePath);
 
@@ -414,7 +409,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
             .DeleteAsync(new DownloadTaskId(first.DownloadBase.Id), TestContext.Current.CancellationToken)
             .ConfigureAwait(true)).IsSuccess);
         var third = CreateItem("after-cleanup", basePath);
-        await admission.AdmitAsync(third, true, TestContext.Current.CancellationToken).ConfigureAwait(true);
+        await admission.AdmitAsync(third, TestContext.Current.CancellationToken).ConfigureAwait(true);
 
         Assert.Equal(Path.GetFullPath(basePath), third.DownloadBase.FilePath);
     }
@@ -445,7 +440,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
             "foreign output",
             TestContext.Current.CancellationToken);
 
-        await admission.AdmitAsync(draft, true, TestContext.Current.CancellationToken).ConfigureAwait(true);
+        await admission.AdmitAsync(draft, TestContext.Current.CancellationToken).ConfigureAwait(true);
 
         Assert.Equal($"{basePath}(1)", draft.DownloadBase.FilePath);
         Assert.Equal(0, store.ReservationProbeCount);
@@ -453,7 +448,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task DisabledAutoSuffixRejectsCollisionWithoutRenamingOrPersisting()
+    public async Task DiskCollisionAlwaysRenamesBeforePersisting()
     {
         Directory.CreateDirectory(_directory);
         using var innerStore = CreateStore();
@@ -478,20 +473,19 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
             TestContext.Current.CancellationToken);
         var item = CreateItem("rejected", basePath);
 
-        await Assert.ThrowsAsync<DownloadOutputCollisionException>(() => admission.AdmitAsync(
+        Assert.True(await admission.AdmitAsync(
             item,
-            false,
             TestContext.Current.CancellationToken));
 
-        Assert.Equal(basePath, item.DownloadBase.FilePath);
-        Assert.Empty(await tasks.GetUnfinishedAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(basePath + "(1)", item.DownloadBase.FilePath);
+        Assert.Single(await tasks.GetUnfinishedAsync(TestContext.Current.CancellationToken));
         Assert.Equal(0, store.ReservationProbeCount);
-        Assert.Equal(0, store.ReservationSnapshotCount);
-        Assert.Equal(0, store.AddCallCount);
+        Assert.Equal(1, store.ReservationSnapshotCount);
+        Assert.Equal(1, store.AddCallCount);
     }
 
     [Fact]
-    public async Task DisabledAutoSuffixRejectsDatabaseCollisionWithoutSnapshotOrSideEffects()
+    public async Task DatabaseCollisionAlwaysRenamesBeforePersisting()
     {
         Directory.CreateDirectory(_directory);
         using var innerStore = CreateStore();
@@ -507,18 +501,133 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         var queue = new RecordingDownloadTaskQueue();
         using var admission = CreateAdmission(list, tasks, historyService, projections, queue);
         var basePath = Path.Combine(_directory, "db-no-auto-suffix");
-        await admission.AdmitAsync(CreateItem("first", basePath), true, TestContext.Current.CancellationToken);
+        await admission.AdmitAsync(CreateItem("first", basePath), TestContext.Current.CancellationToken);
         var rejected = CreateItem("rejected", basePath);
 
-        await Assert.ThrowsAsync<DownloadOutputCollisionException>(() => admission.AdmitAsync(
-            rejected, false, TestContext.Current.CancellationToken));
+        Assert.True(await admission.AdmitAsync(
+            rejected, TestContext.Current.CancellationToken));
 
-        Assert.Equal(basePath, rejected.DownloadBase.FilePath);
-        Assert.Single(list.Downloading);
-        Assert.Single(queue.Enqueued);
+        Assert.Equal(basePath + "(1)", rejected.DownloadBase.FilePath);
+        Assert.Equal(2, list.Downloading.Count);
+        Assert.Equal(2, queue.Enqueued.Count);
         Assert.Equal(2, store.ReservationProbeCount);
+        Assert.Equal(1, store.ReservationSnapshotCount);
+        Assert.Equal(2, store.AddCallCount);
+    }
+
+    [Fact]
+    public async Task IndependentPackagesReserveDistinctDirectoriesAndKeepPageNames()
+    {
+        Directory.CreateDirectory(_directory);
+        using var innerStore = CreateStore();
+        var store = new CountingDownloadTaskStore(innerStore);
+        var clock = new SystemClock();
+        var historyService = DownloadHistoryService.CreateForSharedStore(store);
+        using var tasks = new DownloadTaskApplicationService(store, historyService, clock);
+        using var projections = new DownloadTaskProjectionStore(tasks, historyService, clock);
+        var list = new DownloadListState();
+        var queue = new AdmissionObservingQueue(list, projections);
+        using var admission = CreateAdmission(list, tasks, historyService, projections, queue);
+        var directory = Path.Combine(_directory, "series");
+        var firstPackage = new DownloadOutputPackage(directory);
+        var secondPackage = new DownloadOutputPackage(directory);
+        var first = CreateItem("first-page", Path.Combine(directory, "section", "page-1"), cid: 1);
+        var second = CreateItem("other-download", Path.Combine(directory, "section", "page-1"), cid: 2);
+        await Task.WhenAll(
+            admission.AdmitAsync(first, TestContext.Current.CancellationToken, package: firstPackage),
+            admission.AdmitAsync(second, TestContext.Current.CancellationToken, package: secondPackage));
+        var next = CreateItem("next-page", Path.Combine(directory, "section", "page-2"), cid: 3);
+        await admission.AdmitAsync(next, TestContext.Current.CancellationToken, package: firstPackage);
+
+        Assert.Equal(directory, firstPackage.AdmittedDirectory);
+        Assert.Equal(directory + "(1)", secondPackage.AdmittedDirectory);
+        Assert.Equal(Path.Combine(directory, "section", "page-1"), first.DownloadBase.FilePath);
+        Assert.Equal(Path.Combine(directory + "(1)", "section", "page-1"), second.DownloadBase.FilePath);
+        Assert.Equal(Path.Combine(directory, "section", "page-2"), next.DownloadBase.FilePath);
+        Assert.Equal(3, queue.ObservedPaths.Count);
+        Assert.False(Directory.Exists(directory));
+        Assert.False(Directory.Exists(directory + "(1)"));
+        Assert.Equal(3, store.DirectoryReservationProbeCount);
         Assert.Equal(0, store.ReservationSnapshotCount);
-        Assert.Equal(1, store.AddCallCount);
+    }
+
+    [Fact]
+    public async Task DistinctPackagesDoNotReadGlobalReservationSnapshots()
+    {
+        Directory.CreateDirectory(_directory);
+        using var innerStore = CreateStore();
+        var store = new CountingDownloadTaskStore(innerStore);
+        var clock = new SystemClock();
+        var historyService = DownloadHistoryService.CreateForSharedStore(store);
+        using var tasks = new DownloadTaskApplicationService(store, historyService, clock);
+        using var projections = new DownloadTaskProjectionStore(tasks, historyService, clock);
+        var queue = new RecordingDownloadTaskQueue();
+        using var admission = CreateAdmission(new DownloadListState(), tasks, historyService, projections, queue);
+        const int count = 64;
+        for (var index = 0; index < count; index++)
+        {
+            var directory = Path.Combine(_directory, $"package-{index}");
+            var item = CreateItem($"package-task-{index}", Path.Combine(directory, "page"));
+            Assert.True(await admission.AdmitAsync(item, TestContext.Current.CancellationToken,
+                package: new DownloadOutputPackage(directory)));
+        }
+
+        Assert.Equal(count, queue.Enqueued.Count);
+        Assert.Equal(count, store.DirectoryReservationProbeCount);
+        Assert.Equal(0, store.ReservationSnapshotCount);
+        Assert.Equal(0, store.GetUnfinishedCallCount);
+    }
+
+    [Fact]
+    public async Task RedownloadUsesANewPackageAndPreservesExistingFiles()
+    {
+        Directory.CreateDirectory(_directory);
+        using var store = CreateStore();
+        var clock = new SystemClock();
+        var historyService = DownloadHistoryService.CreateForSharedStore(store);
+        using var tasks = new DownloadTaskApplicationService(store, historyService, clock);
+        using var projections = new DownloadTaskProjectionStore(tasks, historyService, clock);
+        using var admission = CreateAdmission(
+            new DownloadListState(), tasks, historyService, projections, new RecordingDownloadTaskQueue());
+        var directory = Path.Combine(_directory, "series");
+        Directory.CreateDirectory(directory);
+        var existingPath = Path.Combine(directory, "page.mp4");
+        await File.WriteAllTextAsync(existingPath, "old-video", TestContext.Current.CancellationToken);
+        Directory.CreateDirectory(directory + "(1)");
+        await File.WriteAllTextAsync(directory + "(2)", "occupied-file", TestContext.Current.CancellationToken);
+        var item = CreateItem("redownload", Path.Combine(directory, "page"));
+
+        Assert.True(await admission.AdmitAsync(
+            item, TestContext.Current.CancellationToken,
+            redownloadCompleted: true, package: new DownloadOutputPackage(directory)));
+
+        Assert.Equal(Path.Combine(directory + "(3)", "page"), item.DownloadBase.FilePath);
+        Assert.Equal("old-video", await File.ReadAllTextAsync(existingPath, TestContext.Current.CancellationToken));
+        Assert.Single(await tasks.GetUnfinishedAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task RejectedPersistenceDoesNotClaimOrCreateAPackageDirectory()
+    {
+        Directory.CreateDirectory(_directory);
+        using var innerStore = CreateStore();
+        var store = new CountingDownloadTaskStore(innerStore) { RejectAdds = true };
+        var clock = new SystemClock();
+        var historyService = DownloadHistoryService.CreateForSharedStore(store);
+        using var tasks = new DownloadTaskApplicationService(store, historyService, clock);
+        using var projections = new DownloadTaskProjectionStore(tasks, historyService, clock);
+        var queue = new RecordingDownloadTaskQueue();
+        using var admission = CreateAdmission(new DownloadListState(), tasks, historyService, projections, queue);
+        var package = new DownloadOutputPackage(Path.Combine(_directory, "failed-series"));
+        var item = CreateItem("failed-page", Path.Combine(package.Directory, "page"));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => admission.AdmitAsync(
+            item, TestContext.Current.CancellationToken, package: package));
+
+        Assert.Null(package.AdmittedDirectory);
+        Assert.False(Directory.Exists(package.Directory));
+        Assert.Empty(queue.Enqueued);
+        Assert.Empty(await tasks.GetUnfinishedAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -541,7 +650,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         var media = CreateItem("media", basePath, cid: 1001);
         media.DownloadBase.NeedDownloadContent =
             DownloadContentSelection.None with { Video = true };
-        await admission.AdmitAsync(media, true, TestContext.Current.CancellationToken);
+        await admission.AdmitAsync(media, TestContext.Current.CancellationToken);
         await File.WriteAllTextAsync(
             basePath + ".mp4",
             "owned-media",
@@ -555,7 +664,6 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
 
         var admitted = await admission.AdmitAsync(
             subtitle,
-            autoAddNumberSuffix: true,
             cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.True(admitted);
@@ -593,7 +701,6 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
 
         await admission.AdmitAsync(
             subtitle,
-            autoAddNumberSuffix: true,
             cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(basePath + "(1)", subtitle.DownloadBase.FilePath);
@@ -624,7 +731,6 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
 
         await admission.AdmitAsync(
             item,
-            autoAddNumberSuffix: true,
             cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(basePath + "(1)", item.DownloadBase.FilePath);
@@ -660,7 +766,6 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
 
         var resolved = await DownloadOutputPathResolver.ResolveAdmissionCollisionAsync(
             basePath,
-            autoAddNumberSuffix: true,
             static (_, _) => Task.FromResult(false),
             static _ => Task.FromResult<IReadOnlyList<string>>([]),
             TestContext.Current.CancellationToken);
@@ -674,7 +779,6 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         var basePath = Path.Combine(_directory, "released-between-observations");
         var resolved = await DownloadOutputPathResolver.ResolveAdmissionCollisionAsync(
             basePath,
-            autoAddNumberSuffix: true,
             static (_, _) => Task.FromResult(true),
             static _ => Task.FromResult<IReadOnlyList<string>>([]),
             TestContext.Current.CancellationToken);
@@ -703,7 +807,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         using var admission = CreateAdmission(listState, tasks, historyService, projections, queue, resolver);
         var item = CreateItem("frozen", logicalBasePath);
 
-        await admission.AdmitAsync(item, true, TestContext.Current.CancellationToken)
+        await admission.AdmitAsync(item, TestContext.Current.CancellationToken)
             .ConfigureAwait(true);
 
         var persisted = Assert.Single(await tasks.GetUnfinishedAsync(
@@ -749,7 +853,6 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
 
         await Assert.ThrowsAsync<IOException>(() => admission.AdmitAsync(
             item,
-            true,
             TestContext.Current.CancellationToken));
 
         Assert.Equal([logicalBasePath], resolver.Inputs);
@@ -779,7 +882,6 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => admission.AdmitAsync(
             item,
-            true,
             TestContext.Current.CancellationToken));
 
         Assert.Empty(await innerStore.GetUnfinishedAsync(TestContext.Current.CancellationToken));
@@ -813,7 +915,6 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
 
         await Assert.ThrowsAsync<DownloadRuntimeUnavailableException>(() => admission.AdmitAsync(
             item,
-            true,
             TestContext.Current.CancellationToken));
 
         Assert.Empty(await tasks.GetUnfinishedAsync(TestContext.Current.CancellationToken));
@@ -843,7 +944,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
             runtimeAvailability: gateway);
         var item = CreateItem("runtime-initializing", Path.Combine(_directory, "output"));
 
-        await admission.AdmitAsync(item, true, TestContext.Current.CancellationToken);
+        await admission.AdmitAsync(item, TestContext.Current.CancellationToken);
 
         var persisted = Assert.IsType<DownloadTask>(await tasks.FindAsync(
             new DownloadTaskId(item.DownloadBase.Id),
@@ -879,7 +980,6 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
 
         await Assert.ThrowsAsync<DownloadRuntimeUnavailableException>(() => admission.AdmitAsync(
             item,
-            true,
             TestContext.Current.CancellationToken));
 
         var persisted = Assert.IsType<DownloadTask>(await tasks.FindAsync(
@@ -915,7 +1015,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         var first = CreateItem("first-alias", Path.Combine(_directory, "alias-a", "output"));
         var second = CreateItem("second-alias", Path.Combine(_directory, "alias-b", "output"));
 
-        await admission.AdmitAsync(first, true, TestContext.Current.CancellationToken)
+        await admission.AdmitAsync(first, TestContext.Current.CancellationToken)
             .ConfigureAwait(true);
         currentTarget = Path.Combine(_directory, "retargeted", "output");
         Assert.Equal(frozenBasePath, first.DownloadBase.FilePath, ignoreCase: false);
@@ -924,7 +1024,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
             projections.GetRequiredSnapshot(new DownloadTaskId(first.DownloadBase.Id)).Output.BasePath,
             ignoreCase: false);
         currentTarget = frozenBasePath;
-        await admission.AdmitAsync(second, true, TestContext.Current.CancellationToken)
+        await admission.AdmitAsync(second, TestContext.Current.CancellationToken)
             .ConfigureAwait(true);
 
         Assert.Equal(frozenBasePath, first.DownloadBase.FilePath, ignoreCase: false);
@@ -974,7 +1074,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         await AdmitThreeWithHoleAsync(admission, basePath);
 
         var next = CreateItem("hole", basePath);
-        await admission.AdmitAsync(next, true, TestContext.Current.CancellationToken);
+        await admission.AdmitAsync(next, TestContext.Current.CancellationToken);
 
         Assert.Equal($"{basePath}(2)", next.DownloadBase.FilePath);
     }
@@ -999,7 +1099,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
             $"{basePath}(2).mp4", "foreign output", TestContext.Current.CancellationToken);
 
         var next = CreateItem("disk-hole", basePath);
-        await admission.AdmitAsync(next, true, TestContext.Current.CancellationToken);
+        await admission.AdmitAsync(next, TestContext.Current.CancellationToken);
 
         Assert.Equal($"{basePath}(4)", next.DownloadBase.FilePath);
     }
@@ -1034,7 +1134,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         using var reopenedAdmission = CreateAdmission(
             new DownloadListState(), reopenedTasks, reopenedHistoryService, reopenedProjections, new RecordingDownloadTaskQueue());
         var next = CreateItem("after-reopen", basePath);
-        await reopenedAdmission.AdmitAsync(next, true, TestContext.Current.CancellationToken);
+        await reopenedAdmission.AdmitAsync(next, TestContext.Current.CancellationToken);
 
         Assert.Equal($"{basePath}(2)", next.DownloadBase.FilePath);
     }
@@ -1064,7 +1164,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         for (var index = 0; index < admissionCount; index++)
         {
             var item = CreateItem($"task-{index}", basePath);
-            await admission.AdmitAsync(item, true, TestContext.Current.CancellationToken)
+            await admission.AdmitAsync(item, TestContext.Current.CancellationToken)
                 .ConfigureAwait(true);
             Assert.Equal(index == 0 ? basePath : $"{basePath}({index})", item.DownloadBase.FilePath);
         }
@@ -1097,7 +1197,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         {
             var basePath = Path.Combine(_directory, $"distinct-{index:D3}");
             var item = CreateItem($"distinct-task-{index}", basePath);
-            await admission.AdmitAsync(item, true, TestContext.Current.CancellationToken);
+            await admission.AdmitAsync(item, TestContext.Current.CancellationToken);
             Assert.Equal(basePath, item.DownloadBase.FilePath);
         }
 
@@ -1126,7 +1226,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         var decomposed = Path.Combine(_directory, "cafe\u0301-legacy-admission");
         var composed = Path.Combine(_directory, "caf\u00e9-legacy-admission");
         await admission.AdmitAsync(
-            CreateItem("legacy-first", decomposed), true, TestContext.Current.CancellationToken);
+            CreateItem("legacy-first", decomposed), TestContext.Current.CancellationToken);
         using (var connection = new SqliteConnection(new SqliteConnectionStringBuilder
         {
             DataSource = Path.Combine(_directory, "download.db"),
@@ -1143,7 +1243,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         }
 
         var next = CreateItem("legacy-next", composed);
-        await admission.AdmitAsync(next, true, TestContext.Current.CancellationToken);
+        await admission.AdmitAsync(next, TestContext.Current.CancellationToken);
 
         Assert.Equal($"{composed}(1)", next.DownloadBase.FilePath);
         Assert.Equal(2, store.ReservationProbeCount);
@@ -1163,7 +1263,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         })
         {
             var item = CreateItem(id, path);
-            await admission.AdmitAsync(item, true, TestContext.Current.CancellationToken)
+            await admission.AdmitAsync(item, TestContext.Current.CancellationToken)
                 .ConfigureAwait(true);
             Assert.Equal(path, item.DownloadBase.FilePath);
         }
@@ -1263,6 +1363,8 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
 
         public int ReservationSnapshotCount { get; private set; }
 
+        public int DirectoryReservationProbeCount { get; private set; }
+
         public int AddCallCount { get; private set; }
 
         public Task InitializeAsync(CancellationToken cancellationToken) =>
@@ -1337,6 +1439,15 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         {
             ReservationSnapshotCount++;
             return inner.GetActiveOutputReservationKeysAsync(ignoreCase, cancellationToken);
+        }
+
+        public Task<bool> IsOutputDirectoryReservedAsync(
+            string directory,
+            bool ignoreCase,
+            CancellationToken cancellationToken)
+        {
+            DirectoryReservationProbeCount++;
+            return inner.IsOutputDirectoryReservedAsync(directory, ignoreCase, cancellationToken);
         }
 
         public Task<bool> HasOutputClaimConflictAsync(

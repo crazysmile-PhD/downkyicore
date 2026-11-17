@@ -14,6 +14,66 @@ public sealed class SqliteDownloadStoreReservationTests : IDisposable
     public void Dispose() => _fixture.Dispose();
 
     [Fact]
+    public async Task DirectoryReservationsIncludeDescendantsWithoutMatchingSiblingPrefixes()
+    {
+        using var store = _fixture.CreateStore();
+        var directory = Path.Combine(_fixture.TempDirectory, "series");
+        Assert.True((await store.AddAsync(
+            _fixture.CreateQueuedTask("nested-owner", Path.Combine(directory, "section", "page")),
+            TestContext.Current.CancellationToken)).IsSuccess);
+        Assert.True((await store.AddAsync(
+            _fixture.CreateQueuedTask("sibling-owner", Path.Combine(directory + "(1)", "page")),
+            TestContext.Current.CancellationToken)).IsSuccess);
+        var ignoreCase = DownloadOutputPathKey.UsesCaseInsensitiveComparison;
+
+        foreach (var (candidate, expected) in new[]
+        {
+            (directory, true),
+            (directory + Path.DirectorySeparatorChar, true),
+            (Path.Combine(directory, "section"), true),
+            (Path.Combine(directory, "section", "page"), true),
+            (Path.Combine(directory, "sec"), false),
+            (directory[..^1], false),
+            (directory + "(1)", true),
+            (directory + "(2)", false),
+            (Path.Combine(directory, "another-section"), false)
+        })
+        {
+            Assert.Equal(expected, await store.IsOutputDirectoryReservedAsync(
+                candidate, ignoreCase, TestContext.Current.CancellationToken));
+        }
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task DirectoryReservationsRespectUnicodeCaseAndLegacyKeys(bool ignoreCase, bool legacyKey)
+    {
+        using var store = _fixture.CreateStore();
+        var decomposed = Path.Combine(_fixture.TempDirectory, "cafe\u0301-package");
+        var composed = Path.Combine(_fixture.TempDirectory, "caf\u00e9-package");
+        Assert.True((await store.AddAsync(
+            _fixture.CreateQueuedTask("unicode-package", Path.Combine(decomposed, "section", "page")),
+            TestContext.Current.CancellationToken)).IsSuccess);
+        if (legacyKey)
+        {
+            using var connection = await _fixture.OpenConnectionAsync(readOnly: false);
+            using var command = connection.CreateCommand();
+            command.CommandText = "UPDATE download_base SET output_reservation_key = NULL WHERE id = 'unicode-package'";
+            await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        }
+
+        Assert.True(await store.IsOutputDirectoryReservedAsync(
+            composed, ignoreCase, TestContext.Current.CancellationToken));
+        Assert.Equal(ignoreCase, await store.IsOutputDirectoryReservedAsync(
+            composed.ToUpperInvariant(), ignoreCase, TestContext.Current.CancellationToken));
+        Assert.False(await store.IsOutputDirectoryReservedAsync(
+            composed + "-other", ignoreCase, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
     public async Task ConcurrentAddsAtomicallyClaimOneOutputPath()
     {
         var outputPath = Path.Combine(_fixture.TempDirectory, "shared-output");
@@ -279,6 +339,13 @@ public sealed class SqliteDownloadStoreReservationTests : IDisposable
             completed.Output.BasePath, DownloadOutputPathKey.UsesCaseInsensitiveComparison), keys);
         Assert.DoesNotContain(DownloadOutputPathKey.Create(
             quarantined.Output.BasePath, DownloadOutputPathKey.UsesCaseInsensitiveComparison), keys);
+        foreach (var (task, expected) in new[]
+                 { (failed, true), (paused, true), (completed, false), (quarantined, false) })
+        {
+            Assert.Equal(expected, await store.IsOutputDirectoryReservedAsync(
+                task.Output.BasePath, DownloadOutputPathKey.UsesCaseInsensitiveComparison,
+                TestContext.Current.CancellationToken));
+        }
     }
 
     [Fact]

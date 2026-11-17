@@ -375,6 +375,9 @@ internal static class CurrentDownloadStoreWriter
             CREATE INDEX IF NOT EXISTS ix_download_base_output_reservation
                 ON download_base(output_reservation_key)
                 WHERE output_reservation_key IS NOT NULL;
+            CREATE INDEX IF NOT EXISTS ix_download_base_unkeyed_output
+                ON download_base(file_path)
+                WHERE output_reservation_key IS NULL;
             """;
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -52,9 +53,9 @@ internal sealed class DownloadTaskAdmissionService : IDisposable
 
     public async Task<bool> AdmitAsync(
         DownloadingItem item,
-        bool autoAddNumberSuffix,
         CancellationToken cancellationToken,
-        bool redownloadCompleted = false)
+        bool redownloadCompleted = false,
+        DownloadOutputPackage? package = null)
     {
         ArgumentNullException.ThrowIfNull(item);
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -86,14 +87,33 @@ internal sealed class DownloadTaskAdmissionService : IDisposable
 
             _runtimeAvailability.EnsureAcceptingTasks();
 
-            var physicalBasePath = _physicalOutputPathResolver.ResolvePhysicalBasePath(
-                item.DownloadBase.FilePath);
+            string? packageDirectory = null;
+            var plannedBasePath = item.DownloadBase.FilePath;
+            if (package != null)
+            {
+                packageDirectory = package.AdmittedDirectory;
+                if (packageDirectory == null)
+                {
+                    var physicalDirectory = _physicalOutputPathResolver.ResolvePhysicalBasePath(
+                        package.Directory);
+                    packageDirectory = await DownloadOutputPathResolver.ResolvePackageDirectoryAsync(
+                        physicalDirectory,
+                        (path, token) => _outputReservations.IsOutputDirectoryReservedAsync(
+                            path, DownloadOutputPathKey.UsesCaseInsensitiveComparison, token),
+                        cancellationToken).ConfigureAwait(true);
+                }
+
+                plannedBasePath = Path.Combine(
+                    packageDirectory,
+                    Path.GetRelativePath(package.Directory, plannedBasePath));
+            }
+
+            var physicalBasePath = _physicalOutputPathResolver.ResolvePhysicalBasePath(plannedBasePath);
             var requestedClaims = DownloadActionClaims.From(
                 item.DownloadBase.NeedDownloadContent,
                 includesNfo: item.Metadata != null);
             var admittedBasePath = await DownloadOutputPathResolver.ResolveAdmissionCollisionAsync(
                 physicalBasePath,
-                autoAddNumberSuffix,
                 (path, token) => _outputReservations.HasOutputClaimConflictAsync(
                     path,
                     item.DownloadBase.Cid,
@@ -110,6 +130,10 @@ internal sealed class DownloadTaskAdmissionService : IDisposable
             item.DownloadBase.FilePath = admittedBasePath;
 
             await _projections.AddDownloadingAsync(item, cancellationToken).ConfigureAwait(true);
+            if (package != null)
+            {
+                package.AdmittedDirectory = packageDirectory;
+            }
 
             // Once persisted, admission must finish even if the originating UI operation is canceled.
             _downloadLists.AddDownloading(item);

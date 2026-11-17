@@ -19,8 +19,7 @@ internal static class SettingsSnapshotModelMapper
                 settings.Basic.ThemeMode,
                 settings.Basic.AfterDownload,
                 settings.Basic.IsListenClipboard,
-                settings.Basic.DownloadFinishedSort,
-                settings.Basic.RepeatFileAutoAddNumberSuffix)
+                settings.Basic.DownloadFinishedSort)
             {
                 UiLanguage = settings.Basic.UiLanguage
             },
@@ -105,8 +104,7 @@ internal static class SettingsSnapshotModelMapper
                 UiLanguage = settings.Basic.UiLanguage,
                 AfterDownload = settings.Basic.AfterDownload,
                 IsListenClipboard = settings.Basic.IsListenClipboard,
-                DownloadFinishedSort = settings.Basic.DownloadFinishedSort,
-                RepeatFileAutoAddNumberSuffix = settings.Basic.RepeatFileAutoAddNumberSuffix
+                DownloadFinishedSort = settings.Basic.DownloadFinishedSort
             },
             Network = new NetworkSettings
             {

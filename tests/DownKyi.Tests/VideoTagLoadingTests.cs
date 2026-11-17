@@ -485,6 +485,7 @@ public sealed class VideoTagLoadingTests : IDisposable
     public async Task RedownloadDecisionLoadsMetadataAndAdmitsTheCompletedDuplicate()
     {
         using var context = CreateContext(generateMetadata: true);
+        context.UseContentIndependentFileName();
         var requestedContent = DownloadContentSelection.None with { Video = true };
         var loadCount = 0;
         var page = CreatePage(_ =>
@@ -500,6 +501,10 @@ public sealed class VideoTagLoadingTests : IDisposable
             DownloadDuplicateBatchDialogContract.Encode(
                 DownloadDuplicateBatchAction.RedownloadCompleted));
         var preparedDownload = await context.PrepareAsync(requestedContent, page);
+        var oldDirectory = Path.Combine(_directory, preparedDownload.Video.Title);
+        Directory.CreateDirectory(oldDirectory);
+        var oldPath = Path.Combine(oldDirectory, page.Name + ".mp4");
+        await File.WriteAllTextAsync(oldPath, "previous-quality", TestContext.Current.CancellationToken);
 
         var result = await context.AddToDownloadResultAsync(
             CreateSelection(_directory, requestedContent),
@@ -509,7 +514,10 @@ public sealed class VideoTagLoadingTests : IDisposable
         Assert.Equal(1, result.AddedCount);
         Assert.Equal(0, result.DuplicateCount);
         Assert.Equal(1, loadCount);
-        Assert.Equal(["kept"], Assert.Single(context.ListState.Downloading).Metadata!.Tags);
+        var download = Assert.Single(context.ListState.Downloading);
+        Assert.Equal(["kept"], download.Metadata!.Tags);
+        Assert.Equal(Path.Combine(oldDirectory + "(1)", page.Name), download.DownloadBase.FilePath);
+        Assert.Equal("previous-quality", await File.ReadAllTextAsync(oldPath, TestContext.Current.CancellationToken));
         Assert.Single(context.Dialogs.Requests);
     }
 
@@ -534,7 +542,7 @@ public sealed class VideoTagLoadingTests : IDisposable
             .ConfigureAwait(true);
 
         Assert.Equal(1, added);
-        Assert.Equal(2, resolver.CallCount);
+        Assert.Equal(3, resolver.CallCount);
         Assert.Equal(1, context.Store.AddCount);
         Assert.Equal("second", Assert.Single(context.ListState.Downloading).DownloadBase.Name);
         Assert.Single(context.Queue.Enqueued);
@@ -844,6 +852,7 @@ public sealed class VideoTagLoadingTests : IDisposable
     public async Task BangumiBatchAssignsTheSeriesCoverOnlyToTheFirstCoverTask()
     {
         using var context = CreateContext(generateMetadata: false);
+        context.UseContentIndependentFileName();
         var firstPage = CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]));
         firstPage.EpisodeId = 101;
         firstPage.FirstFrame = "https://example.test/episode-1.jpg";
@@ -883,6 +892,8 @@ public sealed class VideoTagLoadingTests : IDisposable
 
         Assert.Equal(2, added);
         var downloads = context.ListState.Downloading.OrderBy(item => item.Order).ToArray();
+        Assert.Equal(Path.Combine(_directory, "bangumi", firstPage.Name), downloads[0].DownloadBase.FilePath);
+        Assert.Equal(Path.Combine(_directory, "bangumi", secondPage.Name), downloads[1].DownloadBase.FilePath);
         Assert.Equal("https://example.test/series.jpg", downloads[0].DownloadBase.CoverUrl);
         Assert.Equal("https://example.test/episode-1.jpg", downloads[0].DownloadBase.PageCoverUrl);
         Assert.Equal(string.Empty, downloads[1].DownloadBase.CoverUrl);
@@ -893,7 +904,7 @@ public sealed class VideoTagLoadingTests : IDisposable
     }
 
     [Fact]
-    public async Task AliasedSubtitleConflictDoesNotOverwriteTheExistingSubtitle()
+    public async Task IndependentAliasedSubtitleDownloadUsesANewPackage()
     {
         var aliasRoot = Path.Combine(_directory, $"conflict-{Guid.NewGuid():N}");
         var logicalDirectory = Path.Combine(aliasRoot, "logical");
@@ -919,7 +930,7 @@ public sealed class VideoTagLoadingTests : IDisposable
             "existing-subtitle",
             TestContext.Current.CancellationToken);
 
-        Assert.Equal(0, await context.AddToDownloadAsync(
+        Assert.Equal(1, await context.AddToDownloadAsync(
             CreateSelection(
                 logicalDirectory,
                 DownloadContentSelection.None with { Subtitle = true }),
@@ -931,12 +942,13 @@ public sealed class VideoTagLoadingTests : IDisposable
             await File.ReadAllTextAsync(
                 subtitlePath,
                 TestContext.Current.CancellationToken));
-        Assert.Single(context.ListState.Downloading);
-        var alert = Assert.Single(context.Dialogs.Requests, request => request.Dialog == AppDialog.Alert);
-        var message = Assert.IsType<string>(alert.Parameters!["message"]);
-        Assert.Equal(DictionaryResource.GetString("DownloadOutputCollision"), message);
-        Assert.DoesNotContain(logicalDirectory, message, StringComparison.Ordinal);
-        Assert.DoesNotContain(physicalDirectory, message, StringComparison.Ordinal);
+        var subtitle = Assert.Single(context.ListState.Downloading, item => item.DownloadBase.NeedDownloadContent.Subtitle);
+        Assert.Equal(
+            Path.Combine(Path.GetDirectoryName(mediaItem.DownloadBase.FilePath)! + "(1)",
+                Path.GetFileName(mediaItem.DownloadBase.FilePath)),
+            subtitle.DownloadBase.FilePath);
+        Assert.Equal(2, context.ListState.Downloading.Count);
+        Assert.Empty(context.Dialogs.Requests);
     }
 
     [Fact]
@@ -1758,7 +1770,8 @@ public sealed class VideoTagLoadingTests : IDisposable
         public Task<IReadOnlyList<string>> GetActiveOutputReservationKeysAsync(
             bool ignoreCase,
             CancellationToken cancellationToken) =>
-            Task.FromResult<IReadOnlyList<string>>([]);
+            Task.FromResult<IReadOnlyList<string>>(_tasks.Select(task =>
+                DownloadOutputPathKey.Create(task.Output.BasePath, ignoreCase)).ToArray());
 
         public Task<DownloadHistoryPage> GetHistoryPageAsync(
             DownloadHistoryCursor? cursor,

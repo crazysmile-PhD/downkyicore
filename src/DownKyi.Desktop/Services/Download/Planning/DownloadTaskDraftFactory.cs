@@ -172,8 +172,21 @@ internal static class DownloadTaskDraftFactory
             relativePath = page.Cid.ToString(CultureInfo.InvariantCulture);
         }
 
-        var filePath = Path.Combine(directory, relativePath);
+        var packageDirectory = GetPackageDirectory(directory, video);
+        var titlePrefix = Path.GetFileName(packageDirectory) + "/";
+        if (relativePath.StartsWith(titlePrefix, StringComparison.Ordinal))
+        {
+            relativePath = relativePath[titlePrefix.Length..];
+        }
+
+        var filePath = Path.Combine(packageDirectory, relativePath);
         return filePath;
+    }
+
+    internal static string GetPackageDirectory(string directory, VideoInfoView video)
+    {
+        var title = Format.FormatFileName(video.Title);
+        return Path.Combine(directory, string.IsNullOrWhiteSpace(title) ? "Download" : title);
     }
 
     private static string GetCodecLabel(string codec)

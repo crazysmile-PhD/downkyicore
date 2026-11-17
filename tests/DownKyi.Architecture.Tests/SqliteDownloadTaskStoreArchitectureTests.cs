@@ -71,6 +71,9 @@ public sealed class SqliteDownloadTaskStoreArchitectureTests
         ["GetActiveOutputReservationKeysAsync"] =
             "await _outputReservations.GetActiveOutputReservationKeysAsync(ignoreCase, cancellationToken)" +
             ".ConfigureAwait(false)",
+        ["IsOutputDirectoryReservedAsync"] =
+            "await _outputReservations.IsOutputDirectoryReservedAsync(directory, ignoreCase, cancellationToken)" +
+            ".ConfigureAwait(false)",
         ["HasOutputClaimConflictAsync"] =
             "await _outputReservations.HasOutputClaimConflictAsync(" +
             "basePath, requestedCid, requestedClaims, ignoreCase, cancellationToken)" +

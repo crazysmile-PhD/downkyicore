@@ -116,6 +116,14 @@ public sealed class SqliteDownloadTaskStore :
             .GetActiveOutputReservationKeysAsync(ignoreCase, cancellationToken)
             .ConfigureAwait(false);
 
+    public async Task<bool> IsOutputDirectoryReservedAsync(
+        string directory,
+        bool ignoreCase,
+        CancellationToken cancellationToken) =>
+        await _outputReservations
+            .IsOutputDirectoryReservedAsync(directory, ignoreCase, cancellationToken)
+            .ConfigureAwait(false);
+
     public async Task<bool> HasOutputClaimConflictAsync(
         string basePath,
         long requestedCid,

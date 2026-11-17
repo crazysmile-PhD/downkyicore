@@ -257,7 +257,6 @@
     <system:String x:Key="AfterDownloadOperationCloseApp">關閉程式</system:String>
     <system:String x:Key="AfterDownloadOperationCloseSystem">關閉電腦</system:String>
     <system:String x:Key="ListenClipboard">監控剪貼簿</system:String>
-    <system:String x:Key="RepeatFileAutoAddNumberSuffix">檔名重複時自動加上數字序號</system:String>
     <system:String x:Key="Network">網路</system:String>
     <system:String x:Key="DownloadTlsUntrusted">下載失敗：伺服器憑證不受信任</system:String>
     <system:String x:Key="DownloadTlsExpired">下載失敗：伺服器憑證已過期</system:String>
@@ -441,7 +440,7 @@
     <system:String x:Key="ConfirmDelete">您確定要刪除嗎？</system:String>
     <system:String x:Key="SelectDirectory">請選擇資料夾</system:String>
     <system:String x:Key="DirectoryError">路徑錯誤！</system:String>
-    <system:String x:Key="DownloadOutputCollision">目標檔名已存在，或正由其他下載任務使用。請選擇其他下載資料夾，或在「設定 → 基本」啟用「檔名重複時自動加上數字序號」，再重試。</system:String>
+    <system:String x:Key="DownloadOutputCollision">無法保留下載輸出路徑，請選擇其他下載資料夾後重試。</system:String>
 
 
     <!--  DownloadSetterDialog  -->
@@ -486,7 +485,7 @@
 
     <system:String x:Key="DownloadContentConflictTitle">下載選擇需要確認</system:String>
     <system:String x:Key="DownloadDuplicateBatchTitle">重複下載需要確認</system:String>
-    <system:String x:Key="DownloadDuplicateBatchMessage">本次下載清單中有 {0} 部影片已經下載過。請選擇跳過或重新下載。</system:String>
+    <system:String x:Key="DownloadDuplicateBatchMessage">本次下載清單中有 {0} 部影片已經下載過。請選擇跳過或重新下載。重新下載會另存至新資料夾，保留原有檔案。</system:String>
     <system:String x:Key="DownloadDuplicateBatchActiveMessage">另有 {0} 部影片已在下載佇列中，將直接跳過。</system:String>
     <system:String x:Key="DownloadDuplicateBatchAffectedItems">檢視已下載的 {0} 部影片</system:String>
     <system:String x:Key="RedownloadDuplicateBatch">重新下載這 {0} 部</system:String>

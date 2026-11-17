@@ -22,9 +22,6 @@ public partial class SettingsManager
     // 下载完成列表排序
     private const DownloadFinishedSort FinishedSort = DownloadFinishedSort.DownloadAsc;
 
-    // 重复文件自动添加数字后缀
-    private const bool RepeatFileAutoAddNumberSuffix = false;
-
     public ThemeMode GetThemeMode()
     {
         if (_appSettings.Basic.ThemeMode == ThemeMode.Default)
@@ -130,35 +127,5 @@ public partial class SettingsManager
             _appSettings.Basic.DownloadFinishedSort,
             finishedSort,
             v => _appSettings.Basic.DownloadFinishedSort = v);
-    }
-
-    /// <summary>
-    /// 重复文件自动添加数字后缀
-    /// </summary>
-    /// <returns></returns>
-    public bool IsRepeatFileAutoAddNumberSuffix()
-    {
-        if (_appSettings.Basic.RepeatFileAutoAddNumberSuffix == false)
-        {
-            // 第一次获取，先设置默认值
-            IsRepeatFileAutoAddNumberSuffix(RepeatFileAutoAddNumberSuffix);
-            return RepeatFileAutoAddNumberSuffix;
-        }
-
-        return _appSettings.Basic.RepeatFileAutoAddNumberSuffix;
-    }
-
-    /// <summary>
-    /// 设置重复文件自动添加数字后缀
-    /// </summary>
-    /// <param name="repeatFileAutoAddNumberSuffix"></param>
-    /// <returns></returns>
-    /// <exception cref="NotImplementedException"></exception>
-    public bool IsRepeatFileAutoAddNumberSuffix(bool repeatFileAutoAddNumberSuffix)
-    {
-        return SetProperty(
-            _appSettings.Basic.RepeatFileAutoAddNumberSuffix,
-            repeatFileAutoAddNumberSuffix,
-            v => _appSettings.Basic.RepeatFileAutoAddNumberSuffix = v);
     }
 }

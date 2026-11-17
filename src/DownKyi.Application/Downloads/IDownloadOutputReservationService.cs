@@ -4,6 +4,11 @@ namespace DownKyi.Application.Downloads;
 
 public interface IDownloadOutputReservationService
 {
+    Task<bool> IsOutputDirectoryReservedAsync(
+        string directory,
+        bool ignoreCase,
+        CancellationToken cancellationToken);
+
     Task<IReadOnlyList<string>> GetActiveOutputReservationKeysAsync(
         bool ignoreCase,
         CancellationToken cancellationToken);

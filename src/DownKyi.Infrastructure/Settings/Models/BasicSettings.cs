@@ -11,5 +11,4 @@ public class BasicSettings
     public AfterDownloadOperation AfterDownload { get; set; } = AfterDownloadOperation.NotSet;
     public AllowStatus IsListenClipboard { get; set; } = AllowStatus.None;
     public DownloadFinishedSort DownloadFinishedSort { get; set; } = DownloadFinishedSort.NotSet;
-    public bool RepeatFileAutoAddNumberSuffix { get; set; }
 }

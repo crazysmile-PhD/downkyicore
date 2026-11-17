@@ -4,6 +4,15 @@ namespace DownKyi.Application.Downloads;
 
 public sealed partial class DownloadTaskApplicationService
 {
+    public Task<bool> IsOutputDirectoryReservedAsync(
+        string directory,
+        bool ignoreCase,
+        CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return _store.IsOutputDirectoryReservedAsync(directory, ignoreCase, cancellationToken);
+    }
+
     public Task<IReadOnlyList<string>> GetActiveOutputReservationKeysAsync(
         bool ignoreCase,
         CancellationToken cancellationToken)
