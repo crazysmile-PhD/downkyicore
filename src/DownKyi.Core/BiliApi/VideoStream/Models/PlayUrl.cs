@@ -30,6 +30,8 @@ public class PlayUrl : BaseModel
     // format
     // timelength
     [JsonProperty("is_preview")] public bool? IsPreview { get; set; }
+    [JsonProperty("is_drm")] public bool? IsDrm { get; set; }
+    [JsonProperty("drm_tech_type")] public int? DrmTechType { get; set; }
     // accept_format
     [JsonProperty("accept_description")]
     public IReadOnlyList<string> AcceptDescription
@@ -96,4 +98,37 @@ public sealed record PlayUrlDiagnostics(
     int? Fnval,
     string? PlayDetail,
     PlayUrlResolutionSource Source,
-    string Outcome);
+    string Outcome)
+{
+    public IReadOnlyList<PlayUrlProtectionDiagnostics> Protection { get; init; } = [];
+}
+
+// Preserve response markers independently of selection. Missing markers stay unknown;
+// these diagnostics do not establish whether the media bytes are encrypted.
+public sealed record PlayUrlProtectionDiagnostics(
+    PlayUrlResolutionSource Source,
+    bool? IsDrm,
+    int? DrmTechType,
+    IReadOnlyList<int> WidevineVideoIds,
+    IReadOnlyList<int> WidevineAudioIds)
+{
+    public static PlayUrlProtectionDiagnostics From(PlayUrl playUrl, PlayUrlResolutionSource source)
+    {
+        ArgumentNullException.ThrowIfNull(playUrl);
+        return new PlayUrlProtectionDiagnostics(
+            source,
+            playUrl.IsDrm,
+            playUrl.DrmTechType,
+            GetWidevineIds(playUrl.Dash.Video),
+            GetWidevineIds(playUrl.Dash.Audio
+                .Concat(playUrl.Dash.Dolby?.Audio ?? [])
+                .Concat(playUrl.Dash.Flac?.Audio is { } flac ? [flac] : [])));
+    }
+
+    private static int[] GetWidevineIds(IEnumerable<PlayUrlDashVideo> streams) => streams
+        .Where(stream => !string.IsNullOrWhiteSpace(stream.WidevinePssh))
+        .Select(stream => stream.Id)
+        .Distinct()
+        .Order()
+        .ToArray();
+}

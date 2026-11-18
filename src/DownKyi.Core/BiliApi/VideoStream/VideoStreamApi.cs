@@ -379,7 +379,8 @@ public static partial class VideoStreamApi
                         quality,
                         embeddedPlayDetail,
                         PlayUrlResolutionSource.WebPage,
-                        "embedded-playback-selected");
+                        "embedded-playback-selected",
+                        [PlayUrlProtectionDiagnostics.From(embeddedPlayUrl, PlayUrlResolutionSource.WebPage)]);
                 }
 
                 apiFallbackReason = hasUsableEmbeddedPlayback
@@ -471,6 +472,10 @@ public static partial class VideoStreamApi
         PlayUrlResolutionSource source,
         string outcome)
     {
+        IReadOnlyList<PlayUrlProtectionDiagnostics> protection = supplement is null
+            ? [PlayUrlProtectionDiagnostics.From(playUrl, source)]
+            : [PlayUrlProtectionDiagnostics.From(playUrl, PlayUrlResolutionSource.WebPage),
+                PlayUrlProtectionDiagnostics.From(supplement, PlayUrlResolutionSource.Api)];
         if (selection is null)
         {
             var primaryAvailability = PlayUrlAvailability.From(playUrl);
@@ -481,7 +486,8 @@ public static partial class VideoStreamApi
                 quality,
                 playDetail,
                 source,
-                outcome);
+                outcome,
+                protection);
             if (supplement != null
                 && (combinedAvailability.Video.Count > primaryAvailability.Video.Count
                     || combinedAvailability.Audio.Count > primaryAvailability.Audio.Count))
@@ -511,7 +517,8 @@ public static partial class VideoStreamApi
             quality,
             playDetail,
             source,
-            outcome);
+            outcome,
+            protection);
     }
 
     internal static string BuildBangumiPlayPageUrl(long episodeId)
@@ -525,7 +532,8 @@ public static partial class VideoStreamApi
         int requestedQuality,
         string? playDetail,
         PlayUrlResolutionSource source,
-        string outcome)
+        string outcome,
+        IReadOnlyList<PlayUrlProtectionDiagnostics> protection)
     {
         var retainedSource = PlaybackSourceProvenance.FromRetainedStreams(playUrl, source);
         playUrl.Diagnostics = new PlayUrlDiagnostics(
@@ -535,7 +543,10 @@ public static partial class VideoStreamApi
                 : null,
             playDetail,
             retainedSource,
-            outcome);
+            outcome)
+        {
+            Protection = protection
+        };
         return playUrl;
     }
 

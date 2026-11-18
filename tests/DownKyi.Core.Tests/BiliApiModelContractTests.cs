@@ -11,6 +11,40 @@ namespace DownKyi.Core.Tests;
 
 public sealed class BiliApiModelContractTests
 {
+    [Theory]
+    [InlineData("{}", null, null)]
+    [InlineData("{\"is_drm\":false,\"drm_tech_type\":0}", false, 0)]
+    [InlineData("{\"is_drm\":true,\"drm_tech_type\":2}", true, 2)]
+    public void PlaybackProtectionMarkersPreserveUnknownAndExplicitValues(
+        string json,
+        bool? expectedIsDrm,
+        int? expectedDrmTechType)
+    {
+        var playUrl = JsonConvert.DeserializeObject<PlayUrl>(json);
+
+        Assert.NotNull(playUrl);
+        Assert.Equal(expectedIsDrm, playUrl.IsDrm);
+        Assert.Equal(expectedDrmTechType, playUrl.DrmTechType);
+    }
+
+    [Fact]
+    public void ProtectionDiagnosticsRetainOnlyStreamIdsForPsshAcrossAudioContainers()
+    {
+        var playUrl = JsonConvert.DeserializeObject<PlayUrl>("""
+            {"dash":{
+              "video":[{"id":122,"widevine_pssh":"video-initialization-data"},{"id":80}],
+              "audio":[{"id":30280,"widevine_pssh":"audio-initialization-data"}],
+              "dolby":{"audio":[{"id":30250,"widevine_pssh":"dolby-initialization-data"}]},
+              "flac":{"audio":{"id":30251,"widevine_pssh":"flac-initialization-data"}}
+            }}
+            """);
+
+        var diagnostics = PlayUrlProtectionDiagnostics.From(playUrl!, PlayUrlResolutionSource.Api);
+
+        Assert.Equal([122], diagnostics.WidevineVideoIds);
+        Assert.Equal([30250, 30251, 30280], diagnostics.WidevineAudioIds);
+    }
+
     [Fact]
     public void FavoritesBvidFieldsRemainDistinct()
     {
