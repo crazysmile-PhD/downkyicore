@@ -13,7 +13,8 @@ public static class Number
     public static long GetInt(string value)
     {
         return Regex.IsMatch(value, @"^\d+$")
-            ? long.Parse(value, CultureInfo.InvariantCulture)
+               && long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var result)
+            ? result
             : -1;
     }
 }

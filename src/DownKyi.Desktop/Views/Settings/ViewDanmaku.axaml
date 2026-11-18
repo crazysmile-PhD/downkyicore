@@ -145,7 +145,7 @@
                         Name="NameScreenWidth"
                         Width="95"
                         VerticalContentAlignment="Center"
-                        Text="{Binding ScreenWidth, Mode=TwoWay}">
+                        Text="{Binding ScreenWidth, Mode=OneWay}">
                         <TextBox.KeyBindings>
                             <KeyBinding Command="{Binding ScreenWidthCommand}" CommandParameter="{Binding #NameScreenWidth.Text}" Gesture="Enter" />
                         </TextBox.KeyBindings>
@@ -160,7 +160,7 @@
                         Name="NameScreenHeight"
                         Width="95"
                         VerticalContentAlignment="Center"
-                        Text="{Binding ScreenHeight, Mode=TwoWay}">
+                        Text="{Binding ScreenHeight, Mode=OneWay}">
                         <TextBox.KeyBindings>
                             <KeyBinding Command="{Binding ScreenHeightCommand}" CommandParameter="{Binding #NameScreenHeight.Text}" Gesture="Enter" />
                         </TextBox.KeyBindings>
@@ -206,7 +206,7 @@
                     Margin="0,0,0,16"
                     HorizontalAlignment="Left"
                     VerticalContentAlignment="Center"
-                    Text="{Binding FontSize}">
+                    Text="{Binding FontSize, Mode=OneWay}">
                     <TextBox.KeyBindings>
                         <KeyBinding Command="{Binding FontSizeCommand}" CommandParameter="{Binding #NameFontSize.Text}" Gesture="Enter" />
                     </TextBox.KeyBindings>
@@ -227,7 +227,7 @@
                     Margin="0,0,0,16"
                     HorizontalAlignment="Left"
                     VerticalContentAlignment="Center"
-                    Text="{Binding LineCount}">
+                    Text="{Binding LineCount, Mode=OneWay}">
                     <TextBox.KeyBindings>
                         <KeyBinding Command="{Binding LineCountCommand}" CommandParameter="{Binding #NameLineCount.Text}" Gesture="Enter" />
                     </TextBox.KeyBindings>

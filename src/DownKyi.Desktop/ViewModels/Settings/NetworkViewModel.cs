@@ -192,6 +192,7 @@ internal partial class NetworkViewModel : ViewModelBase
     private void ExecuteMaxOverallDownloadLimitCommand(string parameter)
     {
         MaxOverallDownloadLimit = ParseDownloadLimit(parameter);
+        OnPropertyChanged(nameof(MaxOverallDownloadLimit));
         ApplyNetwork(
             settings => settings with
             {
@@ -209,6 +210,7 @@ internal partial class NetworkViewModel : ViewModelBase
     private void ExecuteMaxDownloadLimitCommand(string parameter)
     {
         MaxDownloadLimit = ParseDownloadLimit(parameter);
+        OnPropertyChanged(nameof(MaxDownloadLimit));
         ApplyNetwork(
             settings => settings with { MaxDownloadLimit = MaxDownloadLimit },
             settings => settings.MaxDownloadLimit == MaxDownloadLimit);
@@ -258,8 +260,10 @@ internal partial class NetworkViewModel : ViewModelBase
     /// <param name="parameter"></param>
     private void ExecuteHttpProxyPortCommand(string parameter)
     {
-        var httpProxyPort = (int)Number.GetInt(parameter);
+        var parsed = Number.GetInt(parameter);
+        var httpProxyPort = parsed is >= 0 and <= 65535 ? (int)parsed : 0;
         HttpProxyPort = httpProxyPort;
+        OnPropertyChanged(nameof(HttpProxyPort));
 
         ApplyNetwork(
             settings => settings with { HttpProxyListenPort = HttpProxyPort },
