@@ -577,4 +577,23 @@
     <system:String x:Key="ToolboxSectionCaption">MEDIA / TOOLS</system:String>
     <system:String x:Key="SettingsSectionCaption">SYSTEM / PREFERENCES</system:String>
     <system:String x:Key="UnavailableMediaTitle">Unavailable video</system:String>
+
+    <!-- Download queue organization -->
+    <system:String x:Key="DownloadCollapseGroup">Collapse group</system:String>
+    <system:String x:Key="DownloadExpandGroup">Expand group</system:String>
+    <system:String x:Key="DownloadGroupSummary">{0} tasks · Active {1} · Paused {2} · Failed {3}</system:String>
+    <system:String x:Key="DownloadGroupFilteredSummary">{0}/{1} match · Active {2} · Paused {3} · Failed {4}</system:String>
+    <system:String x:Key="DownloadSelectedCount">{0} selected</system:String>
+    <system:String x:Key="DownloadRemoveSelected">Remove selected</system:String>
+    <system:String x:Key="DownloadConfirmRemoveCount">Remove these {0} download tasks and their temporary files?</system:String>
+    <system:String x:Key="DownloadSelectTask">Select task</system:String>
+    <system:String x:Key="DownloadSelectGroup">Select matching tasks in this group</system:String>
+    <system:String x:Key="DownloadSearchQueue">Search titles or BV ID</system:String>
+    <system:String x:Key="DownloadFailedOnly">Failed only</system:String>
+    <system:String x:Key="DownloadExpandAll">Expand all</system:String>
+    <system:String x:Key="DownloadCollapseAll">Collapse all</system:String>
+    <system:String x:Key="DownloadSelectVisible">Select visible matching tasks</system:String>
+    <system:String x:Key="DownloadNoMatches">No matching tasks</system:String>
+    <system:String x:Key="DownloadClearFilters">Clear filters</system:String>
+    <system:String x:Key="DownloadClearSelection">Clear selection</system:String>
 </ResourceDictionary>

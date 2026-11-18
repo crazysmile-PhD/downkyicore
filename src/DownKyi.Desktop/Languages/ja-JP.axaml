@@ -577,4 +577,23 @@
     <system:String x:Key="ToolboxSectionCaption">メディア / ツール</system:String>
     <system:String x:Key="SettingsSectionCaption">システム / 環境設定</system:String>
     <system:String x:Key="UnavailableMediaTitle">視聴できなくなった動画</system:String>
+
+    <!-- Download queue organization -->
+    <system:String x:Key="DownloadCollapseGroup">グループを折りたたむ</system:String>
+    <system:String x:Key="DownloadExpandGroup">グループを展開</system:String>
+    <system:String x:Key="DownloadGroupSummary">{0} 件 · 実行中 {1} · 一時停止 {2} · 失敗 {3}</system:String>
+    <system:String x:Key="DownloadGroupFilteredSummary">該当 {0}/{1} 件 · 実行中 {2} · 一時停止 {3} · 失敗 {4}</system:String>
+    <system:String x:Key="DownloadSelectedCount">{0} 件選択中</system:String>
+    <system:String x:Key="DownloadRemoveSelected">選択を削除</system:String>
+    <system:String x:Key="DownloadConfirmRemoveCount">選択した {0} 件のダウンロードと一時ファイルを削除しますか？</system:String>
+    <system:String x:Key="DownloadSelectTask">タスクを選択</system:String>
+    <system:String x:Key="DownloadSelectGroup">このグループの該当タスクを選択</system:String>
+    <system:String x:Key="DownloadSearchQueue">タイトルまたは BV ID を検索</system:String>
+    <system:String x:Key="DownloadFailedOnly">失敗のみ</system:String>
+    <system:String x:Key="DownloadExpandAll">すべて展開</system:String>
+    <system:String x:Key="DownloadCollapseAll">すべて折りたたむ</system:String>
+    <system:String x:Key="DownloadSelectVisible">表示中の該当タスクを選択</system:String>
+    <system:String x:Key="DownloadNoMatches">該当するタスクはありません</system:String>
+    <system:String x:Key="DownloadClearFilters">絞り込みを解除</system:String>
+    <system:String x:Key="DownloadClearSelection">選択を解除</system:String>
 </ResourceDictionary>

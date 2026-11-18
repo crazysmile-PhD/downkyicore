@@ -577,4 +577,23 @@
     <system:String x:Key="ToolboxSectionCaption">媒體 / 工具箱</system:String>
     <system:String x:Key="SettingsSectionCaption">系統 / 偏好設定</system:String>
     <system:String x:Key="UnavailableMediaTitle">已失效影片</system:String>
+
+    <!-- Download queue organization -->
+    <system:String x:Key="DownloadCollapseGroup">收合此群組</system:String>
+    <system:String x:Key="DownloadExpandGroup">展開此群組</system:String>
+    <system:String x:Key="DownloadGroupSummary">{0} 項 · 下載中 {1} · 暫停 {2} · 失敗 {3}</system:String>
+    <system:String x:Key="DownloadGroupFilteredSummary">符合 {0}/{1} 項 · 下載中 {2} · 暫停 {3} · 失敗 {4}</system:String>
+    <system:String x:Key="DownloadSelectedCount">已選 {0} 項</system:String>
+    <system:String x:Key="DownloadRemoveSelected">移除所選</system:String>
+    <system:String x:Key="DownloadConfirmRemoveCount">確定移除這 {0} 個下載任務及其暫存檔案嗎？</system:String>
+    <system:String x:Key="DownloadSelectTask">選取此任務</system:String>
+    <system:String x:Key="DownloadSelectGroup">選取此群組中的符合任務</system:String>
+    <system:String x:Key="DownloadSearchQueue">搜尋標題或 BV 號</system:String>
+    <system:String x:Key="DownloadFailedOnly">只看失敗</system:String>
+    <system:String x:Key="DownloadExpandAll">全部展開</system:String>
+    <system:String x:Key="DownloadCollapseAll">全部收合</system:String>
+    <system:String x:Key="DownloadSelectVisible">選取目前展開的符合任務</system:String>
+    <system:String x:Key="DownloadNoMatches">沒有符合條件的任務</system:String>
+    <system:String x:Key="DownloadClearFilters">清除篩選</system:String>
+    <system:String x:Key="DownloadClearSelection">取消選取</system:String>
 </ResourceDictionary>

@@ -6,20 +6,46 @@
              x:DataType="vmdm:DownloadingViewModel"
              Background="{DynamicResource SpacePaper}">
     <UserControl.Resources>
-        <ControlTheme x:Key="DownloadingStyle" TargetType="{x:Type ListBoxItem}" x:DataType="vmdm:DownloadingItem">
+        <ControlTheme x:Key="DownloadingStyle" TargetType="{x:Type ListBoxItem}">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
             <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="{x:Type ListBoxItem}">
-                        <Border
+                <ControlTemplate TargetType="ListBoxItem">
+                    <ContentPresenter Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+                                      HorizontalContentAlignment="Stretch" />
+                </ControlTemplate>
+            </Setter>
+            <Style Selector="^:pointerover"><Setter Property="Background" Value="{DynamicResource SpaceHover}" /></Style>
+        </ControlTheme>
+        <ControlTheme x:Key="QueueFilterButton" TargetType="ToggleButton" BasedOn="{StaticResource DownloadActionButton}">
+            <Style Selector="^:checked">
+                <Setter Property="Background" Value="{DynamicResource SpaceSelection}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource SpaceAccent}" />
+            </Style>
+        </ControlTheme>
+    </UserControl.Resources>
+    <UserControl.Styles>
+        <Style Selector="Border.queue-task"><Setter Property="Background" Value="Transparent" /></Style>
+        <Style Selector="Border.queue-task:pointerover"><Setter Property="Background" Value="{DynamicResource SpaceHover}" /></Style>
+        <Style Selector="Border.queue-task.selected"><Setter Property="Background" Value="{DynamicResource SpaceSelection}" /></Style>
+        <Style Selector="TextBlock#NameTaskStatus"><Setter Property="Foreground" Value="{DynamicResource SpaceInk}" /></Style>
+        <Style Selector="TextBlock#NameTaskStatus.failed"><Setter Property="Foreground" Value="{DynamicResource DownloadWarning}" /></Style>
+        <Style Selector="TextBlock#NameGroupSummary.failed"><Setter Property="Foreground" Value="{DynamicResource DownloadWarning}" /></Style>
+    </UserControl.Styles>
+    <UserControl.DataTemplates>
+        <DataTemplate DataType="vmdm:DownloadingItem" x:DataType="vmdm:DownloadingItem">
+<Border
                             Name="NameTaskRow"
                             MinHeight="86"
                             Padding="14,0"
                             BorderBrush="{DynamicResource SpaceRule}" BorderThickness="0,0,0,1"
-                            Background="{TemplateBinding Background}"
+                            Classes="queue-task" Classes.selected="{Binding IsSelected}"
                             CornerRadius="0">
-                            <Grid ColumnDefinitions="52,1.25*,1.75*,92" RowDefinitions="85,Auto">
+                            <Grid ColumnDefinitions="32,*">
+                                <CheckBox Theme="{StaticResource PersonalCheckBox}" Name="NameTaskSelection" Grid.Column="0" VerticalAlignment="Center"
+                                          IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                          AutomationProperties.Name="{DynamicResource DownloadSelectTask}" />
+                                <Grid Grid.Column="1" ColumnDefinitions="52,1.25*,1.75*,92" RowDefinitions="85,Auto">
 
                                 <Border
                                     Name="NameZoneIconFrame"
@@ -51,21 +77,10 @@
                                         TextTrimming="CharacterEllipsis">
                                         <ToolTip.Tip>
                                             <TextBlock>
-                                                <TextBlock.Text>
-                                                    <MultiBinding StringFormat="{}{0}-{1}">
-                                                        <Binding Path="MainTitle" />
-                                                        <Binding Path="Name" />
-                                                    </MultiBinding>
-                                                </TextBlock.Text>
+                                                <TextBlock.Text><Binding Path="QueueTitle" /></TextBlock.Text>
                                             </TextBlock>
                                         </ToolTip.Tip>
-                                        <TextBlock.Text>
-                                            <MultiBinding StringFormat="{}{0}-{1}-{2}">
-                                                <Binding Path="Order" />
-                                                <Binding Path="MainTitle" />
-                                                <Binding Path="Name" />
-                                            </MultiBinding>
-                                        </TextBlock.Text>
+                                        <TextBlock.Text><Binding Path="QueueTitle" /></TextBlock.Text>
                                     </TextBlock>
 
                                     <TextBlock
@@ -240,44 +255,84 @@
                                         Text="{Binding FailureDetailsText}"
                                         TextWrapping="Wrap" />
                                 </Border>
+                                </Grid>
                             </Grid>
                         </Border>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-            <Style Selector="^ /template/ TextBlock#NameTaskStatus">
-                <Setter Property="Foreground" Value="{DynamicResource SpaceInk}" />
-            </Style>
-            <Style Selector="^ /template/ TextBlock#NameTaskStatus.failed">
-                <Setter Property="Foreground" Value="{DynamicResource DownloadWarning}" />
-            </Style>
-            <Style Selector="^:pointerover">
-                <Setter Property="Background" Value="{DynamicResource SpaceHover}" />
-            </Style>
-        </ControlTheme>
-    </UserControl.Resources>
+        </DataTemplate>
+        <DataTemplate DataType="vmdm:DownloadQueueGroup" x:DataType="vmdm:DownloadQueueGroup">
+            <Border Name="NameQueueGroup" Background="{DynamicResource SpaceHover}" Padding="14,4"
+                    BorderBrush="{DynamicResource SpaceRule}" BorderThickness="0,0,0,1">
+                <Grid ColumnDefinitions="32,*">
+                    <CheckBox Theme="{StaticResource PersonalCheckBox}" Name="NameGroupSelection" Grid.Column="0" VerticalAlignment="Center"
+                              IsChecked="{Binding SelectionState, Mode=OneWay}"
+                              Command="{Binding ElementName=DownloadingList, Path=((vmdm:DownloadingViewModel)DataContext).SelectGroupCommand}"
+                              CommandParameter="{Binding}" AutomationProperties.Name="{DynamicResource DownloadSelectGroup}" />
+                    <Button Name="NameGroupDisclosure" Grid.Column="1" MinHeight="56" Padding="0" HorizontalContentAlignment="Stretch"
+                            Background="Transparent" BorderThickness="0" ToolTip.Tip="{Binding ExpansionHint}"
+                            AutomationProperties.Name="{Binding Title}"
+                            Command="{Binding ElementName=DownloadingList, Path=((vmdm:DownloadingViewModel)DataContext).ToggleGroupCommand}"
+                            CommandParameter="{Binding}">
+                        <Grid ColumnDefinitions="32,*,Auto" RowDefinitions="Auto,Auto" RowSpacing="4">
+                            <Path Grid.Column="0" Grid.RowSpan="2" Width="16" Height="16" Data="{Binding Chevron}"
+                                  Stroke="{DynamicResource SpaceInk}" StrokeThickness="1.5" VerticalAlignment="Center" />
+                            <TextBlock Name="NameGroupTitle" Grid.Column="1" FontSize="14" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource SpaceInk}" Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Grid.Column="2" Text="{Binding SourceLabel}" FontSize="12" Margin="12,0,8,0" Foreground="{DynamicResource SpaceMuted}" VerticalAlignment="Center" />
+                            <TextBlock Name="NameGroupSummary" Classes.failed="{Binding HasFailures}" Grid.Column="1" Grid.Row="1" Grid.ColumnSpan="2" FontSize="12"
+                                       Foreground="{DynamicResource SpaceMuted}" Text="{Binding Summary}" TextTrimming="CharacterEllipsis" />
+                        </Grid>
+                    </Button>
+                </Grid>
+            </Border>
+        </DataTemplate>
+    </UserControl.DataTemplates>
     <Grid>
         <Grid
             Name="NameDownloadingContent"
             Height="{Binding RelativeSource={RelativeSource FindAncestor, AncestorType={x:Type UserControl}}, Path=Bounds.Height}"
-            RowDefinitions="32,*,1,58"
+            RowDefinitions="54,32,*,1,58"
             IsVisible="{Binding DownloadingList.Count}">
-            <Grid Name="DownloadColumnHeader" Margin="14,0,26,0" ColumnDefinitions="52,1.25*,1.75*,92">
-                <TextBlock Grid.Column="1" Text="{DynamicResource DownloadTaskColumn}" FontSize="12"
+            <Grid Name="NameQueueTools" Grid.Row="0" Margin="14,6,16,6" ColumnDefinitions="*,Auto,Auto">
+                <TextBox CornerRadius="0" FontSize="14" Foreground="{DynamicResource SpaceInk}" Background="{DynamicResource SpacePaper}" BorderBrush="{DynamicResource SpaceRule}" Name="NameQueueSearch" Grid.Column="0" Margin="0,0,12,0" MinHeight="36"
+                         PlaceholderText="{DynamicResource DownloadSearchQueue}" Text="{Binding SearchText, Mode=TwoWay}"
+                         AutomationProperties.Name="{DynamicResource DownloadSearchQueue}" />
+                <ToggleButton Theme="{StaticResource QueueFilterButton}" Name="NameFailedOnly" Grid.Column="1" Margin="0,0,12,0" Padding="10,4"
+                              IsChecked="{Binding FailedOnly, Mode=TwoWay}" Content="{DynamicResource DownloadFailedOnly}" />
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
+                    <Button Theme="{StaticResource DownloadActionButton}" Name="NameExpandGroups" IsEnabled="{Binding HasVisibleGroups}" Padding="10,4" MinHeight="36" Command="{Binding ExpandGroupsCommand}"
+                            Content="{DynamicResource DownloadExpandAll}" ToolTip.Tip="{DynamicResource DownloadExpandAll}" />
+                    <Button Theme="{StaticResource DownloadActionButton}" Name="NameCollapseGroups" IsEnabled="{Binding HasVisibleGroups}" Padding="10,4" MinHeight="36" Command="{Binding CollapseGroupsCommand}"
+                            Content="{DynamicResource DownloadCollapseAll}" ToolTip.Tip="{DynamicResource DownloadCollapseAll}" />
+                </StackPanel>
+            </Grid>
+            <Grid Name="DownloadColumnHeader" Grid.Row="1" Margin="14,0,26,0" ColumnDefinitions="32,52,1.25*,1.75*,92">
+                <CheckBox Theme="{StaticResource PersonalCheckBox}" IsEnabled="{Binding HasVisibleTasks}" MinHeight="28" Name="NameSelectVisible" Grid.Column="0" VerticalAlignment="Center"
+                          IsChecked="{Binding VisibleSelectionState, Mode=OneWay}" Command="{Binding SelectVisibleCommand}"
+                          AutomationProperties.Name="{DynamicResource DownloadSelectVisible}" ToolTip.Tip="{DynamicResource DownloadSelectVisible}" />
+                <TextBlock Grid.Column="2" Text="{DynamicResource DownloadTaskColumn}" FontSize="12"
                            Foreground="{DynamicResource SpaceMuted}" VerticalAlignment="Center" />
-                <TextBlock Grid.Column="2" Text="{DynamicResource DownloadTransferColumn}" FontSize="12"
+                <TextBlock Grid.Column="3" Text="{DynamicResource DownloadTransferColumn}" FontSize="12"
                            Foreground="{DynamicResource SpaceMuted}" VerticalAlignment="Center" />
-                <TextBlock Grid.Column="3" Text="{DynamicResource DownloadActionsColumn}" FontSize="12"
+                <TextBlock Grid.Column="4" Text="{DynamicResource DownloadActionsColumn}" FontSize="12"
                            Foreground="{DynamicResource SpaceMuted}" HorizontalAlignment="Right" VerticalAlignment="Center" />
             </Grid>
+            <StackPanel Name="NameNoQueueMatches" Grid.Row="2" HorizontalAlignment="Center" VerticalAlignment="Center"
+                        Spacing="12" IsVisible="{Binding HasNoMatches}">
+                <TextBlock Foreground="{DynamicResource SpaceMuted}" Text="{DynamicResource DownloadNoMatches}" />
+                <Button Name="NameClearQueueFilters" Theme="{StaticResource DownloadActionButton}" HorizontalAlignment="Center" Command="{Binding ClearFiltersCommand}" Content="{DynamicResource DownloadClearFilters}" />
+            </StackPanel>
 
             <ListBox
                 Name="DownloadingList"
-                Grid.Row="1"
+                IsVisible="{Binding !HasNoMatches}"
+                Grid.Row="2"
+                SelectionMode="Single"
+                Focusable="True"
+                AutoScrollToSelectedItem="False"
                 Margin="0,0,12,0"
                 BorderThickness="0"
                 ItemContainerTheme="{StaticResource DownloadingStyle}"
-                ItemsSource="{Binding DownloadingList}">
+                ItemsSource="{Binding QueueRows}">
                 <ListBox.ItemsPanel>
                     <ItemsPanelTemplate>
                         <VirtualizingStackPanel />
@@ -309,16 +364,17 @@
                 </ListBox.Theme>
             </ListBox>
 
-            <TextBlock Grid.Row="2" Background="{DynamicResource SpaceRule}" />
+            <TextBlock Grid.Row="3" Background="{DynamicResource SpaceRule}" />
 
             <Border
                 Name="NameBatchActionBar"
-                Grid.Row="3"
+                Grid.Row="4"
                 Padding="16,0"
                 Background="{DynamicResource SpacePaper}">
                 <Grid ColumnDefinitions="*,Auto">
                     <StackPanel
                         Name="NameBatchSummary"
+                        IsVisible="{Binding !HasSelection}"
                         Grid.Column="0"
                         HorizontalAlignment="Left"
                         VerticalAlignment="Center"
@@ -343,6 +399,12 @@
                             Text="{DynamicResource DownloadTaskUnit}" />
                     </StackPanel>
 
+                    <StackPanel Grid.Column="0" IsVisible="{Binding HasSelection}" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <TextBlock Name="NameSelectionSummary" Text="{Binding SelectionSummary}" VerticalAlignment="Center"
+                                   FontSize="14" Foreground="{DynamicResource SpaceInk}" />
+                        <Button Theme="{StaticResource DownloadActionButton}" Name="NameClearSelection" Command="{Binding ClearSelectionCommand}" Padding="6,4"
+                                Content="{DynamicResource DownloadClearSelection}" ToolTip.Tip="{DynamicResource DownloadClearSelection}" />
+                    </StackPanel>
                     <StackPanel
                         Grid.Column="1"
                         HorizontalAlignment="Right"
@@ -350,7 +412,7 @@
                         Orientation="Horizontal"
                         Spacing="10">
                         <StackPanel
-                            Name="NameSafeBatchActions"
+                            Name="NameSafeBatchActions" IsVisible="{Binding !HasSelection}"
                             VerticalAlignment="Center"
                             Orientation="Horizontal"
                             Spacing="6">
@@ -358,6 +420,7 @@
                                 Name="NamePauseAllButton"
                                 MinWidth="104"
                                 Command="{Binding PauseAllDownloadingCommand}"
+                                IsEnabled="{Binding !HasFilter}"
                                 FontSize="12"
                                 Theme="{StaticResource DownloadActionButton}">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
@@ -376,6 +439,7 @@
                                 Name="NameContinueAllButton"
                                 MinWidth="104"
                                 Command="{Binding ContinueAllDownloadingCommand}"
+                                IsEnabled="{Binding !HasFilter}"
                                 FontSize="12"
                                 Theme="{StaticResource PersonalActionButton}">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
@@ -393,7 +457,7 @@
                         </StackPanel>
 
                         <Border
-                            Name="NameDeleteBatchDivider"
+                            Name="NameDeleteBatchDivider" IsVisible="{Binding !HasSelection}"
                             Width="1"
                             Height="24"
                             VerticalAlignment="Center"
@@ -402,7 +466,8 @@
                         <Button
                             Name="NameDeleteAllButton"
                             MinWidth="104"
-                            Command="{Binding DeleteAllDownloadingCommand}"
+                            Command="{Binding DeleteScopeCommand}"
+                            IsEnabled="{Binding CanOperateQueue}"
                             FontSize="12"
                             Classes="danger"
                             Foreground="{DynamicResource DownloadWarning}"
@@ -416,7 +481,7 @@
                                     Stretch="Uniform" />
                                 <TextBlock
                                     VerticalAlignment="Center"
-                                    Text="{DynamicResource DeleteAllDownloading}" />
+                                    Text="{Binding DeleteScopeText}" />
                             </StackPanel>
                         </Button>
                     </StackPanel>

@@ -1,4 +1,5 @@
 using System;
+using System.ComponentModel;
 using DownKyi.Domain.Downloads;
 using DownKyi.Images;
 using DownKyi.Models;
@@ -10,6 +11,41 @@ namespace DownKyi.ViewModels.DownloadManager
 {
     internal class DownloadingItem : DownloadBaseItem
     {
+        private bool _isSelected;
+        private bool _isGrouped;
+
+        public bool IsSelected
+        {
+            get => _isSelected;
+            set => SetProperty(ref _isSelected, value);
+        }
+
+        public bool IsGrouped
+        {
+            get => _isGrouped;
+            set
+            {
+                if (SetProperty(ref _isGrouped, value))
+                {
+                    OnPropertyChanged(nameof(QueueTitle));
+                }
+            }
+        }
+
+        public string QueueTitle => IsGrouped
+            ? $"{Order} · {Name}"
+            : string.IsNullOrWhiteSpace(MainTitle) || MainTitle == Name
+                ? Name
+                : $"{MainTitle} · {Name}";
+
+        protected override void OnPropertyChanged(PropertyChangedEventArgs e)
+        {
+            base.OnPropertyChanged(e);
+            if (e.PropertyName is nameof(MainTitle) or nameof(Name) or nameof(Order))
+            {
+                OnPropertyChanged(nameof(QueueTitle));
+            }
+        }
 
         public DownloadingItem()
         {
