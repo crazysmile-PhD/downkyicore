@@ -22,6 +22,7 @@ public class PlayUrlDashVideo : BaseModel
 
     // mime_type
     [JsonProperty("codecs")] public string Codecs { get; set; } = string.Empty;
+    [JsonProperty("widevine_pssh")] public string? WidevinePssh { get; set; }
     [JsonProperty("width")] public int Width { get; set; }
     [JsonProperty("height")] public int Height { get; set; }
 

@@ -241,6 +241,29 @@ public sealed class VideoPagePlaybackMapperTests : IDisposable
         Assert.True(page.VideoQuality!.IsDurl);
     }
 
+    [Theory]
+    [InlineData(120, PlaybackQualityMatchKind.Higher)]
+    [InlineData(122, PlaybackQualityMatchKind.Exact)]
+    public void LargeView4KIsSelectedAndNamedWhenOrdinary4KIsAbsent(
+        int requestedQuality,
+        PlaybackQualityMatchKind expectedKind)
+    {
+        var playUrl = CreatePlayUrl(122, 80);
+        playUrl.SupportFormats = [];
+        var page = new VideoPage();
+
+        VideoPagePlaybackMapper.ApplyPlayUrl(
+            playUrl,
+            page,
+            CreateSettings(requestedQuality, isVip: true));
+
+        Assert.Equal(122, page.VideoQuality!.Quality);
+        Assert.Equal("大视界 4K", page.VideoQuality.QualityFormat);
+        Assert.Equal("H.264/AVC", page.VideoQuality.SelectedVideoCodec);
+        Assert.Equal(expectedKind, page.VideoQualityMatch!.Kind);
+        Assert.False(page.VideoQualityMatch.RequiresLowerQualityConfirmation);
+    }
+
     [Fact]
     public void AvailabilityMapsDashAndDurlWithoutMixingTheirManifests()
     {
@@ -597,6 +620,9 @@ public sealed class VideoPagePlaybackMapperTests : IDisposable
             "PLAY_WHOLE\r\nforged",
             PlayUrlResolutionSource.Api,
             "embedded-playback-unavailable");
+        playUrl.IsDrm = true;
+        playUrl.DrmTechType = 2;
+        playUrl.Dash.Video[0].WidevinePssh = "private-initialization-data";
         playUrl.Availability = new PlayUrlAvailability(
         [
             new PlayUrlVideoAvailability(
@@ -616,9 +642,36 @@ public sealed class VideoPagePlaybackMapperTests : IDisposable
         Assert.Contains("supportQuality=[112(login=True,vip=True)]", summary, StringComparison.Ordinal);
         Assert.Contains("dashVideoIds=[64]", summary, StringComparison.Ordinal);
         Assert.Contains("availableVideo=[112:13:Durl]", summary, StringComparison.Ordinal);
+        Assert.Contains("protection=[Payload(isDrm=True,drmTechType=2,widevineVideo=[64],widevineAudio=[])]", summary, StringComparison.Ordinal);
+        Assert.DoesNotContain("private-initialization-data", summary, StringComparison.Ordinal);
         Assert.DoesNotContain("media.invalid", summary, StringComparison.Ordinal);
         Assert.DoesNotContain('\r', summary);
         Assert.DoesNotContain('\n', summary);
+    }
+
+    [Fact]
+    public void CapabilitySummaryDistinguishesProtectionMarkersFromDifferentSources()
+    {
+        var playUrl = CreatePlayUrl(80);
+        var supplement = CreatePlayUrl(122);
+        supplement.IsDrm = true;
+        supplement.DrmTechType = 2;
+        supplement.Dash.Video[0].WidevinePssh = "private-pssh";
+        playUrl.Diagnostics = new PlayUrlDiagnostics(127, 4048, "PLAY_WHOLE", PlayUrlResolutionSource.Mixed, "api-supplement-selected")
+        {
+            Protection =
+            [
+                PlayUrlProtectionDiagnostics.From(playUrl, PlayUrlResolutionSource.WebPage),
+                PlayUrlProtectionDiagnostics.From(supplement, PlayUrlResolutionSource.Api)
+            ]
+        };
+
+        var summary = VideoPagePlaybackMapper.BuildCapabilitySummary(playUrl, CreateSettings(122, isVip: true));
+
+        Assert.Contains("WebPage(isDrm=unknown,drmTechType=unknown,widevineVideo=[],widevineAudio=[])", summary, StringComparison.Ordinal);
+        Assert.Contains("Api(isDrm=True,drmTechType=2,widevineVideo=[122],widevineAudio=[])", summary, StringComparison.Ordinal);
+        Assert.DoesNotContain("private-pssh", summary, StringComparison.Ordinal);
+        Assert.DoesNotContain("media.invalid", summary, StringComparison.Ordinal);
     }
 
     private ApplicationSettings CreateSettings(int videoQuality, bool isVip)

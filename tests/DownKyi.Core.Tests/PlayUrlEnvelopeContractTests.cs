@@ -37,6 +37,70 @@ public sealed class PlayUrlEnvelopeContractTests
     }
 
     [Fact]
+    public async Task BangumiLargeView4KRefreshRequestsTheExactQuality()
+    {
+        var requests = new List<BilibiliHttpRequest>();
+        var client = new StubBilibiliApiClient((request, _) =>
+        {
+            requests.Add(request);
+            return Task.FromResult(requests.Count == 1 ? "<html></html>" : LargeViewBangumiApiResponse);
+        });
+
+        var payload = await client.GetBangumiPlayUrlAsync(
+            1, "BV1fixture", 2, 3489,
+            quality: 122,
+            videoCodecId: 12,
+            streamKind: PlayUrlStreamKind.Dash,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, requests.Count);
+        Assert.Contains("qn=122", requests[1].RequestAddress, StringComparison.Ordinal);
+        Assert.Equal(122, Assert.Single(payload!.Dash.Video).Id);
+        Assert.Equal(12, Assert.Single(payload.Dash.Video).CodecId);
+        var protection = Assert.Single(payload.Diagnostics!.Protection);
+        Assert.Equal(PlayUrlResolutionSource.Api, protection.Source);
+        Assert.True(protection.IsDrm);
+        Assert.Equal(2, protection.DrmTechType);
+        Assert.Equal([122], protection.WidevineVideoIds);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task BangumiProtectionDiagnosticsRetainBothSourcesAcrossSelection(bool finalized)
+    {
+        var requests = 0;
+        var client = new StubBilibiliApiClient((_, _) =>
+            Task.FromResult(++requests == 1 ? Ordinary1080EmbeddedBangumiPage : LargeViewBangumiApiResponse));
+
+        var payload = finalized
+            ? await client.GetBangumiPlayUrlAsync(
+                1, "BV1fixture", 2, 3489, quality: 122, videoCodecId: 12,
+                cancellationToken: TestContext.Current.CancellationToken)
+            : await client.GetBangumiPlaybackDiscoveryAsync(
+                1, "BV1fixture", 2, 3489,
+                new PlaybackDiscoveryRequest(122, 30280, RequireVideo: true, RequireAudio: false),
+                TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, requests);
+        var protection = payload!.Diagnostics!.Protection;
+        Assert.Equal(2, protection.Count);
+        Assert.Equal(PlayUrlResolutionSource.WebPage, protection[0].Source);
+        Assert.Null(protection[0].IsDrm);
+        Assert.Null(protection[0].DrmTechType);
+        Assert.Empty(protection[0].WidevineVideoIds);
+        Assert.Equal(PlayUrlResolutionSource.Api, protection[1].Source);
+        Assert.True(protection[1].IsDrm);
+        Assert.Equal(2, protection[1].DrmTechType);
+        Assert.Equal([122], protection[1].WidevineVideoIds);
+    }
+
+    private const string LargeViewBangumiApiResponse = """
+        {"code":0,"result":{"video_info":{"quality":122,"is_drm":true,"drm_tech_type":2,
+          "dash":{"video":[{"id":122,"codecid":12,"base_url":"https://api.invalid/video-122","widevine_pssh":"initialization-data"}],"audio":[]}}}}
+        """;
+
+    [Fact]
     public void DataOnlyResponseSelectsData()
     {
         var response = ReadSample("playurl-video-data.json");

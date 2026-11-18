@@ -36,6 +36,7 @@ public static class PlaybackQualityCatalog
         new("1080P 高码率", 112),
         new("1080P 60帧", 116),
         new("4K 超清", 120),
+        new("大视界 4K", 122),
         new("HDR 真彩", 125),
         new("杜比视界", 126),
         new("超高清 8K", 127)

@@ -144,12 +144,26 @@ internal static class VideoPagePlaybackMapper
                + $"resolution={SanitizeDiagnosticToken(diagnostics?.Outcome)}; "
                + $"returnedQuality={playUrl.Quality}; "
                + $"isPreview={playUrl.IsPreview?.ToString() ?? "unknown"}; "
+               + $"protection=[{BuildProtectionSummary(playUrl)}]; "
                + $"acceptQuality=[{string.Join(",", playUrl.AcceptQuality ?? [])}]; "
                + $"supportQuality=[{supportQualities}]; "
                + $"dashVideoIds=[{dashVideoIds}]; "
                + $"dashVideoCodecIds=[{dashVideoCodecIds}]; "
                + $"availableVideo=[{availableVideo}]";
     }
+
+    private static string BuildProtectionSummary(PlayUrl playUrl)
+    {
+        return playUrl.Diagnostics?.Protection is { Count: > 0 } protection
+            ? string.Join(";", protection.Select(info => FormatProtection(info, info.Source.ToString())))
+            : FormatProtection(PlayUrlProtectionDiagnostics.From(playUrl, default), "Payload");
+    }
+
+    private static string FormatProtection(PlayUrlProtectionDiagnostics info, string source) =>
+        $"{source}(isDrm={FormatNullableBoolean(info.IsDrm)},"
+        + $"drmTechType={info.DrmTechType?.ToString(CultureInfo.InvariantCulture) ?? "unknown"},"
+        + $"widevineVideo=[{string.Join(",", info.WidevineVideoIds)}],"
+        + $"widevineAudio=[{string.Join(",", info.WidevineAudioIds)}])";
 
     private static string FormatNullableBoolean(bool? value)
     {
