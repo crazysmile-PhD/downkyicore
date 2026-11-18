@@ -19,6 +19,7 @@ using DownKyi.Application.Desktop;
 using DownKyi.Application.Diagnostics;
 using DownKyi.Commands;
 using DownKyi.Core.BiliApi.BiliUtils;
+using DownKyi.Core.Utils.Validator;
 using DownKyi.Infrastructure.FFmpeg;
 using DownKyi.Utils;
 using Microsoft.Extensions.Logging;
@@ -211,6 +212,31 @@ internal class DelogoViewModel : ViewModelBase
     // 去水印事件
     private DownKyiAsyncDelegateCommand? _delogoCommand;
 
+    private RelayCommand<string>? _logoWidthCommand;
+    private RelayCommand<string>? _logoHeightCommand;
+    private RelayCommand<string>? _logoXCommand;
+    private RelayCommand<string>? _logoYCommand;
+
+    public RelayCommand<string> LogoWidthCommand =>
+        _logoWidthCommand ??= RequiredParameterCommand.Create<string>(parameter =>
+            ApplyGeometryInput(parameter, allowZero: false, value => LogoWidth = value,
+                nameof(LogoWidth), "TipInputRightLogoWidth"));
+
+    public RelayCommand<string> LogoHeightCommand =>
+        _logoHeightCommand ??= RequiredParameterCommand.Create<string>(parameter =>
+            ApplyGeometryInput(parameter, allowZero: false, value => LogoHeight = value,
+                nameof(LogoHeight), "TipInputRightLogoHeight"));
+
+    public RelayCommand<string> LogoXCommand =>
+        _logoXCommand ??= RequiredParameterCommand.Create<string>(parameter =>
+            ApplyGeometryInput(parameter, allowZero: true, value => LogoX = value,
+                nameof(LogoX), "TipInputRightLogoX"));
+
+    public RelayCommand<string> LogoYCommand =>
+        _logoYCommand ??= RequiredParameterCommand.Create<string>(parameter =>
+            ApplyGeometryInput(parameter, allowZero: true, value => LogoY = value,
+                nameof(LogoY), "TipInputRightLogoY"));
+
     public DownKyiAsyncDelegateCommand DelogoCommand => _delogoCommand ??= new DownKyiAsyncDelegateCommand(ExecuteDelogoCommand, _logger);
 
     /// <summary>
@@ -274,6 +300,27 @@ internal class DelogoViewModel : ViewModelBase
         {
             _isDelogo = false;
         }
+    }
+
+    private void ApplyGeometryInput(
+        string parameter,
+        bool allowZero,
+        Action<int> apply,
+        string propertyName,
+        string validationMessageKey)
+    {
+        var parsed = Number.GetInt(parameter);
+        var minimum = allowZero ? 0 : 1;
+        if (parsed is >= 0 and <= int.MaxValue && parsed >= minimum)
+        {
+            apply((int)parsed);
+        }
+        else
+        {
+            Notifications.Show(DictionaryResource.GetString(validationMessageKey));
+        }
+
+        OnPropertyChanged(propertyName);
     }
 
     // Status改变事件

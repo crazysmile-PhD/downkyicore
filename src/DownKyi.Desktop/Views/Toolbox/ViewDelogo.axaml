@@ -92,7 +92,16 @@
                                     Height="34"
                                     Margin="0,6,0,0"
                                     VerticalContentAlignment="Center"
-                                    Text="{Binding LogoWidth, Mode=TwoWay}" />
+                                    Text="{Binding LogoWidth, Mode=OneWay}">
+                                    <TextBox.KeyBindings>
+                                        <KeyBinding Command="{Binding LogoWidthCommand}" CommandParameter="{Binding #NameLogoWidth.Text}" Gesture="Enter" />
+                                    </TextBox.KeyBindings>
+                                    <Interaction.Behaviors>
+                                        <EventTriggerBehavior EventName="LostFocus">
+                                            <InvokeCommandAction Command="{Binding LogoWidthCommand}" CommandParameter="{Binding #NameLogoWidth.Text}" />
+                                        </EventTriggerBehavior>
+                                    </Interaction.Behaviors>
+                                </TextBox>
                             </StackPanel>
                             <StackPanel Grid.Row="0" Grid.Column="2">
                                 <TextBlock Foreground="{DynamicResource SpaceInk}" Text="{DynamicResource LogoHeight}" />
@@ -101,7 +110,16 @@
                                     Height="34"
                                     Margin="0,6,0,0"
                                     VerticalContentAlignment="Center"
-                                    Text="{Binding LogoHeight, Mode=TwoWay}" />
+                                    Text="{Binding LogoHeight, Mode=OneWay}">
+                                    <TextBox.KeyBindings>
+                                        <KeyBinding Command="{Binding LogoHeightCommand}" CommandParameter="{Binding #NameLogoHeight.Text}" Gesture="Enter" />
+                                    </TextBox.KeyBindings>
+                                    <Interaction.Behaviors>
+                                        <EventTriggerBehavior EventName="LostFocus">
+                                            <InvokeCommandAction Command="{Binding LogoHeightCommand}" CommandParameter="{Binding #NameLogoHeight.Text}" />
+                                        </EventTriggerBehavior>
+                                    </Interaction.Behaviors>
+                                </TextBox>
                             </StackPanel>
                             <StackPanel Grid.Row="2" Grid.Column="0">
                                 <TextBlock Foreground="{DynamicResource SpaceInk}" Text="{DynamicResource LogoX}" />
@@ -110,7 +128,16 @@
                                     Height="34"
                                     Margin="0,6,0,0"
                                     VerticalContentAlignment="Center"
-                                    Text="{Binding LogoX, Mode=TwoWay}" />
+                                    Text="{Binding LogoX, Mode=OneWay}">
+                                    <TextBox.KeyBindings>
+                                        <KeyBinding Command="{Binding LogoXCommand}" CommandParameter="{Binding #NameLogoX.Text}" Gesture="Enter" />
+                                    </TextBox.KeyBindings>
+                                    <Interaction.Behaviors>
+                                        <EventTriggerBehavior EventName="LostFocus">
+                                            <InvokeCommandAction Command="{Binding LogoXCommand}" CommandParameter="{Binding #NameLogoX.Text}" />
+                                        </EventTriggerBehavior>
+                                    </Interaction.Behaviors>
+                                </TextBox>
                             </StackPanel>
                             <StackPanel Grid.Row="2" Grid.Column="2">
                                 <TextBlock Foreground="{DynamicResource SpaceInk}" Text="{DynamicResource LogoY}" />
@@ -119,7 +146,16 @@
                                     Height="34"
                                     Margin="0,6,0,0"
                                     VerticalContentAlignment="Center"
-                                    Text="{Binding LogoY, Mode=TwoWay}" />
+                                    Text="{Binding LogoY, Mode=OneWay}">
+                                    <TextBox.KeyBindings>
+                                        <KeyBinding Command="{Binding LogoYCommand}" CommandParameter="{Binding #NameLogoY.Text}" Gesture="Enter" />
+                                    </TextBox.KeyBindings>
+                                    <Interaction.Behaviors>
+                                        <EventTriggerBehavior EventName="LostFocus">
+                                            <InvokeCommandAction Command="{Binding LogoYCommand}" CommandParameter="{Binding #NameLogoY.Text}" />
+                                        </EventTriggerBehavior>
+                                    </Interaction.Behaviors>
+                                </TextBox>
                             </StackPanel>
                         </Grid>
                         <StackPanel Margin="0,16,0,0">

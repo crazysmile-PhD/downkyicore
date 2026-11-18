@@ -327,10 +327,11 @@ internal class DanmakuViewModel : ViewModelBase
     /// <param name="parameter"></param>
     private void ExecuteScreenWidthCommand(string parameter)
     {
-        var width = (int)Number.GetInt(parameter);
-        ScreenWidth = width;
-
-        var isSucceed = UpdateDanmaku(settings => settings with { ScreenWidth = ScreenWidth }).ScreenWidth == ScreenWidth;
+        var requested = ParseNumericSetting(parameter);
+        var updated = UpdateDanmaku(settings => settings with { ScreenWidth = requested });
+        ScreenWidth = updated.ScreenWidth;
+        OnPropertyChanged(nameof(ScreenWidth));
+        var isSucceed = updated.ScreenWidth == requested;
         PublishTip(isSucceed);
     }
 
@@ -345,10 +346,11 @@ internal class DanmakuViewModel : ViewModelBase
     /// <param name="parameter"></param>
     private void ExecuteScreenHeightCommand(string parameter)
     {
-        var height = (int)Number.GetInt(parameter);
-        ScreenHeight = height;
-
-        var isSucceed = UpdateDanmaku(settings => settings with { ScreenHeight = ScreenHeight }).ScreenHeight == ScreenHeight;
+        var requested = ParseNumericSetting(parameter);
+        var updated = UpdateDanmaku(settings => settings with { ScreenHeight = requested });
+        ScreenHeight = updated.ScreenHeight;
+        OnPropertyChanged(nameof(ScreenHeight));
+        var isSucceed = updated.ScreenHeight == requested;
         PublishTip(isSucceed);
     }
 
@@ -378,10 +380,11 @@ internal class DanmakuViewModel : ViewModelBase
     /// <param name="parameter"></param>
     private void ExecuteFontSizeCommand(string parameter)
     {
-        var fontSize = (int)Number.GetInt(parameter);
-        FontSize = fontSize;
-
-        var isSucceed = UpdateDanmaku(settings => settings with { FontSize = FontSize }).FontSize == FontSize;
+        var requested = ParseNumericSetting(parameter);
+        var updated = UpdateDanmaku(settings => settings with { FontSize = requested });
+        FontSize = updated.FontSize;
+        OnPropertyChanged(nameof(FontSize));
+        var isSucceed = updated.FontSize == requested;
         PublishTip(isSucceed);
     }
 
@@ -396,10 +399,11 @@ internal class DanmakuViewModel : ViewModelBase
     /// <param name="parameter"></param>
     private void ExecuteLineCountCommand(string parameter)
     {
-        var lineCount = (int)Number.GetInt(parameter);
-        LineCount = lineCount;
-
-        var isSucceed = UpdateDanmaku(settings => settings with { LineCount = LineCount }).LineCount == LineCount;
+        var requested = ParseNumericSetting(parameter);
+        var updated = UpdateDanmaku(settings => settings with { LineCount = requested });
+        LineCount = updated.LineCount;
+        OnPropertyChanged(nameof(LineCount));
+        var isSucceed = updated.LineCount == requested;
         PublishTip(isSucceed);
     }
 
@@ -442,6 +446,12 @@ internal class DanmakuViewModel : ViewModelBase
         {
             Danmaku = update(settings.Danmaku)
         }).Danmaku;
+    }
+
+    private static int ParseNumericSetting(string value)
+    {
+        var parsed = Number.GetInt(value);
+        return parsed is >= 0 and <= int.MaxValue ? (int)parsed : -1;
     }
 
     private static ImmutableArray<string> ParseKeywords(string text)

@@ -72,7 +72,7 @@
                     Margin="0,6,0,0"
                     HorizontalAlignment="Left"
                     VerticalContentAlignment="Center"
-                    Text="{Binding MaxOverallDownloadLimit}">
+                    Text="{Binding MaxOverallDownloadLimit, Mode=OneWay}">
                     <TextBox.KeyBindings>
                         <KeyBinding Command="{Binding MaxOverallDownloadLimitCommand}" CommandParameter="{Binding #NameMaxOverallDownloadLimit.Text}" Gesture="Enter" />
                     </TextBox.KeyBindings>
@@ -91,7 +91,7 @@
                     Margin="0,6,0,0"
                     HorizontalAlignment="Left"
                     VerticalContentAlignment="Center"
-                    Text="{Binding MaxDownloadLimit}">
+                    Text="{Binding MaxDownloadLimit, Mode=OneWay}">
                     <TextBox.KeyBindings>
                         <KeyBinding Command="{Binding MaxDownloadLimitCommand}" CommandParameter="{Binding #NameMaxDownloadLimit.Text}" Gesture="Enter" />
                     </TextBox.KeyBindings>
@@ -136,7 +136,7 @@
                     Margin="0,6,0,0"
                     HorizontalAlignment="Left"
                     VerticalContentAlignment="Center"
-                    Text="{Binding HttpProxyPort}">
+                    Text="{Binding HttpProxyPort, Mode=OneWay}">
                     <TextBox.KeyBindings>
                         <KeyBinding Command="{Binding HttpProxyPortCommand}" CommandParameter="{Binding #NameHttpProxyPort.Text}" Gesture="Enter" />
                     </TextBox.KeyBindings>
