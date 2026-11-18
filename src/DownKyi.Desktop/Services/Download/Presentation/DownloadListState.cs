@@ -29,6 +29,8 @@ internal sealed class DownloadListState : IDownloadedListProjection
 
     public ReadOnlyObservableCollection<DownloadedItem> Downloaded { get; }
 
+    public DownloadQueueViewState QueueView { get; } = new();
+
     public bool IsDownloadedHistoryLoaded { get; private set; }
 
     public void AddDownloading(DownloadingItem item)

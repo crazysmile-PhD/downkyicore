@@ -11,7 +11,7 @@ using Microsoft.Extensions.Logging;
 
 namespace DownKyi.ViewModels.DownloadManager
 {
-    internal class DownloadingViewModel : ViewModelBase
+    internal partial class DownloadingViewModel : ViewModelBase
     {
         public const string Tag = "PageDownloadManagerDownloading";
 
@@ -35,6 +35,8 @@ namespace DownKyi.ViewModels.DownloadManager
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             // 初始化DownloadingList
             DownloadingList = (downloadLists ?? throw new ArgumentNullException(nameof(downloadLists))).Downloading;
+            _queueView = downloadLists.QueueView;
+            InitializeQueue();
         }
 
         #region 命令申明
