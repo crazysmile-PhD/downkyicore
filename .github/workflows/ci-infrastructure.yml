@@ -43,28 +43,39 @@ permissions:
 
 jobs:
   local-actions:
-    name: Local action round trip
+    name: Upload local action fixture
     runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
     timeout-minutes: 5
+    outputs:
+      artifact-name: ${{ steps.fixture.outputs.artifact-name }}
     steps:
       - name: Checkout
         uses: $/.github/actions/checkout
       - name: Create local-action round-trip fixture
+        id: fixture
         shell: pwsh
         run: |
           $fixturePath = Join-Path $env:RUNNER_TEMP 'downkyi-local-action-fixture.txt'
           Set-Content -LiteralPath $fixturePath -Value 'downkyi-local-action-round-trip' -NoNewline
+          'artifact-name=local-action-round-trip-${{ github.run_id }}-${{ github.run_attempt }}' | Add-Content -LiteralPath $env:GITHUB_OUTPUT
       - name: Upload local-action round-trip fixture
         uses: $/.github/actions/upload-artifact
         with:
-          name: local-action-round-trip-${{ github.run_id }}-${{ github.run_attempt }}
+          name: ${{ steps.fixture.outputs.artifact-name }}
           path: ${{ runner.temp }}/downkyi-local-action-fixture.txt
           if-no-files-found: error
           retention-days: 1
+
+  local-action-download:
+    name: Download and verify local action fixture
+    needs: local-actions
+    runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
+    timeout-minutes: 5
+    steps:
       - name: Download local-action round-trip fixture
         uses: $/.github/actions/download-artifact
         with:
-          name: local-action-round-trip-${{ github.run_id }}-${{ github.run_attempt }}
+          name: ${{ needs.local-actions.outputs.artifact-name }}
           path: ${{ runner.temp }}/downkyi-local-action-round-trip
       - name: Verify local-action round trip
         shell: pwsh

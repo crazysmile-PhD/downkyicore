@@ -66,6 +66,8 @@ job-level `if`。架構測試、嚴格 analyzers、原生平台測試及 actionl
 macOS 打包統一由 `build.yml` 負責；不再維護另一份 ad-hoc package workflow。
 本地 upload/download action round trip 移到 CI infrastructure，修改本地
 `.github/actions/**` 時執行一次，不再附加於每張 PR 的格式檢查。
+Round trip 由上傳 job 成功後再啟動下載 job，覆蓋發布鏈的跨 job 交接契約；
+artifact 名稱從 producer output 傳遞，重跑失敗 consumer 時不自行重算 attempt。
 CI infrastructure 的三平台 slices 保留，仍使用正式 CentralTestRunner。
 
 `Build` 與 CI infrastructure 是選擇性驗證，不列為全 PR required checks；
