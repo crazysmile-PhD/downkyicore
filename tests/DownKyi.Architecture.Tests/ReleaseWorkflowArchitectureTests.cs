@@ -66,19 +66,15 @@ public sealed class ReleaseWorkflowArchitectureTests
     }
 
     [Fact]
-    public void ReleaseWorkflowsShareOnePackageChecksumSidecarOwner()
+    public void ReleaseWorkflowUsesOnePackageChecksumSidecarOwner()
     {
         var releaseWorkflow = File.ReadAllText(
             Path.Combine(RepositoryRoot, ".github", "workflows", "build.yml"));
-        var adHocWorkflow = File.ReadAllText(
-            Path.Combine(RepositoryRoot, ".github", "workflows", "macos-adhoc-package.yml"));
         var checksumWriter = File.ReadAllText(
             Path.Combine(RepositoryRoot, "script", "write-package-checksum.ps1"));
 
         Assert.Equal(4, Regex.Count(releaseWorkflow, "write-package-checksum\\.ps1"));
-        Assert.Equal(1, Regex.Count(adHocWorkflow, "write-package-checksum\\.ps1"));
         Assert.DoesNotContain("Get-FileHash", releaseWorkflow, StringComparison.Ordinal);
-        Assert.DoesNotContain("Get-FileHash", adHocWorkflow, StringComparison.Ordinal);
         Assert.Contains("Get-FileHash", checksumWriter, StringComparison.Ordinal);
         Assert.Contains(".ToLowerInvariant()", checksumWriter, StringComparison.Ordinal);
         Assert.Contains("$hash  $($package.Name)", checksumWriter, StringComparison.Ordinal);
@@ -305,7 +301,6 @@ public sealed class ReleaseWorkflowArchitectureTests
             ["codeql"] = ReadWorkflow("codeql.yml"),
             ["dependency"] = ReadWorkflow("dependency-audit.yml"),
             ["build"] = ReadWorkflow("build.yml"),
-            ["macos"] = ReadWorkflow("macos-adhoc-package.yml"),
             ["infrastructure"] = ReadWorkflow("ci-infrastructure.yml")
         };
 
@@ -319,16 +314,19 @@ public sealed class ReleaseWorkflowArchitectureTests
             ("tests/DownKyi.Windows.Tests/WindowsEtwResourceFlightRecorderTests.cs", ["infrastructure"]),
             ("script/validate-build-run-artifacts.ps1", []),
             ("script/pupnet/stage-canonical-publish.sh", []),
-            ("script/validate-publish-output.ps1", ["macos"]),
-            (".github/actions/build-macos-app/action.yml", ["macos"]),
-            ("script/macos/validate-dmg-package.sh", ["macos"]),
+            ("script/validate-publish-output.ps1", []),
+            (".github/actions/build-macos-app/action.yml", ["infrastructure"]),
+            (".github/actions/upload-artifact/action.yml", ["infrastructure"]),
+            ("script/macos/validate-dmg-package.sh", []),
+            ("version.txt", []),
+            ("Directory.Packages.props", ["infrastructure"]),
             ("script/resolve-release-plan.ps1", []),
             ("script/ffmpeg-source/vcpkg.json", ["build"]),
             ("script/ffmpeg-source/build.py", ["build"]),
             ("script/ffmpeg.ps1", ["build"]),
             ("script/ffmpeg.sh", ["build"]),
             ("script/assets/external-assets.json", ["build"]),
-            (".github/workflows/build.yml", ["build"]),
+            (".github/workflows/build.yml", []),
             (".github/workflows/quality.yml", ["infrastructure"])
         };
         foreach (var (path, extraWorkflows) in pullRequests)
@@ -341,15 +339,17 @@ public sealed class ReleaseWorkflowArchitectureTests
             }
         }
 
-        Assert.True(WorkflowRuns(workflows["quality"], "push-main", "docs/maintenance.md"));
+        Assert.False(WorkflowRuns(workflows["quality"], "push-main", "docs/maintenance.md"));
         Assert.True(WorkflowRuns(workflows["codeql"], "push-main", "docs/maintenance.md"));
         Assert.False(WorkflowRuns(workflows["dependency"], "push-main", "docs/maintenance.md"));
+        Assert.False(WorkflowRuns(workflows["dependency"], "push-main", "Directory.Packages.props"));
+        Assert.False(WorkflowRuns(workflows["infrastructure"], "push-main", "tools/DownKyi.CentralTestRunner/Program.cs"));
         Assert.False(WorkflowRuns(workflows["build"], "push-main", "script/assets/external-assets.json"));
         Assert.True(WorkflowRuns(workflows["build"], "push-tag", "docs/maintenance.md"));
         Assert.False(WorkflowRuns(workflows["quality"], "push-tag", "docs/maintenance.md"));
         Assert.True(WorkflowRuns(workflows["build"], "workflow_dispatch", ""));
-        Assert.True(WorkflowRuns(workflows["macos"], "workflow_dispatch", ""));
-        Assert.False(WorkflowRuns(workflows["quality"], "workflow_dispatch", ""));
+        Assert.True(WorkflowRuns(workflows["quality"], "workflow_dispatch", ""));
+        Assert.True(WorkflowRuns(workflows["infrastructure"], "workflow_dispatch", ""));
 
         // A combined PR takes the union of path matches.
         Assert.True(WorkflowRuns(workflows["build"], "pull_request",
@@ -555,21 +555,15 @@ public sealed class ReleaseWorkflowArchitectureTests
     }
 
     [Fact]
-    public void MacWorkflowsShareOneAppBuildAction()
+    public void MacReleaseUsesOneAppBuildAction()
     {
         var action = File.ReadAllText(
             Path.Combine(RepositoryRoot, ".github", "actions", "build-macos-app", "action.yml"));
         var releaseWorkflow = File.ReadAllText(
             Path.Combine(RepositoryRoot, ".github", "workflows", "build.yml"));
-        var adHocWorkflow = File.ReadAllText(
-            Path.Combine(RepositoryRoot, ".github", "workflows", "macos-adhoc-package.yml"));
-
-        foreach (var workflow in new[] { releaseWorkflow, adHocWorkflow })
-        {
-            Assert.Contains("uses: ./.github/actions/build-macos-app", workflow, StringComparison.Ordinal);
-            Assert.DoesNotContain("dotnet publish src/DownKyi/DownKyi.csproj", workflow, StringComparison.Ordinal);
-            Assert.DoesNotContain("./ffmpeg.sh mac ${{ matrix.cpu }}", workflow, StringComparison.Ordinal);
-        }
+        Assert.Contains("uses: ./.github/actions/build-macos-app", releaseWorkflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("dotnet publish src/DownKyi/DownKyi.csproj", releaseWorkflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("./ffmpeg.sh mac ${{ matrix.cpu }}", releaseWorkflow, StringComparison.Ordinal);
 
         Assert.Contains(
             "dotnet restore src/DownKyi/DownKyi.csproj -r osx-${{ inputs.cpu }}",
@@ -582,21 +576,16 @@ public sealed class ReleaseWorkflowArchitectureTests
     }
 
     [Fact]
-    public void MacWorkflowsShareOneDmgLayoutOwner()
+    public void MacReleaseUsesOneDmgLayoutOwner()
     {
         var releaseWorkflow = File.ReadAllText(
             Path.Combine(RepositoryRoot, ".github", "workflows", "build.yml"));
-        var adHocWorkflow = File.ReadAllText(
-            Path.Combine(RepositoryRoot, ".github", "workflows", "macos-adhoc-package.yml"));
         var createDmgScript = File.ReadAllText(
             Path.Combine(RepositoryRoot, "script", "macos", "create-dmg.sh"));
 
-        foreach (var workflow in new[] { releaseWorkflow, adHocWorkflow })
-        {
-            Assert.Contains("./create-dmg.sh ${{ steps.macos-app.outputs.version }} ${{ matrix.cpu }}", workflow, StringComparison.Ordinal);
-            Assert.DoesNotContain("--icon-size", workflow, StringComparison.Ordinal);
-            Assert.DoesNotContain("--window-size", workflow, StringComparison.Ordinal);
-        }
+        Assert.Contains("./create-dmg.sh ${{ steps.macos-app.outputs.version }} ${{ matrix.cpu }}", releaseWorkflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("--icon-size", releaseWorkflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("--window-size", releaseWorkflow, StringComparison.Ordinal);
 
         Assert.Contains("create-dmg", createDmgScript, StringComparison.Ordinal);
         Assert.Contains("--icon-size 120", createDmgScript, StringComparison.Ordinal);
@@ -783,77 +772,21 @@ public sealed class ReleaseWorkflowArchitectureTests
     }
 
     [Fact]
-    public void MacAdHocPackageWorkflowCoversBothRidsWithoutAppleCredentials()
+    public void PackagingHasOneReleaseEntryAndSupersededPrRunsAreCancelled()
     {
-        var workflow = File.ReadAllText(
-            Path.Combine(RepositoryRoot, ".github", "workflows", "macos-adhoc-package.yml"));
-        var appBuildAction = File.ReadAllText(
-            Path.Combine(RepositoryRoot, ".github", "actions", "build-macos-app", "action.yml"));
-        var lines = workflow.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
-        var pullRequest = GetYamlBlock(lines, "  pull_request:", 2);
-        var pathBlock = GetYamlBlock(pullRequest.ToArray(), "    paths:", 4);
-        var triggerPaths = pathBlock
-            .Where(line => GetIndent(line) == 6 && line.TrimStart().StartsWith("- ", StringComparison.Ordinal))
-            .Select(line => line.Trim()[2..].Trim('\'', '"'))
-            .ToHashSet(StringComparer.Ordinal);
+        Assert.False(File.Exists(Path.Combine(
+            RepositoryRoot, ".github", "workflows", "macos-adhoc-package.yml")));
 
-        Assert.Contains("runs-on: ${{ matrix.os }}", workflow, StringComparison.Ordinal);
-        Assert.Contains("os: macos-26", workflow, StringComparison.Ordinal);
-        Assert.Contains("os: macos-15-intel", workflow, StringComparison.Ordinal);
-        Assert.Contains("runtime: osx-x64", workflow, StringComparison.Ordinal);
-        Assert.Contains("runtime: osx-arm64", workflow, StringComparison.Ordinal);
-        Assert.Contains("MACOS_ADHOC_SIGNING: 'true'", workflow, StringComparison.Ordinal);
-        foreach (var packageInput in new[]
+        foreach (var file in new[]
                  {
-                     "src/**/*.csproj",
-                     "src/DownKyi.Desktop/Resources/favicon.ico",
-                     "THIRD-PARTY-NOTICES.md",
-                     "script/validate-publish-output.ps1",
-                     "script/macos/**",
-                     ".github/actions/build-macos-app/action.yml"
+                     "quality.yml", "ci-infrastructure.yml", "dependency-audit.yml",
+                     "codeql.yml", "build.yml"
                  })
         {
-            Assert.Contains(packageInput, triggerPaths);
+            var workflow = ReadWorkflow(file);
+            Assert.Contains("group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}", workflow, StringComparison.Ordinal);
+            Assert.Contains("cancel-in-progress: ${{ github.event_name == 'pull_request' }}", workflow, StringComparison.Ordinal);
         }
-
-        foreach (var broadOrDuplicateInput in new[]
-                 {
-                     "src/DownKyi/**",
-                     "src/DownKyi.Core/**",
-                     "src/**",
-                     "script/test-project.ps1",
-                     "script/test-project-runner.ps1",
-                     "tests/DownKyi.MacOS.Tests/**",
-                     "tests/PlatformShared/**",
-                     "tools/DownKyi.CentralTestRunner/**"
-                 })
-        {
-            Assert.DoesNotContain(broadOrDuplicateInput, triggerPaths);
-        }
-
-        Assert.Contains("uses: ./.github/actions/build-macos-app", workflow, StringComparison.Ordinal);
-        Assert.DoesNotContain("dotnet publish", workflow, StringComparison.Ordinal);
-        Assert.Contains("dotnet publish", appBuildAction, StringComparison.Ordinal);
-        Assert.Contains(
-            "manifest-path: script/macos/publish-manifest-osx-${{ matrix.cpu }}.json",
-            workflow,
-            StringComparison.Ordinal);
-        Assert.Contains("./sign.sh", workflow, StringComparison.Ordinal);
-        Assert.Contains("./verify-app-signature.sh", workflow, StringComparison.Ordinal);
-        Assert.Contains("flags=.*runtime", workflow, StringComparison.Ordinal);
-        Assert.Contains("./create-dmg.sh", workflow, StringComparison.Ordinal);
-        Assert.Contains("./validate-dmg-package.sh", workflow, StringComparison.Ordinal);
-        Assert.Contains(
-            "- name: Upload verified DMG\n        continue-on-error: ${{ github.event_name == 'pull_request' }}",
-            workflow.Replace("\r\n", "\n", StringComparison.Ordinal),
-            StringComparison.Ordinal);
-        Assert.DoesNotContain("Run macOS packaging regressions", workflow, StringComparison.Ordinal);
-        Assert.DoesNotContain("Upload macOS test evidence", workflow, StringComparison.Ordinal);
-        Assert.DoesNotContain("script/test-project.ps1", workflow, StringComparison.Ordinal);
-        Assert.DoesNotContain("secrets.", workflow, StringComparison.Ordinal);
-        Assert.DoesNotContain("notarytool", workflow, StringComparison.Ordinal);
-        Assert.DoesNotContain("stapler", workflow, StringComparison.Ordinal);
-        Assert.DoesNotContain("spctl", workflow, StringComparison.Ordinal);
     }
 
     [Fact]

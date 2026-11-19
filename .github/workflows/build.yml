@@ -15,8 +15,12 @@ on:
       - 'script/ffmpeg-source/**'
       - 'script/ffmpeg.ps1'
       - 'script/ffmpeg.sh'
-      - '.github/workflows/build.yml'
   workflow_dispatch:
+
+# Superseded PR candidates are disposable; release/manual runs have unique groups.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   source-update-identity:
@@ -94,6 +98,14 @@ jobs:
           -NoRestore
           -NoBuild
           -ResultsDirectory ./artifacts/test-results
+      - name: Verify release formatting
+        if: runner.os == 'Linux'
+        run: dotnet format ./DownKyi.sln --verify-no-changes --no-restore
+      - name: Validate release workflows
+        if: runner.os == 'Linux'
+        uses: $/.github/actions/actionlint
+        with:
+          files: .github/workflows/*.yml
       - name: Upload test results and failure diagnostics
         if: always()
         continue-on-error: ${{ github.event_name == 'pull_request' }}

@@ -95,8 +95,6 @@ public sealed class AgentEnvironmentArchitectureTests
         Assert.DoesNotContain("dotnet-version:", workflows, StringComparison.Ordinal);
         Assert.DoesNotContain("python-version:", workflows, StringComparison.Ordinal);
 
-        Assert.Contains("      - '.python-version'", Read(".github/workflows/macos-adhoc-package.yml"), StringComparison.Ordinal);
-
         var pythonUpdater = Read(".github/workflows/update-ffmpeg-source.yml");
         Assert.Contains("script/update-python-version.py", pythonUpdater, StringComparison.Ordinal);
         Assert.Contains("add_paths: .python-version", pythonUpdater, StringComparison.Ordinal);
@@ -255,21 +253,24 @@ public sealed class AgentEnvironmentArchitectureTests
         var qualityWorkflow = Read(".github/workflows/quality.yml");
 
         Assert.Contains("pull_request:", qualityWorkflow, StringComparison.Ordinal);
-        var qualityPullRequestTrigger = Slice(qualityWorkflow, "  pull_request:", "  push:");
+        var qualityPullRequestTrigger = Slice(qualityWorkflow, "  pull_request:", "  workflow_dispatch:");
         Assert.DoesNotContain("paths:", qualityPullRequestTrigger, StringComparison.Ordinal);
         Assert.Contains("windows-latest", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("vars.UBUNTU_X64_RUNNER", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("macos-latest", qualityWorkflow, StringComparison.Ordinal);
-        var normalizedQualityWorkflow = qualityWorkflow.Replace("\r\n", "\n", StringComparison.Ordinal);
+        var ciInfrastructureWorkflow = Read(".github/workflows/ci-infrastructure.yml");
+        var normalizedInfrastructureWorkflow = ciInfrastructureWorkflow.Replace("\r\n", "\n", StringComparison.Ordinal);
         Assert.Contains(
             "- name: Upload local-action round-trip fixture\n        uses: $/.github/actions/upload-artifact",
-            normalizedQualityWorkflow,
+            normalizedInfrastructureWorkflow,
             StringComparison.Ordinal);
         Assert.Contains(
             "- name: Download local-action round-trip fixture\n        uses: $/.github/actions/download-artifact",
-            normalizedQualityWorkflow,
+            normalizedInfrastructureWorkflow,
             StringComparison.Ordinal);
-        Assert.Contains("- name: Verify local-action round trip", normalizedQualityWorkflow, StringComparison.Ordinal);
+        Assert.Contains("- name: Verify local-action round trip", normalizedInfrastructureWorkflow, StringComparison.Ordinal);
+        Assert.Contains("'.github/actions/**'", ciInfrastructureWorkflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("local-action round-trip fixture", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("--no-incremental", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("AnalysisMode=All", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("./script/test-solution.ps1", qualityWorkflow, StringComparison.Ordinal);
@@ -288,7 +289,7 @@ public sealed class AgentEnvironmentArchitectureTests
         var dependencyAuditPullRequestTrigger = Slice(
             dependencyAuditWorkflow,
             "  pull_request:",
-            "  push:");
+            "  schedule:");
         Assert.DoesNotContain("paths:", dependencyAuditPullRequestTrigger, StringComparison.Ordinal);
         Assert.Contains("schedule:", dependencyAuditWorkflow, StringComparison.Ordinal);
         Assert.Contains("    name: Dependency policy", dependencyAuditWorkflow, StringComparison.Ordinal);
@@ -343,11 +344,10 @@ public sealed class AgentEnvironmentArchitectureTests
         Assert.DoesNotContain("actions/checkout", dependabotAutoMergeWorkflow, StringComparison.Ordinal);
         Assert.DoesNotContain("pull_request_target:", dependabotAutoMergeWorkflow, StringComparison.Ordinal);
 
-        var ciInfrastructureWorkflow = Read(".github/workflows/ci-infrastructure.yml");
         Assert.Contains("pull_request:", ciInfrastructureWorkflow, StringComparison.Ordinal);
         Assert.Contains("paths:", ciInfrastructureWorkflow, StringComparison.Ordinal);
         Assert.Equal(
-            2,
+            1,
             ciInfrastructureWorkflow.Split("'tests/Directory.Build.props'", StringSplitOptions.None).Length - 1);
         Assert.Contains("tools/DownKyi.CentralTestRunner/**", ciInfrastructureWorkflow, StringComparison.Ordinal);
         Assert.Contains("tools/DownKyi.ProcessSupervision/**", ciInfrastructureWorkflow, StringComparison.Ordinal);
@@ -644,7 +644,6 @@ public sealed class AgentEnvironmentArchitectureTests
                 var expectedMinutes = (Path.GetFileName(workflowPath), currentJob) switch
                 {
                     ("build.yml", "build-macos") => "240",
-                    ("macos-adhoc-package.yml", "package-validation") => "180",
                     _ => "20"
                 };
                 var timeoutLine = Assert.Single(jobLines, line => timeout.IsMatch(line));

@@ -3,6 +3,7 @@ name: CI infrastructure tests
 on:
   pull_request:
     paths:
+      - '.github/actions/**'
       - '.github/workflows/ci-infrastructure.yml'
       - '.github/workflows/quality.yml'
       - 'Directory.Build.*'
@@ -31,43 +32,62 @@ on:
       - 'tests/TestInfrastructure/**'
       - 'tools/DownKyi.CentralTestRunner/**'
       - 'tools/DownKyi.ProcessSupervision/**'
-  push:
-    branches:
-      - main
-    paths:
-      - '.github/workflows/ci-infrastructure.yml'
-      - '.github/workflows/quality.yml'
-      - 'Directory.Build.*'
-      - 'Directory.Packages.props'
-      - 'global.json'
-      - 'tests/Directory.Build.props'
-      - 'docs/testing/test-runner-policy.json'
-      - 'script/ci-infrastructure-test-slices.ps1'
-      - 'script/classify-resource-contention.ps1'
-      - 'script/test-ci-infrastructure.ps1'
-      - 'script/test-project.ps1'
-      - 'script/test-project-runner.ps1'
-      - 'script/test-solution.ps1'
-      - 'tests/**/*.csproj'
-      - 'tests/DownKyi.Architecture.Tests/CentralTestRunnerCancellationComponentTests.cs'
-      - 'tests/DownKyi.Architecture.Tests/CentralTestRunnerCommandTests.cs'
-      - 'tests/DownKyi.Architecture.Tests/CentralTestRunnerFixtureDispatchTests.cs'
-      - 'tests/DownKyi.Architecture.Tests/CentralTestRunnerRecorderTests.cs'
-      - 'tests/DownKyi.Architecture.Tests/FlightRecorderOutputTests.cs'
-      - 'tests/DownKyi.Architecture.Tests/PowerShellTestEntryContractTests.cs'
-      - 'tests/DownKyi.Windows.Tests/TargetedResourceForensicsWindowsTests.cs'
-      - 'tests/DownKyi.Windows.Tests/TestDataIsolationFixtureWindowsTests.cs'
-      - 'tests/DownKyi.Windows.Tests/WindowsEtwResourceFlightRecorderTests.cs'
-      - 'tests/DownKyi.Windows.Tests/WindowsProcessSnapshotTests.cs'
-      - 'tests/PlatformShared/OwnedProcessScopePlatformTests.cs'
-      - 'tests/TestInfrastructure/**'
-      - 'tools/DownKyi.CentralTestRunner/**'
-      - 'tools/DownKyi.ProcessSupervision/**'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
 
 jobs:
+  local-actions:
+    name: Upload local action fixture
+    runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
+    timeout-minutes: 5
+    outputs:
+      artifact-name: ${{ steps.fixture.outputs.artifact-name }}
+    steps:
+      - name: Checkout
+        uses: $/.github/actions/checkout
+      - name: Create local-action round-trip fixture
+        id: fixture
+        shell: pwsh
+        run: |
+          $fixturePath = Join-Path $env:RUNNER_TEMP 'downkyi-local-action-fixture.txt'
+          Set-Content -LiteralPath $fixturePath -Value 'downkyi-local-action-round-trip' -NoNewline
+          'artifact-name=local-action-round-trip-${{ github.run_id }}-${{ github.run_attempt }}' | Add-Content -LiteralPath $env:GITHUB_OUTPUT
+      - name: Upload local-action round-trip fixture
+        uses: $/.github/actions/upload-artifact
+        with:
+          name: ${{ steps.fixture.outputs.artifact-name }}
+          path: ${{ runner.temp }}/downkyi-local-action-fixture.txt
+          if-no-files-found: error
+          retention-days: 1
+
+  local-action-download:
+    name: Download and verify local action fixture
+    needs: local-actions
+    runs-on: ${{ vars.UBUNTU_X64_RUNNER }}
+    timeout-minutes: 5
+    steps:
+      - name: Download local-action round-trip fixture
+        uses: $/.github/actions/download-artifact
+        with:
+          name: ${{ needs.local-actions.outputs.artifact-name }}
+          path: ${{ runner.temp }}/downkyi-local-action-round-trip
+      - name: Verify local-action round trip
+        shell: pwsh
+        run: |
+          $downloadedPath = Join-Path $env:RUNNER_TEMP 'downkyi-local-action-round-trip/downkyi-local-action-fixture.txt'
+          if (-not (Test-Path -LiteralPath $downloadedPath -PathType Leaf)) {
+            throw 'The local upload/download action round trip did not produce the fixture.'
+          }
+          if ((Get-Content -LiteralPath $downloadedPath -Raw) -cne 'downkyi-local-action-round-trip') {
+            throw 'The local upload/download action round trip changed the fixture content.'
+          }
+
   test:
     name: CI infrastructure (${{ matrix.check_name }})
     runs-on: ${{ matrix.runner }}

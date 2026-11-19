@@ -25,6 +25,9 @@ Product PRs do not update this file merely because their work state changed.
   selected, that commit remains the release subject while later work may advance
   `main`; publication requires the subject to remain in `main`'s first-parent
   history as an exact integration head, not to remain the current `main` head.
+- The tagged Build run owns the complete package and downloaded-artifact gates
+  before publication. A manual Build is an optional candidate rehearsal, not a
+  mandatory second packaging run. Every publishing run validates its own outputs.
 - Preserve settings JSON, legacy SQLite, unfinished tasks, GID, partial-file
   maps, completed keys and resume fixtures unless an approved migration with
   rollback evidence explicitly changes them.
@@ -42,7 +45,9 @@ Product PRs do not update this file merely because their work state changed.
   Published assets are never replaced or deleted; an interrupted draft is
   inspected and removed before a clean rerun.
 - Existing tags are immutable. Do not change `version.txt`, create a tag or
-  publish a release while any release blocker or required gate is unresolved.
+  publish a release while any known release blocker or required PR gate is
+  unresolved. A failed tagged Build must block publication; never move its tag
+  to bypass a failed gate.
 
 ## Verification
 

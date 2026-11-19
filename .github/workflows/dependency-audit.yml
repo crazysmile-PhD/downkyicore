@@ -2,22 +2,13 @@ name: Dependency policy
 
 on:
   pull_request:
-  push:
-    branches:
-      - main
-    paths:
-      - '.github/workflows/dependency-audit.yml'
-      - 'src/**/*.csproj'
-      - 'tests/**/*.csproj'
-      - 'tools/**/*.csproj'
-      - 'benchmarks/**/*.csproj'
-      - 'Directory.Build.props'
-      - 'Directory.Packages.props'
-      - 'DownKyi.sln'
-      - 'global.json'
   schedule:
     - cron: '31 3 * * 3'
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read

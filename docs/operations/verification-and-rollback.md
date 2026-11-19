@@ -56,37 +56,81 @@ pwsh ./script/scan-secrets.ps1
 的聯集；workflow 的 path filter 以整個 diff 判斷，並非逐檔隔離 job。
 
 所有 PR 均執行 `Strict PR CI` 的 Format check 與三平台 Build and test、
-`CodeQL` 的 Analyze C#、`Dependency policy`。這六個 job 是目前 `main`
-branch protection 的 required checks，均無 PR path filter 或 job-level `if`。
-`Strict PR CI` 的 Format check 還做所有 workflow 的 actionlint 與本地
-upload/download action round trip；FFmpeg 原始碼則由 Build 的六 RID job 驗證。
-`Build`、macOS ad-hoc package 與 CI infrastructure 是額外的
-選擇性驗證，不列為全 PR required checks；把 path-filtered workflow 的
-job 設成 required 會讓沒有觸發該 workflow 的 PR 永久 Pending。反過來，
-不能以 required checks 已綠燈取代本列真正需要的選擇性 job；應查看其
-實際結果。GitHub branch protection 的設定在 repository 外，修改設定後
-須重新核對這個相容性前提。
+`CodeQL` 的 Analyze C#、`Dependency policy`。這六個 job 對應 `main`
+branch protection 的 required checks，名稱不變，均無 PR path filter 或
+job-level `if`。架構測試、嚴格 analyzers、原生平台測試及 actionlint
+仍在 PR 基線；不以預測失敗率選擇或刪減測試。
+
+驗證分為三層：PR 基線、按 owner 路徑觸發的 CI infrastructure／外部來源
+驗證，以及發布 Build。一般 PR 不編譯 FFmpeg、不產生發布包。
+macOS 打包統一由 `build.yml` 負責；不再維護另一份 ad-hoc package workflow。
+本地 upload/download action round trip 移到 CI infrastructure，修改本地
+`.github/actions/**` 時執行一次，不再附加於每張 PR 的格式檢查。
+Round trip 由上傳 job 成功後再啟動下載 job，覆蓋發布鏈的跨 job 交接契約；
+artifact 名稱從 producer output 傳遞，重跑失敗 consumer 時不自行重算 attempt。
+CI infrastructure 的三平台 slices 保留，仍使用正式 CentralTestRunner。
+
+`Build` 與 CI infrastructure 是選擇性驗證，不列為全 PR required checks；
+把 path-filtered workflow 的 job 設成 required 會讓沒有觸發該 workflow 的
+PR 永久 Pending。不能以 required checks 已綠燈取代確實需要的選擇性 job。
+GitHub branch protection 的設定在 repository 外，修改設定後須重新核對。
 
 | PR 修改類型／代表路徑 | 除所有 PR 基線外，應執行的驗證 | 預期跳過與理由 |
 | --- | --- | --- |
-| 一般文件、`AGENTS.md`、`docs/maintenance.md` | 無額外 job；基線檢查文件及現有測試 | Build 發布鏈、macOS package、CI infrastructure：沒有對應 binary／package／runner 風險。`docs/testing/test-runner-policy.json` 是例外，須跑 CI infrastructure。 |
-| 一般應用程式 `.cs`／XAML，及一般測試 `.cs` | 基線三平台 build/test 與 CodeQL；測試修改由其所屬 test project 執行 | Build 發布鏈與 package matrix：程式變更本身不要求每張 PR 產生九種發布包；推 tag 前仍須 exact-head 手動 Build。CI infrastructure 只在其 path filter 命中時執行。 |
-| runner／測試基礎設施 owner、`quality.yml`、`ci-infrastructure.yml`、相關測試 | `CI infrastructure tests` 三平台 matrix | 發布包 job：runner 風險由專屬 slices 驗證；其餘一般測試仍由基線執行。 |
-| `script/assets/external-assets.json` | Build 的 appimagetool preflight、三平台 release gate 與 package/ARM64 validation | `Pre-release artifacts` 與 Publish release 在 PR 預期跳過；macOS package 不消費 appimagetool。 |
-| `script/ffmpeg-source/**`、`script/ffmpeg.ps1`、`script/ffmpeg.sh`、`build.yml` | Build 的六 RID 原始碼編譯、encoder 驗證與 package gates；required Format check 執行 workflow lint | 原始碼編譯增加六個 runner 的時間與暫存空間，因為這些變更直接影響每個發布包的 FFmpeg。Build 已覆蓋 macOS 的 ad-hoc package，避免重複編譯；`Pre-release artifacts` 與 Publish release 在 PR 預期跳過。 |
-| `install-appimagetool.ps1` | required baseline tests、workflow lint；manifest PR 或正式發布前手動 Build 實測安裝 | 不為 installer 腳本本身啟動九種發布包。 |
-| `script/macos/**`、macOS packaging inputs、`validate-publish-output.ps1` | macOS ad-hoc package x64／arm64；對應 package／architecture tests 仍在基線 | Build 發布鏈通常跳過；ad-hoc 驗證不宣稱 Developer ID／notarization。其他平台打包腳本（如 `script/pupnet/**`）由基線的現有針對性測試與發布前 Build 驗收，沒有通用 PR package matrix。 |
-| `validate-build-run-artifacts.ps1` 等下載後發布驗證腳本 | 基線中的 `ReleaseSafetyRegressionTests` synthetic inventory／package validator fixtures、`ReleaseWorkflowArchitectureTests` wiring；發布前手動 Build 驗證真實下載包 | PR Build 發布鏈預期跳過；不為腳本修改啟動九種 package build。 |
-| 其他 GitHub Actions 配置／本地 `.github/actions/**` | 基線 test／format（包含 actionlint 與 action round trip）；若改到某個選擇性 workflow，執行該 workflow 的現有 PR path filter | 不因所有 Actions 修改而跑 Build；`macos-adhoc-package.yml` 命中 macOS package。變更未納入某專屬 filter 時，需檢查基線與 focused tests 是否已覆蓋。 |
-
-事件與依賴：
+| 文件、一般 `.cs`／XAML、一般測試、`version.txt` | 無額外 workflow | 不產生九種發布包；tag Build 完成全套驗收後才發布。`docs/testing/test-runner-policy.json` 依 infrastructure filter 處理。 |
+| runner／測試基礎設施 owner、`quality.yml`、`ci-infrastructure.yml`、相關測試與共用 build inputs | CI infrastructure 三平台 slices 與 action round trip | 發布包不屬於 runner 驗證；基線仍執行其餘測試。觸發路徑只維護在 infrastructure 的 PR filter。 |
+| `.github/actions/**` | CI infrastructure（含單一 Ubuntu action round trip） | wrapper 修改的動態契約在此驗證；不因此啟動所有發布包。 |
+| `script/assets/external-assets.json`、`script/ffmpeg-source/**`、`script/ffmpeg.ps1`、`script/ffmpeg.sh` | Build preflight、三平台 release gate、六 RID 原始碼編譯、encoder 與 package／ARM64 validation | 外部來源更新會進入自動合併流程，保留實際編譯驗證。PR 的下載後發布驗收與 Publish release 仍跳過。 |
+| `script/macos/**`、`script/pupnet/**`、`validate-publish-output.ps1` 等 packaging inputs | 基線中的 package／architecture fixtures 與原生平台測試；需要真實包時在該 head 手動 Build | 完整打包集中到 tag，手動候選預演可選；打包缺陷可能延後到手動 Build 才被發現，不能將 PR 基線視為成品驗收。 |
+| `validate-build-run-artifacts.ps1` 等發布驗證腳本、`build.yml` | 基線的 ReleaseSafetyRegressionTests、ReleaseWorkflowArchitectureTests 與 actionlint；tag Build 驗證真實下載包，需要提前驗收時手動 Build | 不為 workflow 配線或 validator 修改自動啟動九種發布包。 |
+| 其他 GitHub Actions 配置 | 基線測試與 actionlint；若命中 infrastructure 或 Build 的 PR filter，執行對應層 | 不因所有 Actions 修改而啟動發布鏈。 |
 
 | 事件 | 應執行 | 預期跳過／重跑條件 |
 | --- | --- | --- |
-| PR（目標 `main`） | 六個 required checks；選擇性 workflow 依 changed paths；只有 production manifest 變更會在 PR 啟動 Build 的 preflight 與 package chain | PR 的 `pre-release-validation`、Publish release 永遠不執行。修正造成缺席的 path、`if` 或 `needs` 後，以新 head 重跑 PR。 |
-| push 到 `main` | Strict PR CI、CodeQL；Dependency policy、CI infrastructure 仍依各自 push paths | Build 沒有一般 branch push；macOS ad-hoc 沒有 push。需要實際包時手動在 exact head 執行 Build。 |
-| `workflow_dispatch` | Build 執行完整 release gate／package／六 scope 下載驗收但不發布；FFmpeg updater、macOS ad-hoc、Dependency policy 各有自己的手動入口 | 手動 Build 在 exact head 執行；FFmpeg 更新需從 updater workflow 啟動。 |
-| `v*` tag push | Build preflight、三平台 release gate、所有 package 與 ARM64 validation、六 scope 下載驗收、Publish release；tag/version/subject 門檻適用 | 任何必要上游失敗／跳過都應阻斷下游與發布，不可視作安全綠燈。 |
+| PR | 六個 required checks；選擇性 workflow 依 changed paths | 新 head 取消同一 workflow 的舊 PR run；不取消其他 PR。Build 的 pre-release-validation 與 Publish release 永遠不在 PR 執行。 |
+| push 到 `main` | CodeQL（更新預設分支安全掃描基線） | 不重跑已在 PR 執行的 Strict PR CI、Dependency policy、CI infrastructure。合併結果不再自動重測；需要驗證整合 head 時手動 Strict PR CI 或 Build。應經受保護的 PR 合併。 |
+| `workflow_dispatch` | Build 執行完整 release gate（含 Linux 的 format／actionlint）、所有 package、六 scope 下載驗收；Strict PR CI、CI infrastructure、Dependency policy 各可獨立手動驗證 | Build 的手動執行不發布。需要 runner 自測時手動 infrastructure；不需要為此產生包。 |
+| `schedule` | CodeQL、Dependency policy 與外部來源 updater 依原排程 | 保留對新漏洞、淘汰套件與外部來源更新的偵測。 |
+| `v*` tag push | Build preflight、三平台完整 release gate、所有 package／ARM64 validation、六 scope 下載驗收、Publish release | tag/version/subject 門檻全部適用；任何必要上游失敗／跳過均阻斷發布。 |
+
+Concurrency 只取消同一 PR 的過時 run；手動與 tag run 以 `github.run_id`
+建立獨立 group，不會因新的 PR、tag 或預演取消正在進行的發布。
+
+### 成本判斷與研究依據
+
+同時衡量等待時間（wall time）與 runner 工作量（各 job 時間總和），不把
+縮短某個測試步驟等同於縮短整條 pipeline。以下是
+[發布準備 PR 的 Strict PR CI](https://github.com/crazysmile-PhD/downkyicore/actions/runs/44254104039)
+及[原先獨立 macOS package](https://github.com/crazysmile-PhD/downkyicore/actions/runs/44254104092) 的 2026-11-18 步驟資料；
+這是改動前樣本，不是改動後效能保證。
+
+| 工作 | job 時間 | 主要成本 |
+| --- | --- | --- |
+| Format check | 123 秒 | format 82 秒；artifact round trip 的上傳／下載各 1 秒 |
+| 三平台 build/test | Windows 271、Ubuntu 288、macOS 308 秒 | 嚴格 build 83–144 秒、測試 99–149 秒 |
+| macOS ad-hoc package | arm64 745、x64 1375 秒 | app／FFmpeg build 分別 550、1104 秒 |
+
+移除獨立 macOS package 可在這類 PR 省下約 35.3 runner 分鐘，原本約
+23 分鐘的額外等待回到約 5 分鐘基線。一般程式 PR 原本就不跑此 package，
+不能宣稱它們也有同等加速。移除一次 main 的 quality 重跑，依相同樣本
+約省 16.5 runner 分鐘；CodeQL 的 main 掃描仍保留。action round trip 的
+移動是責任歸屬整理，不是主要效能收益。
+
+同一 release subject 的[手動 Build](https://github.com/crazysmile-PhD/downkyicore/actions/runs/44257075416)
+與 [tag Build](https://github.com/crazysmile-PhD/downkyicore/actions/runs/44261274382)
+另分別耗時約 31、39 分鐘。tag run 已在 Publish release 前執行完整 gates，
+因此不再要求固定先跑一次手動 Build；需要預先檢查真實包時才預演。
+手動預演不會發布，tag run 也不重用其他 run 的未驗證產物。
+
+- Elbaum、Rothermel、Penix，FSE 2014，
+  [Techniques for improving regression testing in continuous integration development environments](https://research.google/pubs/techniques-for-improving-regression-testing-in-continuous-integration-development-environments/)：
+  將提交前的測試選擇與提交後的驗證排序分開處理。本專案採用分層原則，
+  不移植論文演算法，也不套用其效能數字。
+- Jin、Servant，ICSE 2021，
+  [What helped, and what did not? An Evaluation of the Strategies to Improve Continuous Integration](https://jxianhao.github.io/files/ICSE21.pdf)：
+  比較 CI 成本與失敗回饋等不同指標，指出略過測試未必能省下 build 準備成本，
+  且選擇策略有延後失敗觀察的代價。因此先移除重複整體執行與非日常打包，
+  保留 PR 的架構與三平台測試；完整發布驗收是明確的後段邊界。
 
 真正的錯誤跳過包括：path filter 漏掉已證明必需的 owner、必需 job 的 `if`
 與事件不相容、`needs` 的上游在該事件不會成功、或 branch protection
@@ -135,8 +179,11 @@ Core 只保存外部 binary catalog，不得選擇平台內容或設定 SDK
 `RuntimeIdentifier`。exe 專案必須從明確的 publish RID 建立 asset RID，
 沒有 publish RID 時才可依本機 host 提供開發 fallback，並直接把對應
 catalog 檔案加入 output/publish；自訂 RID 不得跨 ProjectReference。
-推 tag 前手動執行 `build.yml`；同一次 run 的 `Pre-release artifacts` matrix
-會下載完整 artifact inventory，不重新 build，重算每個 package sidecar，並在
+正式發布以 tag 的 `build.yml` 作為單一完整驗收與發布鏈。手動 Build 是可選的
+候選預演，用於需要在 tag 前檢查真實包的修改，不要求每次發布先完整打包
+兩遍；已知 blocker 與必要 PR 檢查仍須在 tag 前解決。同一次 run 的
+`Pre-release artifacts` matrix 下載完整 artifact inventory，不重新 build，
+重算每個 package sidecar，並在
 對應原生平台重新檢查 manifest、版本、必要 binary、Fluent theme 與使用者
 資料排除。`Publish release` 也會先以相同驗證腳本再次整理並核對下載內容，
 接著才以組裝腳本建立公開集合，且只在整個 matrix 成功後執行：
