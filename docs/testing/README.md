@@ -41,7 +41,9 @@ runner、recorder、process cleanup 與 test-fixture 自測；這些 class slice
 位於 `script/ci-infrastructure-test-slices.ps1`，並由
 `script/test-ci-infrastructure.ps1` 透過同一個 CentralTestRunner 執行。
 `.github/workflows/ci-infrastructure.yml` 只在上述工具、script、fixture 或測試 owner
-路徑改變時執行三平台 slice。未指定 `-ExcludeCiInfrastructure` 的正式本機
+路徑及本地 `.github/actions/**` 改變時執行三平台 slice，並在單一 Ubuntu job
+驗證 upload/download action round trip；也可手動觸發，不在合併後重跑。
+未指定 `-ExcludeCiInfrastructure` 的正式本機
 `test-solution.ps1` 仍執行完整測試集合。
 
 ## Lightweight Flight Recorder
