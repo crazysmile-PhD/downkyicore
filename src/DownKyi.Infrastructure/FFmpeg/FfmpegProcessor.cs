@@ -77,7 +77,6 @@ public sealed class FfmpegProcessor : IFfmpegMediaMuxer
     }
 
     public async Task<FfmpegOperationResult> MergeMediaAsync(
-        VideoApplicationSettings videoSettings,
         string? audio,
         string? video,
         string destination,
@@ -86,7 +85,6 @@ public sealed class FfmpegProcessor : IFfmpegMediaMuxer
         string? cover = null,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(videoSettings);
         var audioPath = !string.IsNullOrWhiteSpace(audio) ? audio : null;
         var videoPath = !string.IsNullOrWhiteSpace(video) ? video : null;
         if (audioPath == null && videoPath == null)
@@ -106,8 +104,6 @@ public sealed class FfmpegProcessor : IFfmpegMediaMuxer
                             audioPath,
                             videoPath,
                             temporaryOutput,
-                            videoSettings.IsTranscodingAacToMp3 == AllowStatus.Yes
-                                && string.Equals(Path.GetExtension(destination), ".mp3", StringComparison.OrdinalIgnoreCase),
                             embeddedAudioMode,
                             normalizedCover),
                         destination,

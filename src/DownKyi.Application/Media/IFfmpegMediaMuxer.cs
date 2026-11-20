@@ -22,7 +22,6 @@ public interface IFfmpegMediaMuxer
         CancellationToken cancellationToken = default);
 
     Task<FfmpegOperationResult> MergeMediaAsync(
-        VideoApplicationSettings videoSettings,
         string? audio,
         string? video,
         string destination,

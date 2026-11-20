@@ -29,7 +29,7 @@ public sealed class DownloadExecutionContextFactoryTests : IDisposable
             Basic = current.Basic with { DownloadFinishedSort = DownloadFinishedSort.Number },
             Video = current.Video with
             {
-                IsTranscodingAacToMp3 = AllowStatus.Yes
+                FfmpegMaxParallelJobs = 1
             },
             Danmaku = current.Danmaku with
             {
@@ -128,7 +128,7 @@ public sealed class DownloadExecutionContextFactoryTests : IDisposable
             Basic = current.Basic with { DownloadFinishedSort = DownloadFinishedSort.DownloadDesc },
             Video = current.Video with
             {
-                IsTranscodingAacToMp3 = AllowStatus.No
+                FfmpegMaxParallelJobs = 2
             },
             Danmaku = current.Danmaku with
             {
@@ -140,7 +140,7 @@ public sealed class DownloadExecutionContextFactoryTests : IDisposable
         });
 
         Assert.Equal(DownloadFinishedSort.DownloadDesc, replacementSettings.Basic.DownloadFinishedSort);
-        Assert.Equal(AllowStatus.No, replacementSettings.Video.IsTranscodingAacToMp3);
+        Assert.Equal(2, replacementSettings.Video.FfmpegMaxParallelJobs);
         Assert.Equal(1280, replacementSettings.Danmaku.ScreenWidth);
         Assert.Equal(720, replacementSettings.Danmaku.ScreenHeight);
         Assert.Equal("replacement-font", replacementSettings.Danmaku.FontName);

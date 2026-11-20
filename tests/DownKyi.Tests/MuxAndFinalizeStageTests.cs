@@ -1,4 +1,3 @@
-using DownKyi.Application.Settings;
 using DownKyi.Domain.Downloads;
 using DownKyi.Services.Download;
 using static DownKyi.Tests.DownloadPipelineTestSupport;
@@ -7,6 +6,40 @@ namespace DownKyi.Tests;
 
 public sealed class MuxAndFinalizeStageTests
 {
+    [Theory]
+    [InlineData(30280, ".mp3", false)]
+    [InlineData(30280, ".aac", false)]
+    [InlineData(30280, ".m4a", true)]
+    [InlineData(30251, ".m4a", false)]
+    [InlineData(30251, ".flac", true)]
+    public async Task ResumeOnlyReusesStagedMediaInTheExpectedOriginalCodecFormat(
+        int audioCodecId,
+        string extension,
+        bool expectedReuse)
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"downkyi-audio-resume-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            using var settings = new TestSettingsStore();
+            var context = CreateContext(
+                settings.Store.Current,
+                requestedContent: DownloadContentSelection.None with { Audio = true },
+                audioCodecId: audioCodecId);
+            context.StagingDirectory = directory;
+            var stagedFile = context.WorkingBasePath + extension;
+            await File.WriteAllBytesAsync(stagedFile, [1, 2, 3, 4], TestContext.Current.CancellationToken);
+
+            Assert.Equal(expectedReuse, context.TryReuseStagedMedia());
+            Assert.Equal(expectedReuse ? stagedFile : null, context.OutputMedia);
+            Assert.True(File.Exists(stagedFile));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     [Fact]
     public void OutputLayoutSelectsDashPathFromRequestedStreamShape()
     {
@@ -18,38 +51,29 @@ public sealed class MuxAndFinalizeStageTests
             DownloadOutputLayout.GetDashMediaPath(
                 videoContext.WorkingBasePath,
                 hasVideo: true,
-                audioCodecId: videoContext.Input.Metadata.AudioCodec.Id,
-                transcodeAacToMp3: videoContext.Input.VideoSettings.IsTranscodingAacToMp3),
+                audioCodecId: videoContext.Input.Metadata.AudioCodec.Id),
             StringComparison.Ordinal);
 
         var audioContext = CreateContext(
             settings.Store.Current,
             requestedContent: DownloadContentSelection.None with { Audio = true });
         Assert.EndsWith(
-            ".mp3",
+            ".m4a",
             DownloadOutputLayout.GetDashMediaPath(
                 audioContext.WorkingBasePath,
                 hasVideo: false,
-                audioCodecId: audioContext.Input.Metadata.AudioCodec.Id,
-                transcodeAacToMp3: audioContext.Input.VideoSettings.IsTranscodingAacToMp3),
+                audioCodecId: audioContext.Input.Metadata.AudioCodec.Id),
             StringComparison.Ordinal);
 
         var losslessContext = CreateContext(
-            settings.Store.Current with
-            {
-                Video = settings.Store.Current.Video with
-                {
-                    IsTranscodingAacToMp3 = AllowStatus.No
-                }
-            },
+            settings.Store.Current,
             audioCodecId: 30251);
         Assert.EndsWith(
             ".flac",
             DownloadOutputLayout.GetDashMediaPath(
                 losslessContext.WorkingBasePath,
                 hasVideo: false,
-                audioCodecId: losslessContext.Input.Metadata.AudioCodec.Id,
-                transcodeAacToMp3: losslessContext.Input.VideoSettings.IsTranscodingAacToMp3),
+                audioCodecId: losslessContext.Input.Metadata.AudioCodec.Id),
             StringComparison.Ordinal);
     }
 

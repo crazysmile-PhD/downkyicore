@@ -12,7 +12,6 @@ public sealed class FfmpegCommandFactoryTests
             audioFile: null,
             videoFile: "segment.flv",
             outputFile: "output.mp4",
-            transcodeAudioToMp3: false,
             embeddedAudioMode: FfmpegEmbeddedAudioMode.Optional);
 
         Assert.Contains("0:a?", command.Arguments);
@@ -27,7 +26,6 @@ public sealed class FfmpegCommandFactoryTests
             audioFile: null,
             videoFile: "segment.flv",
             outputFile: "output.mp4",
-            transcodeAudioToMp3: false,
             embeddedAudioMode: FfmpegEmbeddedAudioMode.Excluded);
 
         Assert.Contains("-an", command.Arguments);
@@ -42,7 +40,6 @@ public sealed class FfmpegCommandFactoryTests
             audioFile: null,
             videoFile: "segment.flv",
             outputFile: "output.mp4",
-            transcodeAudioToMp3: false,
             embeddedAudioMode: FfmpegEmbeddedAudioMode.Required);
 
         Assert.Contains("0:a:0", command.Arguments);
@@ -100,7 +97,6 @@ public sealed class FfmpegCommandFactoryTests
             audioFile: "audio.m4s",
             videoFile: "video.m4s",
             outputFile: "merged.mp4",
-            transcodeAudioToMp3: false,
             embeddedAudioMode: FfmpegEmbeddedAudioMode.Required);
         var concat = FfmpegCommandFactory.BuildConcat(
             "segments.txt",
@@ -155,7 +151,6 @@ public sealed class FfmpegCommandFactoryTests
             audioFile: "audio.m4s",
             videoFile: "video.m4s",
             outputFile: "output.mp4",
-            transcodeAudioToMp3: false,
             embeddedAudioMode: FfmpegEmbeddedAudioMode.Required,
             coverFile: "normalized.jpg");
         var concat = FfmpegCommandFactory.BuildConcat(
@@ -185,7 +180,6 @@ public sealed class FfmpegCommandFactoryTests
             audioFile: "audio.m4s",
             videoFile: "video.m4s",
             outputFile: "output.mp4",
-            transcodeAudioToMp3: false,
             embeddedAudioMode: FfmpegEmbeddedAudioMode.Required,
             coverFile: "normalized.jpg");
         var concat = FfmpegCommandFactory.BuildConcat(

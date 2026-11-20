@@ -30,7 +30,6 @@ public sealed class FfmpegProcessorMergeTests : IDisposable
             runner);
 
         var result = await processor.MergeMediaAsync(
-            _settings.Current.Video,
             audio,
             video,
             Path.Combine(_directory, "output.mp4"),
@@ -56,7 +55,6 @@ public sealed class FfmpegProcessorMergeTests : IDisposable
             runner);
 
         var result = await processor.MergeMediaAsync(
-            _settings.Current.Video,
             audio,
             video,
             Path.Combine(_directory, "unavailable-output.mp4"),
@@ -88,7 +86,6 @@ public sealed class FfmpegProcessorMergeTests : IDisposable
             runner);
 
         var result = await processor.MergeMediaAsync(
-            _settings.Current.Video,
             audio,
             video,
             destination,
@@ -119,7 +116,6 @@ public sealed class FfmpegProcessorMergeTests : IDisposable
             runner);
 
         var result = await processor.MergeMediaAsync(
-            _settings.Current.Video,
             audio,
             video,
             Path.Combine(_directory, "cover-failure-output.mp4"),
@@ -150,7 +146,6 @@ public sealed class FfmpegProcessorMergeTests : IDisposable
             runner);
 
         var result = await processor.MergeMediaAsync(
-            _settings.Current.Video,
             audio,
             video,
             Path.Combine(_directory, "cover-output-failure.mp4"),
@@ -182,7 +177,6 @@ public sealed class FfmpegProcessorMergeTests : IDisposable
             runner);
 
         var result = await processor.MergeMediaAsync(
-            _settings.Current.Video,
             audio,
             video,
             output,
@@ -211,7 +205,6 @@ public sealed class FfmpegProcessorMergeTests : IDisposable
             runner);
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => processor.MergeMediaAsync(
-            _settings.Current.Video,
             audio,
             video,
             Path.Combine(_directory, "cover-cancel-output.mp4"),

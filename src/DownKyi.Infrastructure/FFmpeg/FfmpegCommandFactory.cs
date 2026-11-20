@@ -9,7 +9,6 @@ internal static class FfmpegCommandFactory
         string? audioFile,
         string? videoFile,
         string outputFile,
-        bool transcodeAudioToMp3,
         FfmpegEmbeddedAudioMode embeddedAudioMode,
         string? coverFile = null)
     {
@@ -51,10 +50,6 @@ internal static class FfmpegCommandFactory
             {
                 arguments.AddRange(["-map", "0:a?", "-c", "copy"]);
             }
-        }
-        else if (transcodeAudioToMp3)
-        {
-            arguments.AddRange(["-vn", "-c:a", "libmp3lame", "-b:a", "320k"]);
         }
         else
         {

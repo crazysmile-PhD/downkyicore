@@ -294,7 +294,6 @@
     <system:String x:Key="FirstVideoQuality">優先する画質：</system:String>
     <system:String x:Key="FirstAudioQuality">優先する音質：</system:String>
     <system:String x:Key="IsTranscodingFlvToMp4">ダウンロードした FLV 動画を MP4 に変換</system:String>
-    <system:String x:Key="IsTranscodingAacToMp3">ダウンロードした AAC 音声を MP3 に変換</system:String>
     <system:String x:Key="FfmpegHardwareAcceleration">FFmpeg ハードウェアアクセラレーション：</system:String>
     <system:String x:Key="FfmpegHardwareAccelerationTip">再エンコードが必要な処理でのみ使用します。通常の音声と動画の結合では、可能な限り無劣化でストリームをコピーします。</system:String>
     <system:String x:Key="FfmpegMaxParallelJobs">FFmpeg の最大並列タスク:</system:String>

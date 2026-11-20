@@ -294,7 +294,6 @@
     <system:String x:Key="FirstVideoQuality">優先下載的影片畫質：</system:String>
     <system:String x:Key="FirstAudioQuality">優先下載的影片音質：</system:String>
     <system:String x:Key="IsTranscodingFlvToMp4">下載 FLV 影片後轉換為 MP4</system:String>
-    <system:String x:Key="IsTranscodingAacToMp3">下載 AAC 音訊後轉換為 MP3</system:String>
     <system:String x:Key="FfmpegHardwareAcceleration">FFmpeg 硬體加速：</system:String>
     <system:String x:Key="FfmpegHardwareAccelerationTip">僅用於需要重新編碼的步驟。一般音訊與影片合併時會優先無損複製，不會強制轉碼。</system:String>
     <system:String x:Key="FfmpegMaxParallelJobs">FFmpeg 同時執行任務上限：</system:String>

@@ -66,14 +66,6 @@ internal partial class VideoViewModel
         set => SetProperty(ref _isTranscodingFlvToMp4, value);
     }
 
-    private bool _isTranscodingAacToMp3;
-
-    public bool IsTranscodingAacToMp3
-    {
-        get => _isTranscodingAacToMp3;
-        set => SetProperty(ref _isTranscodingAacToMp3, value);
-    }
-
     private IReadOnlyList<FfmpegHardwareAccelerationItem> _ffmpegHardwareAccelerations =
         Array.Empty<FfmpegHardwareAccelerationItem>();
 

@@ -8,6 +8,45 @@ namespace DownKyi.Infrastructure.Tests;
 
 public sealed class SettingsStoreTests
 {
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public async Task RemovedMp3SettingIsIgnoredAndOmittedWithoutChangingOtherPreferences(int legacyValue)
+    {
+        var directory = CreateTestDirectory();
+        var settingsPath = Path.Combine(directory, "settings.json");
+        var source = $$$"""
+            {"SchemaVersion":1,"Video":{"IsTranscodingAacToMp3":{{{legacyValue}}},"Quality":80,"AudioQuality":30251,"FfmpegMaxParallelJobs":3}}
+            """;
+        try
+        {
+            await File.WriteAllTextAsync(settingsPath, source, TestContext.Current.CancellationToken);
+            using (var store = new SettingsStore(settingsPath))
+            {
+                store.Update(settings => settings with
+                {
+                    Basic = settings.Basic with { IsListenClipboard = AllowStatus.No }
+                });
+                await store.FlushAsync(TestContext.Current.CancellationToken);
+                using var document = JsonDocument.Parse(await File.ReadAllTextAsync(
+                    settingsPath,
+                    TestContext.Current.CancellationToken));
+                Assert.False(document.RootElement.GetProperty("Video").TryGetProperty("IsTranscodingAacToMp3", out _));
+            }
+
+            using var reopened = new SettingsStore(settingsPath);
+            Assert.Equal(80, reopened.Current.Video.Quality);
+            Assert.Equal(30251, reopened.Current.Video.AudioQuality);
+            Assert.Equal(3, reopened.Current.Video.FfmpegMaxParallelJobs);
+            Assert.Equal(AllowStatus.No, reopened.Current.Basic.IsListenClipboard);
+        }
+        finally
+        {
+            DeleteDirectory(directory);
+        }
+    }
+
     [Fact]
     public void NewStoreInitializesSentinelDefaultsWithoutBehaviorGetters()
     {

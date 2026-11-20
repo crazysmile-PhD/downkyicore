@@ -29,7 +29,6 @@ public sealed class FfmpegCommitBoundaryTests : IDisposable
             new SuccessfulOutputRunner());
 
         var result = await processor.MergeMediaAsync(
-            _settings.Current.Video,
             audio,
             video,
             output,
