@@ -10,12 +10,12 @@ namespace DownKyi.Services.Download;
 internal static class DownloadOutputLayout
 {
     private const int FlacAudioCodecId = 30251;
+    private const int DolbyAudioCodecId = 30250;
 
     public static string GetDashMediaPath(
         string outputBasePath,
         bool hasVideo,
-        int audioCodecId,
-        AllowStatus transcodeAacToMp3)
+        int audioCodecId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(outputBasePath);
         if (hasVideo)
@@ -23,14 +23,13 @@ internal static class DownloadOutputLayout
             return outputBasePath + ".mp4";
         }
 
-        if (transcodeAacToMp3 == AllowStatus.Yes)
+        // The M4A (ipod) muxer accepts AAC, but not the Dolby E-AC-3 stream.
+        return outputBasePath + (audioCodecId switch
         {
-            return outputBasePath + ".mp3";
-        }
-
-        return audioCodecId == FlacAudioCodecId
-            ? outputBasePath + ".flac"
-            : outputBasePath + ".aac";
+            FlacAudioCodecId => ".flac",
+            DolbyAudioCodecId => ".mp4",
+            _ => ".m4a"
+        });
     }
 
     public static string GetDurlMediaPath(string outputBasePath)
@@ -42,17 +41,14 @@ internal static class DownloadOutputLayout
     public static IReadOnlyList<string> GetReusableStagedMediaPaths(
         string outputBasePath,
         bool needsVideo,
-        bool needsAudio)
+        bool needsAudio,
+        int audioCodecId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(outputBasePath);
         return needsVideo
             ? [outputBasePath + ".mp4"]
             : needsAudio
-                ? [
-                    outputBasePath + ".mp3",
-                    outputBasePath + ".aac",
-                    outputBasePath + ".flac"
-                ]
+                ? [GetDashMediaPath(outputBasePath, hasVideo: false, audioCodecId)]
                 : [];
     }
 
@@ -132,6 +128,7 @@ internal static class DownloadOutputLayout
 
     public static bool IsAudioExtension(string extension) =>
         extension.Equals(".mp3", StringComparison.OrdinalIgnoreCase)
+        || extension.Equals(".m4a", StringComparison.OrdinalIgnoreCase)
         || extension.Equals(".aac", StringComparison.OrdinalIgnoreCase)
         || extension.Equals(".flac", StringComparison.OrdinalIgnoreCase);
 

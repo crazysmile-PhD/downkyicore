@@ -62,7 +62,6 @@ public sealed record VideoApplicationSettings(
     int Quality,
     int AudioQuality,
     AllowStatus IsTranscodingFlvToMp4,
-    AllowStatus IsTranscodingAacToMp3,
     FfmpegHardwareAcceleration FfmpegHardwareAcceleration,
     int FfmpegMaxParallelJobs,
     string SaveVideoRootPath,

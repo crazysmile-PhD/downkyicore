@@ -82,7 +82,6 @@ internal static class ApplicationSettingsValidator
             Quality = settings.Video.Quality <= 0 ? Corrected("Video.Quality", 120, corrections) : settings.Video.Quality,
             AudioQuality = settings.Video.AudioQuality <= 0 ? Corrected("Video.AudioQuality", 30280, corrections) : settings.Video.AudioQuality,
             IsTranscodingFlvToMp4 = AllowValue(settings.Video.IsTranscodingFlvToMp4, AllowStatus.Yes, "Video.IsTranscodingFlvToMp4", corrections),
-            IsTranscodingAacToMp3 = AllowValue(settings.Video.IsTranscodingAacToMp3, AllowStatus.Yes, "Video.IsTranscodingAacToMp3", corrections),
             FfmpegHardwareAcceleration = EnumValueExcept(
                 settings.Video.FfmpegHardwareAcceleration,
                 FfmpegHardwareAcceleration.NotSet,

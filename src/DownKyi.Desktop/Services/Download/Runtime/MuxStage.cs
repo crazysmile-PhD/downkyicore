@@ -66,10 +66,8 @@ internal sealed class MuxStage : IDownloadPipelineStage
         var finalFile = DownloadOutputLayout.GetDashMediaPath(
             context.WorkingBasePath,
             context.VideoFile != null,
-            context.Input.Metadata.AudioCodec.Id,
-            context.Input.VideoSettings.IsTranscodingAacToMp3);
+            context.Input.Metadata.AudioCodec.Id);
         var result = await _ffmpegProcessor.MergeMediaAsync(
-            context.Input.VideoSettings,
             context.AudioFile,
             context.VideoFile,
             finalFile,
@@ -108,7 +106,6 @@ internal sealed class MuxStage : IDownloadPipelineStage
             await _presenter.ShowMuxingAsync(context, cancellationToken).ConfigureAwait(true);
             var finalFile = DownloadOutputLayout.GetDurlMediaPath(context.WorkingBasePath);
             var mergeResult = await _ffmpegProcessor.MergeMediaAsync(
-                context.Input.VideoSettings,
                 audio: null,
                 video: context.DurlDownloads[0].FilePath,
                 destination: finalFile,

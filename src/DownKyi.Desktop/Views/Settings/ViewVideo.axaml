@@ -126,16 +126,6 @@
                     FontSize="{DynamicResource DownKyiFontSizeBody}"
                     Foreground="{DynamicResource SpaceInk}"
                     IsChecked="{Binding IsTranscodingFlvToMp4, Mode=TwoWay}" />
-                <CheckBox
-                    Name="NameTranscodeAacToMp3"
-                    Margin="0,12,0,0"
-                    HorizontalAlignment="Left"
-                    VerticalAlignment="Center"
-                    Command="{Binding IsTranscodingAacToMp3Command}"
-                    Content="{DynamicResource IsTranscodingAacToMp3}"
-                    FontSize="{DynamicResource DownKyiFontSizeBody}"
-                    Foreground="{DynamicResource SpaceInk}"
-                    IsChecked="{Binding IsTranscodingAacToMp3, Mode=TwoWay}" />
             </StackPanel>
             <TextBlock
                 Name="NameVideoFfmpegTitle"

@@ -80,7 +80,8 @@ internal sealed class DownloadExecutionContext
         foreach (var path in DownloadOutputLayout.GetReusableStagedMediaPaths(
                      WorkingBasePath,
                      NeedsVideo,
-                     NeedsAudio))
+                     NeedsAudio,
+                     Input.Metadata.AudioCodec.Id))
         {
             if (DownloadFileIntegrity.Check(path).IsUsable)
             {

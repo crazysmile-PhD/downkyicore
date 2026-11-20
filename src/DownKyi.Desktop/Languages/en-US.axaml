@@ -294,7 +294,6 @@
     <system:String x:Key="FirstVideoQuality">Preferred video quality:</system:String>
     <system:String x:Key="FirstAudioQuality">Preferred audio quality:</system:String>
     <system:String x:Key="IsTranscodingFlvToMp4">Convert downloaded FLV videos to MP4</system:String>
-    <system:String x:Key="IsTranscodingAacToMp3">Convert downloaded AAC audio to MP3</system:String>
     <system:String x:Key="FfmpegHardwareAcceleration">FFmpeg hardware acceleration:</system:String>
     <system:String x:Key="FfmpegHardwareAccelerationTip">Used only when re-encoding is needed. Normal audio/video muxing copies streams without loss whenever possible.</system:String>
     <system:String x:Key="FfmpegMaxParallelJobs">FFmpeg maximum parallel tasks:</system:String>

@@ -472,7 +472,6 @@ public sealed class MuxFailureRecoveryTests
         }
 
         public Task<FfmpegOperationResult> MergeMediaAsync(
-            VideoApplicationSettings videoSettings,
             string? audio,
             string? video,
             string destination,

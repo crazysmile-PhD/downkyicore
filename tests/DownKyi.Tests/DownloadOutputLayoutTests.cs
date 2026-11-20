@@ -12,21 +12,21 @@ public sealed class DownloadOutputLayoutTests
         "video");
 
     [Theory]
-    [InlineData(true, 30251, AllowStatus.Yes, ".mp4")]
-    [InlineData(false, 30251, AllowStatus.Yes, ".mp3")]
-    [InlineData(false, 30251, AllowStatus.No, ".flac")]
-    [InlineData(false, 30280, AllowStatus.No, ".aac")]
+    [InlineData(true, 30251, ".mp4")]
+    [InlineData(false, 30251, ".flac")]
+    [InlineData(false, 30250, ".mp4")]
+    [InlineData(false, 30280, ".m4a")]
+    [InlineData(false, 30232, ".m4a")]
+    [InlineData(false, 30216, ".m4a")]
     public void DashMediaPathPreservesStreamAndCodecRules(
         bool hasVideo,
         int audioCodecId,
-        AllowStatus transcodeAacToMp3,
         string expectedExtension)
     {
         var path = DownloadOutputLayout.GetDashMediaPath(
             BasePath,
             hasVideo,
-            audioCodecId,
-            transcodeAacToMp3);
+            audioCodecId);
 
         Assert.Equal(BasePath + expectedExtension, path);
     }
@@ -37,25 +37,31 @@ public sealed class DownloadOutputLayoutTests
         Assert.Equal(BasePath + ".mp4", DownloadOutputLayout.GetDurlMediaPath(BasePath));
     }
 
-    [Fact]
-    public void ReusableStagedMediaCandidatesPreserveRequestedStreamPrecedence()
+    [Theory]
+    [InlineData(30280, ".m4a")]
+    [InlineData(30251, ".flac")]
+    [InlineData(30250, ".mp4")]
+    public void ReusableStagedMediaMustMatchTheOriginalCodecOutput(int audioCodecId, string extension)
     {
         Assert.Equal(
             [BasePath + ".mp4"],
             DownloadOutputLayout.GetReusableStagedMediaPaths(
                 BasePath,
                 needsVideo: true,
-                needsAudio: true));
+                needsAudio: true,
+                audioCodecId));
         Assert.Equal(
-            [BasePath + ".mp3", BasePath + ".aac", BasePath + ".flac"],
+            [BasePath + extension],
             DownloadOutputLayout.GetReusableStagedMediaPaths(
                 BasePath,
                 needsVideo: false,
-                needsAudio: true));
+                needsAudio: true,
+                audioCodecId));
         Assert.Empty(DownloadOutputLayout.GetReusableStagedMediaPaths(
             BasePath,
             needsVideo: false,
-            needsAudio: false));
+                needsAudio: false,
+                audioCodecId));
     }
 
     [Theory]
@@ -128,6 +134,7 @@ public sealed class DownloadOutputLayoutTests
     [InlineData(".mp4", true, false, false)]
     [InlineData(".MP3", true, true, false)]
     [InlineData(".aac", true, true, false)]
+    [InlineData(".M4A", true, true, false)]
     [InlineData(".flac", true, true, false)]
     [InlineData(".jpg", false, false, true)]
     [InlineData(".jpeg", false, false, true)]
@@ -151,6 +158,7 @@ public sealed class DownloadOutputLayoutTests
     [Theory]
     [InlineData(DownloadActionClaim.Media, ".mp4", true)]
     [InlineData(DownloadActionClaim.Media, ".flac", true)]
+    [InlineData(DownloadActionClaim.Media, ".m4a", true)]
     [InlineData(DownloadActionClaim.Subtitle, ".srt", true)]
     [InlineData(DownloadActionClaim.Subtitle, "_English.srt", true)]
     [InlineData(DownloadActionClaim.DanmakuAss, ".ass", true)]

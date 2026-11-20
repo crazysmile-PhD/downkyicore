@@ -12,7 +12,6 @@ public class VideoSettings
     public int Quality { get; set; } = -1; // 画质
     public int AudioQuality { get; set; } = -1; // 音质
     public AllowStatus IsTranscodingFlvToMp4 { get; set; } = AllowStatus.None; // 是否将flv转为mp4
-    public AllowStatus IsTranscodingAacToMp3 { get; set; } = AllowStatus.None; // 是否将aac转为mp3
     public FfmpegHardwareAcceleration FfmpegHardwareAcceleration { get; set; } = FfmpegHardwareAcceleration.NotSet;
     public int FfmpegMaxParallelJobs { get; set; } = -1;
     public string? SaveVideoRootPath { get; set; } // 视频保存路径

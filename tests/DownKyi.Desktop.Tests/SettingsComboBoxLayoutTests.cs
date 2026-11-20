@@ -266,8 +266,7 @@ public sealed class SettingsComboBoxLayoutTests
             view.FindControl<ComboBox>("NameAudioQualityList"));
         var transcodeVideo = Assert.IsType<CheckBox>(
             view.FindControl<CheckBox>("NameTranscodeFlvToMp4"));
-        var transcodeAudio = Assert.IsType<CheckBox>(
-            view.FindControl<CheckBox>("NameTranscodeAacToMp3"));
+        Assert.Null(view.FindControl<CheckBox>("NameTranscodeAacToMp3"));
         var hardwareAcceleration = Assert.IsType<ComboBox>(
             view.FindControl<ComboBox>("NameFfmpegHardwareAcceleration"));
         var parallelJobs = Assert.IsType<ComboBox>(
@@ -277,7 +276,6 @@ public sealed class SettingsComboBoxLayoutTests
         postProcessingTitle.Text = "下载后处理";
         ffmpegTitle.Text = "FFmpeg";
         transcodeVideo.Content = "下载FLV视频后转码为mp4";
-        transcodeAudio.Content = "下载AAC音频后转码为mp3";
         var window = new Window
         {
             Content = view,
@@ -302,8 +300,6 @@ public sealed class SettingsComboBoxLayoutTests
             var audioQualityOrigin = Assert.NotNull(audioQuality.TranslatePoint(default, window));
             var transcodeVideoOrigin = Assert.NotNull(
                 transcodeVideo.TranslatePoint(default, window));
-            var transcodeAudioOrigin = Assert.NotNull(
-                transcodeAudio.TranslatePoint(default, window));
             var hardwareOrigin = Assert.NotNull(
                 hardwareAcceleration.TranslatePoint(default, window));
             var parallelOrigin = Assert.NotNull(parallelJobs.TranslatePoint(default, window));
@@ -315,10 +311,7 @@ public sealed class SettingsComboBoxLayoutTests
             Assert.Equal(videoQuality.Bounds.Width, audioQuality.Bounds.Width, 0.5);
             Assert.True(preferencesTitleOrigin.Y > pageTitleOrigin.Y + pageTitle.Bounds.Height);
             Assert.True(postProcessingTitleOrigin.Y > audioQualityOrigin.Y + audioQuality.Bounds.Height);
-            Assert.Equal(transcodeVideoOrigin.X, transcodeAudioOrigin.X, 0.5);
-            Assert.True(
-                transcodeAudioOrigin.Y > transcodeVideoOrigin.Y + transcodeVideo.Bounds.Height);
-            Assert.True(ffmpegTitleOrigin.Y > transcodeAudioOrigin.Y + transcodeAudio.Bounds.Height);
+            Assert.True(ffmpegTitleOrigin.Y > transcodeVideoOrigin.Y + transcodeVideo.Bounds.Height);
             Assert.Equal(hardwareOrigin.X, parallelOrigin.X, 0.5);
             Assert.True(hardwareAcceleration.Bounds.Width >= 320);
             Assert.Equal(120, parallelJobs.Bounds.Width, 0.5);

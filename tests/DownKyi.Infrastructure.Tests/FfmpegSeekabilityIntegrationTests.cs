@@ -47,6 +47,116 @@ public sealed class FfmpegSeekabilityIntegrationTests : IDisposable
     };
 
     [Theory]
+    [InlineData("aac", "m4a", "48000", false)]
+    [InlineData("flac", "flac", "96000", false)]
+    [InlineData("eac3", "mp4", "48000", false)]
+    [InlineData("aac", "mp4", "48000", true)]
+    [InlineData("flac", "mp4", "96000", true)]
+    [InlineData("eac3", "mp4", "48000", true)]
+    [Trait("Category", "FfmpegIntegration")]
+    public async Task MergePreservesOriginalAudioAndVideoPacketsDespiteLegacyMp3Setting(
+        string codec,
+        string extension,
+        string sampleRate,
+        bool includeVideo)
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var processRunner = new FfmpegProcessRunner();
+        if (!await AreMediaToolsAvailableAsync(processRunner, cancellationToken).ConfigureAwait(true))
+        {
+            Assert.Skip("ffmpeg and ffprobe are required for the audio quality integration test.");
+        }
+
+        var input = Path.Combine(_testDirectory, "audio.m4s");
+        var output = Path.Combine(_testDirectory, $"output.{extension}");
+        var source = await processRunner.RunAsync(
+            new FfmpegCommand(
+                FfmpegExecutableLocator.Ffmpeg,
+                [
+                    "-hide_banner", "-nostdin", "-y",
+                    "-f", "lavfi",
+                    "-i", $"sine=frequency=1000:sample_rate={sampleRate}:duration=2",
+                    "-ac", "2",
+                    "-c:a", codec,
+                    "-sample_fmt", codec == "flac" ? "s32" : "fltp",
+                    "-f", "mp4",
+                    input
+                ],
+                "create-audio-quality-fixture"),
+            ProcessTimeout,
+            cancellationToken).ConfigureAwait(true);
+        Assert.True(source.Succeeded, source.StandardError);
+        var settingsPath = Path.Combine(_testDirectory, "audio-settings.json");
+        await File.WriteAllTextAsync(
+            settingsPath,
+            """{"SchemaVersion":1,"Video":{"IsTranscodingAacToMp3":2}}""",
+            cancellationToken).ConfigureAwait(true);
+        using var settings = new SettingsStore(settingsPath);
+        var processor = new FfmpegProcessor(settings, NullLoggerFactory.Instance);
+        string? video = null;
+        if (includeVideo)
+        {
+            video = Path.Combine(_testDirectory, "video.mp4");
+            await CreateSegmentAsync(processRunner, video, "blue", cancellationToken).ConfigureAwait(true);
+        }
+
+        var result = await processor.MergeMediaAsync(
+            input,
+            video,
+            output,
+            overwriteDestination: false,
+            cancellationToken: cancellationToken).ConfigureAwait(true);
+
+        Assert.True(result.Succeeded, result.FailureReason);
+        var probe = await processRunner.RunAsync(
+            new FfmpegCommand(
+                FfmpegExecutableLocator.Ffprobe,
+                [
+                    "-v", "error",
+                    "-select_streams", "a:0",
+                    "-show_entries", "stream=codec_name,sample_rate,channels,bit_rate,bits_per_raw_sample",
+                    "-of", "json",
+                    output
+                ],
+                "probe-audio-quality"),
+            ProcessTimeout,
+            cancellationToken).ConfigureAwait(true);
+        Assert.True(probe.Succeeded, probe.StandardError);
+        using var document = JsonDocument.Parse(probe.StandardOutput);
+        var stream = Assert.Single(document.RootElement.GetProperty("streams").EnumerateArray());
+        Assert.Equal(codec, stream.GetProperty("codec_name").GetString());
+        Assert.Equal(sampleRate, stream.GetProperty("sample_rate").GetString());
+        Assert.Equal(2, stream.GetProperty("channels").GetInt32());
+        Assert.Equal(
+            await GetPrimaryStreamHashAsync(processRunner, input, cancellationToken).ConfigureAwait(true),
+            await GetPrimaryStreamHashAsync(processRunner, output, cancellationToken).ConfigureAwait(true));
+        if (video != null)
+        {
+            Assert.Equal(
+                await GetPrimaryStreamHashAsync(processRunner, video, cancellationToken, "0:v:0").ConfigureAwait(true),
+                await GetPrimaryStreamHashAsync(processRunner, output, cancellationToken, "0:v:0").ConfigureAwait(true));
+        }
+
+        if (codec == "flac")
+        {
+            Assert.Equal("24", stream.GetProperty("bits_per_raw_sample").GetString());
+        }
+
+        if (extension == "m4a")
+        {
+            var seek = await processRunner.RunAsync(
+                new FfmpegCommand(
+                    FfmpegExecutableLocator.Ffmpeg,
+                    ["-v", "error", "-ss", "1", "-i", output, "-map", "0:a:0", "-t", "0.1", "-f", "framemd5", "-"],
+                    "seek-original-aac"),
+                ProcessTimeout,
+                cancellationToken).ConfigureAwait(true);
+            Assert.True(seek.Succeeded, seek.StandardError);
+            Assert.Contains("0,", seek.StandardOutput, StringComparison.Ordinal);
+        }
+    }
+
+    [Theory]
     [MemberData(nameof(CoverFixtures))]
     [Trait("Category", "FfmpegIntegration")]
     public async Task CoverNormalizationUsesActualContentForEverySupportedInput(
@@ -106,7 +216,6 @@ public sealed class FfmpegSeekabilityIntegrationTests : IDisposable
         var processor = new FfmpegProcessor(settings, NullLoggerFactory.Instance);
 
         var result = await processor.MergeMediaAsync(
-            settings.Current.Video,
             audio,
             video,
             Path.Combine(_testDirectory, "classification-output.mp4"),
@@ -199,12 +308,11 @@ public sealed class FfmpegSeekabilityIntegrationTests : IDisposable
             processRunner,
             video,
             cancellationToken).ConfigureAwait(true);
-        var primaryAudioHash = await GetPrimaryAudioHashAsync(
+        var primaryAudioHash = await GetPrimaryStreamHashAsync(
             processRunner,
             audio,
             cancellationToken).ConfigureAwait(true);
         var result = await processor.MergeMediaAsync(
-            settings.Current.Video,
             audio,
             video,
             destination: output,
@@ -222,7 +330,7 @@ public sealed class FfmpegSeekabilityIntegrationTests : IDisposable
                 cancellationToken).ConfigureAwait(true));
         Assert.Equal(
             primaryAudioHash,
-            await GetPrimaryAudioHashAsync(
+            await GetPrimaryStreamHashAsync(
                 processRunner,
                 output,
                 cancellationToken).ConfigureAwait(true));
@@ -359,7 +467,6 @@ public sealed class FfmpegSeekabilityIntegrationTests : IDisposable
             processRunner);
         var mergeOutput = Path.Combine(_testDirectory, "merge-must-not-exist.mp4");
         var mergeResult = await processor.MergeMediaAsync(
-            settings.Current.Video,
             audio: null,
             video: emptyVideo,
             destination: mergeOutput,
@@ -506,10 +613,11 @@ public sealed class FfmpegSeekabilityIntegrationTests : IDisposable
         return result.StandardOutput.Trim();
     }
 
-    private static async Task<string> GetPrimaryAudioHashAsync(
+    private static async Task<string> GetPrimaryStreamHashAsync(
         FfmpegProcessRunner processRunner,
         string mediaFile,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string stream = "0:a:0")
     {
         var result = await processRunner.RunAsync(
             new FfmpegCommand(
@@ -517,7 +625,7 @@ public sealed class FfmpegSeekabilityIntegrationTests : IDisposable
                 [
                     "-v", "error",
                     "-i", mediaFile,
-                    "-map", "0:a:0",
+                    "-map", stream,
                     "-c", "copy",
                     "-f", "hash",
                     "-hash", "sha256",

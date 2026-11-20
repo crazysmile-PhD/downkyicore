@@ -19,9 +19,6 @@ public partial class SettingsManager
     // 是否下载flv视频后转码为mp4
     private const AllowStatus IsTranscodingFlvToMp4 = AllowStatus.Yes;
 
-    // 是否下载aac音频后转码为mp3
-    private const AllowStatus IsTranscodingAacToMp3 = AllowStatus.Yes;
-
     // 默认下载目录
     private readonly string _saveVideoRootPath = ApplicationStorage.GetMedia();
 
@@ -157,35 +154,6 @@ public partial class SettingsManager
             _appSettings.Video.IsTranscodingFlvToMp4,
             isTranscodingFlvToMp4,
             v => _appSettings.Video.IsTranscodingFlvToMp4 = v);
-    }
-
-    /// <summary>
-    /// 获取是否下载aac音频后转码为mp3
-    /// </summary>
-    /// <returns></returns>
-    public AllowStatus GetIsTranscodingAacToMp3()
-    {
-        if (_appSettings.Video.IsTranscodingAacToMp3 == AllowStatus.None)
-        {
-            // 第一次获取，先设置默认值
-            SetIsTranscodingAacToMp3(IsTranscodingAacToMp3);
-            return IsTranscodingAacToMp3;
-        }
-
-        return _appSettings.Video.IsTranscodingAacToMp3;
-    }
-
-    /// <summary>
-    /// 设置是否下载aac音频后转码为mp3
-    /// </summary>
-    /// <param name="isTranscodingAacToMp3"></param>
-    /// <returns></returns>
-    public bool SetIsTranscodingAacToMp3(AllowStatus isTranscodingAacToMp3)
-    {
-        return SetProperty(
-            _appSettings.Video.IsTranscodingAacToMp3,
-            isTranscodingAacToMp3,
-            v => _appSettings.Video.IsTranscodingAacToMp3 = v);
     }
 
     /// <summary>

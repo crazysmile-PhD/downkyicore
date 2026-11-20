@@ -133,10 +133,6 @@ internal partial class VideoViewModel : ViewModelBase
         var isTranscodingFlvToMp4 = videoSettings.IsTranscodingFlvToMp4;
         IsTranscodingFlvToMp4 = isTranscodingFlvToMp4 == AllowStatus.Yes;
 
-        // 是否下载aac音频后转码为mp3
-        var isTranscodingAacToMp3 = videoSettings.IsTranscodingAacToMp3;
-        IsTranscodingAacToMp3 = isTranscodingAacToMp3 == AllowStatus.Yes;
-
         var ffmpegHardwareAcceleration = videoSettings.FfmpegHardwareAcceleration;
         SelectedFfmpegHardwareAcceleration = FfmpegHardwareAccelerations
                                                  .FirstOrDefault(t => t.Value == ffmpegHardwareAcceleration) ??
@@ -272,25 +268,6 @@ internal partial class VideoViewModel : ViewModelBase
         {
             IsTranscodingFlvToMp4 = isTranscodingFlvToMp4
         }).IsTranscodingFlvToMp4 == isTranscodingFlvToMp4;
-        PublishTip(isSucceed);
-    }
-
-    // 是否下载aac音频后转码为mp3事件
-    private RelayCommand? _isTranscodingAacToMp3Command;
-
-    public RelayCommand IsTranscodingAacToMp3Command => _isTranscodingAacToMp3Command ??= new RelayCommand(ExecuteIsTranscodingAacToMp3Command);
-
-    /// <summary>
-    /// 是否下载aac音频后转码为mp3事件
-    /// </summary>
-    private void ExecuteIsTranscodingAacToMp3Command()
-    {
-        var isTranscodingAacToMp3 = IsTranscodingAacToMp3 ? AllowStatus.Yes : AllowStatus.No;
-
-        var isSucceed = UpdateVideo(settings => settings with
-        {
-            IsTranscodingAacToMp3 = isTranscodingAacToMp3
-        }).IsTranscodingAacToMp3 == isTranscodingAacToMp3;
         PublishTip(isSucceed);
     }
 
