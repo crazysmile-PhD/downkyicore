@@ -1,5 +1,6 @@
 using System.Text.Json;
 using DownKyi.Application.Media;
+using DownKyi.Application.Settings;
 using DownKyi.Infrastructure.FFmpeg;
 using DownKyi.Infrastructure.Settings;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -45,6 +46,89 @@ public sealed class FfmpegSeekabilityIntegrationTests : IDisposable
             "AAAAIGZ0eXBhdmlmAAAAAGF2aWZtaWYxbWlhZk1BMUIAAAD5bWV0YQAAAAAAAAAvaGRscgAAAAAAAAAAcGljdAAAAAAAAAAAAAAAAFBpY3R1cmVIYW5kbGVyAAAAAA5waXRtAAAAAAABAAAAHmlsb2MAAAAARAAAAQABAAAAAQAAASEAAAAdAAAAKGlpbmYAAAAAAAEAAAAaaW5mZQIAAAAAAQAAYXYwMUNvbG9yAAAAAGppcHJwAAAAS2lwY28AAAAUaXNwZQAAAAAAAAAQAAAAEAAAABBwaXhpAAAAAAMICAgAAAAMYXYxQ4EADAAAAAATY29scm5jbHgAAgACAAIAAAAAF2lwbWEAAAAAAAAAAQABBAECgwQAAAAlbWRhdAoGGAz/2wCAMhMYAAAAUAAAAACpjmy2qrHGtoVA"
         }
     };
+
+    [Theory]
+    [InlineData("aac", "mp3", "48000", "320000")]
+    [InlineData("flac", "flac", "96000", null)]
+    [Trait("Category", "FfmpegIntegration")]
+    public async Task AudioOnlyMergeHonorsOutputFormatAndQualityWithAacConversionEnabled(
+        string codec,
+        string extension,
+        string sampleRate,
+        string? expectedBitrate)
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var processRunner = new FfmpegProcessRunner();
+        if (!await AreMediaToolsAvailableAsync(processRunner, cancellationToken).ConfigureAwait(true))
+        {
+            Assert.Skip("ffmpeg and ffprobe are required for the audio quality integration test.");
+        }
+
+        var input = Path.Combine(_testDirectory, "audio.m4s");
+        var output = Path.Combine(_testDirectory, $"output.{extension}");
+        var source = await processRunner.RunAsync(
+            new FfmpegCommand(
+                FfmpegExecutableLocator.Ffmpeg,
+                [
+                    "-hide_banner", "-nostdin", "-y",
+                    "-f", "lavfi",
+                    "-i", $"sine=frequency=1000:sample_rate={sampleRate}:duration=2",
+                    "-ac", "2",
+                    "-c:a", codec,
+                    "-sample_fmt", codec == "flac" ? "s32" : "fltp",
+                    "-f", "mp4",
+                    input
+                ],
+                "create-audio-quality-fixture"),
+            ProcessTimeout,
+            cancellationToken).ConfigureAwait(true);
+        Assert.True(source.Succeeded, source.StandardError);
+        using var settings = new SettingsStore(Path.Combine(_testDirectory, "audio-settings.json"));
+        var processor = new FfmpegProcessor(settings, NullLoggerFactory.Instance);
+
+        var result = await processor.MergeMediaAsync(
+            settings.Current.Video with { IsTranscodingAacToMp3 = AllowStatus.Yes },
+            input,
+            video: null,
+            output,
+            overwriteDestination: false,
+            cancellationToken: cancellationToken).ConfigureAwait(true);
+
+        Assert.True(result.Succeeded, result.FailureReason);
+        var probe = await processRunner.RunAsync(
+            new FfmpegCommand(
+                FfmpegExecutableLocator.Ffprobe,
+                [
+                    "-v", "error",
+                    "-show_entries", "stream=codec_name,sample_rate,channels,bit_rate,bits_per_raw_sample",
+                    "-of", "json",
+                    output
+                ],
+                "probe-audio-quality"),
+            ProcessTimeout,
+            cancellationToken).ConfigureAwait(true);
+        Assert.True(probe.Succeeded, probe.StandardError);
+        using var document = JsonDocument.Parse(probe.StandardOutput);
+        var stream = Assert.Single(document.RootElement.GetProperty("streams").EnumerateArray());
+        Assert.Equal(extension, stream.GetProperty("codec_name").GetString());
+        Assert.Equal(sampleRate, stream.GetProperty("sample_rate").GetString());
+        Assert.Equal(2, stream.GetProperty("channels").GetInt32());
+        if (expectedBitrate != null)
+        {
+            Assert.Equal(expectedBitrate, stream.GetProperty("bit_rate").GetString());
+        }
+        else
+        {
+            Assert.Equal(
+                await GetPrimaryAudioHashAsync(processRunner, input, cancellationToken).ConfigureAwait(true),
+                await GetPrimaryAudioHashAsync(processRunner, output, cancellationToken).ConfigureAwait(true));
+        }
+
+        if (codec == "flac")
+        {
+            Assert.Equal("24", stream.GetProperty("bits_per_raw_sample").GetString());
+        }
+    }
 
     [Theory]
     [MemberData(nameof(CoverFixtures))]

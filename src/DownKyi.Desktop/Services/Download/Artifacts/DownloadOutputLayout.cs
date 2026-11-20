@@ -23,14 +23,17 @@ internal static class DownloadOutputLayout
             return outputBasePath + ".mp4";
         }
 
+        if (audioCodecId == FlacAudioCodecId)
+        {
+            return outputBasePath + ".flac";
+        }
+
         if (transcodeAacToMp3 == AllowStatus.Yes)
         {
             return outputBasePath + ".mp3";
         }
 
-        return audioCodecId == FlacAudioCodecId
-            ? outputBasePath + ".flac"
-            : outputBasePath + ".aac";
+        return outputBasePath + ".aac";
     }
 
     public static string GetDurlMediaPath(string outputBasePath)

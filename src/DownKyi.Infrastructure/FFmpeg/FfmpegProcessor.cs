@@ -106,7 +106,8 @@ public sealed class FfmpegProcessor : IFfmpegMediaMuxer
                             audioPath,
                             videoPath,
                             temporaryOutput,
-                            videoSettings.IsTranscodingAacToMp3 == AllowStatus.Yes,
+                            videoSettings.IsTranscodingAacToMp3 == AllowStatus.Yes
+                                && string.Equals(Path.GetExtension(destination), ".mp3", StringComparison.OrdinalIgnoreCase),
                             embeddedAudioMode,
                             normalizedCover),
                         destination,

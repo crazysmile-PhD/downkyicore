@@ -54,7 +54,7 @@ internal static class FfmpegCommandFactory
         }
         else if (transcodeAudioToMp3)
         {
-            arguments.AddRange(["-vn", "-c:a", "libmp3lame"]);
+            arguments.AddRange(["-vn", "-c:a", "libmp3lame", "-b:a", "320k"]);
         }
         else
         {

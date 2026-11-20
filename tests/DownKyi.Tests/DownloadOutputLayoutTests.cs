@@ -13,8 +13,9 @@ public sealed class DownloadOutputLayoutTests
 
     [Theory]
     [InlineData(true, 30251, AllowStatus.Yes, ".mp4")]
-    [InlineData(false, 30251, AllowStatus.Yes, ".mp3")]
+    [InlineData(false, 30251, AllowStatus.Yes, ".flac")]
     [InlineData(false, 30251, AllowStatus.No, ".flac")]
+    [InlineData(false, 30280, AllowStatus.Yes, ".mp3")]
     [InlineData(false, 30280, AllowStatus.No, ".aac")]
     public void DashMediaPathPreservesStreamAndCodecRules(
         bool hasVideo,

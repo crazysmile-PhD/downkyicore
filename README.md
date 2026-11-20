@@ -41,6 +41,8 @@ Windows ZIP 必须完整解压到新目录后再运行。`DownKyi.exe` 旁必须
 
 发布包已包含 .NET 和 FFmpeg，不需要另外安装运行环境。FFmpeg 优先无损 stream copy；必须转码时会探测可用的硬件 encoder，失败则记录原因并回退到软件编码。
 
+纯音频下载会将 Hi-Res 无损音轨保留为 FLAC，不受「下载 AAC 音频后转码为 MP3」选项影响。启用该选项时，AAC 转 MP3 使用 320 kbps 目标码率；MP3 仍是有损格式，不能保留 Hi-Res 无损音质。关闭该选项可保留原始 AAC 音轨。
+
 默认数据目录：
 
 - Windows：`%APPDATA%\DownKyi`
