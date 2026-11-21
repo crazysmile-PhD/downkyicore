@@ -61,30 +61,6 @@ internal static class DownloadOutputPathResolver
             ? StringComparer.OrdinalIgnoreCase
             : StringComparer.Ordinal;
 
-    internal static async Task<string> ResolvePackageDirectoryAsync(
-        string directory,
-        Func<string, CancellationToken, Task<bool>> isDirectoryReservedAsync,
-        CancellationToken cancellationToken)
-    {
-        var parent = Path.GetDirectoryName(directory)!;
-        var occupiedPaths = Directory.Exists(parent)
-            ? Directory.EnumerateFileSystemEntries(parent)
-                .Select(CreateComparisonKey).ToHashSet(PlatformComparer)
-            : new HashSet<string>(PlatformComparer);
-        for (var suffix = 0; ; suffix++)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var candidate = suffix == 0 ? directory : $"{directory}({suffix})";
-            var key = CreateComparisonKey(candidate);
-            if (!occupiedPaths.Contains(key)
-                && !await isDirectoryReservedAsync(candidate, cancellationToken).ConfigureAwait(false))
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                return candidate;
-            }
-        }
-    }
-
     internal static bool HasExistingOutputClaimConflict(
         string basePath,
         DownloadActionClaims requestedClaims)

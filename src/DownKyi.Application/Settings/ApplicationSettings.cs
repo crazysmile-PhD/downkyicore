@@ -70,10 +70,7 @@ public sealed record VideoApplicationSettings(
     VideoContentApplicationSettings Content,
     ImmutableArray<FileNamePart> FileNameParts,
     string FileNamePartTimeFormat,
-    OrderFormat OrderFormat)
-{
-    public bool UseTitlePackageDirectory { get; init; } = true;
-}
+    OrderFormat OrderFormat);
 
 public sealed record VideoContentApplicationSettings(
     bool DownloadAudio,

@@ -124,10 +124,8 @@ public sealed class DownloadAddOwnerTests : IDisposable
         Assert.Equal(first.DownloadBase.FilePath, second.DownloadBase.FilePath);
     }
 
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public void FlatFileNameTemplateRespectsTitleDirectoryPreference(bool useTitleDirectory)
+    [Fact]
+    public void FlatFileNameTemplateSavesDirectlyInTheSelectedDirectory()
     {
         Directory.CreateDirectory(_directory);
         using var settingsStore = new DownKyi.Infrastructure.Settings.SettingsStore(
@@ -136,8 +134,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
         {
             Video = settingsStore.Current.Video with
             {
-                FileNameParts = [FileNamePart.PageTitle],
-                UseTitlePackageDirectory = useTitleDirectory
+                FileNameParts = [FileNamePart.PageTitle]
             }
         };
         var page = CreatePage();
@@ -147,14 +144,11 @@ public sealed class DownloadAddOwnerTests : IDisposable
         var draft = CreateDraft(_directory, video, section, 1, page,
             CreateVideoQuality(), settings, DownloadContentSelection.None with { Video = true });
 
-        var expectedDirectory = useTitleDirectory ? Path.Combine(_directory, "main") : _directory;
-        Assert.Equal(Path.Combine(expectedDirectory, "page"), draft.DownloadBase.FilePath);
+        Assert.Equal(Path.Combine(_directory, "page"), draft.DownloadBase.FilePath);
     }
 
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public void CreatorAndTitleTemplateRespectsTitleDirectoryPreference(bool useTitleDirectory)
+    [Fact]
+    public void CreatorAndTitleTemplateDefinesTheCompleteRelativePath()
     {
         Directory.CreateDirectory(_directory);
         using var settingsStore = new DownKyi.Infrastructure.Settings.SettingsStore(
@@ -163,7 +157,6 @@ public sealed class DownloadAddOwnerTests : IDisposable
         {
             Video = settingsStore.Current.Video with
             {
-                UseTitlePackageDirectory = useTitleDirectory,
                 FileNameParts =
                 [
                     FileNamePart.UpMid, FileNamePart.Plus,
@@ -188,9 +181,8 @@ public sealed class DownloadAddOwnerTests : IDisposable
         var draft = CreateDraft(_directory, video, section, 2, page,
             CreateVideoQuality(), settings, DownloadContentSelection.None with { Video = true });
 
-        var expectedDirectory = useTitleDirectory ? Path.Combine(_directory, "main") : _directory;
         Assert.Equal(
-            Path.Combine(expectedDirectory, "42+creator+2024-01-02+main+1-BV1test", "section+BV1test+page-1080P-AVC"),
+            Path.Combine(_directory, "42+creator+2024-01-02+main+1-BV1test", "section+BV1test+page-1080P-AVC"),
             Path.GetFullPath(draft.DownloadBase.FilePath));
     }
 

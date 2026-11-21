@@ -19,7 +19,6 @@ public class VideoSettings
     public AllowStatus IsUseSaveVideoRootPath { get; set; } = AllowStatus.None; // 是否使用默认视频保存路径
     public VideoContentSettings? VideoContent { get; set; } // 下载内容
     public IReadOnlyList<FileNamePart>? FileNameParts { get; set; } // 文件命名格式
-    public bool UseTitlePackageDirectory { get; set; } = true;
     public string? FileNamePartTimeFormat { get; set; } // 文件命名中的时间格式
     public OrderFormat OrderFormat { get; set; } = OrderFormat.NotSet; // 文件命名中的序号格式
 }

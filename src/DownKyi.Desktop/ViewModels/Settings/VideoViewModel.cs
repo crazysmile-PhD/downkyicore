@@ -169,7 +169,6 @@ internal partial class VideoViewModel : ViewModelBase
         }
 
         // 文件命名格式
-        UseTitlePackageDirectory = videoSettings.UseTitlePackageDirectory;
         var fileNameParts = videoSettings.FileNameParts;
         SelectedFileName.Clear();
         foreach (var fileNamePart in fileNameParts.Select(x => new DisplayFileNamePart()

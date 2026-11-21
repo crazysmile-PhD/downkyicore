@@ -303,8 +303,6 @@
     <system:String x:Key="DefaultDirectoryTip">通常、ファイルはこのフォルダーにダウンロードされます。</system:String>
     <system:String x:Key="ChangeDirectory">フォルダーを変更</system:String>
     <system:String x:Key="FileNameParts">ファイル名の形式</system:String>
-    <system:String x:Key="UseTitlePackageDirectory">動画タイトルの専用フォルダーを使用する</system:String>
-    <system:String x:Key="UseTitlePackageDirectoryTip">オフにすると命名形式どおりに保存します。同名ファイルには番号を付け、既存ファイルを保持します。新しく追加するダウンロードに適用されます。</system:String>
     <system:String x:Key="FileName">ファイル名：</system:String>
     <system:String x:Key="OptionalFields">任意の項目：</system:String>
     <system:String x:Key="DisplayOrder">番号</system:String>

@@ -43,19 +43,6 @@ internal partial class VideoViewModel
         }
     }
 
-    private RelayCommand? _useTitlePackageDirectoryCommand;
-
-    public RelayCommand UseTitlePackageDirectoryCommand =>
-        _useTitlePackageDirectoryCommand ??= new RelayCommand(ExecuteUseTitlePackageDirectoryCommand);
-
-    private void ExecuteUseTitlePackageDirectoryCommand()
-    {
-        var requested = UseTitlePackageDirectory;
-        var updated = UpdateVideo(settings => settings with { UseTitlePackageDirectory = requested });
-        UseTitlePackageDirectory = updated.UseTitlePackageDirectory;
-        PublishTip(updated.UseTitlePackageDirectory == requested);
-    }
-
     // 所有内容选择事件
     private RelayCommand? _downloadAllCommand;
 

@@ -483,17 +483,11 @@ public sealed class VideoTagLoadingTests : IDisposable
         Assert.Equal(2, prompt.CompletedItemNames.Count);
     }
 
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task RedownloadDecisionLoadsMetadataAndAdmitsTheCompletedDuplicate(bool useTitleDirectory)
+    [Fact]
+    public async Task RedownloadDecisionLoadsMetadataAndAdmitsTheCompletedDuplicate()
     {
         using var context = CreateContext(generateMetadata: true);
         context.UseContentIndependentFileName();
-        if (!useTitleDirectory)
-        {
-            context.UseTemplateOnlyPaths(FileNamePart.MainTitle, FileNamePart.Slash, FileNamePart.PageTitle);
-        }
         var requestedContent = DownloadContentSelection.None with { Video = true };
         var loadCount = 0;
         var page = CreatePage(_ =>
@@ -524,10 +518,7 @@ public sealed class VideoTagLoadingTests : IDisposable
         Assert.Equal(1, loadCount);
         var download = Assert.Single(context.ListState.Downloading);
         Assert.Equal(["kept"], download.Metadata!.Tags);
-        var expectedPath = useTitleDirectory
-            ? Path.Combine(oldDirectory + "(1)", page.Name)
-            : Path.Combine(oldDirectory, page.Name + "(1)");
-        Assert.Equal(expectedPath, download.DownloadBase.FilePath);
+        Assert.Equal(Path.Combine(oldDirectory, page.Name + "(1)"), download.DownloadBase.FilePath);
         Assert.Equal("previous-quality", await File.ReadAllTextAsync(oldPath, TestContext.Current.CancellationToken));
         Assert.Single(context.Dialogs.Requests);
     }
@@ -536,7 +527,7 @@ public sealed class VideoTagLoadingTests : IDisposable
     public async Task TemplateOnlyPagesShareTheCreatorDirectoryAndPreserveExistingFiles()
     {
         using var context = CreateContext(generateMetadata: false);
-        context.UseTemplateOnlyPaths(
+        context.SetFileNameTemplate(
             FileNamePart.UpName, FileNamePart.Slash,
             FileNamePart.Order, FileNamePart.Hyphen, FileNamePart.PageTitle);
         var first = CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]));
@@ -583,7 +574,7 @@ public sealed class VideoTagLoadingTests : IDisposable
             .ConfigureAwait(true);
 
         Assert.Equal(1, added);
-        Assert.Equal(3, resolver.CallCount);
+        Assert.Equal(2, resolver.CallCount);
         Assert.Equal(1, context.Store.AddCount);
         Assert.Equal("second", Assert.Single(context.ListState.Downloading).DownloadBase.Name);
         Assert.Single(context.Queue.Enqueued);
@@ -945,7 +936,7 @@ public sealed class VideoTagLoadingTests : IDisposable
     }
 
     [Fact]
-    public async Task IndependentAliasedSubtitleDownloadUsesANewPackage()
+    public async Task IndependentAliasedSubtitleDownloadKeepsTheTemplateDirectoryAndRenamesTheFile()
     {
         var aliasRoot = Path.Combine(_directory, $"conflict-{Guid.NewGuid():N}");
         var logicalDirectory = Path.Combine(aliasRoot, "logical");
@@ -985,8 +976,7 @@ public sealed class VideoTagLoadingTests : IDisposable
                 TestContext.Current.CancellationToken));
         var subtitle = Assert.Single(context.ListState.Downloading, item => item.DownloadBase.NeedDownloadContent.Subtitle);
         Assert.Equal(
-            Path.Combine(Path.GetDirectoryName(mediaItem.DownloadBase.FilePath)! + "(1)",
-                Path.GetFileName(mediaItem.DownloadBase.FilePath)),
+            mediaItem.DownloadBase.FilePath + "(1)",
             subtitle.DownloadBase.FilePath);
         Assert.Equal(2, context.ListState.Downloading.Count);
         Assert.Empty(context.Dialogs.Requests);
@@ -1492,13 +1482,12 @@ public sealed class VideoTagLoadingTests : IDisposable
             });
         }
 
-        public void UseTemplateOnlyPaths(params FileNamePart[] parts)
+        public void SetFileNameTemplate(params FileNamePart[] parts)
         {
             _settings.Update(settings => settings with
             {
                 Video = settings.Video with
                 {
-                    UseTitlePackageDirectory = false,
                     FileNameParts = [.. parts]
                 }
             });
