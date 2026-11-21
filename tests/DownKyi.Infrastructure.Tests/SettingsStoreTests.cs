@@ -63,8 +63,42 @@ public sealed class SettingsStoreTests
                 FfmpegHardwareAcceleration.Auto,
                 store.Current.Video.FfmpegHardwareAcceleration);
             Assert.Equal(OrderFormat.Natural, store.Current.Video.OrderFormat);
+            Assert.True(store.Current.Video.UseTitlePackageDirectory);
             Assert.Equal(DanmakuLayoutAlgorithm.Sync, store.Current.Danmaku.LayoutAlgorithm);
             Assert.False(File.Exists(settingsPath));
+        }
+        finally
+        {
+            DeleteDirectory(directory);
+        }
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task TitleDirectoryPreferenceDefaultsToEnabledAndPersists(bool enabled)
+    {
+        var directory = CreateTestDirectory();
+        var settingsPath = Path.Combine(directory, "settings.json");
+        try
+        {
+            await File.WriteAllTextAsync(settingsPath, "{\"SchemaVersion\":1,\"Video\":{}}",
+                TestContext.Current.CancellationToken);
+            using (var store = new SettingsStore(settingsPath))
+            {
+                Assert.True(store.Current.Video.UseTitlePackageDirectory);
+                var commit = await store.CommitAsync(settings => settings with
+                {
+                    Video = settings.Video with { UseTitlePackageDirectory = enabled }
+                }, TestContext.Current.CancellationToken);
+                Assert.True(commit.Succeeded);
+            }
+
+            using var reopened = new SettingsStore(settingsPath);
+            Assert.Equal(enabled, reopened.Current.Video.UseTitlePackageDirectory);
+            using var json = JsonDocument.Parse(await File.ReadAllTextAsync(
+                settingsPath, TestContext.Current.CancellationToken));
+            Assert.Equal(enabled, json.RootElement.GetProperty("Video").GetProperty("UseTitlePackageDirectory").GetBoolean());
         }
         finally
         {

@@ -296,8 +296,9 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
         var pending = new List<PendingDownload>();
         foreach (var finalizedDownload in finalizedDownloads.Where(download => download.StopReason == null))
         {
-            var package = new DownloadOutputPackage(
-                DownloadTaskDraftFactory.GetPackageDirectory(directory, finalizedDownload.Video));
+            var packageDirectory = DownloadTaskDraftFactory.GetPackageDirectory(
+                directory, finalizedDownload.Video, settings.Video);
+            var package = packageDirectory == null ? null : new DownloadOutputPackage(packageDirectory);
             var bangumiMainCoverAssigned = false;
             foreach (var finalizedSection in finalizedDownload.Sections)
             {
@@ -349,6 +350,6 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
         DownloadingItem Item,
         VideoInfoView Video,
         VideoPage Page,
-        DownloadOutputPackage Package);
+        DownloadOutputPackage? Package);
 
 }

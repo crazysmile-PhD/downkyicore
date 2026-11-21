@@ -107,6 +107,14 @@ internal partial class VideoViewModel
         set => SetProperty(ref _saveVideoDirectory, value);
     }
 
+    private bool _useTitlePackageDirectory = true;
+
+    public bool UseTitlePackageDirectory
+    {
+        get => _useTitlePackageDirectory;
+        set => SetProperty(ref _useTitlePackageDirectory, value);
+    }
+
     private bool _downloadAll;
 
     public bool DownloadAll

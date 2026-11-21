@@ -303,6 +303,8 @@
     <system:String x:Key="DefaultDirectoryTip">Files are downloaded to this folder by default</system:String>
     <system:String x:Key="ChangeDirectory">Change folder</system:String>
     <system:String x:Key="FileNameParts">File naming format</system:String>
+    <system:String x:Key="UseTitlePackageDirectory">Use a separate video title folder</system:String>
+    <system:String x:Key="UseTitlePackageDirectoryTip">Turn off to save using only the naming format. Conflicting filenames receive a number to preserve existing files. Applies to newly added downloads.</system:String>
     <system:String x:Key="FileName">File name:</system:String>
     <system:String x:Key="OptionalFields">Optional fields:</system:String>
     <system:String x:Key="DisplayOrder">Number</system:String>

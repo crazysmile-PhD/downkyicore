@@ -57,7 +57,10 @@ internal static class SettingsSnapshotModelMapper
                     content.PreferredSubtitleType),
                 settings.Video.FileNameParts?.ToImmutableArray() ?? [],
                 settings.Video.FileNamePartTimeFormat ?? string.Empty,
-                settings.Video.OrderFormat),
+                settings.Video.OrderFormat)
+            {
+                UseTitlePackageDirectory = settings.Video.UseTitlePackageDirectory
+            },
             new DanmakuApplicationSettings(
                 settings.Danmaku.OutputFormat,
                 settings.Danmaku.DanmakuTopFilter,
@@ -143,6 +146,7 @@ internal static class SettingsSnapshotModelMapper
                     PreferredSubtitleType = settings.Video.Content.PreferredSubtitleType
                 },
                 FileNameParts = settings.Video.FileNameParts,
+                UseTitlePackageDirectory = settings.Video.UseTitlePackageDirectory,
                 FileNamePartTimeFormat = settings.Video.FileNamePartTimeFormat,
                 OrderFormat = settings.Video.OrderFormat
             },

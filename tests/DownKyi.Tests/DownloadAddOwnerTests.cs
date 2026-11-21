@@ -124,15 +124,21 @@ public sealed class DownloadAddOwnerTests : IDisposable
         Assert.Equal(first.DownloadBase.FilePath, second.DownloadBase.FilePath);
     }
 
-    [Fact]
-    public void FlatFileNameTemplateStillUsesATitlePackage()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void FlatFileNameTemplateRespectsTitleDirectoryPreference(bool useTitleDirectory)
     {
         Directory.CreateDirectory(_directory);
         using var settingsStore = new DownKyi.Infrastructure.Settings.SettingsStore(
             Path.Combine(_directory, "settings.json"));
         var settings = settingsStore.Current with
         {
-            Video = settingsStore.Current.Video with { FileNameParts = [FileNamePart.PageTitle] }
+            Video = settingsStore.Current.Video with
+            {
+                FileNameParts = [FileNamePart.PageTitle],
+                UseTitlePackageDirectory = useTitleDirectory
+            }
         };
         var page = CreatePage();
         var video = new VideoInfoView { Title = "main", VideoZone = "Technology" };
@@ -141,7 +147,51 @@ public sealed class DownloadAddOwnerTests : IDisposable
         var draft = CreateDraft(_directory, video, section, 1, page,
             CreateVideoQuality(), settings, DownloadContentSelection.None with { Video = true });
 
-        Assert.Equal(Path.Combine(_directory, "main", "page"), draft.DownloadBase.FilePath);
+        var expectedDirectory = useTitleDirectory ? Path.Combine(_directory, "main") : _directory;
+        Assert.Equal(Path.Combine(expectedDirectory, "page"), draft.DownloadBase.FilePath);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void CreatorAndTitleTemplateRespectsTitleDirectoryPreference(bool useTitleDirectory)
+    {
+        Directory.CreateDirectory(_directory);
+        using var settingsStore = new DownKyi.Infrastructure.Settings.SettingsStore(
+            Path.Combine(_directory, "settings.json"));
+        var settings = settingsStore.Current with
+        {
+            Video = settingsStore.Current.Video with
+            {
+                UseTitlePackageDirectory = useTitleDirectory,
+                FileNameParts =
+                [
+                    FileNamePart.UpMid, FileNamePart.Plus,
+                    FileNamePart.UpName, FileNamePart.Plus,
+                    FileNamePart.VideoPublishTime, FileNamePart.Plus,
+                    FileNamePart.MainTitle, FileNamePart.Plus,
+                    FileNamePart.Order, FileNamePart.Hyphen,
+                    FileNamePart.Bvid, FileNamePart.Slash,
+                    FileNamePart.Section, FileNamePart.Plus,
+                    FileNamePart.Bvid, FileNamePart.Plus,
+                    FileNamePart.PageTitle, FileNamePart.Hyphen,
+                    FileNamePart.VideoQuality, FileNamePart.Hyphen,
+                    FileNamePart.VideoCodec
+                ]
+            }
+        };
+        var page = CreatePage();
+        page.Owner = new() { Mid = 42, Name = "creator" };
+        var video = new VideoInfoView { Title = "main", VideoZone = "Technology" };
+        var section = new VideoSection { Title = "section", VideoPages = [page] };
+
+        var draft = CreateDraft(_directory, video, section, 2, page,
+            CreateVideoQuality(), settings, DownloadContentSelection.None with { Video = true });
+
+        var expectedDirectory = useTitleDirectory ? Path.Combine(_directory, "main") : _directory;
+        Assert.Equal(
+            Path.Combine(expectedDirectory, "42+creator+2024-01-02+main+1-BV1test", "section+BV1test+page-1080P-AVC"),
+            Path.GetFullPath(draft.DownloadBase.FilePath));
     }
 
     [Fact]

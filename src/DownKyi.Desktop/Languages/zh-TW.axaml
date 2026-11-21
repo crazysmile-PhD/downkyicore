@@ -303,6 +303,8 @@
     <system:String x:Key="DefaultDirectoryTip">預設將檔案下載到該資料夾中</system:String>
     <system:String x:Key="ChangeDirectory">更改目錄</system:String>
     <system:String x:Key="FileNameParts">檔案命名格式</system:String>
+    <system:String x:Key="UseTitlePackageDirectory">使用獨立的影片標題資料夾</system:String>
+    <system:String x:Key="UseTitlePackageDirectoryTip">關閉後完全依命名格式儲存；同名檔案自動編號，保留既有檔案。僅影響新加入的下載任務。</system:String>
     <system:String x:Key="FileName">檔名：</system:String>
     <system:String x:Key="OptionalFields">可選欄位：</system:String>
     <system:String x:Key="DisplayOrder">序號</system:String>

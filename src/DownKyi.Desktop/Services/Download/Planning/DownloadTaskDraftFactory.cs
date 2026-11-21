@@ -172,7 +172,12 @@ internal static class DownloadTaskDraftFactory
             relativePath = page.Cid.ToString(CultureInfo.InvariantCulture);
         }
 
-        var packageDirectory = GetPackageDirectory(directory, video);
+        var packageDirectory = GetPackageDirectory(directory, video, settings.Video);
+        if (packageDirectory == null)
+        {
+            return Path.Combine(directory, relativePath);
+        }
+
         var titlePrefix = Path.GetFileName(packageDirectory) + "/";
         if (relativePath.StartsWith(titlePrefix, StringComparison.Ordinal))
         {
@@ -183,8 +188,16 @@ internal static class DownloadTaskDraftFactory
         return filePath;
     }
 
-    internal static string GetPackageDirectory(string directory, VideoInfoView video)
+    internal static string? GetPackageDirectory(
+        string directory,
+        VideoInfoView video,
+        VideoApplicationSettings settings)
     {
+        if (!settings.UseTitlePackageDirectory)
+        {
+            return null;
+        }
+
         var title = Format.FormatFileName(video.Title);
         return Path.Combine(directory, string.IsNullOrWhiteSpace(title) ? "Download" : title);
     }

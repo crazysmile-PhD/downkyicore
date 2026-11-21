@@ -341,7 +341,7 @@
                 Foreground="{DynamicResource SpaceInk}"
                 CornerRadius="0"
                 FontSize="{DynamicResource DownKyiFontSizeBody}">
-                <Grid ColumnDefinitions="100,*" RowDefinitions="*,*,*" Margin="10">
+                <Grid ColumnDefinitions="100,*" RowDefinitions="*,*,*,Auto" Margin="10">
                     <TextBlock
                         Grid.Row="0"
                         Grid.Column="0"
@@ -465,6 +465,18 @@
                             Grid.RowSpan="2"
                             Margin="0,0,12,12" />
                     </Grid>
+                    <StackPanel Grid.Row="3" Grid.ColumnSpan="2" Spacing="6" Margin="0,12,0,0">
+                        <CheckBox
+                            x:Name="UseTitlePackageDirectoryCheckBox"
+                            Command="{Binding UseTitlePackageDirectoryCommand}"
+                            Content="{DynamicResource UseTitlePackageDirectory}"
+                            Foreground="{DynamicResource SpaceInk}"
+                            IsChecked="{Binding UseTitlePackageDirectory, Mode=TwoWay}" />
+                        <TextBlock
+                            Foreground="{DynamicResource SpaceMuted}"
+                            Text="{DynamicResource UseTitlePackageDirectoryTip}"
+                            TextWrapping="Wrap" />
+                    </StackPanel>
                 </Grid>
             </HeaderedContentControl>
         </StackPanel>
