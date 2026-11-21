@@ -516,7 +516,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task IndependentPackagesReserveDistinctDirectoriesAndKeepPageNames()
+    public async Task IndependentAdmissionsShareTheTemplateDirectoryAndRenameOnlyCollidingFiles()
     {
         Directory.CreateDirectory(_directory);
         using var innerStore = CreateStore();
@@ -529,30 +529,25 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         var queue = new AdmissionObservingQueue(list, projections);
         using var admission = CreateAdmission(list, tasks, historyService, projections, queue);
         var directory = Path.Combine(_directory, "series");
-        var firstPackage = new DownloadOutputPackage(directory);
-        var secondPackage = new DownloadOutputPackage(directory);
         var first = CreateItem("first-page", Path.Combine(directory, "section", "page-1"), cid: 1);
         var second = CreateItem("other-download", Path.Combine(directory, "section", "page-1"), cid: 2);
         await Task.WhenAll(
-            admission.AdmitAsync(first, TestContext.Current.CancellationToken, package: firstPackage),
-            admission.AdmitAsync(second, TestContext.Current.CancellationToken, package: secondPackage));
+            admission.AdmitAsync(first, TestContext.Current.CancellationToken),
+            admission.AdmitAsync(second, TestContext.Current.CancellationToken));
         var next = CreateItem("next-page", Path.Combine(directory, "section", "page-2"), cid: 3);
-        await admission.AdmitAsync(next, TestContext.Current.CancellationToken, package: firstPackage);
+        await admission.AdmitAsync(next, TestContext.Current.CancellationToken);
 
-        Assert.Equal(directory, firstPackage.AdmittedDirectory);
-        Assert.Equal(directory + "(1)", secondPackage.AdmittedDirectory);
         Assert.Equal(Path.Combine(directory, "section", "page-1"), first.DownloadBase.FilePath);
-        Assert.Equal(Path.Combine(directory + "(1)", "section", "page-1"), second.DownloadBase.FilePath);
+        Assert.Equal(Path.Combine(directory, "section", "page-1(1)"), second.DownloadBase.FilePath);
         Assert.Equal(Path.Combine(directory, "section", "page-2"), next.DownloadBase.FilePath);
         Assert.Equal(3, queue.ObservedPaths.Count);
         Assert.False(Directory.Exists(directory));
         Assert.False(Directory.Exists(directory + "(1)"));
-        Assert.Equal(3, store.DirectoryReservationProbeCount);
-        Assert.Equal(0, store.ReservationSnapshotCount);
+        Assert.Equal(1, store.ReservationSnapshotCount);
     }
 
     [Fact]
-    public async Task DistinctPackagesDoNotReadGlobalReservationSnapshots()
+    public async Task DistinctTemplateOutputPathsDoNotReadGlobalReservationSnapshots()
     {
         Directory.CreateDirectory(_directory);
         using var innerStore = CreateStore();
@@ -568,18 +563,17 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         {
             var directory = Path.Combine(_directory, $"package-{index}");
             var item = CreateItem($"package-task-{index}", Path.Combine(directory, "page"));
-            Assert.True(await admission.AdmitAsync(item, TestContext.Current.CancellationToken,
-                package: new DownloadOutputPackage(directory)));
+            Assert.True(await admission.AdmitAsync(item, TestContext.Current.CancellationToken));
         }
 
         Assert.Equal(count, queue.Enqueued.Count);
-        Assert.Equal(count, store.DirectoryReservationProbeCount);
+        Assert.Equal(count, store.ReservationProbeCount);
         Assert.Equal(0, store.ReservationSnapshotCount);
         Assert.Equal(0, store.GetUnfinishedCallCount);
     }
 
     [Fact]
-    public async Task RedownloadUsesANewPackageAndPreservesExistingFiles()
+    public async Task RedownloadKeepsTheTemplateDirectoryAndPreservesExistingFiles()
     {
         Directory.CreateDirectory(_directory);
         using var store = CreateStore();
@@ -593,21 +587,22 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         Directory.CreateDirectory(directory);
         var existingPath = Path.Combine(directory, "page.mp4");
         await File.WriteAllTextAsync(existingPath, "old-video", TestContext.Current.CancellationToken);
-        Directory.CreateDirectory(directory + "(1)");
-        await File.WriteAllTextAsync(directory + "(2)", "occupied-file", TestContext.Current.CancellationToken);
+        var numberedPath = Path.Combine(directory, "page(1).mp4");
+        await File.WriteAllTextAsync(numberedPath, "numbered-video", TestContext.Current.CancellationToken);
         var item = CreateItem("redownload", Path.Combine(directory, "page"));
 
         Assert.True(await admission.AdmitAsync(
             item, TestContext.Current.CancellationToken,
-            redownloadCompleted: true, package: new DownloadOutputPackage(directory)));
+            redownloadCompleted: true));
 
-        Assert.Equal(Path.Combine(directory + "(3)", "page"), item.DownloadBase.FilePath);
+        Assert.Equal(Path.Combine(directory, "page(2)"), item.DownloadBase.FilePath);
         Assert.Equal("old-video", await File.ReadAllTextAsync(existingPath, TestContext.Current.CancellationToken));
+        Assert.Equal("numbered-video", await File.ReadAllTextAsync(numberedPath, TestContext.Current.CancellationToken));
         Assert.Single(await tasks.GetUnfinishedAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
-    public async Task RejectedPersistenceDoesNotClaimOrCreateAPackageDirectory()
+    public async Task RejectedPersistenceDoesNotCreateATemplateDirectory()
     {
         Directory.CreateDirectory(_directory);
         using var innerStore = CreateStore();
@@ -618,14 +613,13 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         using var projections = new DownloadTaskProjectionStore(tasks, historyService, clock);
         var queue = new RecordingDownloadTaskQueue();
         using var admission = CreateAdmission(new DownloadListState(), tasks, historyService, projections, queue);
-        var package = new DownloadOutputPackage(Path.Combine(_directory, "failed-series"));
-        var item = CreateItem("failed-page", Path.Combine(package.Directory, "page"));
+        var directory = Path.Combine(_directory, "failed-series");
+        var item = CreateItem("failed-page", Path.Combine(directory, "page"));
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => admission.AdmitAsync(
-            item, TestContext.Current.CancellationToken, package: package));
+            item, TestContext.Current.CancellationToken));
 
-        Assert.Null(package.AdmittedDirectory);
-        Assert.False(Directory.Exists(package.Directory));
+        Assert.False(Directory.Exists(directory));
         Assert.Empty(queue.Enqueued);
         Assert.Empty(await tasks.GetUnfinishedAsync(TestContext.Current.CancellationToken));
     }
@@ -1363,8 +1357,6 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
 
         public int ReservationSnapshotCount { get; private set; }
 
-        public int DirectoryReservationProbeCount { get; private set; }
-
         public int AddCallCount { get; private set; }
 
         public Task InitializeAsync(CancellationToken cancellationToken) =>
@@ -1439,15 +1431,6 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         {
             ReservationSnapshotCount++;
             return inner.GetActiveOutputReservationKeysAsync(ignoreCase, cancellationToken);
-        }
-
-        public Task<bool> IsOutputDirectoryReservedAsync(
-            string directory,
-            bool ignoreCase,
-            CancellationToken cancellationToken)
-        {
-            DirectoryReservationProbeCount++;
-            return inner.IsOutputDirectoryReservedAsync(directory, ignoreCase, cancellationToken);
         }
 
         public Task<bool> HasOutputClaimConflictAsync(
