@@ -518,9 +518,39 @@ public sealed class VideoTagLoadingTests : IDisposable
         Assert.Equal(1, loadCount);
         var download = Assert.Single(context.ListState.Downloading);
         Assert.Equal(["kept"], download.Metadata!.Tags);
-        Assert.Equal(Path.Combine(oldDirectory + "(1)", page.Name), download.DownloadBase.FilePath);
+        Assert.Equal(Path.Combine(oldDirectory, page.Name + "(1)"), download.DownloadBase.FilePath);
         Assert.Equal("previous-quality", await File.ReadAllTextAsync(oldPath, TestContext.Current.CancellationToken));
         Assert.Single(context.Dialogs.Requests);
+    }
+
+    [Fact]
+    public async Task TemplateOnlyPagesShareTheCreatorDirectoryAndPreserveExistingFiles()
+    {
+        using var context = CreateContext(generateMetadata: false);
+        context.SetFileNameTemplate(
+            FileNamePart.UpName, FileNamePart.Slash,
+            FileNamePart.Order, FileNamePart.Hyphen, FileNamePart.PageTitle);
+        var first = CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]));
+        first.Owner = new() { Mid = 42, Name = "creator" };
+        var second = CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]));
+        second.Owner = first.Owner;
+        second.Cid = first.Cid + 1;
+        second.Order = 2;
+        var creatorDirectory = Path.Combine(_directory, "creator");
+        Directory.CreateDirectory(creatorDirectory);
+        var oldPath = Path.Combine(creatorDirectory, "1-page.mp4");
+        await File.WriteAllTextAsync(oldPath, "old-video", TestContext.Current.CancellationToken);
+        var prepared = await context.PrepareAsync(first, second);
+
+        var result = await context.AddToDownloadResultAsync(
+            CreateSelection(_directory), prepared, isAll: true,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, result.AddedCount);
+        Assert.Equal(
+            [Path.Combine(creatorDirectory, "1-page(1)"), Path.Combine(creatorDirectory, "2-page")],
+            context.ListState.Downloading.Select(item => item.DownloadBase.FilePath));
+        Assert.Equal("old-video", await File.ReadAllTextAsync(oldPath, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -544,7 +574,7 @@ public sealed class VideoTagLoadingTests : IDisposable
             .ConfigureAwait(true);
 
         Assert.Equal(1, added);
-        Assert.Equal(3, resolver.CallCount);
+        Assert.Equal(2, resolver.CallCount);
         Assert.Equal(1, context.Store.AddCount);
         Assert.Equal("second", Assert.Single(context.ListState.Downloading).DownloadBase.Name);
         Assert.Single(context.Queue.Enqueued);
@@ -906,7 +936,7 @@ public sealed class VideoTagLoadingTests : IDisposable
     }
 
     [Fact]
-    public async Task IndependentAliasedSubtitleDownloadUsesANewPackage()
+    public async Task IndependentAliasedSubtitleDownloadKeepsTheTemplateDirectoryAndRenamesTheFile()
     {
         var aliasRoot = Path.Combine(_directory, $"conflict-{Guid.NewGuid():N}");
         var logicalDirectory = Path.Combine(aliasRoot, "logical");
@@ -946,8 +976,7 @@ public sealed class VideoTagLoadingTests : IDisposable
                 TestContext.Current.CancellationToken));
         var subtitle = Assert.Single(context.ListState.Downloading, item => item.DownloadBase.NeedDownloadContent.Subtitle);
         Assert.Equal(
-            Path.Combine(Path.GetDirectoryName(mediaItem.DownloadBase.FilePath)! + "(1)",
-                Path.GetFileName(mediaItem.DownloadBase.FilePath)),
+            mediaItem.DownloadBase.FilePath + "(1)",
             subtitle.DownloadBase.FilePath);
         Assert.Equal(2, context.ListState.Downloading.Count);
         Assert.Empty(context.Dialogs.Requests);
@@ -1449,6 +1478,17 @@ public sealed class VideoTagLoadingTests : IDisposable
                 {
                     IsUseSaveVideoRootPath = AllowStatus.Yes,
                     SaveVideoRootPath = directory
+                }
+            });
+        }
+
+        public void SetFileNameTemplate(params FileNamePart[] parts)
+        {
+            _settings.Update(settings => settings with
+            {
+                Video = settings.Video with
+                {
+                    FileNameParts = [.. parts]
                 }
             });
         }

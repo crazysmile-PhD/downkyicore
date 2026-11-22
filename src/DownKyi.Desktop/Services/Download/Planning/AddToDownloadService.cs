@@ -224,8 +224,7 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
                             download.Item,
                             cancellationToken,
                             redownloadCompleted
-                            && review.CompletedDuplicateIds.Contains(download.Item.DownloadBase.Id),
-                            download.Package)
+                            && review.CompletedDuplicateIds.Contains(download.Item.DownloadBase.Id))
                         .ConfigureAwait(true);
                     if (!admitted)
                     {
@@ -296,8 +295,6 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
         var pending = new List<PendingDownload>();
         foreach (var finalizedDownload in finalizedDownloads.Where(download => download.StopReason == null))
         {
-            var package = new DownloadOutputPackage(
-                DownloadTaskDraftFactory.GetPackageDirectory(directory, finalizedDownload.Video));
             var bangumiMainCoverAssigned = false;
             foreach (var finalizedSection in finalizedDownload.Sections)
             {
@@ -331,8 +328,7 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
                     pending.Add(new PendingDownload(
                         item,
                         finalizedDownload.Video,
-                        finalizedPage.Page,
-                        package));
+                        finalizedPage.Page));
                 }
             }
         }
@@ -348,7 +344,6 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
     private sealed record PendingDownload(
         DownloadingItem Item,
         VideoInfoView Video,
-        VideoPage Page,
-        DownloadOutputPackage Package);
+        VideoPage Page);
 
 }
