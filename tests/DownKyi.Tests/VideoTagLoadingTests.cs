@@ -1,10 +1,13 @@
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Net.Http;
+using System.Web;
 using DownKyi.Application.Desktop;
 using DownKyi.Application.Downloads;
 using DownKyi.Application.FileName;
 using DownKyi.Application.Settings;
 using DownKyi.Core.BiliApi.BiliUtils;
+using DownKyi.Core.BiliApi.Video.Models;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.BiliApi.VideoStream.Models;
 using DownKyi.Core.FileName;
@@ -18,6 +21,7 @@ using DownKyi.Services.Download;
 using DownKyi.Services.Video;
 using DownKyi.Utils;
 using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
 using CoreVideoPage = DownKyi.Core.BiliApi.Video.Models.VideoPage;
 using VideoPage = DownKyi.Presentation.VideoPage;
 
@@ -503,7 +507,8 @@ public sealed class VideoTagLoadingTests : IDisposable
             DownloadDuplicateBatchDialogContract.Encode(
                 DownloadDuplicateBatchAction.RedownloadCompleted));
         var preparedDownload = await context.PrepareAsync(requestedContent, page);
-        var oldDirectory = Path.Combine(_directory, preparedDownload.Video.Title);
+        var preparedPage = Assert.Single(Assert.Single(preparedDownload.Sections).Pages);
+        var oldDirectory = Path.Combine(_directory, preparedPage.Video.Title);
         Directory.CreateDirectory(oldDirectory);
         var oldPath = Path.Combine(oldDirectory, page.Name + ".mp4");
         await File.WriteAllTextAsync(oldPath, "previous-quality", TestContext.Current.CancellationToken);
@@ -1101,8 +1106,8 @@ public sealed class VideoTagLoadingTests : IDisposable
             TestContext.Current.CancellationToken);
 
         Assert.NotNull(preparedDownload);
-        Assert.Same(video, preparedDownload.Video);
         var preparedPage = Assert.Single(Assert.Single(preparedDownload.Sections).Pages);
+        Assert.Same(video, preparedPage.Video);
         Assert.Same(page, preparedPage.Page);
         Assert.Equal(
             new DownloadMediaCapabilities(DownloadMediaOutputModes.VideoOnly),
@@ -1255,6 +1260,215 @@ public sealed class VideoTagLoadingTests : IDisposable
         Assert.Equal(0, infoService.StreamRequestCount);
         Assert.False(Assert.Single(Assert.Single(prepared.Sections).Pages).AvailableMedia.HasAnyMedia);
     }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task UgcDownloadsKeepEachVideosMetadataAndSelectedPages(bool selectEntry, bool hasPlayback)
+    {
+        var entry = CreateUgcDownloadVideo("BV17x411w7KC", 42, 1_700_000_000, 84);
+        var multipart = CreateUgcDownloadVideo("BV1xx411c7mD", 43, 1_710_000_000, 85, 86, 87);
+        var other = CreateUgcDownloadVideo("BV1GJ411x7h7", 44, 1_720_000_000, 88);
+        var unselected = CreateUgcDownloadVideo("BV1Q541167Qg", 45, 1_730_000_000, 89);
+        var videos = new[] { entry, multipart, other, unselected }.ToDictionary(video => video.Bvid);
+        var detailRequests = new List<string>();
+        var playbackRequests = new List<long>();
+        var playback = new PlayUrl
+        {
+            Quality = 80,
+            VideoCodecid = 7,
+            Durl = [new PlayUrlDurl { SourceAddress = "https://media.invalid/video.mp4" }]
+        };
+        var client = new TestBilibiliApiClient
+        {
+            GetStringAsyncHandler = (request, cancellationToken) =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var uri = new Uri(request.RequestAddress);
+                if (uri.Host == "www.bilibili.com")
+                {
+                    return Task.FromResult("<html></html>");
+                }
+
+                if (uri.AbsolutePath == "/x/web-interface/wbi/view")
+                {
+                    var bvid = HttpUtility.ParseQueryString(uri.Query)["bvid"]!;
+                    detailRequests.Add(bvid);
+                    return Task.FromResult(JsonConvert.SerializeObject(new { code = 0, data = videos[bvid] }));
+                }
+
+                if (uri.AbsolutePath == "/x/player/wbi/playurl")
+                {
+                    var query = HttpUtility.ParseQueryString(uri.Query);
+                    var cid = long.Parse(query["cid"]!, CultureInfo.InvariantCulture);
+                    Assert.Contains(videos[query["bvid"]!].Pages!, page => page.Cid == cid);
+                    playbackRequests.Add(cid);
+                    return Task.FromResult(JsonConvert.SerializeObject(new { code = 0, data = playback }));
+                }
+
+                Assert.Equal("/x/web-interface/view/detail/tag", uri.AbsolutePath);
+                return Task.FromResult("{\"code\":0,\"data\":[]}");
+            }
+        };
+        using var context = CreateContext(generateMetadata: true, client: client);
+        context.SetFileNameTemplate(
+            FileNamePart.Section, FileNamePart.Slash,
+            FileNamePart.MainTitle, FileNamePart.Slash,
+            FileNamePart.PageTitle, FileNamePart.Slash,
+            FileNamePart.VideoPublishTime);
+        using var settings = new TestSettingsStore();
+        entry.UgcSeason = new UgcSeason
+        {
+            Sections =
+            [
+                new UgcSection
+                {
+                    Id = 7,
+                    Title = "collection-section",
+                    Episodes = videos.Values.Select(video => new UgcEpisode
+                    {
+                        Aid = video.Aid,
+                        Bvid = video.Bvid,
+                        Cid = video.Pages![0].Cid,
+                        Title = video == entry ? video.Title : $"listed-{video.Bvid}",
+                        Page = video.Pages[0],
+                        Pages = video.Pages,
+                        Arc = new UgcArc
+                        {
+                            Pic = video.Pic,
+                            Pubdate = video.Pubdate,
+                            Ctime = video.Pubdate - 86_400
+                        }
+                    }).ToArray()
+                }
+            ]
+        };
+        var source = new VideoInfoService(
+            entry, settings.Store, new VideoTagProvider(client), new TestWbiKeyProvider(), client);
+        var videoInfo = source.GetVideoView(TestContext.Current.CancellationToken)!;
+        var sections = source.GetVideoSections(cancellationToken: TestContext.Current.CancellationToken)!;
+        foreach (var page in sections.SelectMany(section => section.VideoPages))
+        {
+            page.IsSelected = page.Bvid != unselected.Bvid && page.Cid != 85
+                && (selectEntry || page.Bvid != entry.Bvid);
+            if (hasPlayback)
+            {
+                SetPlayback(page, playback, isDurl: true);
+            }
+        }
+
+        var requested = DownloadContentSelection.None with { Video = true, Cover = true };
+        var prepared = await context.Service.PrepareAsync(
+            videoInfo, sections, requested, isAll: false, TestContext.Current.CancellationToken);
+        var result = await context.AddToDownloadResultAsync(
+            CreateSelection(_directory, requested), prepared,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(entry.Bvid, videoInfo.Bvid);
+        Assert.Equal(selectEntry ? 4 : 3, result.AddedCount);
+        Assert.Equal(new[] { multipart.Bvid, other.Bvid }, detailRequests);
+        long[] selectedCids = selectEntry ? [84, 86, 87, 88] : [86, 87, 88];
+        Assert.Equal(hasPlayback ? [] : selectedCids, playbackRequests.Order());
+        Assert.Equal(selectedCids, prepared.Sections.SelectMany(section => section.Pages).Select(page => page.Page.Cid).Order());
+        Assert.Equal(selectedCids,
+            context.ListState.Downloading.Select(item => item.DownloadBase.Cid).Order());
+        foreach (var item in context.ListState.Downloading)
+        {
+            var expected = videos[item.DownloadBase.Bvid];
+            var page = sections.SelectMany(section => section.VideoPages)
+                .Single(candidate => candidate.Cid == item.DownloadBase.Cid);
+            var section = sections.Single(candidate => candidate.VideoPages.Contains(page));
+            var expectedPages = expected.Pages!;
+            var expectedPage = expectedPages.Single(candidate => candidate.Cid == page.Cid);
+            var expectedName = expectedPages.Count == 1 ? expected.Title : expectedPage.Part;
+            var published = DateTimeOffset.FromUnixTimeSeconds(expected.Pubdate).LocalDateTime;
+            Assert.Equal(expected.Title, item.DownloadBase.MainTitle);
+            Assert.Equal(expectedName, item.DownloadBase.Name);
+            Assert.Equal(expected.Pic, item.DownloadBase.CoverUrl);
+            Assert.Equal(published, page.OriginalPublishTime);
+            Assert.Equal(expected.Desc, item.Metadata!.Plot);
+            Assert.Equal(published.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), item.Metadata.Premiered);
+            Assert.Equal(
+                Path.Combine(_directory, section.Title, expected.Title, expectedName, page.PublishTime),
+                item.DownloadBase.FilePath);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task UgcDetailFailureDoesNotFallBackToEntryVideoMetadata(bool missingSelectedPage)
+    {
+        var detail = CreateUgcDownloadVideo("BV1GJ411x7h7", 43, 1_710_000_000, 85);
+        var client = new TestBilibiliApiClient
+        {
+            GetStringAsyncHandler = (_, _) => Task.FromResult(missingSelectedPage
+                ? JsonConvert.SerializeObject(new { code = 0, data = detail })
+                : "{\"code\":-404,\"message\":\"Not found\"}")
+        };
+        using var context = CreateContext(generateMetadata: false, client: client);
+        var page = new VideoPage { Bvid = detail.Bvid, Cid = 86, IsSelected = true };
+
+        await Assert.ThrowsAsync<DownKyi.Core.BiliApi.BilibiliApiResponseException>(() =>
+            context.Service.PrepareAsync(
+                new VideoInfoView { Bvid = "BV17x411w7KC", Title = "entry" },
+                [new VideoSection { VideoPages = [page] }],
+                DownloadContentSelection.None with { Cover = true },
+                isAll: false,
+                TestContext.Current.CancellationToken));
+
+        Assert.Empty(context.ListState.Downloading);
+        Assert.Empty(context.Queue.Enqueued);
+    }
+
+    [Fact]
+    public async Task CancelingUgcDetailLookupCancelsPreparation()
+    {
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var client = new TestBilibiliApiClient
+        {
+            GetStringAsyncHandler = async (_, cancellationToken) =>
+            {
+                entered.TrySetResult();
+                await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(true);
+                return string.Empty;
+            }
+        };
+        using var context = CreateContext(generateMetadata: false, client: client);
+        using var operation = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        var preparation = context.Service.PrepareAsync(
+            new VideoInfoView { Bvid = "BV17x411w7KC", Title = "entry" },
+            [new VideoSection { VideoPages = [new VideoPage { Bvid = "BV1GJ411x7h7", Cid = 85, IsSelected = true }] }],
+            DownloadContentSelection.None with { Cover = true },
+            isAll: false,
+            operation.Token);
+        await entered.Task.WaitAsync(TestContext.Current.CancellationToken);
+
+        await operation.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => preparation);
+        Assert.Empty(context.ListState.Downloading);
+        Assert.Empty(context.Queue.Enqueued);
+    }
+
+    private static VideoView CreateUgcDownloadVideo(string bvid, long avid, long pubdate, params long[] cids) => new()
+    {
+        Aid = avid,
+        Bvid = bvid,
+        Title = $"title-{bvid}",
+        Pic = $"https://images.invalid/{bvid}.jpg",
+        Desc = $"description-{bvid}",
+        Pubdate = pubdate,
+        Pages = cids.Select((cid, index) => new CoreVideoPage
+        {
+            Cid = cid,
+            Page = index + 1,
+            Part = $"part-{index + 1}",
+            FirstFrame = $"https://images.invalid/{cid}.jpg"
+        }).ToArray()
+    };
 
     private DownloadTestContext CreateContext(
         bool generateMetadata,

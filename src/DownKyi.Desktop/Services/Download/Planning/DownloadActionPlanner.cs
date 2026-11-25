@@ -168,6 +168,7 @@ internal sealed class DownloadActionPlanner
                 {
                     pages.Add(new FinalizedDownloadPage(
                         page,
+                        preparedPage.Video,
                         preparedPage.VideoQuality,
                         preparedPage.AudioQualityFormat,
                         preparedPage.AvailableMedia,
@@ -203,7 +204,6 @@ internal sealed class DownloadActionPlanner
                     ? DownloadPlanningStopReason.SkippedByUser
                     : DownloadPlanningStopReason.NoAvailableContent;
         return new FinalizedDownload(
-            preparedDownload.Video,
             sections,
             stopReason,
             candidateCount,
@@ -236,7 +236,7 @@ internal sealed class DownloadActionPlanner
                 }
 
                 items.Add(new DownloadContentConflictPromptItem(
-                    CreatePageDisplayName(preparedDownload.Video.Title, page.Name),
+                    CreatePageDisplayName(preparedPage.Video.Title, page.Name),
                     conflict));
             }
         }
@@ -267,7 +267,6 @@ internal sealed class DownloadActionPlanner
         int candidateCount,
         int skippedCount) =>
         new(
-            preparedDownload.Video,
             preparedDownload.Sections
                 .Select(static section =>
                     new FinalizedDownloadSection(section.Section, []))

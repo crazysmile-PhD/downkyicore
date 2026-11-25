@@ -280,7 +280,7 @@ internal class VideoInfoService : IInfoService
         var order = 1;
         foreach (var p in episode.Pages)
         {
-            var dateTime = startTime.AddSeconds(episode.Arc.Ctime);
+            var dateTime = startTime.AddSeconds(episode.Arc.Pubdate);
             videoSection.VideoPages.Add(new VideoPage
             {
                 Avid = episode.Aid,
@@ -320,7 +320,7 @@ internal class VideoInfoService : IInfoService
             LoadTagsAsync = currentToken =>
                 _tagProvider.GetTagsAsync(episode.Bvid, episode.Cid, currentToken)
         };
-        var dateTime = startTime.AddSeconds(episode.Arc.Ctime);
+        var dateTime = startTime.AddSeconds(episode.Arc.Pubdate);
         page.PublishTime = dateTime.ToString(timeFormat, CultureInfo.CurrentCulture);
         page.OriginalPublishTime = dateTime;
         return page;
@@ -397,6 +397,7 @@ internal class VideoInfoService : IInfoService
         var dateTime = startTime.AddSeconds(videoView.Pubdate);
         var videoInfoView = new VideoInfoView
         {
+            Bvid = videoView.Bvid,
             CoverUrl = coverUrl ?? string.Empty,
             Title = videoView.Title,
             TypeId = videoView.Tid,

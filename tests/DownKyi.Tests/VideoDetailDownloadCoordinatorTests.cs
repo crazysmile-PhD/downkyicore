@@ -72,9 +72,9 @@ public sealed class VideoDetailDownloadCoordinatorTests
         Assert.Equal(1, result.AddedCount);
         Assert.Equal(1, session.PrepareCount);
         Assert.Equal(1, session.AddCount);
-        Assert.Same(video, session.CreatedPreparedDownload!.Video);
+        Assert.Same(video, Assert.Single(Assert.Single(session.CreatedPreparedDownload!.Sections).Pages).Video);
         Assert.Equal(session.Selection.Directory, session.ReceivedDirectory);
-        Assert.Same(video, session.ReceivedFinalizedDownload!.Video);
+        Assert.NotNull(session.ReceivedFinalizedDownload);
         Assert.Same(page, session.ReceivedSubtitlePage);
     }
 

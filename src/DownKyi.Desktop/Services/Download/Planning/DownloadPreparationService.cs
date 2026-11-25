@@ -54,41 +54,13 @@ internal sealed class DownloadPreparationService
         };
     }
 
-    public async Task<PreparedDownload> PrepareAsync(
+    public Task<PreparedDownload> PrepareAsync(
         VideoInfoView videoInfoView,
         IList<VideoSection> videoSections,
         DownloadContentSelection requestedContent,
         bool isAll,
-        CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(videoInfoView);
-        ArgumentNullException.ThrowIfNull(videoSections);
-        ArgumentNullException.ThrowIfNull(requestedContent);
-        foreach (var section in videoSections)
-        {
-            foreach (var page in section.VideoPages)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                if (isAll || page.IsSelected)
-                {
-                    var playbackService = await ResolvePlaybackServiceAsync(
-                        _playbackService,
-                        page,
-                        cancellationToken).ConfigureAwait(false);
-                    if (requestedContent.HasMedia)
-                    {
-                        await PrepareMediaAsync(
-                            playbackService,
-                            page,
-                            requestedContent,
-                            cancellationToken).ConfigureAwait(false);
-                    }
-                }
-            }
-        }
-
-        return PreparedDownload.Create(videoInfoView, videoSections);
-    }
+        CancellationToken cancellationToken) => PreparePagesAsync(
+            _playbackService, videoInfoView, videoSections, requestedContent, isAll, cancellationToken);
 
     public async Task<PreparedDownload?> PrepareAsync(
         IInfoService videoInfoService,
@@ -127,22 +99,111 @@ internal sealed class DownloadPreparationService
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 page.IsSelected = true;
-                var playbackService = await ResolvePlaybackServiceAsync(
-                    videoInfoService,
-                    page,
-                    cancellationToken).ConfigureAwait(false);
-                if (requestedContent.HasMedia)
-                {
-                    await PrepareMediaAsync(
-                        playbackService,
-                        page,
-                        requestedContent,
-                        cancellationToken).ConfigureAwait(false);
-                }
             }
         }
 
-        return PreparedDownload.Create(videoInfoView, videoSections);
+        return await PreparePagesAsync(
+            videoInfoService, videoInfoView, videoSections, requestedContent, isAll: true, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task<PreparedDownload> PreparePagesAsync(
+        IInfoService sourceService,
+        VideoInfoView videoInfoView,
+        IList<VideoSection> videoSections,
+        DownloadContentSelection requestedContent,
+        bool isAll,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(videoInfoView);
+        ArgumentNullException.ThrowIfNull(videoSections);
+        ArgumentNullException.ThrowIfNull(requestedContent);
+        var resolvedVideos = new Dictionary<string, ResolvedVideo>(StringComparer.Ordinal);
+        var preparedSections = new List<PreparedDownloadSection>(videoSections.Count);
+        foreach (var section in videoSections)
+        {
+            var preparedPages = new List<PreparedDownloadPage>();
+            foreach (var page in section.VideoPages)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!isAll && !page.IsSelected)
+                {
+                    continue;
+                }
+
+                var video = videoInfoView;
+                if (!string.IsNullOrWhiteSpace(videoInfoView.Bvid)
+                    && !string.Equals(videoInfoView.Bvid, page.Bvid, StringComparison.Ordinal))
+                {
+                    var resolved = await ResolveCollectionVideoAsync(
+                        page.Bvid, resolvedVideos, cancellationToken).ConfigureAwait(false);
+                    if (!resolved.Pages.TryGetValue(page.Cid, out var resolvedPage))
+                    {
+                        throw new BilibiliApiResponseException(
+                            nameof(VideoInfo.VideoViewInfoAsync),
+                            "Collection video metadata did not contain the selected page.");
+                    }
+
+                    page.Avid = resolvedPage.Avid;
+                    page.Page = resolvedPage.Page;
+                    page.Name = resolvedPage.Name;
+                    page.Owner = resolvedPage.Owner;
+                    page.PublishTime = resolvedPage.PublishTime;
+                    page.OriginalPublishTime = resolvedPage.OriginalPublishTime;
+                    page.LoadTagsAsync = resolvedPage.LoadTagsAsync;
+                    if (!string.IsNullOrWhiteSpace(resolvedPage.FirstFrame))
+                    {
+                        page.FirstFrame = resolvedPage.FirstFrame;
+                    }
+
+                    video = resolved.Video;
+                }
+
+                var playbackService = await ResolvePlaybackServiceAsync(
+                    sourceService, page, cancellationToken).ConfigureAwait(false);
+                if (requestedContent.HasMedia)
+                {
+                    await PrepareMediaAsync(
+                        playbackService, page, requestedContent, cancellationToken).ConfigureAwait(false);
+                }
+
+                preparedPages.Add(PreparedDownloadPage.Create(page, video));
+            }
+
+            preparedSections.Add(new PreparedDownloadSection(section, preparedPages));
+        }
+
+        return new PreparedDownload(preparedSections);
+    }
+
+    private async Task<ResolvedVideo> ResolveCollectionVideoAsync(
+        string bvid,
+        Dictionary<string, ResolvedVideo> resolvedVideos,
+        CancellationToken cancellationToken)
+    {
+        if (resolvedVideos.TryGetValue(bvid, out var resolved))
+        {
+            return resolved;
+        }
+
+        var service = await VideoInfoService.CreateAsync(
+            new BilibiliBvidInput(bvid), _settingsStore, _tagProvider, _wbiKeyProvider, _client, cancellationToken)
+            .ConfigureAwait(false);
+        var video = service.GetVideoView(cancellationToken)
+            ?? throw new BilibiliApiResponseException(
+                nameof(VideoInfo.VideoViewInfoAsync),
+                "Collection video metadata was unavailable.");
+        var pages = service.GetVideoPages(cancellationToken);
+        if (pages == null || !string.Equals(video.Bvid, bvid, StringComparison.Ordinal))
+        {
+            throw new BilibiliApiResponseException(
+                nameof(VideoInfo.VideoViewInfoAsync),
+                "Collection video metadata did not match the requested video.");
+        }
+
+        resolved = new ResolvedVideo(video, pages.ToDictionary(page => page.Cid));
+        resolvedVideos.Add(bvid, resolved);
+        return resolved;
     }
 
     private async Task<IInfoService> ResolvePlaybackServiceAsync(
@@ -254,4 +315,6 @@ internal sealed class DownloadPreparationService
             requestedContent.Video,
             requestedContent.Audio);
     }
+
+    private sealed record ResolvedVideo(VideoInfoView Video, IReadOnlyDictionary<long, VideoPage> Pages);
 }
