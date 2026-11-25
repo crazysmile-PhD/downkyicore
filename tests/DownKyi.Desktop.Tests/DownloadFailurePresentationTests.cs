@@ -169,7 +169,7 @@ public sealed class DownloadFailurePresentationTests
     }
 
     [AvaloniaFact]
-    public Task CoverConversionFailureDoesNotOfferAnIneffectiveRetry()
+    public Task CoverConversionFailureExplainsHowToDisableEmbeddingAndRecreateTheTask()
     {
         return AvaloniaTestDispatcher.RunAsync(() =>
         {
@@ -182,8 +182,11 @@ public sealed class DownloadFailurePresentationTests
 
             Assert.False(failure.IsTransient);
             Assert.Contains("封面无法转换", details, StringComparison.Ordinal);
-            Assert.Contains("取消“封面”", details, StringComparison.Ordinal);
-            Assert.DoesNotContain("点“重试”", details, StringComparison.Ordinal);
+            Assert.Contains("关闭“视频内嵌封面”", details, StringComparison.Ordinal);
+            Assert.Contains("重新建立任务", details, StringComparison.Ordinal);
+            Assert.Contains("仍可保留封面图片", details, StringComparison.Ordinal);
+            Assert.DoesNotContain("取消“封面”", details, StringComparison.Ordinal);
+            Assert.DoesNotContain("重试", details, StringComparison.Ordinal);
         });
     }
 
