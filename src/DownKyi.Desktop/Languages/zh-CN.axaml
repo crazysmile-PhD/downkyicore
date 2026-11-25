@@ -218,7 +218,7 @@
     <system:String x:Key="DownloadFailureSubtitleDetails">所选字幕未能完成下载。可点“重试”；若字幕已不可用，请重新建立任务并调整字幕选择。</system:String>
     <system:String x:Key="DownloadFailureArtifactDetails">附加文件未能完成下载。请检查网络和下载目录后重试；持续失败时可在“设置 → 关于与反馈”导出诊断包。</system:String>
     <system:String x:Key="DownloadFailureProcessingDetails">下载后的文件处理未完成。可点“重试”；持续失败时可在“设置 → 关于与反馈”导出诊断包。</system:String>
-    <system:String x:Key="DownloadFailureCoverConversionDetails">封面无法转换为 MP4 可写入的格式。重试同一任务不会改变结果；请取消“封面”后重新建立任务，并在“设置 → 关于与反馈”导出诊断包。</system:String>
+    <system:String x:Key="DownloadFailureCoverConversionDetails">封面无法转换为 MP4 可写入的格式。请在“设置 → 视频 → 下载后处理”关闭“视频内嵌封面”后重试，仍可保留封面图片。如需内嵌封面，请在“设置 → 关于与反馈”导出诊断包。</system:String>
     <system:String x:Key="DownloadFailureTlsDetails">安全连接验证失败。请检查系统日期、代理和证书设置，然后再重试。</system:String>
     <system:String x:Key="DownloadFailureRuntimeDetails">下载服务无法继续运行。请重新启动应用；若仍失败，请在“设置 → 关于与反馈”导出诊断包。</system:String>
     <system:String x:Key="DownloadFailureLegacyDetails">此任务使用已移除的旧下载器，无法直接重试。请重新解析并建立任务。</system:String>
@@ -294,6 +294,8 @@
     <system:String x:Key="FirstVideoQuality">优先下载的视频画质：</system:String>
     <system:String x:Key="FirstAudioQuality">优先下载的视频音质：</system:String>
     <system:String x:Key="IsTranscodingFlvToMp4">下载FLV视频后转码为mp4</system:String>
+    <system:String x:Key="EmbedCover">视频内嵌封面</system:String>
+    <system:String x:Key="EmbedCoverTip">下载内容同时勾选“视频”和“封面”时，将封面写入 MP4。关闭后仍会保存封面图片。</system:String>
     <system:String x:Key="FfmpegHardwareAcceleration">FFmpeg硬件加速：</system:String>
     <system:String x:Key="FfmpegHardwareAccelerationTip">仅用于需要重新编码的步骤。普通音视频混流会优先无损复制，不会强制转码。</system:String>
     <system:String x:Key="FfmpegMaxParallelJobs">FFmpeg最大并行任务：</system:String>

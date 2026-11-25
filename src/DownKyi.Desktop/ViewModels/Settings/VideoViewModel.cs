@@ -132,6 +132,7 @@ internal partial class VideoViewModel : ViewModelBase
         // 是否下载flv视频后转码为mp4
         var isTranscodingFlvToMp4 = videoSettings.IsTranscodingFlvToMp4;
         IsTranscodingFlvToMp4 = isTranscodingFlvToMp4 == AllowStatus.Yes;
+        EmbedCover = videoSettings.EmbedCover;
 
         var ffmpegHardwareAcceleration = videoSettings.FfmpegHardwareAcceleration;
         SelectedFfmpegHardwareAcceleration = FfmpegHardwareAccelerations
@@ -268,6 +269,20 @@ internal partial class VideoViewModel : ViewModelBase
         {
             IsTranscodingFlvToMp4 = isTranscodingFlvToMp4
         }).IsTranscodingFlvToMp4 == isTranscodingFlvToMp4;
+        PublishTip(isSucceed);
+    }
+
+    private RelayCommand? _embedCoverCommand;
+
+    public RelayCommand EmbedCoverCommand =>
+        _embedCoverCommand ??= new RelayCommand(ExecuteEmbedCoverCommand);
+
+    private void ExecuteEmbedCoverCommand()
+    {
+        var isSucceed = UpdateVideo(settings => settings with
+        {
+            EmbedCover = EmbedCover
+        }).EmbedCover == EmbedCover;
         PublishTip(isSucceed);
     }
 

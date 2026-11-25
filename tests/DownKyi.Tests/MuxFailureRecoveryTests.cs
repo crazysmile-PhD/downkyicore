@@ -60,11 +60,15 @@ public sealed class MuxFailureRecoveryTests
     }
 
     [Theory]
-    [InlineData(0)]
-    [InlineData(1)]
-    [InlineData(3)]
-    public async Task RequestedCoverIsPassedIntoEveryVideoMuxPath(
-        int durlSegmentCount)
+    [InlineData(0, true)]
+    [InlineData(1, true)]
+    [InlineData(3, true)]
+    [InlineData(0, false)]
+    [InlineData(1, false)]
+    [InlineData(3, false)]
+    public async Task CoverEmbeddingSettingIsRespectedByEveryVideoMuxPath(
+        int durlSegmentCount,
+        bool embedCover)
     {
         var mediaKind = durlSegmentCount == 0
             ? DownloadMediaKind.Dash
@@ -76,7 +80,9 @@ public sealed class MuxFailureRecoveryTests
             Cover = true,
             MediaKind = mediaKind
         };
-        var test = await MuxTestContext.CreateAsync(requestedContent).ConfigureAwait(true);
+        var test = await MuxTestContext.CreateAsync(
+            requestedContent,
+            embedCover: embedCover).ConfigureAwait(true);
         await using var testLifetime = test.ConfigureAwait(true);
         if (durlSegmentCount > 0)
         {
@@ -100,10 +106,12 @@ public sealed class MuxFailureRecoveryTests
 
         Assert.True(result.IsSuccess, result.Error?.Message);
         Assert.Equal(
-            cover,
+            embedCover ? cover : null,
             durlSegmentCount > 1
                 ? test.Muxer?.ConcatCover
                 : test.Muxer?.MergeCover);
+        Assert.True(test.Execution.NeedsCover);
+        Assert.True(File.Exists(cover));
     }
 
     [Fact]
@@ -275,13 +283,18 @@ public sealed class MuxFailureRecoveryTests
 
         public static async Task<MuxTestContext> CreateAsync(
             DownloadContentSelection? requestedContent = null,
-            PlayStreamType streamType = PlayStreamType.Video)
+            PlayStreamType streamType = PlayStreamType.Video,
+            bool embedCover = true)
         {
             var directory = Path.Combine(
                 Path.GetTempPath(),
                 $"downkyi-mux-recovery-{Guid.NewGuid():N}");
             Directory.CreateDirectory(directory);
             var settings = new TestSettingsStore();
+            settings.Store.Update(value => value with
+            {
+                Video = value.Video with { EmbedCover = embedCover }
+            });
             var store = new SingleTaskStore();
             var clock = new SystemClock();
             var historyService = DownloadHistoryService.CreateForSharedStore(store);

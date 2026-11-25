@@ -160,7 +160,7 @@ internal sealed class MuxStage : IDownloadPipelineStage
     }
 
     private static string? GetCoverForMux(DownloadExecutionContext context) =>
-        context.NeedsVideo && context.NeedsCover
+        context.NeedsVideo && context.NeedsCover && context.Input.VideoSettings.EmbedCover
             ? context.GetPreferredUsableCoverFile()
             : null;
 
