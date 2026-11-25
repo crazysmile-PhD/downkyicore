@@ -426,9 +426,9 @@ public sealed class DownloadContentConflictResolverTests
         var planner = new DownloadActionPlanner(new DownloadContentConflictResolver(dialogs));
         var requested = DownloadContentSelection.None with { Video = true };
         var first = CreatePreparedDownload(CreateLowerVideoQualityPage(64, "720P 高清"));
-        first.Video.Title = "第一批";
+        Assert.Single(Assert.Single(first.Sections).Pages).Video.Title = "第一批";
         var second = CreatePreparedDownload(CreateLowerVideoQualityPage(32, "480P 清晰"));
-        second.Video.Title = "第二批";
+        Assert.Single(Assert.Single(second.Sections).Pages).Video.Title = "第二批";
 
         var finalized = await planner.PlanBatchAsync(
             requested,

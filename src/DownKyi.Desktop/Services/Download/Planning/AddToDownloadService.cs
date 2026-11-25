@@ -302,7 +302,7 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
                 {
                     var item = DownloadTaskDraftFactory.Create(
                         directory,
-                        finalizedDownload.Video,
+                        finalizedPage.Video,
                         finalizedSection.Section,
                         finalizedDownload.Sections.Count,
                         finalizedPage.Page,
@@ -327,7 +327,7 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
 
                     pending.Add(new PendingDownload(
                         item,
-                        finalizedDownload.Video,
+                        finalizedPage.Video,
                         finalizedPage.Page));
                 }
             }

@@ -6,6 +6,8 @@ namespace DownKyi.Presentation;
 
 internal class VideoInfoView : ObservableObject
 {
+    public string Bvid { get; init; } = string.Empty;
+
     private string _coverUrl = string.Empty;
 
     public string CoverUrl

@@ -71,8 +71,10 @@ public sealed class VideoInfoServiceTests
         Assert.Equal("N/A", page.Duration);
     }
 
-    [Fact]
-    public void UgcPagesUseDurationFromDetailMetadata()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void UgcPagesUseDurationAndPublicationTimeFromDetailMetadata(bool multipart)
     {
         using var settings = new TestSettingsStore();
         var client = new TestBilibiliApiClient();
@@ -98,12 +100,19 @@ public sealed class VideoInfoServiceTests
                                     Bvid = "BV1episode",
                                     Cid = 85,
                                     Title = "Episode",
+                                    Arc = new UgcArc { Pubdate = 1_700_000_000, Ctime = 1_600_000_000 },
                                     Page = new CoreVideoPage
                                     {
                                         Cid = 85,
                                         Page = 1,
                                         Duration = 61
-                                    }
+                                    },
+                                    Pages = multipart
+                                        ? [
+                                            new CoreVideoPage { Cid = 85, Page = 1, Duration = 61 },
+                                            new CoreVideoPage { Cid = 86, Page = 2, Duration = 61 }
+                                        ]
+                                        : []
                                 }
                             ]
                         }
@@ -117,8 +126,11 @@ public sealed class VideoInfoServiceTests
 
         var section = Assert.Single(service.GetVideoSections(
             cancellationToken: TestContext.Current.CancellationToken)!);
-        var page = Assert.Single(section.VideoPages);
-
-        Assert.Equal("1m1s", page.Duration);
+        Assert.Equal(multipart ? 2 : 1, section.VideoPages.Count);
+        Assert.All(section.VideoPages, page =>
+        {
+            Assert.Equal("1m1s", page.Duration);
+            Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1_700_000_000).LocalDateTime, page.OriginalPublishTime);
+        });
     }
 }

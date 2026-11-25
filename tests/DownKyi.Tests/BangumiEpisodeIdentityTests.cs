@@ -291,7 +291,7 @@ public sealed class BangumiEpisodeIdentityTests
         var preparedPage = Assert.Single(preparedSection.Pages);
         var item = DownloadTaskDraftFactory.Create(
             Path.GetTempPath(),
-            prepared.Video,
+            preparedPage.Video,
             preparedSection.Section,
             prepared.Sections.Count,
             preparedPage.Page,

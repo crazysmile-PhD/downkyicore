@@ -233,18 +233,40 @@ internal sealed record DownloadQualitySubstitutions(
 
 internal sealed record PreparedDownloadPage(
     VideoPage Page,
+    VideoInfoView Video,
     VideoQuality? VideoQuality,
     string AudioQualityFormat,
     DownloadMediaCapabilities AvailableMedia,
-    DownloadQualitySubstitutions QualitySubstitutions);
+    DownloadQualitySubstitutions QualitySubstitutions)
+{
+    public static PreparedDownloadPage Create(VideoPage page, VideoInfoView video)
+    {
+        ArgumentNullException.ThrowIfNull(page);
+        ArgumentNullException.ThrowIfNull(video);
+        var videoQuality = page.VideoQuality is { } quality
+            ? new VideoQuality
+            {
+                Quality = quality.Quality,
+                QualityFormat = quality.QualityFormat,
+                IsDurl = quality.IsDurl,
+                SelectedVideoCodec = quality.SelectedVideoCodec
+            }
+            : null;
+        return new PreparedDownloadPage(
+            page,
+            video,
+            videoQuality,
+            page.AudioQualityFormat,
+            DownloadMediaCapabilities.From(page.PlaybackAvailability, videoQuality, page.AudioQualityFormat),
+            DownloadQualitySubstitutions.From(page));
+    }
+}
 
 internal sealed record PreparedDownloadSection(
     VideoSection Section,
     IReadOnlyList<PreparedDownloadPage> Pages);
 
-internal sealed record PreparedDownload(
-    VideoInfoView Video,
-    IReadOnlyList<PreparedDownloadSection> Sections)
+internal sealed record PreparedDownload(IReadOnlyList<PreparedDownloadSection> Sections)
 {
     public static PreparedDownload Create(
         VideoInfoView video,
@@ -254,43 +276,19 @@ internal sealed record PreparedDownload(
         ArgumentNullException.ThrowIfNull(sections);
 
         return new PreparedDownload(
-            video,
             sections.Select(section =>
             {
                 ArgumentNullException.ThrowIfNull(section);
                 return new PreparedDownloadSection(
                     section,
-                    section.VideoPages.Select(page =>
-                    {
-                        ArgumentNullException.ThrowIfNull(page);
-                        var videoQuality = CopyVideoQuality(page.VideoQuality);
-                        var audioQualityFormat = page.AudioQualityFormat;
-                        return new PreparedDownloadPage(
-                            page,
-                            videoQuality,
-                            audioQualityFormat,
-                            DownloadMediaCapabilities.From(
-                                page.PlaybackAvailability,
-                                videoQuality,
-                                audioQualityFormat),
-                            DownloadQualitySubstitutions.From(page));
-                    }).ToArray());
+                    section.VideoPages.Select(page => PreparedDownloadPage.Create(page, video)).ToArray());
             }).ToArray());
     }
-
-    private static VideoQuality? CopyVideoQuality(VideoQuality? source) => source == null
-        ? null
-        : new VideoQuality
-        {
-            Quality = source.Quality,
-            QualityFormat = source.QualityFormat,
-            IsDurl = source.IsDurl,
-            SelectedVideoCodec = source.SelectedVideoCodec
-        };
 }
 
 internal sealed record FinalizedDownloadPage(
     VideoPage Page,
+    VideoInfoView Video,
     VideoQuality? VideoQuality,
     string AudioQualityFormat,
     DownloadMediaCapabilities AvailableMedia,
@@ -302,7 +300,6 @@ internal sealed record FinalizedDownloadSection(
     IReadOnlyList<FinalizedDownloadPage> Pages);
 
 internal sealed record FinalizedDownload(
-    VideoInfoView Video,
     IReadOnlyList<FinalizedDownloadSection> Sections,
     DownloadPlanningStopReason? StopReason,
     int CandidateCount,
