@@ -31,6 +31,7 @@
     <system:String x:Key="ScanToLogin">扫描二维码登录</system:String>
     <system:String x:Key="ScanLoginTip" xml:space="preserve">请使用哔哩哔哩客户端&#x000A;扫码登录&#x000A;或扫码下载APP</system:String>
     <system:String x:Key="GetLoginUrlFailed">获取登录链接失败！</system:String>
+    <system:String x:Key="UserSessionRefreshFailed">无法更新登录状态，请检查网络或代理设置。</system:String>
     <system:String x:Key="LoginKeyError">密钥错误！尝试重新获取！</system:String>
     <system:String x:Key="LoginTimeOut">已超时！尝试重新获取二维码！</system:String>
     <system:String x:Key="LoginSuccessful">登录成功！(3秒后自动回到主页)</system:String>

@@ -8,6 +8,7 @@ using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Avalonia.Xaml.Interactivity;
+using DownKyi.Application.Bilibili;
 using DownKyi.Application.Desktop;
 using DownKyi.Application.Diagnostics;
 using DownKyi.Application.Lifetime;
@@ -26,6 +27,7 @@ using DownKyi.Infrastructure.Storage;
 using DownKyi.Platform;
 using DownKyi.Presentation;
 using DownKyi.Services;
+using DownKyi.Services.Account;
 using DownKyi.Services.Download;
 using DownKyi.Services.Media;
 using DownKyi.Services.UserSpace;
@@ -49,6 +51,80 @@ public sealed class UiSmokeTests
     public void AvaloniaFactRunsOnOwnedDispatcher()
     {
         Assert.True(Avalonia.Threading.Dispatcher.UIThread.CheckAccess());
+    }
+
+    [AvaloniaFact]
+    public Task IndexAccountButtonRemainsUsableWhileUserRefreshIsPendingAndAfterFailure()
+    {
+        return AvaloniaTestDispatcher.RunAsync(async () =>
+        {
+            DesktopTestResources.EnsureProductThemeResources();
+            DesktopTestResources.EnsureDownloadProjectionResources();
+            var directory = Path.Combine(Path.GetTempPath(), $"index-account-{Guid.NewGuid():N}");
+            Directory.CreateDirectory(directory);
+            try
+            {
+                using var settings = new SettingsStore(Path.Combine(directory, "settings.json"));
+                var pending = new TaskCompletionSource<UserInfoForNavigation?>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+                var coordinator = new UserSessionCoordinator(settings, _ => pending.Task);
+                IndexViewModel? index = null;
+                var login = new NavigationProbe(AppRoute.Login);
+                using var navigation = new AvaloniaNavigationService(
+                    route => route switch
+                    {
+                        AppRoute.Index => index!,
+                        AppRoute.Login => login,
+                        _ => throw new InvalidOperationException($"Unexpected route {route}.")
+                    },
+                    static action => action());
+                var interactions = new DesktopInteractionContextStub(navigation);
+                string? notification = null;
+                interactions.Notifications.NotificationRaised += (_, e) => notification = e.Message;
+                using var viewModel = new IndexViewModel(
+                    interactions,
+                    coordinator,
+                    settings,
+                    new SearchService(settings, navigation),
+                    NullLogger<IndexViewModel>.Instance);
+                index = viewModel;
+                var view = new ViewIndex { DataContext = viewModel };
+                var window = new Window { Content = view, Width = 800, Height = 550 };
+                try
+                {
+                    window.Show();
+                    navigation.Navigate(new AppNavigationRequest(AppRoute.Index, Parameter: "start"));
+                    window.UpdateLayout();
+                    var button = Assert.IsType<Button>(view.FindControl<Button>("IndexAccountButton"));
+                    Assert.True(button.IsEffectivelyVisible);
+                    Assert.True(button.Focus(NavigationMethod.Tab));
+                    window.KeyPressQwerty(PhysicalKey.Enter, RawInputModifiers.None);
+                    window.KeyReleaseQwerty(PhysicalKey.Enter, RawInputModifiers.None);
+                    Assert.Same(login, navigation.GetActiveView(AppNavigationRegion.Main));
+
+                    pending.SetException(new BilibiliHttpRequestException("Fixture request timeout."));
+                    navigation.GoBack(AppNavigationRegion.Main);
+                    await Dispatcher.UIThread.InvokeAsync(window.UpdateLayout, DispatcherPriority.Background);
+
+                    Assert.False(string.IsNullOrWhiteSpace(notification));
+                    Assert.True(button.IsEffectivelyVisible);
+                    Assert.True(button.Focus(NavigationMethod.Tab));
+                    window.KeyPressQwerty(PhysicalKey.Enter, RawInputModifiers.None);
+                    window.KeyReleaseQwerty(PhysicalKey.Enter, RawInputModifiers.None);
+                    Assert.Same(login, navigation.GetActiveView(AppNavigationRegion.Main));
+                    Assert.Equal(2, login.NavigatedToCount);
+                }
+                finally
+                {
+                    pending.TrySetCanceled(TestContext.Current.CancellationToken);
+                    window.Close();
+                }
+            }
+            finally
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        });
     }
 
     [AvaloniaFact]

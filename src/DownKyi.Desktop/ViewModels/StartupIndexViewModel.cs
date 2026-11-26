@@ -34,7 +34,6 @@ internal sealed class StartupIndexViewModel : ObservableObject, IIndexSurfaceVie
         InputCommand = new RelayCommand(QueueInput);
     }
 
-    public bool LoginPanelVisibility => true;
     public string? UserName { get; }
     public string Header => "avares://DownKyi.Desktop/Resources/default_header.jpg";
     public VectorImage TextLogo { get; } = LogoIcon.TextLogo;

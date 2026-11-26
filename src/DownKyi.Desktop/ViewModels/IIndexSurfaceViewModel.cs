@@ -5,7 +5,6 @@ namespace DownKyi.ViewModels;
 
 internal interface IIndexSurfaceViewModel
 {
-    bool LoginPanelVisibility { get; }
     string? UserName { get; }
     string Header { get; }
     VectorImage TextLogo { get; }

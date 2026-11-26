@@ -53,32 +53,19 @@ internal sealed class BilibiliHttpTransport
         return response.Content;
     }
 
-    internal async Task<BilibiliHttpTextResponse> GetResponseAsync(
+    internal Task<BilibiliHttpTextResponse> GetResponseAsync(
         Func<HttpRequestMessage> requestFactory,
         int attempts,
         bool requireContent,
         bool allowRedirectStatus,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(requestFactory);
-        ArgumentOutOfRangeException.ThrowIfLessThan(attempts, 1);
-
-        Exception? lastError = null;
-        for (var attempt = 1; attempt <= attempts; attempt++)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            try
+        return ExecuteAsync(
+            requestFactory,
+            attempts,
+            async (response, token) =>
             {
-                using var request = requestFactory();
-                using var response = await SendAsync(request, cancellationToken).ConfigureAwait(false);
-                if (await RetryResponseAsync(response, attempt, attempts, cancellationToken)
-                    .ConfigureAwait(false))
-                {
-                    continue;
-                }
-
-                ThrowForTerminalStatus(response, allowRedirectStatus);
-                var content = await response.Content.ReadAsStringAsync(cancellationToken)
+                var content = await response.Content.ReadAsStringAsync(token)
                     .ConfigureAwait(false);
                 if (requireContent && string.IsNullOrWhiteSpace(content))
                 {
@@ -98,22 +85,92 @@ internal sealed class BilibiliHttpTransport
                     setCookieHeaders,
                     response.StatusCode,
                     response.Headers.Location);
-            }
-            catch (OperationCanceledException)
+            },
+            allowRedirectStatus,
+            cancellationToken);
+    }
+
+    public Task<Stream> OpenReadAsync(
+        Func<HttpRequestMessage> requestFactory,
+        int attempts,
+        CancellationToken cancellationToken)
+    {
+        return ExecuteAsync<Stream>(
+            requestFactory,
+            attempts,
+            static async (response, token) =>
             {
-                throw;
+                var content = response.Content;
+                var stream = await content.ReadAsStreamAsync(token).ConfigureAwait(false);
+                // Transfer the content to the stream; the attempt still owns request/response.
+                response.Content = null;
+                return new ResponseStream(stream, content);
+            },
+            allowRedirectStatus: false,
+            cancellationToken);
+    }
+
+    private async Task<T> ExecuteAsync<T>(
+        Func<HttpRequestMessage> requestFactory,
+        int attempts,
+        Func<HttpResponseMessage, CancellationToken, Task<T>> readResponseAsync,
+        bool allowRedirectStatus,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(requestFactory);
+        ArgumentOutOfRangeException.ThrowIfLessThan(attempts, 1);
+
+        Exception? lastError = null;
+        for (var attempt = 1; attempt <= attempts; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            TimeSpan retryDelay;
+            try
+            {
+                // ResponseHeadersRead does not apply HttpClient.Timeout to the response body.
+                using var timeout = new CancellationTokenSource(
+                    BilibiliServiceCollectionExtensions.RequestTimeout,
+                    _timeProvider);
+                using var attemptCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+                    cancellationToken,
+                    timeout.Token);
+                var attemptToken = attemptCancellation.Token;
+                using var request = requestFactory();
+                var client = _httpClientFactory.CreateClient(BilibiliServiceCollectionExtensions.HttpClientName);
+                using var response = await client.SendAsync(
+                    request,
+                    HttpCompletionOption.ResponseHeadersRead,
+                    attemptToken).ConfigureAwait(false);
+                if (GetRetryDelay(response, attempt) is { } delay && attempt < attempts)
+                {
+                    retryDelay = delay;
+                }
+                else
+                {
+                    ThrowForTerminalStatus(response, allowRedirectStatus);
+                    return await readResponseAsync(response, attemptToken).ConfigureAwait(false);
+                }
             }
             catch (Exception exception) when (exception is HttpRequestException or IOException
-                or InvalidOperationException)
+                or InvalidOperationException
+                || (exception is OperationCanceledException && !cancellationToken.IsCancellationRequested))
             {
-                lastError = exception;
-                if (!IsRetryableException(exception) || attempt == attempts)
+                cancellationToken.ThrowIfCancellationRequested();
+                lastError = exception is OperationCanceledException
+                    ? new BilibiliHttpRequestException(
+                        "Bilibili request timed out.",
+                        BilibiliHttpFailureKind.Timeout,
+                        innerException: exception)
+                    : exception;
+                if (!IsRetryableException(lastError) || attempt == attempts)
                 {
                     break;
                 }
 
-                await DelayAsync(GetBackoff(attempt), cancellationToken).ConfigureAwait(false);
+                retryDelay = GetBackoff(attempt);
             }
+
+            await DelayAsync(retryDelay, cancellationToken).ConfigureAwait(false);
         }
 
         if (lastError is BilibiliHttpRequestException typedFailure)
@@ -127,105 +184,9 @@ internal sealed class BilibiliHttpTransport
             innerException: lastError);
     }
 
-    public async Task<Stream> OpenReadAsync(
-        Func<HttpRequestMessage> requestFactory,
-        int attempts,
-        CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(requestFactory);
-        ArgumentOutOfRangeException.ThrowIfLessThan(attempts, 1);
-
-        Exception? lastError = null;
-        for (var attempt = 1; attempt <= attempts; attempt++)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            HttpRequestMessage? request = null;
-            HttpResponseMessage? response = null;
-            try
-            {
-                request = requestFactory();
-                response = await SendAsync(request, cancellationToken).ConfigureAwait(false);
-                if (await RetryResponseAsync(response, attempt, attempts, cancellationToken)
-                    .ConfigureAwait(false))
-                {
-                    response.Dispose();
-                    request.Dispose();
-                    continue;
-                }
-
-                ThrowForTerminalStatus(response);
-                var content = response.Content;
-                var stream = await content.ReadAsStreamAsync(cancellationToken)
-                    .ConfigureAwait(false);
-                response.Content = null;
-                response.Dispose();
-                response = null;
-                var responseStream = new ResponseStream(stream, content, request);
-                request = null;
-                return responseStream;
-            }
-            catch (OperationCanceledException)
-            {
-                response?.Dispose();
-                request?.Dispose();
-                throw;
-            }
-            catch (Exception exception) when (exception is HttpRequestException or IOException
-                or InvalidOperationException)
-            {
-                response?.Dispose();
-                request?.Dispose();
-                lastError = exception;
-                if (!IsRetryableException(exception) || attempt == attempts)
-                {
-                    break;
-                }
-
-                await DelayAsync(GetBackoff(attempt), cancellationToken).ConfigureAwait(false);
-            }
-        }
-
-        if (lastError is BilibiliHttpRequestException typedFailure)
-        {
-            throw typedFailure;
-        }
-
-        throw new BilibiliHttpRequestException(
-            $"Bilibili stream request failed after {attempts} attempts.",
-            BilibiliHttpFailureKind.Transport,
-            innerException: lastError);
-    }
-
     internal static TimeSpan GetBackoff(int attempt)
     {
         return TimeSpan.FromMilliseconds(Math.Clamp(attempt * 250, 250, 2000));
-    }
-
-    private async Task<HttpResponseMessage> SendAsync(
-        HttpRequestMessage request,
-        CancellationToken cancellationToken)
-    {
-        var client = _httpClientFactory.CreateClient(BilibiliServiceCollectionExtensions.HttpClientName);
-        return await client.SendAsync(
-            request,
-            HttpCompletionOption.ResponseHeadersRead,
-            cancellationToken).ConfigureAwait(false);
-    }
-
-    private async Task<bool> RetryResponseAsync(
-        HttpResponseMessage response,
-        int attempt,
-        int attempts,
-        CancellationToken cancellationToken)
-    {
-        var retryDelay = GetRetryDelay(response, attempt);
-        if (retryDelay == null || attempt >= attempts)
-        {
-            return false;
-        }
-
-        await DelayAsync(retryDelay.Value, cancellationToken).ConfigureAwait(false);
-        return true;
     }
 
     private Task DelayAsync(TimeSpan delay, CancellationToken cancellationToken)
@@ -304,18 +265,15 @@ internal sealed class BilibiliHttpTransport
     {
         private readonly Func<Stream> _getInner;
         private readonly HttpContent _content;
-        private readonly HttpRequestMessage _request;
         private int _disposed;
 
         public ResponseStream(
             Stream inner,
-            HttpContent content,
-            HttpRequestMessage request)
+            HttpContent content)
         {
             // HttpContent is the sole owner of the cached response stream.
             _getInner = () => inner;
             _content = content;
-            _request = request;
         }
 
         private Stream Inner => _getInner();
@@ -377,14 +335,7 @@ internal sealed class BilibiliHttpTransport
         {
             if (Interlocked.Exchange(ref _disposed, 1) == 0)
             {
-                try
-                {
-                    _content.Dispose();
-                }
-                finally
-                {
-                    _request.Dispose();
-                }
+                _content.Dispose();
             }
         }
     }

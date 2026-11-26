@@ -31,6 +31,7 @@
     <system:String x:Key="ScanToLogin">掃描 QR Code 登入</system:String>
     <system:String x:Key="ScanLoginTip" xml:space="preserve">請使用 Bilibili App&#x000A;掃描 QR Code 登入&#x000A;或掃描 QR Code 下載 App</system:String>
     <system:String x:Key="GetLoginUrlFailed">無法取得登入連結！</system:String>
+    <system:String x:Key="UserSessionRefreshFailed">無法更新登入狀態，請檢查網路或代理設定。</system:String>
     <system:String x:Key="LoginKeyError">登入金鑰無效，請重新取得。</system:String>
     <system:String x:Key="LoginTimeOut">登入已逾時，請重新取得 QR Code。</system:String>
     <system:String x:Key="LoginSuccessful">登入成功，3 秒後將自動返回首頁。</system:String>

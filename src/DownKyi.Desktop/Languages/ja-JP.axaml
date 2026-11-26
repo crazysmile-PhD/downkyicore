@@ -31,6 +31,7 @@
     <system:String x:Key="ScanToLogin">QR コードをスキャンしてログイン</system:String>
     <system:String x:Key="ScanLoginTip" xml:space="preserve">Bilibili アプリで QR コードを読み取ってログインするか、アプリをダウンロードしてください。</system:String>
     <system:String x:Key="GetLoginUrlFailed">ログイン URL を取得できませんでした。</system:String>
+    <system:String x:Key="UserSessionRefreshFailed">ログイン状態を更新できませんでした。ネットワークまたはプロキシの設定を確認してください。</system:String>
     <system:String x:Key="LoginKeyError">ログインキーが無効です。再取得してください。</system:String>
     <system:String x:Key="LoginTimeOut">ログインがタイムアウトしました。QR コードを再取得してください。</system:String>
     <system:String x:Key="LoginSuccessful">ログインしました。3 秒後にホームへ戻ります。</system:String>

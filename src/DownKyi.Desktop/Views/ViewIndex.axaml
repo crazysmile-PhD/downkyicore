@@ -147,7 +147,7 @@
         <Grid Grid.Column="1" Margin="24,24,24,28" RowDefinitions="56,*,64,32,104">
             <Button x:Name="IndexAccountButton" Grid.Row="0" HorizontalAlignment="Right" VerticalAlignment="Top"
                     Theme="{StaticResource IndexButton}" Padding="8,6" TabIndex="5"
-                    Command="{Binding LoginCommand}" IsVisible="{Binding LoginPanelVisibility}">
+                    Command="{Binding LoginCommand}">
                 <StackPanel Orientation="Horizontal" Spacing="10">
                     <Border Width="32" Height="32" CornerRadius="16" ClipToBounds="True" Background="{DynamicResource SpaceHover}">
                         <Grid>

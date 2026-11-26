@@ -6,6 +6,100 @@ namespace DownKyi.Infrastructure.Tests;
 
 public sealed class BilibiliHttpTransportTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task TransportTimeoutFaultsInsteadOfCancelingTheOperation(bool streaming)
+    {
+        var timeout = new TaskCanceledException("Fixture HTTP timeout.", new TimeoutException());
+        using var factory = CreateFactory((_, _) => Task.FromException<HttpResponseMessage>(timeout));
+        var transport = CreateTransport(factory);
+
+        Task operation = streaming
+            ? transport.OpenReadAsync(CreateRequest, 1, TestContext.Current.CancellationToken)
+            : transport.GetStringAsync(CreateRequest, 1, TestContext.Current.CancellationToken);
+        var exception = await Assert.ThrowsAsync<BilibiliHttpRequestException>(() => operation);
+
+        Assert.Equal(BilibiliHttpFailureKind.Timeout, exception.FailureKind);
+        Assert.Same(timeout, exception.InnerException);
+        Assert.True(operation.IsFaulted);
+        Assert.False(operation.IsCanceled);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task TimeoutUsesTheSameRetryBudgetAsOtherTransportFailures(bool streaming)
+    {
+        var calls = 0;
+        using var factory = CreateFactory((_, _) => ++calls == 1
+            ? Task.FromException<HttpResponseMessage>(new TaskCanceledException("Fixture timeout."))
+            : BilibiliTestResponses.CompletedJson());
+        var transport = CreateTransport(factory);
+
+        if (streaming)
+        {
+            var stream = await transport.OpenReadAsync(
+                CreateRequest, 2, TestContext.Current.CancellationToken);
+            await using var streamLifetime = stream.ConfigureAwait(false);
+            var bytes = new byte[2];
+            await stream.ReadExactlyAsync(bytes, TestContext.Current.CancellationToken);
+            Assert.Equal("{}"u8.ToArray(), bytes);
+        }
+        else
+        {
+            Assert.Equal("{}", await transport.GetStringAsync(
+                CreateRequest, 2, TestContext.Current.CancellationToken));
+        }
+
+        Assert.Equal(2, calls);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CallerCancellationDuringSendIsNotConvertedToTimeoutOrRetried(bool streaming)
+    {
+        var calls = 0;
+        using var cancellation = new CancellationTokenSource();
+        using var factory = CreateFactory(async (_, token) =>
+        {
+            calls++;
+            await cancellation.CancelAsync().ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
+            return BilibiliTestResponses.Json();
+        });
+        var transport = CreateTransport(factory);
+
+        Task operation = streaming
+            ? transport.OpenReadAsync(CreateRequest, 3, cancellation.Token)
+            : transport.GetStringAsync(CreateRequest, 3, cancellation.Token);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => operation);
+
+        Assert.True(operation.IsCanceled);
+        Assert.Equal(1, calls);
+    }
+
+    [Fact]
+    public async Task TextRequestDeadlineIncludesTheResponseBodyAndDisposesItOnTimeout()
+    {
+        var clock = new RequestDeadlineClock();
+        using var content = new BlockingContent();
+        using var factory = CreateFactory((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = content
+        }));
+        var transport = new BilibiliHttpTransport(factory, clock, static (_, _) => Task.CompletedTask);
+
+        var operation = transport.GetStringAsync(CreateRequest, 1, TestContext.Current.CancellationToken);
+        await content.ReadStarted.Task.WaitAsync(TestContext.Current.CancellationToken);
+        clock.Expire();
+        var exception = await Assert.ThrowsAsync<BilibiliHttpRequestException>(() => operation);
+
+        Assert.Equal(BilibiliHttpFailureKind.Timeout, exception.FailureKind);
+        Assert.True(content.IsDisposed);
+    }
+
     [Fact]
     public async Task TextResponsePreservesAllSetCookieHeaders()
     {
@@ -163,6 +257,9 @@ public sealed class BilibiliHttpTransportTests
                 CreateRequest,
                 1,
                 TestContext.Current.CancellationToken);
+            var bytes = new byte[3];
+            await responseStream.ReadExactlyAsync(bytes, TestContext.Current.CancellationToken);
+            Assert.Equal(new byte[] { 1, 2, 3 }, bytes);
             await responseStream.DisposeAsync();
             var firstDisposeCalls = stream.DisposeCalls;
             await responseStream.DisposeAsync();
@@ -211,5 +308,70 @@ public sealed class BilibiliHttpTransportTests
             base.Dispose(disposing);
         }
 
+    }
+
+    private sealed class BlockingContent : HttpContent
+    {
+        public TaskCompletionSource ReadStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public bool IsDisposed { get; private set; }
+
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context)
+            => SerializeToStreamAsync(stream, context, CancellationToken.None);
+
+        protected override Task SerializeToStreamAsync(
+            Stream stream, TransportContext? context, CancellationToken cancellationToken)
+        {
+            ReadStarted.TrySetResult();
+            return Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+        }
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            IsDisposed = true;
+            base.Dispose(disposing);
+        }
+    }
+
+    private sealed class RequestDeadlineClock : TimeProvider
+    {
+        private Action? _expire;
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            Assert.Equal(BilibiliServiceCollectionExtensions.RequestTimeout, dueTime);
+            Assert.Equal(Timeout.InfiniteTimeSpan, period);
+            var timer = new DeadlineTimer(callback, state);
+            _expire = timer.Fire;
+            return timer;
+        }
+
+        public void Expire() => Assert.IsType<Action>(_expire).Invoke();
+
+        private sealed class DeadlineTimer(TimerCallback callback, object? state) : ITimer
+        {
+            private bool _disposed;
+
+            public void Fire()
+            {
+                if (!_disposed)
+                {
+                    callback(state);
+                }
+            }
+
+            public bool Change(TimeSpan dueTime, TimeSpan period) => !_disposed;
+            public void Dispose() => _disposed = true;
+            public ValueTask DisposeAsync()
+            {
+                Dispose();
+                return ValueTask.CompletedTask;
+            }
+        }
     }
 }

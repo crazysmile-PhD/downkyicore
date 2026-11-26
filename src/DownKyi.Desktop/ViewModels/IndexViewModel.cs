@@ -25,14 +25,6 @@ internal class IndexViewModel : ViewModelBase, IIndexSurfaceViewModel
     private readonly ISettingsStore _settingsStore;
     private CancellationTokenSource? _userRefreshCancellation;
 
-    private bool _loginPanelVisibility;
-
-    public bool LoginPanelVisibility
-    {
-        get => _loginPanelVisibility;
-        set => SetProperty(ref _loginPanelVisibility, value);
-    }
-
     private string? _userName;
 
     public string? UserName
@@ -111,7 +103,6 @@ internal class IndexViewModel : ViewModelBase, IIndexSurfaceViewModel
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         _searchService = searchService ?? throw new ArgumentNullException(nameof(searchService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _loginPanelVisibility = true;
         Header = "avares://DownKyi.Desktop/Resources/default_header.jpg";
 
         TextLogo = LogoIcon.TextLogo;
@@ -147,24 +138,10 @@ internal class IndexViewModel : ViewModelBase, IIndexSurfaceViewModel
     /// </summary>
     private void ExecuteLogin()
     {
-        if (UserName is null or "")
-        {
-            Navigation.Navigate(new AppNavigationRequest(
-                AppRoute.Login,
-                AppRoute.Index));
-        }
-        else
-        {
-            // 进入用户空间
-            var userInfo = _settingsStore.Current.User;
-            if (userInfo != null && userInfo.Mid != -1)
-            {
-                Navigation.Navigate(new AppNavigationRequest(
-                    AppRoute.MySpace,
-                    AppRoute.Index,
-                    userInfo.Mid));
-            }
-        }
+        var user = _settingsStore.Current.User;
+        Navigation.Navigate(user.IsLogin && user.Mid >= 0
+            ? new AppNavigationRequest(AppRoute.MySpace, AppRoute.Index, user.Mid)
+            : new AppNavigationRequest(AppRoute.Login, AppRoute.Index));
     }
 
     // 进入设置页面
@@ -240,48 +217,23 @@ internal class IndexViewModel : ViewModelBase, IIndexSurfaceViewModel
     /// <summary>
     /// 更新用户登录信息
     /// </summary>
-    private async Task UpdateUserInfoAsync(bool isBackground = false)
+    private async Task UpdateUserInfoAsync()
     {
         var cancellationToken = ReplaceCancellationSource(ref _userRefreshCancellation);
-        var updateUi = !isBackground || !LoginPanelVisibility;
         try
         {
-            if (updateUi)
-            {
-                LoginPanelVisibility = false;
-            }
-
             var snapshot = await _userSessionCoordinator
                 .RefreshAsync(cancellationToken)
                 .ConfigureAwait(true);
             cancellationToken.ThrowIfCancellationRequested();
-            if (_userRefreshCancellation?.Token != cancellationToken || !updateUi)
+            if (_userRefreshCancellation?.Token != cancellationToken)
             {
                 return;
             }
 
-            // 检查本地是否存在login文件，没有则说明未登录
-            if (!snapshot.HasLoginFile)
-            {
-                LoginPanelVisibility = true;
-                Header = "avares://DownKyi.Desktop/Resources/default_header.jpg";
-                UserName = null;
-                return;
-            }
-
-            LoginPanelVisibility = true;
-
-            if (snapshot.UserInfo != null)
-            {
-                Header = snapshot.UserInfo.Face ?? "avares://DownKyi.Desktop/Resources/default_header.jpg";
-
-                UserName = snapshot.UserInfo.Name;
-            }
-            else
-            {
-                Header = "avares://DownKyi.Desktop/Resources/default_header.jpg";
-                UserName = null;
-            }
+            var user = snapshot.HasLoginFile ? snapshot.UserInfo : null;
+            Header = user?.Face ?? "avares://DownKyi.Desktop/Resources/default_header.jpg";
+            UserName = user?.Name;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -293,9 +245,9 @@ internal class IndexViewModel : ViewModelBase, IIndexSurfaceViewModel
             or Newtonsoft.Json.JsonException)
         {
             _logger.LogErrorMessage("User session refresh failed.", e);
-            if (updateUi && _userRefreshCancellation?.Token == cancellationToken)
+            if (_userRefreshCancellation?.Token == cancellationToken)
             {
-                LoginPanelVisibility = true;
+                Notifications.Show(DictionaryResource.GetString("UserSessionRefreshFailed"));
             }
         }
     }
@@ -309,27 +261,14 @@ internal class IndexViewModel : ViewModelBase, IIndexSurfaceViewModel
         DownloadManager.Height = 27;
         DownloadManager.Width = 32;
 
-        // 根据传入参数不同执行不同任务
-        var parameter = navigationContext.Parameters.GetValue<string>("Parameter");
-        switch (parameter)
+        var user = _settingsStore.Current.User;
+        UserName = user.IsLogin ? user.Name : null;
+        if (!user.IsLogin)
         {
-            case null:
-                // 其他情况只更新设置的用户信息，不更新UI
-                RunFireAndForget(UpdateUserInfoAsync(true), nameof(UpdateUserInfoAsync), _logger);
-                return;
-            // 启动
-            case "start":
-            // 从登录页面返回
-            case "login":
-            // 注销
-            case "logout":
-                RunFireAndForget(UpdateUserInfoAsync(), nameof(UpdateUserInfoAsync), _logger);
-                break;
-            default:
-                // 其他情况只更新设置的用户信息，不更新UI
-                RunFireAndForget(UpdateUserInfoAsync(true), nameof(UpdateUserInfoAsync), _logger);
-                break;
+            Header = "avares://DownKyi.Desktop/Resources/default_header.jpg";
         }
+
+        RunFireAndForget(UpdateUserInfoAsync(), nameof(UpdateUserInfoAsync), _logger);
     }
 
     protected override void Dispose(bool disposing)

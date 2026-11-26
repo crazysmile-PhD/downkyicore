@@ -10,6 +10,39 @@ namespace DownKyi.Tests;
 
 public sealed class UserSessionCoordinatorTests
 {
+    [Theory]
+    [InlineData(true, null)]
+    [InlineData(true, "display-name")]
+    [InlineData(false, null)]
+    [InlineData(false, "stale-name")]
+    public void IndexAccountNavigationUsesSavedLoginStateInsteadOfTheDisplayedName(
+        bool loggedIn, string? displayedName)
+    {
+        using var settings = new TestSettingsStore();
+        settings.Store.Update(current => current with
+        {
+            User = current.User with { IsLogin = loggedIn, Mid = loggedIn ? 42 : -1 }
+        });
+        var coordinator = new RecordingUserSessionCoordinator();
+        var navigation = new StubNavigationService();
+        using var viewModel = new IndexViewModel(
+            new TestDesktopInteractionContext(navigation),
+            coordinator,
+            settings.Store,
+            new SearchService(settings.Store, navigation),
+            NullLogger<IndexViewModel>.Instance)
+        {
+            UserName = displayedName
+        };
+
+        viewModel.LoginCommand.Execute(null);
+
+        var request = Assert.Single(navigation.Requests);
+        Assert.Equal(loggedIn ? AppRoute.MySpace : AppRoute.Login, request.Route);
+        Assert.Equal(AppRoute.Index, request.Parent);
+        Assert.Equal(0, coordinator.RefreshCount);
+    }
+
     [Fact]
     public void ConstructingIndexViewModelDoesNotStartAccountWork()
     {
