@@ -9,6 +9,32 @@ namespace DownKyi.Infrastructure.Tests;
 public sealed class SettingsStoreTests
 {
     [Theory]
+    [InlineData("{}", true)]
+    [InlineData("{\"EmbedCover\":false}", false)]
+    [InlineData("{\"EmbedCover\":true}", true)]
+    public async Task CoverEmbeddingDefaultsToEnabledForLegacySettingsAndPreservesExplicitChoice(
+        string videoJson,
+        bool expected)
+    {
+        var directory = CreateTestDirectory();
+        var settingsPath = Path.Combine(directory, "settings.json");
+        try
+        {
+            await File.WriteAllTextAsync(
+                settingsPath,
+                $$"""{"SchemaVersion":1,"Video":{{videoJson}}}""",
+                TestContext.Current.CancellationToken);
+            using var store = new SettingsStore(settingsPath);
+
+            Assert.Equal(expected, store.Current.Video.EmbedCover);
+        }
+        finally
+        {
+            DeleteDirectory(directory);
+        }
+    }
+
+    [Theory]
     [InlineData(0)]
     [InlineData(1)]
     [InlineData(2)]

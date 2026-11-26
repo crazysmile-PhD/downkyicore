@@ -218,7 +218,7 @@
     <system:String x:Key="DownloadFailureSubtitleDetails">選択した字幕をダウンロードできませんでした。「再試行」を押してください。字幕が利用できなくなった場合は、別の字幕を選んで新しいタスクを作成してください。</system:String>
     <system:String x:Key="DownloadFailureArtifactDetails">追加ファイルをダウンロードできませんでした。ネットワークとダウンロード先を確認してから再試行してください。失敗が続く場合は、「設定 → 概要とフィードバック」で診断パッケージをエクスポートしてください。</system:String>
     <system:String x:Key="DownloadFailureProcessingDetails">ダウンロード後のファイル処理が完了しませんでした。「再試行」を押してください。失敗が続く場合は、「設定 → 概要とフィードバック」で診断パッケージをエクスポートしてください。</system:String>
-    <system:String x:Key="DownloadFailureCoverConversionDetails">カバー画像を MP4 に保存できる形式へ変換できませんでした。同じタスクを再試行しても結果は変わりません。「カバー」を外してタスクを作り直し、「設定 → 概要とフィードバック」から診断パッケージをエクスポートしてください。</system:String>
+    <system:String x:Key="DownloadFailureCoverConversionDetails">カバー画像を MP4 に保存できる形式へ変換できませんでした。「設定 → 動画 → ダウンロード後の処理」で「動画にカバー画像を埋め込む」をオフにしてタスクを作り直すと、画像を別ファイルとして保存できます。埋め込みが必要な場合は、「設定 → 概要とフィードバック」から診断パッケージをエクスポートしてください。</system:String>
     <system:String x:Key="DownloadFailureTlsDetails">安全な接続の検証に失敗しました。システムの日付、プロキシ、および証明書の設定を確認して、再試行してください。</system:String>
     <system:String x:Key="DownloadFailureRuntimeDetails">ダウンロードサービスを続行できません。DownKyi を再起動してください。それでも失敗する場合は、「設定 → 概要とフィードバック」で診断パッケージをエクスポートしてください。</system:String>
     <system:String x:Key="DownloadFailureLegacyDetails">このタスクは廃止されたダウンローダーを使用しているため、直接再試行できません。動画を再解析して新しいタスクを作成してください。</system:String>
@@ -294,6 +294,8 @@
     <system:String x:Key="FirstVideoQuality">優先する画質：</system:String>
     <system:String x:Key="FirstAudioQuality">優先する音質：</system:String>
     <system:String x:Key="IsTranscodingFlvToMp4">ダウンロードした FLV 動画を MP4 に変換</system:String>
+    <system:String x:Key="EmbedCover">動画にカバー画像を埋め込む</system:String>
+    <system:String x:Key="EmbedCoverTip">ダウンロード内容で「動画」と「カバー画像」の両方を選択すると、MP4 にカバー画像を埋め込みます。オフにしても画像は別ファイルとして保存されます。</system:String>
     <system:String x:Key="FfmpegHardwareAcceleration">FFmpeg ハードウェアアクセラレーション：</system:String>
     <system:String x:Key="FfmpegHardwareAccelerationTip">再エンコードが必要な処理でのみ使用します。通常の音声と動画の結合では、可能な限り無劣化でストリームをコピーします。</system:String>
     <system:String x:Key="FfmpegMaxParallelJobs">FFmpeg の最大並列タスク:</system:String>

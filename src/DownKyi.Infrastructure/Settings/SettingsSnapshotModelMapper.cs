@@ -57,7 +57,10 @@ internal static class SettingsSnapshotModelMapper
                     content.PreferredSubtitleType),
                 settings.Video.FileNameParts?.ToImmutableArray() ?? [],
                 settings.Video.FileNamePartTimeFormat ?? string.Empty,
-                settings.Video.OrderFormat),
+                settings.Video.OrderFormat)
+            {
+                EmbedCover = settings.Video.EmbedCover
+            },
             new DanmakuApplicationSettings(
                 settings.Danmaku.OutputFormat,
                 settings.Danmaku.DanmakuTopFilter,
@@ -126,6 +129,7 @@ internal static class SettingsSnapshotModelMapper
                 Quality = settings.Video.Quality,
                 AudioQuality = settings.Video.AudioQuality,
                 IsTranscodingFlvToMp4 = settings.Video.IsTranscodingFlvToMp4,
+                EmbedCover = settings.Video.EmbedCover,
                 FfmpegHardwareAcceleration = settings.Video.FfmpegHardwareAcceleration,
                 FfmpegMaxParallelJobs = settings.Video.FfmpegMaxParallelJobs,
                 SaveVideoRootPath = settings.Video.SaveVideoRootPath,

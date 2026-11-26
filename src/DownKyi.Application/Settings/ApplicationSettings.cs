@@ -70,7 +70,10 @@ public sealed record VideoApplicationSettings(
     VideoContentApplicationSettings Content,
     ImmutableArray<FileNamePart> FileNameParts,
     string FileNamePartTimeFormat,
-    OrderFormat OrderFormat);
+    OrderFormat OrderFormat)
+{
+    public bool EmbedCover { get; init; } = true;
+}
 
 public sealed record VideoContentApplicationSettings(
     bool DownloadAudio,

@@ -66,6 +66,14 @@ internal partial class VideoViewModel
         set => SetProperty(ref _isTranscodingFlvToMp4, value);
     }
 
+    private bool _embedCover;
+
+    public bool EmbedCover
+    {
+        get => _embedCover;
+        set => SetProperty(ref _embedCover, value);
+    }
+
     private IReadOnlyList<FfmpegHardwareAccelerationItem> _ffmpegHardwareAccelerations =
         Array.Empty<FfmpegHardwareAccelerationItem>();
 

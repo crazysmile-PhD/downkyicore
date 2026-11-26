@@ -116,7 +116,7 @@
                 Foreground="{DynamicResource SpaceInk}"
                 Text="{DynamicResource VideoPostProcessing}"
                 Classes=" studio-section" />
-            <StackPanel Name="NameVideoPostProcessing" Margin="0,12,0,0">
+            <StackPanel Name="NameVideoPostProcessing" Margin="0,12,0,0" Spacing="8">
                 <CheckBox
                     Name="NameTranscodeFlvToMp4"
                     HorizontalAlignment="Left"
@@ -126,6 +126,19 @@
                     FontSize="{DynamicResource DownKyiFontSizeBody}"
                     Foreground="{DynamicResource SpaceInk}"
                     IsChecked="{Binding IsTranscodingFlvToMp4, Mode=TwoWay}" />
+                <CheckBox
+                    Name="NameEmbedCover"
+                    HorizontalAlignment="Left"
+                    Command="{Binding EmbedCoverCommand}"
+                    Content="{DynamicResource EmbedCover}"
+                    FontSize="{DynamicResource DownKyiFontSizeBody}"
+                    Foreground="{DynamicResource SpaceInk}"
+                    IsChecked="{Binding EmbedCover, Mode=TwoWay}" />
+                <TextBlock
+                    Margin="24,0,0,0"
+                    Foreground="{DynamicResource SpaceMuted}"
+                    Text="{DynamicResource EmbedCoverTip}"
+                    TextWrapping="Wrap" />
             </StackPanel>
             <TextBlock
                 Name="NameVideoFfmpegTitle"
