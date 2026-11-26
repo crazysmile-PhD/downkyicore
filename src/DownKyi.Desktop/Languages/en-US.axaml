@@ -31,6 +31,7 @@
     <system:String x:Key="ScanToLogin">Scan the QR code to log in</system:String>
     <system:String x:Key="ScanLoginTip" xml:space="preserve">Scan with the Bilibili app to sign in&#x000A;or download the app.</system:String>
     <system:String x:Key="GetLoginUrlFailed">Could not get the login URL.</system:String>
+    <system:String x:Key="UserSessionRefreshFailed">Could not refresh your login status. Check your network or proxy settings.</system:String>
     <system:String x:Key="LoginKeyError">Invalid login key. Request a new one.</system:String>
     <system:String x:Key="LoginTimeOut">Sign-in timed out. Request a new QR code.</system:String>
     <system:String x:Key="LoginSuccessful">Signed in. Returning home in 3 seconds.</system:String>

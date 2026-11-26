@@ -8,6 +8,42 @@ namespace DownKyi.Infrastructure.Tests;
 public sealed class BilibiliApiClientTests
 {
     [Fact]
+    public async Task FingerprintTimeoutIsReportedAndTheNextApiRequestCanRecover()
+    {
+        var fingerprintCalls = 0;
+        var apiCalls = 0;
+        using var factory = new TestHttpClientFactory((request, _) =>
+        {
+            if (request.RequestUri?.AbsolutePath == "/x/frontend/finger/spi")
+            {
+                fingerprintCalls++;
+                return fingerprintCalls <= 2
+                    ? Task.FromException<HttpResponseMessage>(new TaskCanceledException("Fixture fingerprint timeout."))
+                    : BilibiliTestResponses.CompletedJson(
+                        body: """{"code":0,"data":{"b_3":"synthetic-3","b_4":"synthetic-4"}}""");
+            }
+
+            apiCalls++;
+            return BilibiliTestResponses.CompletedJson();
+        });
+        var transport = new BilibiliHttpTransport(factory, TimeProvider.System, static (_, _) => Task.CompletedTask);
+        var client = CreateClient(factory, new EmptyCookieProvider(), new BilibiliBuvidProvider(transport));
+        var request = new BilibiliHttpRequest("https://api.bilibili.com/x/web-interface/nav");
+
+        var failed = client.GetStringAsync(request, TestContext.Current.CancellationToken);
+        var exception = await Assert.ThrowsAsync<BilibiliHttpRequestException>(() => failed);
+
+        Assert.Equal(BilibiliHttpFailureKind.Timeout, exception.FailureKind);
+        Assert.True(failed.IsFaulted);
+        Assert.Equal(2, fingerprintCalls);
+        Assert.Equal(0, apiCalls);
+
+        Assert.Equal("{}", await client.GetStringAsync(request, TestContext.Current.CancellationToken));
+        Assert.Equal(3, fingerprintCalls);
+        Assert.Equal(1, apiCalls);
+    }
+
+    [Fact]
     public async Task AnonymousRequestDoesNotReadCredentialsOrBuvid()
     {
         using var factory = new TestHttpClientFactory(

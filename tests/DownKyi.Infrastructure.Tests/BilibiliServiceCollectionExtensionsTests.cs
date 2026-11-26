@@ -22,9 +22,17 @@ public sealed class BilibiliServiceCollectionExtensionsTests
         Assert.IsType<BilibiliBuvidProvider>(provider.GetRequiredService<IBuvidProvider>());
         Assert.IsType<BilibiliLoginSessionFactory>(
             provider.GetRequiredService<IBilibiliLoginSessionFactory>());
-        var client = provider.GetRequiredService<IHttpClientFactory>()
-            .CreateClient(BilibiliServiceCollectionExtensions.HttpClientName);
-        Assert.Equal(BilibiliServiceCollectionExtensions.RequestTimeout, client.Timeout);
+        var factory = provider.GetRequiredService<IHttpClientFactory>();
+        foreach (var name in new[]
+                 {
+                     BilibiliServiceCollectionExtensions.HttpClientName,
+                     BilibiliServiceCollectionExtensions.LoginHttpClientName
+                 })
+        {
+            using var client = factory.CreateClient(name);
+            Assert.Equal(Timeout.InfiniteTimeSpan, client.Timeout);
+            Assert.Equal("DownKyi-Test-Agent", client.DefaultRequestHeaders.UserAgent.ToString());
+        }
     }
 
     [Fact]

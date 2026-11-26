@@ -143,6 +143,7 @@ internal class LoginViewModel : ViewModelBase
             or FormatException or Newtonsoft.Json.JsonException)
         {
             _logger.LogErrorMessage("Login initialization failed.", e);
+            Notifications.Show(DictionaryResource.GetString("GetLoginUrlFailed"));
         }
     }
 

@@ -71,6 +71,8 @@ Desktop composition root 只選擇模組；Navigation／Dialog／Download 的實
 
 Bilibili endpoint adapters 留在 `src/DownKyi.Core/BiliApi` 以維持 DTO 與協定相容。所有 production 呼叫必須使用注入的 async port：普通 API 經 `IBilibiliApiClient`；QR 登入由同一個隔離 `IBilibiliLoginSession` 貫穿 generate、poll 與 trusted callback，以保留 response cookies。Host 是 client、session factory、cookie、buvid 與 network settings 的唯一組合點；不得恢復 static client、global `Configure()` 或同步 HTTP compatibility path。
 
+Bilibili transport 是每次嘗試的重試與逾時 owner；deadline 涵蓋取得標頭及完整文字回應，串流交付後則由 caller 擁有讀取與釋放。逾時必須回傳可記錄的 typed failure，只有 caller token 取消才保留取消語意。帳號資訊刷新不應影響首頁登入入口的可用性。
+
 GitHub release 的 HTTP、JSON contract 與解析由 Infrastructure 擁有；Desktop composition 提供 repository identity 與 HttpClient 設定，Desktop 決定何時檢查及顯示更新提示。版本比較與 skip-version 等價性共用 Application 的 `SemanticVersionPolicy`；HTTP service 不保存目前應用版本。
 
 下載地址的 HTTP 探測、HTTPS redirect 與 Cookie header 決策由 Infrastructure 的 `DownloadAddressResolver` 擁有；每次跳轉重新產生 header，攜帶登入資料時不得跨 origin。Desktop download runtime 消費解析結果，保留 Range 傳輸與調度責任。

@@ -38,26 +38,10 @@ public static class BilibiliServiceCollectionExtensions
                 provider.GetRequiredService<BilibiliHttpTransport>(),
                 provider.GetRequiredService<IBilibiliCookieProvider>(),
                 provider.GetRequiredService<IBuvidProvider>()));
-        services.AddHttpClient(HttpClientName, (provider, client) =>
-            {
-                var options = provider.GetRequiredService<BilibiliNetworkOptions>();
-                client.Timeout = RequestTimeout;
-                client.DefaultRequestHeaders.UserAgent.ParseAdd(options.UserAgent);
-                client.DefaultRequestHeaders.Add(
-                    "accept-language",
-                    "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7");
-            })
+        services.AddHttpClient(HttpClientName, ConfigureClient)
             .ConfigurePrimaryHttpMessageHandler(provider =>
                 CreateHandler(provider.GetRequiredService<BilibiliNetworkOptions>()));
-        services.AddHttpClient(LoginHttpClientName, (provider, client) =>
-            {
-                var options = provider.GetRequiredService<BilibiliNetworkOptions>();
-                client.Timeout = RequestTimeout;
-                client.DefaultRequestHeaders.UserAgent.ParseAdd(options.UserAgent);
-                client.DefaultRequestHeaders.Add(
-                    "accept-language",
-                    "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7");
-            })
+        services.AddHttpClient(LoginHttpClientName, ConfigureClient)
             .ConfigurePrimaryHttpMessageHandler(provider =>
             {
                 var handler = CreateHandler(
@@ -67,6 +51,17 @@ public static class BilibiliServiceCollectionExtensions
                 return handler;
             });
         return services;
+    }
+
+    private static void ConfigureClient(IServiceProvider provider, HttpClient client)
+    {
+        var options = provider.GetRequiredService<BilibiliNetworkOptions>();
+        // The transport owns the deadline for both headers and buffered response bodies.
+        client.Timeout = Timeout.InfiniteTimeSpan;
+        client.DefaultRequestHeaders.UserAgent.ParseAdd(options.UserAgent);
+        client.DefaultRequestHeaders.Add(
+            "accept-language",
+            "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7");
     }
 
     internal static SocketsHttpHandler CreateHandler(BilibiliNetworkOptions options)

@@ -1,4 +1,6 @@
 using Avalonia.Media.Imaging;
+using DownKyi.Application.Bilibili;
+using DownKyi.Application.Desktop;
 using DownKyi.Core.BiliApi.Login.Models;
 using DownKyi.Infrastructure.Storage;
 using DownKyi.Services.Account;
@@ -10,6 +12,31 @@ namespace DownKyi.Tests;
 
 public sealed class LoginViewModelTests
 {
+    [Fact]
+    public async Task LoginUrlTimeoutShowsFailureInsteadOfLeavingTheQrCodeSilentlyEmpty()
+    {
+        var notification = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var interactions = new TestDesktopInteractionContext();
+        interactions.Notifications.NotificationRaised += (_, e) => notification.TrySetResult(e.Message);
+        using var coordinator = new StubLoginCoordinator
+        {
+            LoginUrlHandler = _ => Task.FromException<LoginUrlOrigin?>(new BilibiliHttpRequestException(
+                "Fixture login timeout.", BilibiliHttpFailureKind.Timeout))
+        };
+        using var viewModel = new LoginViewModel(
+            interactions,
+            coordinator,
+            new StubLoginQrCodeRenderer(),
+            NullLogger<LoginViewModel>.Instance);
+
+        viewModel.OnNavigatedTo(new AppNavigationContext(
+            AppNavigationRegion.Main, AppRoute.Login, AppRoute.Index, null, new AppNavigationParameters()));
+
+        Assert.Equal(DictionaryResource.GetString("GetLoginUrlFailed"),
+            await notification.Task.WaitAsync(TestContext.Current.CancellationToken));
+        Assert.Null(viewModel.LoginQrCode);
+    }
+
     [Fact]
     public async Task TransportCancellationShowsLoginFailureWhenLoginTokenIsActive()
     {
@@ -63,6 +90,8 @@ public sealed class LoginViewModelTests
 
     private sealed class StubLoginCoordinator : ILoginCoordinator
     {
+        public Func<CancellationToken, Task<LoginUrlOrigin?>>? LoginUrlHandler { get; init; }
+
         public Func<IReadOnlyList<DownKyiCookie>, CancellationToken, Task<bool>>? CommitHandler
         {
             get;
@@ -71,7 +100,7 @@ public sealed class LoginViewModelTests
 
         public Task<LoginUrlOrigin?> RequestLoginUrlAsync(CancellationToken cancellationToken)
         {
-            throw new NotSupportedException();
+            return LoginUrlHandler?.Invoke(cancellationToken) ?? throw new NotSupportedException();
         }
 
         public Task<LoginStatusResult?> GetLoginStatusAsync(
