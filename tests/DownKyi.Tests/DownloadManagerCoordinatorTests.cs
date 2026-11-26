@@ -469,6 +469,28 @@ public sealed class DownloadManagerCoordinatorTests
         Assert.False(context.State.IsDownloadedHistoryLoaded);
     }
 
+    [Fact]
+    public async Task LoadedHistoryItemsCanBeCollectedAfterClearingTheList()
+    {
+        using var context = new CoordinatorContext();
+        await context.CreateCompletedItemAsync("released-history", "media", "released-history.mp4");
+        var reference = await LoadAndClearHistoryAsync(context);
+
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+
+        Assert.False(reference.TryGetTarget(out _));
+    }
+
+    private static async Task<WeakReference<DownloadedItem>> LoadAndClearHistoryAsync(CoordinatorContext context)
+    {
+        await context.Coordinator.LoadDownloadedHistoryAsync().ConfigureAwait(false);
+        var reference = new WeakReference<DownloadedItem>(Assert.Single(context.State.Downloaded));
+        await context.Coordinator.ClearDownloadedAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
+        return reference;
+    }
+
     private sealed class CoordinatorContext : IDisposable
     {
         private readonly string _directory = Path.Combine(

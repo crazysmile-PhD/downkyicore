@@ -1,4 +1,6 @@
+using System.Collections.Specialized;
 using DownKyi.Application.Downloads;
+using DownKyi.Application.Settings;
 using DownKyi.Domain.Downloads;
 using DownKyi.Domain.Results;
 using DownKyi.Infrastructure.Settings;
@@ -136,6 +138,12 @@ public sealed class DownloadPipelineCommitBoundaryTests
     public async Task CommittedCompletionCleansOnlyTransferInputsAndSidecars()
     {
         using var harness = await CommitBoundaryHarness.CreateAsync().ConfigureAwait(true);
+        harness.Lists.SortDownloaded(DownloadFinishedSort.DownloadDesc);
+        var resets = 0;
+        ((INotifyCollectionChanged)harness.Lists.Downloaded).CollectionChanged += (_, args) =>
+        {
+            if (args.Action == NotifyCollectionChangedAction.Reset) resets++;
+        };
 
         var result = await harness.FinalizeStage.ExecuteAsync(
             harness.Context,
@@ -150,6 +158,9 @@ public sealed class DownloadPipelineCommitBoundaryTests
             harness.Store.History.PublishedArtifacts["media"]);
         Assert.Empty(harness.Lists.Downloading);
         Assert.Single(harness.Lists.Downloaded);
+        Assert.Equal(0, resets);
+        Assert.Throws<InvalidOperationException>(() =>
+            harness.Projections.GetRequiredDownloadingProjection(harness.Context.TaskId));
     }
 
     [Fact]
@@ -293,6 +304,8 @@ public sealed class DownloadPipelineCommitBoundaryTests
         public CommitBoundaryStore Store { get; }
 
         public DownloadListState Lists { get; }
+
+        public DownloadTaskProjectionStore Projections => _projectionStore;
 
         public DownloadExecutionContext Context { get; }
 
@@ -567,11 +580,6 @@ public sealed class DownloadPipelineCommitBoundaryTests
             History = history;
             return Task.FromResult(OperationResult.Success());
         }
-
-        public Task<OperationResult> UpdateProgressAsync(
-            DownloadProgressWrite progressWrite,
-            CancellationToken cancellationToken) =>
-            Task.FromResult(OperationResult.Success());
 
         public Task<DownloadTask?> FindAsync(
             DownloadTaskId taskId,

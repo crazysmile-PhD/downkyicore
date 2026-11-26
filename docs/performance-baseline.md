@@ -33,7 +33,7 @@ Every comparable report must record：
 - raw metric units、sample count、failure／unsupported status；
 - output schema version and artifact locator.
 
-System scenarios cover shell startup、SQLite restore／progress persistence、UI projection、loopback built-in transfer、real FFmpeg CPU／available hardware encode, and production logging／flush. Source and report schema in `benchmarks/DownKyi.SystemBenchmarks` are authoritative；this list is only a route.
+System scenarios cover shell startup、SQLite restore／progress persistence、UI projection、loopback built-in transfer、real FFmpeg CPU／available hardware encode, and production logging／flush. The `sqlite` scenario runs the production transfer request／attempt and Application progress commit with a sampling backend, and verifies restored progress. Its dataset counts attempts and progress samples；it performs no network transfer and is a separate series from the removed write-behind mechanism benchmark. Source and report schema in `benchmarks/DownKyi.SystemBenchmarks` are authoritative；this list is only a route.
 
 ## Comparison rules
 
@@ -44,5 +44,6 @@ System scenarios cover shell startup、SQLite restore／progress persistence、U
 5. FFmpeg hardware support is available only after a real synthetic encode succeeds. Unsupported GPU paths remain explicit and preserve CPU fallback.
 6. Logging benchmarks must use the production provider and identical queue／recent-buffer dataset before comparing sink changes. Reliability, drops, flush latency and allocation are reported together；one metric cannot hide another.
 7. Before turning a metric into a gate, demonstrate representative workload relevance and stable runner variance. Until then, label the result investigation evidence and keep current values in artifacts／Git history.
+8. For short mutation workloads, include warmup, alternate before／after runs and increase work enough to expose process CPU counter resolution. Separate database-only and UI-projection paths, and record resource lookups／scheduled work alongside time and allocation. CPU time does not measure electrical energy.
 
 Formal verification and release gates are owned by `docs/operations/verification-and-rollback.md`；performance documents do not introduce a second pass/fail policy.

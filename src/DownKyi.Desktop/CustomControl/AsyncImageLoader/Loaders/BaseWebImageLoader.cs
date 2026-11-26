@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Net.Http;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Logging;
 using Avalonia.Media.Imaging;
@@ -32,9 +33,9 @@ internal class BaseWebImageLoader : IAsyncImageLoader
     protected HttpClient HttpClient { get; }
 
     /// <inheritdoc />
-    public virtual async Task<Bitmap?> ProvideImageAsync(string url)
+    public virtual async Task<Bitmap?> ProvideImageAsync(string url, CancellationToken cancellationToken = default)
     {
-        return await LoadAsync(url).ConfigureAwait(false);
+        return await LoadAsync(url, cancellationToken).ConfigureAwait(false);
     }
 
     public void Dispose()
@@ -48,8 +49,9 @@ internal class BaseWebImageLoader : IAsyncImageLoader
     /// </summary>
     /// <param name="url">Target url</param>
     /// <returns>Bitmap</returns>
-    protected virtual async Task<Bitmap?> LoadAsync(string url)
+    protected virtual async Task<Bitmap?> LoadAsync(string url, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var internalOrCachedBitmap = ImageSourceUriResolver.ResolveExternal(url) == null
             ? LoadFromLocal(url) ?? LoadFromInternal(url) ?? LoadFromGlobalCache(url)
             : LoadFromGlobalCache(url);
@@ -57,13 +59,23 @@ internal class BaseWebImageLoader : IAsyncImageLoader
 
         try
         {
-            var externalBytes = await LoadDataFromExternalAsync(url).ConfigureAwait(false);
+            var externalBytes = await LoadDataFromExternalAsync(url, cancellationToken).ConfigureAwait(false);
             if (externalBytes == null) return null;
 
+            cancellationToken.ThrowIfCancellationRequested();
             using var memoryStream = new MemoryStream(externalBytes);
             var bitmap = new Bitmap(memoryStream);
-            await SaveToGlobalCache(url, externalBytes).ConfigureAwait(false);
-            return bitmap;
+            try
+            {
+                await SaveToGlobalCache(url, externalBytes).ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
+                return bitmap;
+            }
+            catch
+            {
+                bitmap.Dispose();
+                throw;
+            }
         }
         catch (HttpRequestException e)
         {
@@ -155,7 +167,7 @@ internal class BaseWebImageLoader : IAsyncImageLoader
     /// </summary>
     /// <param name="url">Target url</param>
     /// <returns>Image bytes</returns>
-    protected virtual async Task<byte[]?> LoadDataFromExternalAsync(string url)
+    protected virtual async Task<byte[]?> LoadDataFromExternalAsync(string url, CancellationToken cancellationToken)
     {
         var uri = ImageSourceUriResolver.ResolveExternal(url);
         if (uri == null)
@@ -163,7 +175,12 @@ internal class BaseWebImageLoader : IAsyncImageLoader
 
         try
         {
-            return await HttpClient.GetByteArrayAsync(uri).ConfigureAwait(false);
+            return await HttpClient.GetByteArrayAsync(uri, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException e) when (!cancellationToken.IsCancellationRequested)
+        {
+            _logger?.Log(this, "Image request timed out: {Exception}", e);
+            return null;
         }
         catch (HttpRequestException e)
         {

@@ -24,7 +24,7 @@ internal static class ImageLoader
         AvaloniaProperty.RegisterAttached<Image, bool>("IsLoading", typeof(ImageLoader));
 
     private static readonly AttachedProperty<CancellationTokenSource?> PendingOperationProperty =
-        AvaloniaProperty.RegisterAttached<Image, CancellationTokenSource?>(
+        AvaloniaProperty.RegisterAttached<AvaloniaObject, CancellationTokenSource?>(
             "PendingOperation",
             typeof(ImageLoader));
 
@@ -73,7 +73,7 @@ internal static class ImageLoader
                 try
                 {
                     await Task.Delay(10, cts.Token).ConfigureAwait(false);
-                    var loaded = await AsyncImageLoader.ProvideImageAsync(url).ConfigureAwait(false);
+                    var loaded = await AsyncImageLoader.ProvideImageAsync(url, cts.Token).ConfigureAwait(false);
                     if (loaded == null || !targetSize.HasValue)
                     {
                         return loaded;
@@ -84,7 +84,7 @@ internal static class ImageLoader
                         return loaded.CreateScaledBitmap(targetSize.Value);
                     }
                 }
-                catch (TaskCanceledException)
+                catch (OperationCanceledException) when (cts.IsCancellationRequested)
                 {
                     return null;
                 }
@@ -126,7 +126,7 @@ internal static class ImageLoader
         }
     }
 
-    private static CancellationTokenSource ReplacePendingOperation(Image image)
+    internal static CancellationTokenSource ReplacePendingOperation(AvaloniaObject image)
     {
         var previous = image.GetValue(PendingOperationProperty);
         var current = new CancellationTokenSource();
@@ -139,7 +139,7 @@ internal static class ImageLoader
         return current;
     }
 
-    private static bool CompletePendingOperation(Image image, CancellationTokenSource operation)
+    internal static bool CompletePendingOperation(AvaloniaObject image, CancellationTokenSource operation)
     {
         var ownsPendingOperation = ReferenceEquals(image.GetValue(PendingOperationProperty), operation);
         if (ownsPendingOperation)

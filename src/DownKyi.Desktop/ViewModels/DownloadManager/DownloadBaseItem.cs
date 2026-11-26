@@ -19,10 +19,15 @@ namespace DownKyi.ViewModels.DownloadManager
             set
             {
                 ArgumentNullException.ThrowIfNull(value);
+                var zoneChanged = _downloadBase.ZoneId != value.ZoneId;
                 _downloadBase = value;
 
-                ZoneImage = DictionaryResource.GetIfApplicationInitialized<DrawingImage>(
-                    VideoZoneIcon.GetZoneImageKey(DownloadBase.ZoneId));
+                if (zoneChanged || ZoneImage == null)
+                {
+                    ZoneImage = DictionaryResource.GetIfApplicationInitialized<DrawingImage>(
+                        VideoZoneIcon.GetZoneImageKey(value.ZoneId));
+                }
+
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(Order));
                 OnPropertyChanged(nameof(MainTitle));

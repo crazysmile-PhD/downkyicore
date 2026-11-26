@@ -197,7 +197,10 @@ namespace DownKyi.ViewModels.DownloadManager
             set
             {
                 ArgumentNullException.ThrowIfNull(value);
-                SetProperty(ref _startOrPause, value);
+                if (!SetProperty(ref _startOrPause, value))
+                {
+                    return;
+                }
 
                 OperationTip = value.Equals(ButtonIcon.Start) ? DictionaryResource.GetString("StartDownload")
                     : value.Equals(ButtonIcon.Pause) ? DictionaryResource.GetString("PauseDownload")

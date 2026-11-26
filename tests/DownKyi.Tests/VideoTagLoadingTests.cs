@@ -2125,9 +2125,6 @@ public sealed class VideoTagLoadingTests : IDisposable
             return Task.FromResult(OperationResult.Success());
         }
 
-        public Task<OperationResult> UpdateProgressAsync(
-            DownloadProgressWrite progressWrite,
-            CancellationToken cancellationToken) => Task.FromResult(OperationResult.Success());
     }
 
     private sealed class RecordingLogger<T> : ILogger<T>

@@ -864,14 +864,6 @@ public sealed class DownloadOrchestratorTests
             return Task.FromResult(OperationResult.Success());
         }
 
-        public Task<OperationResult> UpdateProgressAsync(
-            DownloadProgressWrite progressWrite,
-            CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(OperationResult.Success());
-        }
-
         public Task<DownloadTask?> FindAsync(
             DownloadTaskId taskId,
             CancellationToken cancellationToken)

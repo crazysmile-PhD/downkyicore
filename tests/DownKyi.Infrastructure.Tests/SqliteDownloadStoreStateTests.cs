@@ -261,7 +261,49 @@ public sealed class SqliteDownloadStoreStateTests : IDisposable
     }
 
     [Fact]
-    public async Task CoalescedProgressWriteAdvancesVersionAndPayloadAtomically()
+    public async Task ContendedForegroundWriteReturnsAnIncompleteTaskBeforeTheWriterIsReleased()
+    {
+        var original = DownloadTask.Create(new DownloadTaskId("background-write"),
+            SqliteDownloadStoreFixture.CreateMetadata("Background"), SqliteDownloadStoreFixture.CreatePlan(),
+            new DownloadOutput("output", null), _fixture.Clock.UtcNow);
+        using var store = _fixture.CreateStore();
+        Assert.True((await store.AddAsync(original, TestContext.Current.CancellationToken)).IsSuccess);
+        var started = original.Start(_fixture.Clock.UtcNow.AddSeconds(1)).RequireValue();
+        using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = Path.Combine(_fixture.TempDirectory, "download.db"),
+            Pooling = false
+        }.ToString());
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        using var transaction = await connection.BeginTransactionAsync(TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
+        var returned = new TaskCompletionSource<Task<DownKyi.Domain.Results.OperationResult>>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var invocation = Task.Factory.StartNew(() => returned.SetResult(
+            store.UpdateAsync(started, original.Version, TestContext.Current.CancellationToken)),
+            TestContext.Current.CancellationToken, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+        Task<DownKyi.Domain.Results.OperationResult>? update = null;
+        try
+        {
+            update = await returned.Task.WaitAsync(TestContext.Current.CancellationToken);
+            Assert.False(update.IsCompleted);
+        }
+        finally
+        {
+            await transaction.RollbackAsync(TestContext.Current.CancellationToken).ConfigureAwait(true);
+            await invocation.ConfigureAwait(true);
+            if (update != null)
+            {
+                Assert.True((await update.ConfigureAwait(true)).IsSuccess);
+            }
+        }
+
+        Assert.Equal(DownloadPhase.Downloading,
+            (await store.FindAsync(original.Id, TestContext.Current.CancellationToken))?.Phase);
+    }
+
+    [Fact]
+    public async Task ProgressTransitionPersistsVersionAndPayloadAtomically()
     {
         var original = DownloadTask.Create(
             new DownloadTaskId("progress"),
@@ -273,19 +315,19 @@ public sealed class SqliteDownloadStoreStateTests : IDisposable
         Assert.True((await store.AddAsync(original, TestContext.Current.CancellationToken)).IsSuccess);
         var progress = new DownloadProgress(75, 750, 1000, 5_000_000, "750 B", "40 Mbps");
 
-        var result = await store.UpdateProgressAsync(
-            new DownKyi.Application.Downloads.DownloadProgressWrite(
-                original.Id,
-                progress,
-                original.Version,
-                original.Version + 3,
-                _fixture.Clock.UtcNow.AddSeconds(4)),
+        using var tasks = new DownKyi.Application.Downloads.DownloadTaskApplicationService(
+            store,
+            DownKyi.Application.Downloads.DownloadHistoryService.CreateForSharedStore(store),
+            _fixture.Clock);
+        var result = await tasks.UpdateProgressAsync(
+            original.Id,
+            progress,
             TestContext.Current.CancellationToken);
         var restored = await store.FindAsync(original.Id, TestContext.Current.CancellationToken);
 
         Assert.True(result.IsSuccess);
         Assert.NotNull(restored);
-        Assert.Equal(original.Version + 3, restored.Version);
+        Assert.Equal(original.Version + 1, restored.Version);
         Assert.Equal(progress, restored.Progress);
     }
 }

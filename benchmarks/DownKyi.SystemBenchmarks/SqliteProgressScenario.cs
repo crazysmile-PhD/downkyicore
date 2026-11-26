@@ -1,11 +1,11 @@
 using System.Diagnostics;
-using System.Threading.Channels;
 using DownKyi.Application.Downloads;
-using DownKyi.Application.Time;
 using DownKyi.Domain.Downloads;
-using DownKyi.Domain.Results;
 using DownKyi.Infrastructure.Downloads;
+using DownKyi.Infrastructure.Time;
+using DownKyi.Services.Download;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DownKyi.SystemBenchmarks;
 
@@ -14,221 +14,125 @@ internal static class SqliteProgressScenario
     public static async Task<SystemBenchmarkResult> RunAsync(
         string dataRoot,
         int taskCount,
-        int simulatedSeconds,
-        int samplesPerTaskSecond,
+        int attemptsPerTask,
+        int samplesPerAttempt,
         CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(dataRoot);
         var databasePath = Path.Combine(dataRoot, "progress.db");
-        var clock = new StepClock(DateTimeOffset.UnixEpoch);
-        var innerStore = new SqliteDownloadTaskStore(
-            new SqliteDownloadTaskStoreOptions(databasePath),
-            clock);
-        var store = new CountingStore(innerStore);
-        try
+        var clock = new SystemClock();
+        using var store = new SqliteDownloadTaskStore(new SqliteDownloadTaskStoreOptions(databasePath), clock);
+        await store.InitializeAsync(cancellationToken).ConfigureAwait(false);
+        var history = DownloadHistoryService.CreateForSharedStore(store);
+        using var tasks = new DownloadTaskApplicationService(store, history, clock);
+        using var projections = new DownloadTaskProjectionStore(tasks, history, clock);
+        var writer = new DownloadTaskStateWriter(tasks);
+        for (var index = 0; index < taskCount; index++)
         {
-            await store.InitializeAsync(cancellationToken).ConfigureAwait(false);
-            for (var taskIndex = 0; taskIndex < taskCount; taskIndex++)
+            var result = await tasks.AddAsync(
+                DownloadBenchmarkData.CreateDownloadingTask(index, DateTimeOffset.UnixEpoch), cancellationToken)
+                .ConfigureAwait(false);
+            if (!result.IsSuccess)
             {
-                var result = await store
-                    .AddAsync(
-                        DownloadBenchmarkData.CreateDownloadingTask(taskIndex, clock.UtcNow),
-                        cancellationToken)
-                    .ConfigureAwait(false);
-                if (!result.IsSuccess)
+                throw new InvalidOperationException(result.Error?.Message ?? "Unable to seed progress dataset.");
+            }
+        }
+
+        await projections.GetDownloadingStateAsync(cancellationToken).ConfigureAwait(false);
+        var committedUpdates = 0;
+        tasks.TaskChanged += (_, args) =>
+        {
+            if (args.Snapshot?.Progress.Percentage == 100)
+            {
+                Interlocked.Increment(ref committedUpdates);
+            }
+        };
+        var backend = new SamplingBackend(samplesPerAttempt);
+        var coordinator = new DownloadTransferCoordinator(backend, new DownloadRetryPolicy(),
+            TimeProvider.System, NullLogger<DownloadTransferCoordinator>.Instance);
+        var allocatedBefore = GC.GetTotalAllocatedBytes(precise: true);
+        using var process = Process.GetCurrentProcess();
+        var cpuBefore = process.TotalProcessorTime;
+        var stopwatch = Stopwatch.StartNew();
+        await Task.WhenAll(Enumerable.Range(0, taskCount).Select(index => Task.Run(async () =>
+        {
+            var taskId = new DownloadTaskId($"benchmark-{index:D6}");
+            for (var attempt = 0; attempt < attemptsPerTask; attempt++)
+            {
+                var request = DownloadTransferRequestFactory.Create(taskId,
+                    ["https://synthetic.invalid/media"], dataRoot, dataRoot, $"media-{index}", 1000,
+                    projections, writer, static () => { }, cancellationToken);
+                var result = await coordinator.TransferAsync(request,
+                    static _ => throw new InvalidOperationException("The sampling backend cannot refresh."),
+                    cancellationToken).ConfigureAwait(false);
+                if (result.Outcome != DownloadTransferOutcome.Succeeded)
                 {
-                    throw new InvalidOperationException(result.Error?.Message ?? "Unable to seed progress dataset.");
+                    throw new InvalidOperationException("The sampling transfer did not complete.");
                 }
             }
-
-            var writeBehind = new DownloadProgressWriteBehind(
-                store,
-                clock,
-                TimeSpan.FromSeconds(1),
-                maximumPendingTasks: taskCount);
-            await using var writeBehindScope = writeBehind.ConfigureAwait(false);
-            var versions = Enumerable.Repeat(1L, taskCount).ToArray();
-            var queuedSamples = 0L;
-            var stopwatch = Stopwatch.StartNew();
-            for (var second = 0; second < simulatedSeconds; second++)
-            {
-                for (var taskIndex = 0; taskIndex < taskCount; taskIndex++)
-                {
-                    var taskId = new DownloadTaskId($"benchmark-{taskIndex:D6}");
-                    for (var sample = 0; sample < samplesPerTaskSecond; sample++)
-                    {
-                        var expectedVersion = versions[taskIndex];
-                        var targetVersion = checked(expectedVersion + 1);
-                        var progress = Math.Min(
-                            99.9,
-                            ((second * samplesPerTaskSecond) + sample + 1d)
-                            / (simulatedSeconds * samplesPerTaskSecond) * 100);
-                        if (!writeBehind.TryQueue(new DownloadProgressWrite(
-                                taskId,
-                                new DownloadProgress(progress),
-                                expectedVersion,
-                                targetVersion,
-                                clock.UtcNow.AddTicks(sample + 1))))
-                        {
-                            throw new InvalidOperationException("Progress write-behind rejected an in-range task.");
-                        }
-
-                        versions[taskIndex] = targetVersion;
-                        queuedSamples++;
-                    }
-                }
-
-                await clock.ReleaseNextDelayAsync(cancellationToken).ConfigureAwait(false);
-                await store
-                    .WaitForWriteCountAsync(checked((second + 1) * taskCount), cancellationToken)
-                    .ConfigureAwait(false);
-                if (writeBehind.Completion.IsFaulted)
-                {
-                    await writeBehind.Completion.ConfigureAwait(false);
-                }
-            }
-
-            stopwatch.Stop();
-            var taskMinutes = taskCount * (simulatedSeconds / 60d);
-            return new SystemBenchmarkResult(
-                "sqlite_progress_write_rate",
-                $"tasks={taskCount}; simulated_seconds={simulatedSeconds}; samples_per_task_second={samplesPerTaskSecond}",
-                "sqlite-write-behind",
-                Available: true,
-                new Dictionary<string, double>(StringComparer.Ordinal)
-                {
-                    ["source_progress_samples"] = queuedSamples,
-                    ["sqlite_progress_writes"] = store.ProgressWriteCount,
-                    ["writes_per_task_minute"] = store.ProgressWriteCount / taskMinutes,
-                    ["wall_elapsed_milliseconds"] = stopwatch.Elapsed.TotalMilliseconds
-                },
-                new Dictionary<string, string>(StringComparer.Ordinal)
-                {
-                    ["source_progress_samples"] = "count",
-                    ["sqlite_progress_writes"] = "count",
-                    ["writes_per_task_minute"] = "writes/task-minute",
-                    ["wall_elapsed_milliseconds"] = "ms"
-                },
-                "A deterministic clock advances one second per flush; multiple source samples for a task are coalesced into one atomic SQLite progress write per interval.");
-        }
-        finally
+        }, cancellationToken))).ConfigureAwait(false);
+        stopwatch.Stop();
+        var allocatedBytes = GC.GetTotalAllocatedBytes(precise: true) - allocatedBefore;
+        var cpuMilliseconds = (process.TotalProcessorTime - cpuBefore).TotalMilliseconds;
+        var expectedCommits = checked(taskCount * attemptsPerTask);
+        if (committedUpdates != expectedCommits)
         {
-            innerStore.Dispose();
-            ClearOwnedSqlitePool(databasePath);
+            throw new InvalidOperationException("The transfer lease did not commit exactly one progress update per attempt.");
         }
-    }
 
-    private static void ClearOwnedSqlitePool(string databasePath)
-    {
-        using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        var restored = await store.GetUnfinishedAsync(cancellationToken).ConfigureAwait(false);
+        if (restored.Count != taskCount || restored.Any(task => task.Progress.Percentage != 100))
+        {
+            throw new InvalidOperationException("The committed transfer progress could not be restored.");
+        }
+
+        using var pooledConnection = new SqliteConnection(new SqliteConnectionStringBuilder
         {
             DataSource = databasePath,
-            Mode = SqliteOpenMode.ReadWriteCreate,
             Pooling = true,
             DefaultTimeout = 5
         }.ToString());
-        SqliteConnection.ClearPool(connection);
+        SqliteConnection.ClearPool(pooledConnection);
+        return new SystemBenchmarkResult(
+            "sqlite_transfer_progress_commits",
+            $"tasks={taskCount}; attempts_per_task={attemptsPerTask}; samples_per_attempt={samplesPerAttempt}",
+            "production-transfer-attempt-sqlite",
+            Available: true,
+            new Dictionary<string, double>(StringComparer.Ordinal)
+            {
+                ["source_progress_samples"] = checked(expectedCommits * samplesPerAttempt),
+                ["committed_progress_updates"] = committedUpdates,
+                ["wall_elapsed_milliseconds"] = stopwatch.Elapsed.TotalMilliseconds,
+                ["cpu_milliseconds"] = cpuMilliseconds,
+                ["allocated_bytes"] = allocatedBytes
+            },
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["source_progress_samples"] = "count",
+                ["committed_progress_updates"] = "count",
+                ["wall_elapsed_milliseconds"] = "ms",
+                ["cpu_milliseconds"] = "ms",
+                ["allocated_bytes"] = "bytes"
+            },
+            "Uses the production request factory, transfer coordinator/attempt and Application/SQLite progress commit. " +
+            "The sampling backend performs no network or file transfer; dataset seeding and restore validation are outside the measured interval. " +
+            "This is a new series, not a continuation of the removed write-behind mechanism benchmark.");
     }
 
-    private sealed class StepClock(DateTimeOffset utcNow) : IClock
+    private sealed class SamplingBackend(int samplesPerAttempt) : ITransferBackend
     {
-        private readonly Channel<DelayRequest> _delays = Channel.CreateUnbounded<DelayRequest>(
-            new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
-        private DateTimeOffset _utcNow = utcNow;
+        public string Name => "sampling";
 
-        public DateTimeOffset UtcNow => _utcNow;
-
-        public Task DelayAsync(TimeSpan delay, CancellationToken cancellationToken)
+        public Task<DownloadTransferResult> TransferAsync(DownloadTransferRequest request)
         {
-            var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            if (!_delays.Writer.TryWrite(new DelayRequest(delay, completion)))
+            for (var sample = 1; sample <= samplesPerAttempt; sample++)
             {
-                throw new InvalidOperationException("Benchmark clock delay queue is closed.");
+                request.CancellationToken.ThrowIfCancellationRequested();
+                request.PublishProgress(new DownloadProgress(sample * 100d / samplesPerAttempt,
+                    sample * 1000L / samplesPerAttempt, 1000));
             }
 
-            return completion.Task.WaitAsync(cancellationToken);
-        }
-
-        public async Task ReleaseNextDelayAsync(CancellationToken cancellationToken)
-        {
-            var request = await _delays.Reader
-                .ReadAsync(cancellationToken)
-                .AsTask()
-                .WaitAsync(TimeSpan.FromSeconds(10), cancellationToken)
-                .ConfigureAwait(false);
-            _utcNow += request.Delay;
-            request.Completion.TrySetResult();
-        }
-
-        private sealed record DelayRequest(TimeSpan Delay, TaskCompletionSource Completion);
-    }
-
-    private sealed class CountingStore(IDownloadTaskStore inner) : IDownloadTaskStore
-    {
-        private readonly IDownloadTaskStore _inner = inner ?? throw new ArgumentNullException(nameof(inner));
-        private readonly Channel<byte> _writeSignals = Channel.CreateUnbounded<byte>(
-            new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
-        private long _progressWriteCount;
-
-        public long ProgressWriteCount => Interlocked.Read(ref _progressWriteCount);
-
-        public Task InitializeAsync(CancellationToken cancellationToken) =>
-            _inner.InitializeAsync(cancellationToken);
-
-        public Task<OperationResult> AddAsync(DownloadTask task, CancellationToken cancellationToken) =>
-            _inner.AddAsync(task, cancellationToken);
-
-        public Task<OperationResult> UpdateAsync(
-            DownloadTask task,
-            long expectedVersion,
-            CancellationToken cancellationToken) =>
-            _inner.UpdateAsync(task, expectedVersion, cancellationToken);
-
-        public async Task<OperationResult> UpdateProgressAsync(
-            DownloadProgressWrite progressWrite,
-            CancellationToken cancellationToken)
-        {
-            var result = await _inner.UpdateProgressAsync(progressWrite, cancellationToken).ConfigureAwait(false);
-            Interlocked.Increment(ref _progressWriteCount);
-            _writeSignals.Writer.TryWrite(0);
-            return result;
-        }
-
-        public Task<DownloadTask?> FindAsync(
-            DownloadTaskId taskId,
-            CancellationToken cancellationToken) => _inner.FindAsync(taskId, cancellationToken);
-
-        public Task<IReadOnlyList<DownloadTask>> GetUnfinishedAsync(CancellationToken cancellationToken) =>
-            _inner.GetUnfinishedAsync(cancellationToken);
-
-        public Task<bool> IsOutputPathReservedAsync(
-            string basePath,
-            bool ignoreCase,
-            CancellationToken cancellationToken) =>
-            _inner.IsOutputPathReservedAsync(basePath, ignoreCase, cancellationToken);
-
-        public Task<IReadOnlyList<string>> GetActiveOutputReservationKeysAsync(
-            bool ignoreCase,
-            CancellationToken cancellationToken) =>
-            _inner.GetActiveOutputReservationKeysAsync(ignoreCase, cancellationToken);
-
-        public Task<OperationResult> DeleteAsync(
-            DownloadTaskId taskId,
-            CancellationToken cancellationToken) => _inner.DeleteAsync(taskId, cancellationToken);
-
-        public Task<IReadOnlyList<QuarantinedDownloadRecord>> GetQuarantinedRecordsAsync(
-            CancellationToken cancellationToken) => _inner.GetQuarantinedRecordsAsync(cancellationToken);
-
-        public async Task WaitForWriteCountAsync(int expectedCount, CancellationToken cancellationToken)
-        {
-            while (ProgressWriteCount < expectedCount)
-            {
-                await _writeSignals.Reader
-                    .ReadAsync(cancellationToken)
-                    .AsTask()
-                    .WaitAsync(TimeSpan.FromSeconds(10), cancellationToken)
-                    .ConfigureAwait(false);
-            }
+            return Task.FromResult(DownloadTransferResult.Succeeded());
         }
     }
 }

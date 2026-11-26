@@ -553,11 +553,6 @@ public sealed class MuxFailureRecoveryTests
             return Task.FromResult(OperationResult.Success());
         }
 
-        public Task<OperationResult> UpdateProgressAsync(
-            DownloadProgressWrite progressWrite,
-            CancellationToken cancellationToken) =>
-            Task.FromResult(OperationResult.Success());
-
         public Task<DownloadTask?> FindAsync(
             DownloadTaskId taskId,
             CancellationToken cancellationToken)

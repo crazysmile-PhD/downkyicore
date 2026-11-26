@@ -163,7 +163,6 @@ public sealed class DownloadExecutionContextFactoryTests : IDisposable
         Assert.Equal(
             DownloadArtifactIdentity.DanmakuAssTransferKey,
             Assert.Single(context.Input.CompletedTransferKeys));
-        Assert.Equal(DownloadFinishedSort.Number, context.Input.FinishedSort);
         Assert.Equal(originalSettings.Video, context.Input.VideoSettings);
         Assert.Equal(originalSettings.Danmaku, context.Input.DanmakuSettings);
 

@@ -1279,13 +1279,6 @@ public sealed class DownloadBootstrapHostedServiceTests
             return Task.FromResult(OperationResult.Success());
         }
 
-        public Task<OperationResult> UpdateProgressAsync(
-            DownloadProgressWrite progressWrite,
-            CancellationToken cancellationToken)
-        {
-            return Task.FromResult(OperationResult.Success());
-        }
-
         public Task<DownloadTask?> FindAsync(DownloadTaskId taskId, CancellationToken cancellationToken)
         {
             _tasks.TryGetValue(taskId, out var task);
