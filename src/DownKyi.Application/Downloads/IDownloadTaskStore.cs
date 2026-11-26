@@ -14,10 +14,6 @@ public interface IDownloadTaskStore
         long expectedVersion,
         CancellationToken cancellationToken);
 
-    Task<OperationResult> UpdateProgressAsync(
-        DownloadProgressWrite progressWrite,
-        CancellationToken cancellationToken);
-
     Task<DownloadTask?> FindAsync(DownloadTaskId taskId, CancellationToken cancellationToken);
 
     Task<IReadOnlyList<DownloadTask>> GetUnfinishedAsync(CancellationToken cancellationToken);

@@ -1,5 +1,6 @@
 using DownKyi.Application.Downloads;
 using DownKyi.Application.Media;
+using DownKyi.Application.Settings;
 using DownKyi.Infrastructure.Downloads;
 using DownKyi.Infrastructure.FFmpeg;
 using DownKyi.Infrastructure.Storage;
@@ -55,7 +56,8 @@ internal static class DownloadComposition
         services.AddSingleton<DownloadCommittedTaskDispatcher>();
         services.AddSingleton<DownloadStoreRecoveryPresenter>();
         services.AddSingleton<DownloadTaskAdmissionService>();
-        services.AddSingleton<DownloadListState>();
+        services.AddSingleton(provider => new DownloadListState(
+            provider.GetRequiredService<ISettingsStore>().Current.Basic.DownloadFinishedSort));
         services.AddSingleton<IDownloadedListProjection>(provider =>
             provider.GetRequiredService<DownloadListState>());
         services.AddSingleton<DownloadTaskFileService>();

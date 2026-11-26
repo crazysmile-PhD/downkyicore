@@ -1392,11 +1392,6 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
             CancellationToken cancellationToken) =>
             _completion.CompleteAsync(task, history, expectedVersion, cancellationToken);
 
-        public Task<OperationResult> UpdateProgressAsync(
-            DownloadProgressWrite progressWrite,
-            CancellationToken cancellationToken) =>
-            inner.UpdateProgressAsync(progressWrite, cancellationToken);
-
         public Task<DownloadTask?> FindAsync(
             DownloadTaskId taskId,
             CancellationToken cancellationToken) => inner.FindAsync(taskId, cancellationToken);

@@ -68,8 +68,7 @@ internal sealed class DownloadExecutionContextFactory
             (Core.BiliApi.VideoStream.PlayStreamType)task.Plan.StreamType,
             task.Plan.NfoRequest,
             settings.Video,
-            danmakuSettings,
-            settings.Basic.DownloadFinishedSort);
+            danmakuSettings);
     }
 
     private static DanmakuOutputFormat ResolveDanmakuOutputFormat(

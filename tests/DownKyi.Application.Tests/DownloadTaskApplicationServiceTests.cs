@@ -463,6 +463,36 @@ public sealed class DownloadTaskApplicationServiceTests
             strict: true);
     }
 
+    [Fact]
+    public async Task CancellationWhileAnotherMutationIsLoadingDoesNotStartASecondCommand()
+    {
+        var store = new RecordingStore();
+        using var service = new DownloadTaskApplicationService(
+            store, DownloadHistoryService.CreateForSharedStore(store), new AdvancingClock());
+        var task = CreateTask();
+        Assert.True((await service.AddAsync(task, TestContext.Current.CancellationToken)).IsSuccess);
+        var pendingFind = new TaskCompletionSource<DownloadTask?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        store.NextFind = pendingFind;
+        var starting = service.StartAsync(task.Id, TestContext.Current.CancellationToken);
+        Assert.False(starting.IsCompleted);
+        using var cancellation = new CancellationTokenSource();
+        try
+        {
+            var waiting = service.PauseAsync(new DownloadTaskId("other-task"), cancellation.Token);
+            await cancellation.CancelAsync();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => waiting);
+        }
+        finally
+        {
+            pendingFind.SetResult(task);
+            Assert.True((await starting.ConfigureAwait(true)).IsSuccess);
+        }
+
+        Assert.Equal(DownloadPhase.Downloading, store.Current?.Phase);
+        Assert.True((await service.PauseAsync(task.Id, TestContext.Current.CancellationToken)).IsSuccess);
+        Assert.Equal(DownloadPhase.Pausing, store.Current?.Phase);
+    }
+
     private static DownloadTask CreateTask()
     {
         return DownloadTask.Create(
@@ -518,6 +548,8 @@ public sealed class DownloadTaskApplicationServiceTests
         public DownloadTask? Current { get; private set; }
 
         public DownloadTask? ConcurrentUpdate { get; set; }
+
+        public TaskCompletionSource<DownloadTask?>? NextFind { get; set; }
 
         public List<long> ExpectedVersions { get; } = [];
 
@@ -599,11 +631,6 @@ public sealed class DownloadTaskApplicationServiceTests
             return Task.FromResult(OperationResult.Success());
         }
 
-        public Task<OperationResult> UpdateProgressAsync(
-            DownloadProgressWrite progressWrite,
-            CancellationToken cancellationToken) =>
-            Task.FromResult(OperationResult.Success());
-
         public Task<DownloadTask?> FindAsync(
             DownloadTaskId taskId,
             CancellationToken cancellationToken)
@@ -611,6 +638,12 @@ public sealed class DownloadTaskApplicationServiceTests
             cancellationToken.ThrowIfCancellationRequested();
             lock (_sync)
             {
+                if (NextFind is { } pending)
+                {
+                    NextFind = null;
+                    return pending.Task.WaitAsync(cancellationToken);
+                }
+
                 return Task.FromResult(Current?.Id == taskId ? Current : null);
             }
         }

@@ -145,58 +145,6 @@ internal sealed class SqliteDownloadStoreCommands(SqliteDownloadStoreDatabase da
             cancellationToken);
     }
 
-    public Task<OperationResult> UpdateProgressAsync(
-        DownloadProgressWrite progressWrite,
-        CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(progressWrite);
-        return _database.ExecuteTransactionAsync(
-            async (connection, transaction, token) =>
-            {
-                using var versionCommand = connection.CreateCommand();
-                versionCommand.Transaction = transaction;
-                versionCommand.CommandText = """
-                    UPDATE download_base
-                    SET version = @target_version, updated_at_utc = @updated_at_utc
-                    WHERE id = @id AND version = @expected_version
-                    """;
-                versionCommand.Parameters.AddWithValue("@target_version", progressWrite.TargetVersion);
-                versionCommand.Parameters.AddWithValue(
-                    "@updated_at_utc",
-                    progressWrite.UpdatedAtUtc.ToUnixTimeMilliseconds());
-                versionCommand.Parameters.AddWithValue("@id", progressWrite.TaskId.Value);
-                versionCommand.Parameters.AddWithValue("@expected_version", progressWrite.ExpectedVersion);
-                var changed = await versionCommand.ExecuteNonQueryAsync(token).ConfigureAwait(false);
-                if (changed == 0)
-                {
-                    return DownloadStoreOperationResults.Conflict(
-                        progressWrite.TaskId,
-                        "has changed since progress was sampled");
-                }
-
-                using var progressCommand = connection.CreateCommand();
-                progressCommand.Transaction = transaction;
-                progressCommand.CommandText = """
-                    UPDATE downloading
-                    SET progress = @progress,
-                        downloaded_bytes = @downloaded_bytes,
-                        total_bytes = @total_bytes,
-                        bytes_per_second = @bytes_per_second,
-                        downloading_file_size = @downloaded_size_text,
-                        speed_display = @speed_text,
-                        max_speed = MAX(max_speed, @bytes_per_second)
-                    WHERE id = @id
-                    """;
-                DownloadTaskSqlWriter.BindProgress(progressCommand, progressWrite.Progress);
-                progressCommand.Parameters.AddWithValue("@id", progressWrite.TaskId.Value);
-                changed = await progressCommand.ExecuteNonQueryAsync(token).ConfigureAwait(false);
-                return changed == 0
-                    ? DownloadStoreOperationResults.NotFound(progressWrite.TaskId)
-                    : OperationResult.Success();
-            },
-            cancellationToken);
-    }
-
     public async Task<OperationResult> DeleteAsync(
         DownloadTaskId taskId,
         CancellationToken cancellationToken)

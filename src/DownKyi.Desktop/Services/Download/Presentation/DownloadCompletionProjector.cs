@@ -35,9 +35,10 @@ internal sealed class DownloadCompletionProjector
         return _uiDispatcher.InvokeAsync(() =>
         {
             _downloadLists.AddDownloaded(downloadedItem);
-            _downloadLists.RemoveDownloading(
-                _projectionStore.GetRequiredDownloadingProjection(context.TaskId));
-            _downloadLists.SortDownloaded(context.Input.FinishedSort);
+            if (_projectionStore.TryRemoveDownloadingProjection(context.TaskId, out var downloadingItem))
+            {
+                _downloadLists.RemoveDownloading(downloadingItem);
+            }
         });
     }
 }

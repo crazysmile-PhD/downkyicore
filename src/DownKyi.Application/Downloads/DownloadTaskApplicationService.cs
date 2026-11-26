@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using DownKyi.Application.Time;
 using DownKyi.Domain.Downloads;
 using DownKyi.Domain.Results;
@@ -11,7 +10,8 @@ public sealed partial class DownloadTaskApplicationService : IDownloadTaskApplic
     private readonly IDownloadTaskStore _store;
     private readonly IDownloadHistoryService _history;
     private readonly IClock _clock;
-    private readonly ConcurrentDictionary<DownloadTaskId, SemaphoreSlim> _taskGates = new();
+    // Serialize durable mutations without retaining a lock for each historical ID.
+    private readonly SemaphoreSlim _mutationGate = new(1, 1);
     private bool _disposed;
 
     public DownloadTaskApplicationService(
@@ -401,12 +401,7 @@ public sealed partial class DownloadTaskApplicationService : IDownloadTaskApplic
             return;
         }
 
-        foreach (var gate in _taskGates.Values)
-        {
-            gate.Dispose();
-        }
-
-        _taskGates.Clear();
+        _mutationGate.Dispose();
         _disposed = true;
     }
 
@@ -430,8 +425,7 @@ public sealed partial class DownloadTaskApplicationService : IDownloadTaskApplic
         ArgumentNullException.ThrowIfNull(shouldTransition);
         ArgumentNullException.ThrowIfNull(transition);
         ObjectDisposedException.ThrowIf(_disposed, this);
-        var gate = _taskGates.GetOrAdd(taskId, static _ => new SemaphoreSlim(1, 1));
-        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await _mutationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             for (var attempt = 0; attempt < MaximumUpdateAttempts; attempt++)
@@ -494,7 +488,7 @@ public sealed partial class DownloadTaskApplicationService : IDownloadTaskApplic
         }
         finally
         {
-            gate.Release();
+            _mutationGate.Release();
         }
     }
 

@@ -246,9 +246,9 @@ internal class AdvancedImage : ContentControl
                     }
 
                     loader ??= ImageLoader.AsyncImageLoader;
-                    return await loader.ProvideImageAsync(source).ConfigureAwait(true);
+                    return await loader.ProvideImageAsync(source, cancellationTokenSource.Token).ConfigureAwait(true);
                 }
-                catch (TaskCanceledException)
+                catch (OperationCanceledException) when (cancellationTokenSource.IsCancellationRequested)
                 {
                     return null;
                 }

@@ -46,51 +46,43 @@ public sealed class SqliteDownloadTaskStoreArchitectureTests
     ];
     private static readonly Dictionary<string, string> ExpectedFacadeDelegations = new(StringComparer.Ordinal)
     {
-        ["InitializeAsync"] = "_database.InitializeAsync(cancellationToken)",
-        ["BackupAndResetAsync"] = "_database.BackupAndResetAsync(cancellationToken)",
-        ["AddAsync"] = "await _outputReservations.AddAsync(task, cancellationToken).ConfigureAwait(false)",
+        ["InitializeAsync"] = "ExecuteAsync(() => _database.InitializeAsync(cancellationToken), cancellationToken)",
+        ["BackupAndResetAsync"] = "ExecuteAsync(() => _database.BackupAndResetAsync(cancellationToken), cancellationToken)",
+        ["AddAsync"] = "ExecuteAsync(() => _outputReservations.AddAsync(task, cancellationToken), cancellationToken)",
         ["AddHistoryAsync"] =
-            "await _commands.AddHistoryAsync(history, cancellationToken).ConfigureAwait(false)",
+            "ExecuteAsync(() => _commands.AddHistoryAsync(history, cancellationToken), cancellationToken)",
         ["UpdateAsync"] =
-            "await _commands.UpdateAsync(task, expectedVersion, cancellationToken).ConfigureAwait(false)",
+            "ExecuteAsync(() => _commands.UpdateAsync(task, expectedVersion, cancellationToken), cancellationToken)",
         ["CompleteAsync"] =
-            "await _commands.CompleteAsync(task, history, expectedVersion, cancellationToken)" +
-            ".ConfigureAwait(false)",
-        ["UpdateProgressAsync"] =
-            "await _commands.UpdateProgressAsync(progressWrite, cancellationToken).ConfigureAwait(false)",
-        ["FindAsync"] = "await _queries.FindAsync(taskId, cancellationToken).ConfigureAwait(false)",
+            "ExecuteAsync(() => _commands.CompleteAsync(task, history, expectedVersion, cancellationToken), cancellationToken)",
+        ["FindAsync"] = "ExecuteAsync(() => _queries.FindAsync(taskId, cancellationToken), cancellationToken)",
         ["GetUnfinishedAsync"] =
-            "await _queries.GetUnfinishedAsync(cancellationToken).ConfigureAwait(false)",
+            "ExecuteAsync(() => _queries.GetUnfinishedAsync(cancellationToken), cancellationToken)",
         ["GetUnfinishedByCidAsync"] =
-            "await _queries.GetUnfinishedByCidAsync(cid, cancellationToken).ConfigureAwait(false)",
+            "ExecuteAsync(() => _queries.GetUnfinishedByCidAsync(cid, cancellationToken), cancellationToken)",
         ["GetUnfinishedByCidsAsync"] =
-            "await _queries.GetUnfinishedByCidsAsync(cids, cancellationToken).ConfigureAwait(false)",
+            "ExecuteAsync(() => _queries.GetUnfinishedByCidsAsync(cids, cancellationToken), cancellationToken)",
         ["IsOutputPathReservedAsync"] =
-            "await _outputReservations.IsOutputPathReservedAsync(basePath, ignoreCase, cancellationToken)" +
-            ".ConfigureAwait(false)",
+            "ExecuteAsync(() => _outputReservations.IsOutputPathReservedAsync(basePath, ignoreCase, cancellationToken), cancellationToken)",
         ["GetActiveOutputReservationKeysAsync"] =
-            "await _outputReservations.GetActiveOutputReservationKeysAsync(ignoreCase, cancellationToken)" +
-            ".ConfigureAwait(false)",
+            "ExecuteAsync(() => _outputReservations.GetActiveOutputReservationKeysAsync(ignoreCase, cancellationToken), cancellationToken)",
         ["IsOutputDirectoryReservedAsync"] =
-            "await _outputReservations.IsOutputDirectoryReservedAsync(directory, ignoreCase, cancellationToken)" +
-            ".ConfigureAwait(false)",
+            "ExecuteAsync(() => _outputReservations.IsOutputDirectoryReservedAsync(directory, ignoreCase, cancellationToken), cancellationToken)",
         ["HasOutputClaimConflictAsync"] =
-            "await _outputReservations.HasOutputClaimConflictAsync(" +
-            "basePath, requestedCid, requestedClaims, ignoreCase, cancellationToken)" +
-            ".ConfigureAwait(false)",
+            "ExecuteAsync(() => _outputReservations.HasOutputClaimConflictAsync(" +
+            "basePath, requestedCid, requestedClaims, ignoreCase, cancellationToken), cancellationToken)",
         ["GetHistoryPageAsync"] =
-            "await _queries.GetHistoryPageAsync(cursor, pageSize, cancellationToken).ConfigureAwait(false)",
+            "ExecuteAsync(() => _queries.GetHistoryPageAsync(cursor, pageSize, cancellationToken), cancellationToken)",
         ["GetHistoryByCidAsync"] =
-            "await _queries.GetHistoryByCidAsync(cid, cancellationToken).ConfigureAwait(false)",
+            "ExecuteAsync(() => _queries.GetHistoryByCidAsync(cid, cancellationToken), cancellationToken)",
         ["GetHistoryByCidsAsync"] =
-            "await _queries.GetHistoryByCidsAsync(cids, cancellationToken).ConfigureAwait(false)",
-        ["DeleteAsync"] = "await _commands.DeleteAsync(taskId, cancellationToken).ConfigureAwait(false)",
+            "ExecuteAsync(() => _queries.GetHistoryByCidsAsync(cids, cancellationToken), cancellationToken)",
+        ["DeleteAsync"] = "ExecuteAsync(() => _commands.DeleteAsync(taskId, cancellationToken), cancellationToken)",
         ["DeleteHistoryAsync"] =
-            "await _commands.DeleteHistoryAsync(taskId, cancellationToken).ConfigureAwait(false)",
-        ["ClearHistoryAsync"] =
-            "await _commands.ClearHistoryAsync(cancellationToken).ConfigureAwait(false)",
+            "ExecuteAsync(() => _commands.DeleteHistoryAsync(taskId, cancellationToken), cancellationToken)",
+        ["ClearHistoryAsync"] = "ExecuteAsync(() => _commands.ClearHistoryAsync(cancellationToken), cancellationToken)",
         ["GetQuarantinedRecordsAsync"] =
-            "await _quarantine.GetRecordsAsync(cancellationToken).ConfigureAwait(false)",
+            "ExecuteAsync(() => _quarantine.GetRecordsAsync(cancellationToken), cancellationToken)",
         ["Dispose"] = "_database.Dispose()"
     };
     private static readonly string[] Collaborators =

@@ -167,8 +167,7 @@ internal sealed record DownloadExecutionInput(
     PlayStreamType StreamType,
     DownloadNfoRequest? NfoRequest,
     VideoApplicationSettings VideoSettings,
-    DanmakuApplicationSettings DanmakuSettings,
-    DownloadFinishedSort FinishedSort);
+    DanmakuApplicationSettings DanmakuSettings);
 
 internal sealed record DurlDownloadResult(
     PlayUrlDurl Durl,

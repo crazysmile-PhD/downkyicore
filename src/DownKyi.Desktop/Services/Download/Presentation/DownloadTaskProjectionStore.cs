@@ -146,6 +146,14 @@ internal sealed class DownloadTaskProjectionStore : IDisposable
             : throw new InvalidOperationException($"Download task '{taskId.Value}' has no active projection.");
     }
 
+    public bool TryRemoveDownloadingProjection(
+        DownloadTaskId taskId,
+        [NotNullWhen(true)] out DownloadingItem? item)
+    {
+        ArgumentNullException.ThrowIfNull(taskId);
+        return _downloadingProjections.TryRemove(taskId, out item);
+    }
+
     public void PublishLiveProgress(DownloadTaskId taskId, DownloadProgress progress)
     {
         ArgumentNullException.ThrowIfNull(taskId);

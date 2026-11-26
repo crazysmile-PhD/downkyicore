@@ -265,28 +265,30 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator, 
             {
                 loadTask = LoadDownloadedHistoryCoreAsync();
                 _downloadedHistoryLoadTask = loadTask;
-                _ = loadTask.ContinueWith(
-                    completed => ResetDownloadedHistoryLoadAfterFailure(completed),
-                    CancellationToken.None,
-                    TaskContinuationOptions.ExecuteSynchronously,
-                    TaskScheduler.Default);
             }
         }
 
-        var items = await loadTask.ConfigureAwait(false);
-        var cancellationToken = _applicationCancellation.ShutdownToken;
-        if (cancellationToken.IsCancellationRequested)
+        try
         {
-            return;
-        }
-
-        await _uiDispatcher.InvokeAsync(() =>
-        {
-            if (!cancellationToken.IsCancellationRequested)
+            var items = await loadTask.ConfigureAwait(false);
+            var cancellationToken = _applicationCancellation.ShutdownToken;
+            if (cancellationToken.IsCancellationRequested)
             {
-                _downloadLists.LoadDownloadedHistory(items);
+                return;
             }
-        }).ConfigureAwait(false);
+
+            await _uiDispatcher.InvokeAsync(() =>
+            {
+                if (!cancellationToken.IsCancellationRequested)
+                {
+                    _downloadLists.LoadDownloadedHistory(items);
+                }
+            }).ConfigureAwait(false);
+        }
+        finally
+        {
+            ReleaseDownloadedHistoryLoad(loadTask);
+        }
     }
 
     public async Task RemoveDownloadedAsync(
@@ -384,13 +386,8 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator, 
         }
     }
 
-    private void ResetDownloadedHistoryLoadAfterFailure(Task<IReadOnlyList<DownloadedItem>> completed)
+    private void ReleaseDownloadedHistoryLoad(Task<IReadOnlyList<DownloadedItem>> completed)
     {
-        if (completed.IsCompletedSuccessfully)
-        {
-            return;
-        }
-
         lock (_downloadedHistoryLoadGate)
         {
             if (ReferenceEquals(_downloadedHistoryLoadTask, completed))

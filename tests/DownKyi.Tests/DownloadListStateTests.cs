@@ -1,3 +1,4 @@
+using System.Collections.Specialized;
 using DownKyi.Application.Settings;
 using DownKyi.Models;
 using DownKyi.Services.Download;
@@ -60,6 +61,50 @@ public sealed class DownloadListStateTests
         state.AddDownloaded(item);
 
         Assert.Empty(state.Downloaded);
+    }
+
+    [Theory]
+    [InlineData(DownloadFinishedSort.DownloadAsc, "A-1,C-3,B-2")]
+    [InlineData(DownloadFinishedSort.DownloadDesc, "B-2,C-3,A-1")]
+    [InlineData(DownloadFinishedSort.Number, "A-1,B-2,C-3")]
+    public void CompletionInsertsInCurrentOrderWithoutResettingTheCollection(
+        DownloadFinishedSort sort, string expectedIds)
+    {
+        ArgumentNullException.ThrowIfNull(expectedIds);
+        var state = new DownloadListState();
+        state.LoadDownloadedHistory([
+            CreateDownloadedItem("B", 2, 20), CreateDownloadedItem("A", 1, 10)]);
+        state.SortDownloaded(sort);
+        var changes = new List<NotifyCollectionChangedAction>();
+        ((INotifyCollectionChanged)state.Downloaded).CollectionChanged += (_, args) => changes.Add(args.Action);
+
+        state.AddDownloaded(CreateDownloadedItem("C", 3, 15));
+        state.AddDownloaded(CreateDownloadedItem("C", 3, 99));
+        state.SortDownloaded(sort);
+
+        Assert.Equal(expectedIds.Split(','), state.Downloaded.Select(item => item.DownloadBase.Id));
+        Assert.Equal([NotifyCollectionChangedAction.Add], changes);
+    }
+
+    [Fact]
+    public void HistoryMergeAndClearKeepIdentityAndDelayedDeleteSemantics()
+    {
+        var state = new DownloadListState(DownloadFinishedSort.DownloadDesc);
+        var first = CreateDownloadedItem("A", 1, 10);
+        var second = CreateDownloadedItem("B", 2, 20);
+        var removed = CreateDownloadedItem("removed", 3, 30);
+        state.AddDownloaded(first);
+        state.RemoveDownloaded(removed);
+        state.LoadDownloadedHistory([first, first, second, removed]);
+        Assert.Equal([second, first], state.Downloaded);
+        state.AddDownloaded(second);
+        Assert.Equal(2, state.Downloaded.Count);
+
+        state.ClearDownloaded();
+        state.AddDownloaded(first);
+        state.AddDownloaded(CreateDownloadedItem("new", 4, 40));
+
+        Assert.Equal("new-4", Assert.Single(state.Downloaded).DownloadBase.Id);
     }
 
     private static DownloadedItem CreateDownloadedItem(

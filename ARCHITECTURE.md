@@ -53,7 +53,7 @@ flowchart TD
 - `DownKyi.Desktop` 擁有 Avalonia App、Views、ViewModels、UI projections、desktop adapters、Host composition、導航／對話框與下載 runtime。`DesktopThemeController` 是唯一 theme switch owner；semantic tokens 由 `DesignTokens.axaml` 擁有。
 - `DownKyi.Application` 擁有 use cases，以及 Bilibili HTTP、cookie／buvid、logging、physical output path、媒體處理與設定 snapshot 等 contracts。
 - `DownKyi.Domain` 的 `DownloadTask` 是 durable state transition 的權威。
-- `DownKyi.Infrastructure` 擁有 FFmpeg runtime、資料目錄選擇／舊資料搬移／維護、設定與登入檔持久化、legacy SQLite adapter、SQLite download store、登入 Cookie adapter 與瀏覽器 header 解析、async Bilibili transport、single-flight buvid、write-behind、physical path resolver 與 private logging sink／retention／exporter。資料位置與既有 JSON／SQLite 相容契約保持不變。
+- `DownKyi.Infrastructure` 擁有 FFmpeg runtime、資料目錄選擇／舊資料搬移／維護、設定與登入檔持久化、legacy SQLite adapter、SQLite download store、登入 Cookie adapter 與瀏覽器 header 解析、async Bilibili transport、single-flight buvid、physical path resolver 與 private logging sink／retention／exporter。資料位置與既有 JSON／SQLite 相容契約保持不變。
 - `DownKyi.Core` 必須保持 headless，擁有 Bilibili DTO／protocol、內容轉換與檔名組合；不再擁有 FFmpeg runtime、設定持久化或資料目錄相容實作。Core 與 Infrastructure 各自依賴 Application，不得互相 reference。UserSpace 協定由 caller 傳入是否存在已儲存登入資料，不能直接探查本機檔案。彈幕轉換只產生 ASS 文字與 XML 文件，不開啟實體輸出檔案；寫入由 Desktop 既有的產物寫入流程負責。
 
 Prism、DryIoc、EventAggregator、RegionManager、ContainerLocator、第二個 router／container 或 service locator 都不得重新引入。否則會產生平行生命週期、導航狀態或依賴解析 owner。
@@ -108,6 +108,10 @@ flowchart LR
 ```
 
 ### Durable state
+
+- SQLite adapter 將前景或具有 synchronization context 的呼叫排入背景；已在沒有 synchronization context 的 thread-pool 上則直接執行同步資料庫工作。Application 的單一 mutation gate 序列化 aggregate 讀取、transition、持久化與 committed snapshot 發布，不為每個歷史 task 保存 lock。讀取查詢仍獨立執行；既有 optimistic version 與 transaction 邊界保持有效。
+- 完成清單的目前排序與 ID 索引由 `DownloadListState` 擁有。單筆完成採排序插入；初次載入與明確變更排序才重排。排序偏好不屬於下載 execution input。完成投影移除活躍項目後釋放對應 projection；歷史載入 Task 僅保留到 UI 套用完成，shutdown 仍只等待背景讀取。
+- 下載項目的分區圖示與操作提示沿用既有 UI 屬性，只在分區或按鈕型態改變時重新解析資源，避免一般進度與活動更新同步往返 UI thread。語言仍依既有設定要求重啟後套用。
 
 - 對既有 task 的 durable command 必須先載入 aggregate、執行合法 transition、以 optimistic version 寫入 SQLite，再發布 committed snapshot。若先更新 UI，crash 後 UI 與可恢復狀態會分裂。
 - 新 task 必須先持久化，才能加入 UI projection 或交給 queue。commit 完成後，原始 UI caller 的 cancellation 不得遺棄 handoff；queue runtime 不可用時由 post-commit dispatcher 持久化 typed failure，不能留下沒有 durable 結果的 task。

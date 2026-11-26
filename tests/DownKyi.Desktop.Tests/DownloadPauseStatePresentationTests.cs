@@ -1,3 +1,6 @@
+using Avalonia.Controls;
+using Avalonia.Media;
+using Avalonia.Styling;
 using DownKyi.Domain.Downloads;
 using DownKyi.Images;
 using DownKyi.Models;
@@ -120,6 +123,81 @@ public sealed class DownloadPauseStatePresentationTests
 
             Assert.False(item.IsToggleVisible);
         }).ConfigureAwait(true);
+    }
+
+    [AvaloniaFact]
+    public async Task RepeatedStateRefreshReusesResourcesUntilTheirInputsChange()
+    {
+        await AvaloniaTestDispatcher.RunAsync(() =>
+        {
+            var application = DesktopTestResources.EnsureDownloadProjectionResources();
+            var resources = new CountingProjectionResources();
+            application.Resources.MergedDictionaries.Add(resources);
+            try
+            {
+                var started = CreateTask().Start(DateTimeOffset.UnixEpoch.AddSeconds(1)).RequireValue();
+                var item = DownloadTaskProjectionMapper.ToDownloadingItem(started);
+                var zoneImage = item.ZoneImage;
+                var initialZoneLookups = resources.ZoneLookups;
+                var initialOperationLookups = resources.OperationLookups;
+                var progressed = started.UpdateProgressAndTransfer(
+                    new DownloadProgress(50, 500, 1000), started.Transfer,
+                    DateTimeOffset.UnixEpoch.AddSeconds(2)).RequireValue();
+                var resized = progressed.UpdateOutput(
+                    new DownloadOutput(progressed.Output.BasePath, "1 KB"),
+                    DateTimeOffset.UnixEpoch.AddSeconds(3)).RequireValue();
+
+                DownloadTaskProjectionMapper.Apply(resized, item);
+
+                Assert.Equal(50, item.Progress);
+                Assert.Equal("1 KB", item.FileSize);
+                Assert.Same(zoneImage, item.ZoneImage);
+                Assert.Equal(initialZoneLookups, resources.ZoneLookups);
+                Assert.Equal(initialOperationLookups, resources.OperationLookups);
+                var pausing = resized.Pause(DateTimeOffset.UnixEpoch.AddSeconds(4)).RequireValue();
+                DownloadTaskProjectionMapper.Apply(pausing, item);
+                DownloadTaskProjectionMapper.Apply(
+                    pausing.ConfirmPaused(DateTimeOffset.UnixEpoch.AddSeconds(5)).RequireValue(), item);
+
+                Assert.Same(ButtonIcon.Start, item.StartOrPause);
+                Assert.Equal("StartDownload", item.OperationTip);
+                Assert.Equal(initialOperationLookups + 1, resources.OperationLookups);
+                item.DownloadBase = new DownloadBase { Id = started.Id.Value, ZoneId = 1 };
+                Assert.NotSame(zoneImage, item.ZoneImage);
+                Assert.Equal(initialZoneLookups + 1, resources.ZoneLookups);
+            }
+            finally
+            {
+                application.Resources.MergedDictionaries.Remove(resources);
+            }
+        }).ConfigureAwait(true);
+    }
+
+    private sealed class CountingProjectionResources : ResourceProvider
+    {
+        public int ZoneLookups { get; private set; }
+        public int OperationLookups { get; private set; }
+        public override bool HasResources => true;
+
+        public override bool TryGetResource(object key, ThemeVariant? theme, out object? value)
+        {
+            if (key is string text && text.EndsWith("DrawingImage", StringComparison.Ordinal))
+            {
+                ZoneLookups++;
+                value = new DrawingImage();
+                return true;
+            }
+
+            if (key is "PauseDownload" or "StartDownload" or "RetryDownload")
+            {
+                OperationLookups++;
+                value = key;
+                return true;
+            }
+
+            value = null;
+            return false;
+        }
     }
 
     private static DownloadTask CreateTask()

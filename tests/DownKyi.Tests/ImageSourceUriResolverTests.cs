@@ -21,7 +21,7 @@ public sealed class ImageSourceUriResolverTests
         using var loader = new BaseWebImageLoader(httpClient, false);
 
         var bitmap = await loader
-            .ProvideImageAsync("//i0.hdslb.com/bfs/archive/cover.jpg")
+            .ProvideImageAsync("//i0.hdslb.com/bfs/archive/cover.jpg", TestContext.Current.CancellationToken)
             .WaitAsync(TestContext.Current.CancellationToken);
 
         Assert.Null(bitmap);
@@ -35,9 +35,24 @@ public sealed class ImageSourceUriResolverTests
         using var httpClient = new HttpClient(handler, false);
         using var loader = new BaseWebImageLoader(httpClient, false);
 
-        var bitmap = await loader.ProvideImageAsync("images/missing-cover.png");
+        var bitmap = await loader.ProvideImageAsync("images/missing-cover.png", TestContext.Current.CancellationToken);
 
         Assert.Null(bitmap);
+        Assert.Null(handler.RequestUri);
+    }
+
+    [Fact]
+    public async Task CanceledImageOperationDoesNotStartAnHttpRequest()
+    {
+        using var handler = new CapturingHandler();
+        using var client = new HttpClient(handler, false);
+        using var loader = new BaseWebImageLoader(client, false);
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            loader.ProvideImageAsync("https://images.invalid/canceled", cancellation.Token));
+
         Assert.Null(handler.RequestUri);
     }
 

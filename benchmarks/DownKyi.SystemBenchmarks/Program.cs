@@ -191,7 +191,7 @@ internal static class Program
                 Path.Combine(dataRoot, "progress"),
                 quick ? 4 : 16,
                 quick ? 5 : 60,
-                samplesPerTaskSecond: 20,
+                samplesPerAttempt: 20,
                 cancellationToken).ConfigureAwait(false));
         }
 
