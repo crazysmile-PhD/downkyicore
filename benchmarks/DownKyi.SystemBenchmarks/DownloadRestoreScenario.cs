@@ -91,7 +91,7 @@ internal static class DownloadRestoreScenario
         }
         finally
         {
-            projection.Dispose();
+            await projection.DisposeAsync().ConfigureAwait(false);
             tasks.Dispose();
             store.Dispose();
             ClearOwnedSqlitePool(databasePath);
