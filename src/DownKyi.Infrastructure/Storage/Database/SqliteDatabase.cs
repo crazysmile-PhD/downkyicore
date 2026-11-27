@@ -3,60 +3,40 @@ using Microsoft.Data.Sqlite;
 namespace DownKyi.Infrastructure.Storage.Database;
 
 /// <summary>
-/// SQLite 数据库操作助手，支持加密数据库操作
+/// Owns one read-only snapshot of a legacy SQLite database for an import.
 /// </summary>
 public sealed class SqliteDatabase : IDisposable
 {
-    private readonly string _connectionString;
+    private readonly SqliteConnection _connection;
+    private readonly SqliteTransaction _transaction;
+    private readonly string? _secretKey;
 
-    /// <summary>
-    /// 创建或连接一个SQLite数据库
-    /// </summary>
-    /// <param name="dbPath">数据库文件路径</param>
-    public SqliteDatabase(string dbPath)
+    public SqliteDatabase(string dbPath, string? secretKey = null)
     {
-        _connectionString = new SqliteConnectionStringBuilder
+        _secretKey = secretKey;
+        _connection = new SqliteConnection(CreateConnectionString(dbPath, secretKey, SqliteOpenMode.ReadOnly));
+        try
         {
-            Mode = SqliteOpenMode.ReadWriteCreate,
-            DataSource = dbPath,
-            Pooling = false,
-            DefaultTimeout = 30
-        }.ToString();
+            _connection.Open();
+            _transaction = _connection.BeginTransaction(deferred: true);
+            // Opening SQLite alone does not always read a page. Probe the format
+            // before schema validation, and pin the WAL snapshot for this import.
+            ExecuteQuery(command => command.CommandText = "SELECT name FROM sqlite_master LIMIT 1", reader => reader.Read());
+        }
+        catch
+        {
+            _connection.Dispose();
+            throw;
+        }
     }
 
-    /// <summary>
-    /// 创建或连接一个加密的SQLite数据库
-    /// </summary>
-    /// <param name="dbPath">数据库文件路径</param>
-    /// <param name="secretKey">加密密钥</param>
-    public SqliteDatabase(string dbPath, string secretKey)
-    {
-        var legacySqlCipherUri = new Uri(Path.GetFullPath(dbPath)).AbsoluteUri
-            + "?cipher=sqlcipher&legacy=4";
-        _connectionString = new SqliteConnectionStringBuilder
-        {
-            Mode = SqliteOpenMode.ReadWriteCreate,
-            Password = secretKey,
-            DataSource = legacySqlCipherUri,
-            Pooling = false,
-            DefaultTimeout = 30
-        }.ToString();
-    }
-
-
-    /// <summary>
-    /// 执行查询SQL语句
-    /// </summary>
-    /// <param name="configureCommand">建立固定查询并绑定参数的委托</param>
-    /// <param name="readAction">读取数据的委托</param>
     public void ExecuteQuery(Action<SqliteCommand> configureCommand, Action<SqliteDataReader> readAction)
     {
         ArgumentNullException.ThrowIfNull(configureCommand);
         ArgumentNullException.ThrowIfNull(readAction);
 
-        using var connection = CreateConnection();
-        using var command = connection.CreateCommand();
-
+        using var command = _connection.CreateCommand();
+        command.Transaction = _transaction;
         configureCommand(command);
         if (string.IsNullOrWhiteSpace(command.CommandText))
         {
@@ -64,36 +44,53 @@ public sealed class SqliteDatabase : IDisposable
         }
 
         using var reader = command.ExecuteReader();
-
         readAction(reader);
     }
 
-    /// <summary>
-    /// 创建并打开一个新的数据库连接
-    /// </summary>
-    private SqliteConnection CreateConnection()
+    public void CreateBackup(string backupPath)
     {
-        var connection = new SqliteConnection(_connectionString);
-        connection.Open();
-        ConfigureConnection(connection);
-        return connection;
+        // Claim the output so failure cleanup cannot overwrite or remove an
+        // existing backup owned by another import.
+        using (new FileStream(backupPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+        {
+        }
+
+        try
+        {
+            using var destination = new SqliteConnection(
+                CreateConnectionString(backupPath, _secretKey, SqliteOpenMode.ReadWrite));
+            destination.Open();
+            // SQLite copies the pinned snapshot, including committed WAL pages.
+            _connection.BackupDatabase(destination);
+        }
+        catch
+        {
+            File.Delete(backupPath);
+            throw;
+        }
     }
 
-    private static void ConfigureConnection(SqliteConnection connection)
-    {
-        using var command = connection.CreateCommand();
-        command.CommandText = @"
-PRAGMA foreign_keys = ON;
-PRAGMA journal_mode = WAL;
-PRAGMA synchronous = NORMAL;
-PRAGMA busy_timeout = 5000;";
-        command.ExecuteNonQuery();
-    }
-
-    /// <summary>
-    /// 释放资源
-    /// </summary>
     public void Dispose()
     {
+        try
+        {
+            _transaction.Dispose();
+        }
+        finally
+        {
+            _connection.Dispose();
+        }
     }
+
+    private static string CreateConnectionString(string path, string? secretKey, SqliteOpenMode mode) =>
+        new SqliteConnectionStringBuilder
+        {
+            Mode = mode,
+            DataSource = secretKey == null
+                ? path
+                : new Uri(Path.GetFullPath(path)).AbsoluteUri + "?cipher=sqlcipher&legacy=4",
+            Password = secretKey ?? string.Empty,
+            Pooling = false,
+            DefaultTimeout = 30
+        }.ToString();
 }

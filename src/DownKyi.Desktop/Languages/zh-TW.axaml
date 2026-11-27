@@ -421,8 +421,8 @@
     <system:String x:Key="StartupDownloadStoreFailureDescription">現有下載資料庫無法依目前的資料結構讀取。可先完整備份，再建立空白資料庫。</system:String>
     <system:String x:Key="StartupDownloadStoreFailureImpact">在重建前下載功能無法使用；重建後舊記錄不會顯示，但原資料庫仍儲存在備份中。</system:String>
     <system:String x:Key="StartupLegacyMigrationFailureTitle">舊版資料移轉失敗</system:String>
-    <system:String x:Key="StartupLegacyMigrationFailureDescription">無法完成部分舊版下載記錄的資料轉換。</system:String>
-    <system:String x:Key="StartupLegacyMigrationFailureImpact">部分歷史下載資料可能無法正常顯示。</system:String>
+    <system:String x:Key="StartupLegacyMigrationFailureDescription">部分舊版下載記錄無法匯入，原始資料已保留。</system:String>
+    <system:String x:Key="StartupLegacyMigrationFailureImpact">新版下載功能不依賴舊資料移轉；關閉此提示即可繼續使用。</system:String>
     <system:String x:Key="ViewFullErrorDetails">檢視完整錯誤詳情</system:String>
     <system:String x:Key="ResetDownloadStore">備份並建立空白資料庫…</system:String>
     <system:String x:Key="DownloadStoreResetConfirmation">將完整備份現有下載資料庫，再建立空白資料庫並重新啟動應用。新資料庫不會包含原下載佇列、歷史或續傳狀態；已經下載的媒體檔案、登入資訊和程式設定不會被刪除。是否繼續？</system:String>
@@ -535,12 +535,10 @@
     <!-- Localized desktop messages -->
     <system:String x:Key="MigrationCancelConfirmation">確定要取消資料移轉嗎？已寫入的資料會保留；剩餘資料可於下次啟動時繼續移轉。</system:String>
     <system:String x:Key="MigrationCancel">取消移轉</system:String>
-    <system:String x:Key="MigrationRestartNow">立即重啟</system:String>
     <system:String x:Key="MigrationContinue">繼續移轉</system:String>
     <system:String x:Key="MigrationInProgress">資料移轉中；如需停止，請按「取消移轉」。</system:String>
     <system:String x:Key="MigrationDownloadComplete">下載資訊移轉完成</system:String>
     <system:String x:Key="MigrationFailedSeeLogs">資料移轉失敗，請查看日誌。</system:String>
-    <system:String x:Key="MigrationRestarting">正在重新啟動程式</system:String>
     <system:String x:Key="MigrationRestartFailed">無法重新啟動程式，請查看日誌。</system:String>
     <system:String x:Key="OpenVideoFailed">無法開啟影片檔案</system:String>
     <system:String x:Key="OpenFolderFailed">無法開啟資料夾</system:String>
@@ -562,20 +560,14 @@
     <system:String x:Key="HardwareAccelerationDisabled">禁用硬體加速</system:String>
     <system:String x:Key="BorderColor">邊框色：</system:String>
     <system:String x:Key="MigrationDownloading">正在移轉下載資訊</system:String>
-    <system:String x:Key="MigrationFailedDetail">資料移轉失敗: {0}</system:String>
     <system:String x:Key="MigrationFailedWithBackup">資料移轉失敗: {0}; {1}</system:String>
     <system:String x:Key="MigrationLoginFailedContinuing">登入資訊移轉失敗，繼續移轉下載資訊</system:String>
     <system:String x:Key="MigrationLoginInProgress">正在移轉登入資訊</system:String>
     <system:String x:Key="MigrationLoginComplete">登入資訊移轉完成</system:String>
     <system:String x:Key="MigrationTryingAlternateConnection">嘗試備用連線方式</system:String>
-    <system:String x:Key="MigrationDatabaseAttemptFailed">資料庫連線嘗試 {0} 失敗</system:String>
-    <system:String x:Key="MigrationDatabaseAttemptsExceeded">資料庫連線嘗試次數超限，放棄移轉</system:String>
-    <system:String x:Key="MigrationSkippedCorruptRecord">已跳過一筆損壞的舊下載記錄</system:String>
-    <system:String x:Key="MigrationSkippedCorruptDetail">已跳過一筆損壞的舊下載詳情</system:String>
     <system:String x:Key="MigrationDownloadProgress">正在移轉下載資訊({0}/{1})</system:String>
     <system:String x:Key="MigrationBackupCreated">原資料庫已備份為 {0}</system:String>
-    <system:String x:Key="MigrationDatabaseRenamed">原資料庫已重新命名為 {0}</system:String>
-    <system:String x:Key="MigrationBackupFailed">無法自動備份舊資料庫，請保留日誌並手動處理</system:String>
+    <system:String x:Key="MigrationSourcePreserved">舊資料庫及 WAL 已保留在原位置，請保留日誌並手動處理</system:String>
     <system:String x:Key="ToolboxSectionCaption">媒體 / 工具箱</system:String>
     <system:String x:Key="SettingsSectionCaption">系統 / 偏好設定</system:String>
     <system:String x:Key="UnavailableMediaTitle">已失效影片</system:String>

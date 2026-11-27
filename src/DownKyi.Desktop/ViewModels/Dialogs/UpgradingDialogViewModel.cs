@@ -5,7 +5,6 @@ using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Application.Diagnostics;
-using DownKyi.Application.Lifetime;
 using DownKyi.Commands;
 using DownKyi.Services.Migration;
 using DownKyi.Utils;
@@ -17,7 +16,6 @@ internal sealed class UpgradingDialogViewModel : BaseDialogViewModel, IAsyncDisp
 {
     public const string Tag = "DialogLoading";
     internal const string FailureResultParameter = "failureResult";
-    private readonly IApplicationLifecycle _applicationLifecycle;
     private readonly ILogger<UpgradingDialogViewModel> _logger;
     private readonly ILegacyUpgradeCoordinator _upgradeCoordinator;
     private CancellationTokenSource? _upgradeCancellation;
@@ -50,14 +48,6 @@ internal sealed class UpgradingDialogViewModel : BaseDialogViewModel, IAsyncDisp
         set => SetProperty(ref _message, value);
     }
 
-    private bool _restartedVisible;
-
-    public bool RestartVisible
-    {
-        get => _restartedVisible;
-        set => SetProperty(ref _restartedVisible, value);
-    }
-
     public bool IsMigrationActive
     {
         get => _isMigrationActive;
@@ -75,11 +65,6 @@ internal sealed class UpgradingDialogViewModel : BaseDialogViewModel, IAsyncDisp
         get => _cancelConfirmationVisible;
         private set => SetProperty(ref _cancelConfirmationVisible, value);
     }
-
-    private DownKyiAsyncDelegateCommand? _restartCommand;
-
-    public DownKyiAsyncDelegateCommand RestartCommand =>
-        _restartCommand ??= new DownKyiAsyncDelegateCommand(ExecuteRestartAsync, _logger);
 
     private RelayCommand? _requestCancelMigrationCommand;
 
@@ -101,12 +86,9 @@ internal sealed class UpgradingDialogViewModel : BaseDialogViewModel, IAsyncDisp
 
     public UpgradingDialogViewModel(
         ILegacyUpgradeCoordinator upgradeCoordinator,
-        IApplicationLifecycle applicationLifecycle,
         ILogger<UpgradingDialogViewModel> logger)
     {
         _upgradeCoordinator = upgradeCoordinator ?? throw new ArgumentNullException(nameof(upgradeCoordinator));
-        _applicationLifecycle = applicationLifecycle
-            ?? throw new ArgumentNullException(nameof(applicationLifecycle));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         Message = DictionaryResource.GetIfApplicationInitialized<string>("MigrationInProgress")
             ?? "数据迁移中；如需停止，请使用“取消迁移”";
@@ -166,12 +148,11 @@ internal sealed class UpgradingDialogViewModel : BaseDialogViewModel, IAsyncDisp
                     Percent = 100;
                     IsProgressVisible = true;
                     Message = DictionaryResource.GetString("MigrationDownloadComplete", "下载信息迁移完成");
-                    RestartVisible = true;
+                    CloseDialog(AppDialogOutcome.Accepted);
                     break;
                 case LegacyUpgradeOutcome.Failed:
                     FinishMigrationActivity();
                     Message = result.ErrorMessage ?? DictionaryResource.GetString("MigrationFailedSeeLogs", "数据迁移失败，请查看日志");
-                    RestartVisible = false;
                     var failure = result.Failure ?? new InvalidOperationException(Message);
                     CloseDialog(
                         AppDialogOutcome.Rejected,
@@ -193,7 +174,6 @@ internal sealed class UpgradingDialogViewModel : BaseDialogViewModel, IAsyncDisp
             _logger.LogErrorMessage("Legacy data migration dialog failed.", e);
             FinishMigrationActivity();
             Message = DictionaryResource.GetString("MigrationFailedSeeLogs", "数据迁移失败，请查看日志");
-            RestartVisible = false;
             CloseDialog(
                 AppDialogOutcome.Rejected,
                 new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -214,26 +194,6 @@ internal sealed class UpgradingDialogViewModel : BaseDialogViewModel, IAsyncDisp
             Percent = percent;
             IsProgressVisible = true;
         }
-    }
-
-    private async Task ExecuteRestartAsync()
-    {
-        Message = DictionaryResource.GetString("MigrationRestarting", "正在重新启动应用");
-        RestartVisible = false;
-        try
-        {
-            if (await _applicationLifecycle.RestartAsync().ConfigureAwait(true))
-            {
-                return;
-            }
-        }
-        catch (Exception e) when (IsRecoverableUiFailure(e))
-        {
-            _logger.LogErrorMessage("Application restart failed after legacy data migration.", e);
-        }
-
-        Message = DictionaryResource.GetString("MigrationRestartFailed", "无法重新启动应用，请查看日志");
-        RestartVisible = true;
     }
 
     private static bool IsRecoverableUiFailure(Exception exception)

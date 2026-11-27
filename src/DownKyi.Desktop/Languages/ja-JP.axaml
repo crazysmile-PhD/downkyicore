@@ -421,8 +421,8 @@
     <system:String x:Key="StartupDownloadStoreFailureDescription">既存のダウンロードデータベースを現在の形式で読み取れません。完全なバックアップを保存してから、空のデータベースを作成できます。</system:String>
     <system:String x:Key="StartupDownloadStoreFailureImpact">データベースを再構築するまでダウンロード機能は使えません。再構築後は以前の記録が表示されなくなりますが、元のデータベースはバックアップに残ります。</system:String>
     <system:String x:Key="StartupLegacyMigrationFailureTitle">旧バージョンのデータ移行に失敗しました</system:String>
-    <system:String x:Key="StartupLegacyMigrationFailureDescription">一部の旧バージョンのダウンロード記録を変換できませんでした。</system:String>
-    <system:String x:Key="StartupLegacyMigrationFailureImpact">一部の過去のダウンロードデータが正しく表示されない場合があります。</system:String>
+    <system:String x:Key="StartupLegacyMigrationFailureDescription">一部の旧ダウンロード記録を取り込めませんでした。元のデータは保持されています。</system:String>
+    <system:String x:Key="StartupLegacyMigrationFailureImpact">現在のダウンロード機能は旧データの移行に依存しません。この通知を閉じてアプリを引き続き使用できます。</system:String>
     <system:String x:Key="ViewFullErrorDetails">エラーの詳細をすべて表示</system:String>
     <system:String x:Key="ResetDownloadStore">バックアップして空のデータベースを作成…</system:String>
     <system:String x:Key="DownloadStoreResetConfirmation">既存のダウンロードデータベースを完全にバックアップし、空のデータベースを作成して DownKyi を再起動します。新しいデータベースには、以前のキュー、履歴、再開状態は含まれません。ダウンロード済みのメディア、ログイン情報、設定は残ります。続行しますか？</system:String>
@@ -535,12 +535,10 @@
     <!-- Localized desktop messages -->
     <system:String x:Key="MigrationCancelConfirmation">データの移行を中止しますか？すでに書き込まれたデータは残ります。残りの移行は次回の起動時に再試行できます。</system:String>
     <system:String x:Key="MigrationCancel">移行をキャンセルする</system:String>
-    <system:String x:Key="MigrationRestartNow">今すぐ再起動</system:String>
     <system:String x:Key="MigrationContinue">移行を継続する</system:String>
     <system:String x:Key="MigrationInProgress">データを移行中です。停止する場合は「移行をキャンセル」を選んでください。</system:String>
     <system:String x:Key="MigrationDownloadComplete">ダウンロード情報の移行が完了しました</system:String>
     <system:String x:Key="MigrationFailedSeeLogs">データの移行に失敗しました。ログを確認してください。</system:String>
-    <system:String x:Key="MigrationRestarting">アプリを再起動中</system:String>
     <system:String x:Key="MigrationRestartFailed">アプリを再起動できません。ログを確認してください。</system:String>
     <system:String x:Key="OpenVideoFailed">動画ファイルを開けませんでした</system:String>
     <system:String x:Key="OpenFolderFailed">フォルダーを開けません</system:String>
@@ -562,20 +560,14 @@
     <system:String x:Key="HardwareAccelerationDisabled">ハードウェアアクセラレーションを無効にする</system:String>
     <system:String x:Key="BorderColor">枠線の色:</system:String>
     <system:String x:Key="MigrationDownloading">ダウンロード情報を移行中</system:String>
-    <system:String x:Key="MigrationFailedDetail">データ移行に失敗しました: {0}</system:String>
     <system:String x:Key="MigrationFailedWithBackup">データ移行に失敗しました: {0}; {1}</system:String>
     <system:String x:Key="MigrationLoginFailedContinuing">ログイン情報の移行に失敗しました。ダウンロード情報の移行を続行します</system:String>
     <system:String x:Key="MigrationLoginInProgress">ログイン情報を移行中</system:String>
     <system:String x:Key="MigrationLoginComplete">ログイン情報の移行が完了しました</system:String>
     <system:String x:Key="MigrationTryingAlternateConnection">別の接続方法を試行中</system:String>
-    <system:String x:Key="MigrationDatabaseAttemptFailed">データベース接続試行 {0} が失敗しました</system:String>
-    <system:String x:Key="MigrationDatabaseAttemptsExceeded">データベース接続の試行回数が制限を超えたため、移行は中止されました。</system:String>
-    <system:String x:Key="MigrationSkippedCorruptRecord">破損した旧ダウンロード記録を 1 件スキップしました。</system:String>
-    <system:String x:Key="MigrationSkippedCorruptDetail">破損した旧ダウンロードの詳細を 1 件スキップしました。</system:String>
     <system:String x:Key="MigrationDownloadProgress">ダウンロード情報を移行しています ({0}/{1})</system:String>
     <system:String x:Key="MigrationBackupCreated">元のデータベースは {0} としてバックアップされました</system:String>
-    <system:String x:Key="MigrationDatabaseRenamed">元のデータベースの名前が {0} に変更されました</system:String>
-    <system:String x:Key="MigrationBackupFailed">旧データベースを自動でバックアップできませんでした。ログを保存し、手動で対応してください。</system:String>
+    <system:String x:Key="MigrationSourcePreserved">旧データベースと WAL は元の場所に保存されています。ログを保存し、手動で対応してください。</system:String>
     <system:String x:Key="ToolboxSectionCaption">メディア / ツール</system:String>
     <system:String x:Key="SettingsSectionCaption">システム / 環境設定</system:String>
     <system:String x:Key="UnavailableMediaTitle">視聴できなくなった動画</system:String>
