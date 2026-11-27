@@ -11,7 +11,7 @@ namespace DownKyi.Tests;
 public sealed class DownloadFinishedHistoryLoadingTests
 {
     [Fact]
-    public void FirstEntryLoadsAllHistoryOnceAndUsesExistingListSorting()
+    public void FirstEntryLoadsHistoryOnceAndUsesExistingListSorting()
     {
         var state = new DownloadListState();
         state.AddDownloaded(DownloadTaskProjectionMapper.ToDownloadedItem(
@@ -46,7 +46,7 @@ public sealed class DownloadFinishedHistoryLoadingTests
     }
 
     [Fact]
-    public async Task LeavingPageDoesNotCancelTheInitialCompleteHistoryLoad()
+    public async Task LeavingPageDoesNotCancelTheInitialHistoryPageLoad()
     {
         var history = new TaskCompletionSource<IReadOnlyList<DownloadedItem>>(
             TaskCreationOptions.RunContinuationsAsynchronously);
@@ -72,7 +72,7 @@ public sealed class DownloadFinishedHistoryLoadingTests
     }
 
     [Fact]
-    public async Task ClearWaitsForInitialHistoryLoadAndDoesNotEnableAReload()
+    public async Task ClearDoesNotWaitForInitialHistoryLoadOrAllowItToResurrectItems()
     {
         var history = new TaskCompletionSource<IReadOnlyList<DownloadedItem>>(
             TaskCreationOptions.RunContinuationsAsynchronously);
@@ -84,13 +84,14 @@ public sealed class DownloadFinishedHistoryLoadingTests
 
         viewModel.OnNavigatedTo(CreateNavigationContext());
         viewModel.ClearAllDownloadedCommand.Execute(null);
-        Assert.Equal(0, coordinator.ClearCount);
+        await coordinator.ClearCalled.Task.WaitAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(1, coordinator.ClearCount);
 
         history.SetResult(
         [
             DownloadTaskProjectionMapper.ToDownloadedItem(CreateHistory("to-clear", 1))
         ]);
-        await coordinator.ClearCalled.Task.WaitAsync(TestContext.Current.CancellationToken);
+        await coordinator.LastLoad.WaitAsync(TestContext.Current.CancellationToken);
 
         Assert.Empty(state.Downloaded);
         Assert.True(state.IsDownloadedHistoryLoaded);
@@ -198,6 +199,8 @@ public sealed class DownloadFinishedHistoryLoadingTests
             LastLoad = LoadCoreAsync();
             return LastLoad;
         }
+
+        public Task LoadMoreDownloadedHistoryAsync() => Task.CompletedTask;
 
         public Task RemoveDownloadedAsync(
             DownloadedItem item,

@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using DownKyi.Application.Downloads;
+using DownKyi.Application.Settings;
 using DownKyi.Domain.Downloads;
 using DownKyi.Domain.Results;
 using DownKyi.Images;
@@ -919,7 +920,8 @@ public sealed class DownloadOrchestratorTests
         public Task<DownloadHistoryPage> GetHistoryPageAsync(
             DownloadHistoryCursor? cursor,
             int pageSize,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            DownloadFinishedSort sort = DownloadFinishedSort.DownloadDesc)
         {
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult(new DownloadHistoryPage([], null));

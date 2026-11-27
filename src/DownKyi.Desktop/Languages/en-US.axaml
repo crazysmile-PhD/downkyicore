@@ -594,4 +594,6 @@
     <system:String x:Key="DownloadNoMatches">No matching tasks</system:String>
     <system:String x:Key="DownloadClearFilters">Clear filters</system:String>
     <system:String x:Key="DownloadClearSelection">Clear selection</system:String>
+    <system:String x:Key="DownloadHistoryLoadedLabel">Loaded</system:String>
+    <system:String x:Key="LoadMoreHistory">Load more</system:String>
 </ResourceDictionary>

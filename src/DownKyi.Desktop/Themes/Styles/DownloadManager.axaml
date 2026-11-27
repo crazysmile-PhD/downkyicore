@@ -27,7 +27,7 @@
                                    Text="{Binding $parent[UserControl].((vm:DownloadManagerViewModel)DataContext).DownloadLists.Downloading.Count}" />
                         <TextBlock Name="DownloadHistoryCount" IsVisible="{Binding Id}"
                                    FontFamily="Cascadia Mono,Consolas,monospace"
-                                   Text="{Binding $parent[UserControl].((vm:DownloadManagerViewModel)DataContext).DownloadLists.Downloaded.Count}" />
+                                   Text="{Binding $parent[UserControl].((vm:DownloadManagerViewModel)DataContext).DownloadLists.DownloadedCountDisplay}" />
                     </StackPanel>
                 </Border>
             </ControlTemplate>

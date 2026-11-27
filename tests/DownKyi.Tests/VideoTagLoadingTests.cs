@@ -2032,7 +2032,8 @@ public sealed class VideoTagLoadingTests : IDisposable
         public Task<DownloadHistoryPage> GetHistoryPageAsync(
             DownloadHistoryCursor? cursor,
             int pageSize,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            DownloadFinishedSort sort = DownloadFinishedSort.DownloadDesc)
         {
             HistoryPageRequestCount++;
             return Task.FromResult(new DownloadHistoryPage(_history.ToArray(), null));

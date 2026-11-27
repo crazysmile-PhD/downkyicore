@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Headless;
+using Avalonia.Markup.Xaml.Styling;
 using Avalonia.Threading;
 
 namespace DownKyi.SystemBenchmarks;
@@ -64,5 +65,20 @@ internal sealed class HeadlessAvaloniaHost : IAsyncDisposable
         }
     }
 
-    private sealed class BenchmarkApplication : Avalonia.Application;
+    private sealed class BenchmarkApplication : Avalonia.Application
+    {
+        public override void Initialize()
+        {
+            AddProductResource("avares://DownKyi.Desktop/Languages/zh-CN.axaml");
+            AddProductResource("avares://DownKyi.Desktop/Resources/Bilibili/BilibiliImages.axaml");
+        }
+
+        private void AddProductResource(string source)
+        {
+            Resources.MergedDictionaries.Add(new ResourceInclude(new Uri("avares://DownKyi.Desktop/"))
+            {
+                Source = new Uri(source)
+            });
+        }
+    }
 }

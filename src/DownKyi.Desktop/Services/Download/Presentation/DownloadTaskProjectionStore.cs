@@ -5,10 +5,16 @@ using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using DownKyi.Application.Diagnostics;
 using DownKyi.Application.Downloads;
+using DownKyi.Application.Lifetime;
+using DownKyi.Application.Settings;
 using DownKyi.Application.Time;
 using DownKyi.Domain.Downloads;
+using DownKyi.Platform;
 using DownKyi.ViewModels.DownloadManager;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DownKyi.Services.Download;
 
@@ -16,23 +22,34 @@ namespace DownKyi.Services.Download;
 /// Projects persisted Domain aggregates into desktop list items.
 /// Runtime state changes enter through <see cref="IDownloadTaskStateService"/>.
 /// </summary>
-internal sealed class DownloadTaskProjectionStore : IDisposable
+internal sealed class DownloadTaskProjectionStore : IDisposable, IAsyncDisposable
 {
     private readonly IDownloadTaskCatalog _tasks;
     private readonly IDownloadHistoryService _history;
     private readonly IClock _clock;
+    private readonly IUiDispatcher? _uiDispatcher;
+    private readonly ILogger<DownloadTaskProjectionStore> _logger;
+    private readonly CancellationToken _shutdownToken;
+    private readonly Lock _presentationGate = new();
+    private Task _presentationUpdates = Task.CompletedTask;
     private readonly ConcurrentDictionary<DownloadTaskId, DownloadTask> _snapshots = new();
     private readonly ConcurrentDictionary<DownloadTaskId, DownloadingItem> _downloadingProjections = new();
-    private bool _disposed;
+    private volatile bool _disposed;
 
     public DownloadTaskProjectionStore(
         IDownloadTaskCatalog tasks,
         IDownloadHistoryService history,
-        IClock clock)
+        IClock clock,
+        IUiDispatcher? uiDispatcher = null,
+        ILogger<DownloadTaskProjectionStore>? logger = null,
+        ApplicationCancellation? applicationCancellation = null)
     {
         _tasks = tasks ?? throw new ArgumentNullException(nameof(tasks));
         _history = history ?? throw new ArgumentNullException(nameof(history));
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
+        _uiDispatcher = uiDispatcher;
+        _logger = logger ?? NullLogger<DownloadTaskProjectionStore>.Instance;
+        _shutdownToken = applicationCancellation?.ShutdownToken ?? CancellationToken.None;
         _tasks.TaskChanged += OnTaskChanged;
     }
 
@@ -88,13 +105,20 @@ internal sealed class DownloadTaskProjectionStore : IDisposable
         RequireSuccess(result.IsSuccess, result.Error?.Message);
     }
 
+    public Task<DownloadHistoryPage> GetDownloadedPageAsync(
+        DownloadHistoryCursor? cursor,
+        int pageSize,
+        CancellationToken cancellationToken = default) =>
+        GetDownloadedPageAsync(cursor, pageSize, DownloadFinishedSort.DownloadDesc, cancellationToken);
+
     public async Task<DownloadHistoryPage> GetDownloadedPageAsync(
         DownloadHistoryCursor? cursor,
         int pageSize,
+        DownloadFinishedSort sort,
         CancellationToken cancellationToken = default)
     {
         var page = await _history
-            .GetPageAsync(cursor, pageSize, cancellationToken)
+            .GetPageAsync(cursor, pageSize, cancellationToken, sort)
             .ConfigureAwait(false);
         return page;
     }
@@ -160,9 +184,37 @@ internal sealed class DownloadTaskProjectionStore : IDisposable
         ArgumentNullException.ThrowIfNull(progress);
         if (_snapshots.TryGetValue(taskId, out var snapshot) &&
             snapshot.Phase is DownloadPhase.Downloading or DownloadPhase.Pausing &&
-            _downloadingProjections.TryGetValue(taskId, out var item))
+            _downloadingProjections.ContainsKey(taskId))
         {
-            DownloadTaskProjectionMapper.ApplyLiveProgress(progress, item);
+            UpdatePresentation(taskId, item =>
+            {
+                if (_snapshots.TryGetValue(taskId, out var current) && current.Version == snapshot.Version &&
+                    current.Phase is DownloadPhase.Downloading or DownloadPhase.Pausing)
+                {
+                    DownloadTaskProjectionMapper.ApplyLiveProgress(progress, item);
+                }
+            });
+        }
+    }
+
+    public void UpdatePresentation(DownloadTaskId taskId, Action<DownloadingItem> update)
+    {
+        ArgumentNullException.ThrowIfNull(taskId);
+        ArgumentNullException.ThrowIfNull(update);
+        QueuePresentationUpdate(() =>
+        {
+            if (_downloadingProjections.TryGetValue(taskId, out var item))
+            {
+                update(item);
+            }
+        });
+    }
+
+    public Task FlushPresentationAsync()
+    {
+        lock (_presentationGate)
+        {
+            return _presentationUpdates;
         }
     }
 
@@ -173,10 +225,20 @@ internal sealed class DownloadTaskProjectionStore : IDisposable
             return;
         }
 
+        lock (_presentationGate)
+        {
+            _disposed = true;
+        }
         _tasks.TaskChanged -= OnTaskChanged;
         _downloadingProjections.Clear();
         _snapshots.Clear();
-        _disposed = true;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Dispose();
+        await FlushPresentationAsync().ConfigureAwait(false);
+        GC.SuppressFinalize(this);
     }
 
     private DownloadingItem CreateDownloadingProjection(DownloadTask task)
@@ -189,6 +251,10 @@ internal sealed class DownloadTaskProjectionStore : IDisposable
 
     private void OnTaskChanged(object? sender, DownloadTaskChangedEventArgs args)
     {
+        if (_disposed)
+        {
+            return;
+        }
         if (args.Kind == DownloadTaskChangeKind.Deleted)
         {
             _snapshots.TryRemove(args.TaskId, out _);
@@ -204,6 +270,7 @@ internal sealed class DownloadTaskProjectionStore : IDisposable
 
     private void Publish(DownloadTask task)
     {
+        _snapshots.TryGetValue(task.Id, out var preceding);
         if (task.Phase == DownloadPhase.Completed)
         {
             _snapshots.TryRemove(task.Id, out _);
@@ -212,9 +279,54 @@ internal sealed class DownloadTaskProjectionStore : IDisposable
         {
             _snapshots[task.Id] = task;
         }
-        if (_downloadingProjections.TryGetValue(task.Id, out var item))
+        UpdatePresentation(task.Id, item => DownloadTaskProjectionMapper.Apply(task, item, preceding));
+    }
+
+    private void QueuePresentationUpdate(Action update)
+    {
+        lock (_presentationGate)
         {
-            DownloadTaskProjectionMapper.Apply(task, item);
+            if (_disposed)
+            {
+                return;
+            }
+            if (_uiDispatcher == null)
+            {
+                // Unbound compatibility models do not have a desktop dispatcher.
+                update();
+                return;
+            }
+
+            _presentationUpdates = ApplyPresentationAsync(_presentationUpdates, update);
+        }
+    }
+
+    private async Task ApplyPresentationAsync(Task preceding, Action update)
+    {
+        try
+        {
+            await preceding.ConfigureAwait(false);
+            if (_disposed || _shutdownToken.IsCancellationRequested) return;
+            await _uiDispatcher!.InvokeAsync(() =>
+            {
+                if (!_disposed)
+                {
+                    update();
+                }
+            }).WaitAsync(_shutdownToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (_shutdownToken.IsCancellationRequested)
+        {
+            // Shutdown can finish after the dispatcher stops servicing queued work.
+            // The disposed guard also makes any later dispatcher callback inert.
+            return;
+        }
+        catch (Exception exception) when (exception is InvalidOperationException
+            or ArgumentException or KeyNotFoundException or OperationCanceledException)
+        {
+            // A presentation failure cannot change an already committed command result.
+            // This owned chain is drained before asynchronous disposal completes.
+            _logger.LogErrorMessage("Download presentation update failed.", exception);
         }
     }
 

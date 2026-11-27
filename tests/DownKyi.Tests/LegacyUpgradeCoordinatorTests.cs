@@ -139,7 +139,8 @@ public sealed class LegacyUpgradeCoordinatorTests
             throw new NotSupportedException();
 
         public Task<DownloadHistoryPage> GetPageAsync(
-            DownloadHistoryCursor? cursor, int pageSize, CancellationToken cancellationToken) =>
+            DownloadHistoryCursor? cursor, int pageSize, CancellationToken cancellationToken,
+            DownKyi.Application.Settings.DownloadFinishedSort sort = DownKyi.Application.Settings.DownloadFinishedSort.DownloadDesc) =>
             throw new NotSupportedException();
 
         public Task<IReadOnlyList<DownloadHistoryRecord>> GetByCidAsync(long cid, CancellationToken cancellationToken) =>

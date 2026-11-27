@@ -25,6 +25,8 @@ internal class DownloadFinishedViewModel : ViewModelBase
 
     public ReadOnlyObservableCollection<DownloadedItem> DownloadedList { get; }
 
+    public DownloadListState DownloadLists => _downloadLists;
+
     private int _finishedSortBy;
 
     public int FinishedSortBy
@@ -102,6 +104,7 @@ internal class DownloadFinishedViewModel : ViewModelBase
                 SetDownloadFinishedSort(DownloadFinishedSort.DownloadAsc);
                 break;
         }
+        RunFireAndForget(EnsureDownloadedHistoryLoadedAsync(), nameof(EnsureDownloadedHistoryLoadedAsync), _logger);
     }
 
     private void SetDownloadFinishedSort(DownloadFinishedSort sort)
@@ -123,7 +126,6 @@ internal class DownloadFinishedViewModel : ViewModelBase
     {
         try
         {
-            await EnsureDownloadedHistoryLoadedAsync().ConfigureAwait(true);
             var alertService = new AlertService(AppDialogs);
             var result = await alertService.ShowWarning(DictionaryResource.GetString("ConfirmDelete")).ConfigureAwait(true);
             if (result != AppDialogOutcome.Accepted)
@@ -194,8 +196,6 @@ internal class DownloadFinishedViewModel : ViewModelBase
             return;
         }
 
-        await EnsureDownloadedHistoryLoadedAsync().ConfigureAwait(true);
-
         var alertService = new AlertService(AppDialogs);
         var result = await alertService.ShowWarning(DictionaryResource.GetString("ConfirmDelete"), 2).ConfigureAwait(true);
         if (result != AppDialogOutcome.Accepted)
@@ -235,9 +235,9 @@ internal class DownloadFinishedViewModel : ViewModelBase
             _logger);
     }
 
-    private async Task EnsureDownloadedHistoryLoadedAsync()
-    {
-        await _downloadManagerCoordinator.LoadDownloadedHistoryAsync().ConfigureAwait(true);
-        _downloadLists.SortDownloaded(_settingsStore.Current.Basic.DownloadFinishedSort);
-    }
+    private DownKyiAsyncDelegateCommand? _loadMoreHistoryCommand;
+    public DownKyiAsyncDelegateCommand LoadMoreHistoryCommand => _loadMoreHistoryCommand ??= new(
+        _downloadManagerCoordinator.LoadMoreDownloadedHistoryAsync, _logger);
+
+    private Task EnsureDownloadedHistoryLoadedAsync() => _downloadManagerCoordinator.LoadDownloadedHistoryAsync();
 }

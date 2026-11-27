@@ -594,4 +594,6 @@
     <system:String x:Key="DownloadNoMatches">沒有符合條件的任務</system:String>
     <system:String x:Key="DownloadClearFilters">清除篩選</system:String>
     <system:String x:Key="DownloadClearSelection">取消選取</system:String>
+    <system:String x:Key="DownloadHistoryLoadedLabel">已載入</system:String>
+    <system:String x:Key="LoadMoreHistory">載入更多</system:String>
 </ResourceDictionary>

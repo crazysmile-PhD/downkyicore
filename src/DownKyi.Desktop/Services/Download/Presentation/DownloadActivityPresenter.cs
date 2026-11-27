@@ -27,9 +27,11 @@ internal sealed class DownloadActivityPresenter
     public void Reset(DownloadExecutionContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
-        var downloading = GetProjection(context);
-        downloading.DownloadStatusTitle = string.Empty;
-        downloading.DownloadContent = string.Empty;
+        _projectionStore.UpdatePresentation(context.TaskId, downloading =>
+        {
+            downloading.DownloadStatusTitle = string.Empty;
+            downloading.DownloadContent = string.Empty;
+        });
     }
 
     public Task ShowParsingAsync(
@@ -347,12 +349,14 @@ internal sealed class DownloadActivityPresenter
         string contentResourceKey)
     {
         ArgumentNullException.ThrowIfNull(context);
-        var downloading = GetProjection(context);
-        downloading.DownloadStatusTitle = DictionaryResource.GetString("WhileDownloading");
-        downloading.DownloadContent = DictionaryResource.GetString(contentResourceKey);
-        downloading.DownloadingFileSize = string.Empty;
-        downloading.Progress = 0;
-        downloading.SpeedDisplay = string.Empty;
+        _projectionStore.UpdatePresentation(context.TaskId, downloading =>
+        {
+            downloading.DownloadStatusTitle = DictionaryResource.GetString("WhileDownloading");
+            downloading.DownloadContent = DictionaryResource.GetString(contentResourceKey);
+            downloading.DownloadingFileSize = string.Empty;
+            downloading.Progress = 0;
+            downloading.SpeedDisplay = string.Empty;
+        });
     }
 
     private async Task ShowActivityAsync(
@@ -363,27 +367,23 @@ internal sealed class DownloadActivityPresenter
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
-        var downloading = GetProjection(context);
-        downloading.DownloadStatusTitle = DictionaryResource.GetString(titleResourceKey);
-        downloading.DownloadContent = contentResourceKey == null
+        var title = DictionaryResource.GetString(titleResourceKey);
+        var content = contentResourceKey == null
             ? string.Empty
             : DictionaryResource.GetString(contentResourceKey);
-        downloading.DownloadingFileSize = string.Empty;
-        downloading.SpeedDisplay = string.Empty;
-        if (resetProgress)
-        {
-            downloading.Progress = 0;
-        }
-
         await _stateWriter.UpdateActivityAsync(
             context.TaskId,
-            downloading.DownloadContent,
-            downloading.DownloadStatusTitle,
+            content,
+            title,
             cancellationToken).ConfigureAwait(true);
-    }
-
-    private DownloadingItem GetProjection(DownloadExecutionContext context)
-    {
-        return _projectionStore.GetRequiredDownloadingProjection(context.TaskId);
+        _projectionStore.UpdatePresentation(context.TaskId, downloading =>
+        {
+            downloading.DownloadingFileSize = string.Empty;
+            downloading.SpeedDisplay = string.Empty;
+            if (resetProgress)
+            {
+                downloading.Progress = 0;
+            }
+        });
     }
 }

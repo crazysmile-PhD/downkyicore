@@ -594,4 +594,6 @@
     <system:String x:Key="DownloadNoMatches">該当するタスクはありません</system:String>
     <system:String x:Key="DownloadClearFilters">絞り込みを解除</system:String>
     <system:String x:Key="DownloadClearSelection">選択を解除</system:String>
+    <system:String x:Key="DownloadHistoryLoadedLabel">読み込み済み</system:String>
+    <system:String x:Key="LoadMoreHistory">さらに読み込む</system:String>
 </ResourceDictionary>

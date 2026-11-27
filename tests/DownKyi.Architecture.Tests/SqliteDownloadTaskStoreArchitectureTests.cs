@@ -72,7 +72,7 @@ public sealed class SqliteDownloadTaskStoreArchitectureTests
             "ExecuteAsync(() => _outputReservations.HasOutputClaimConflictAsync(" +
             "basePath, requestedCid, requestedClaims, ignoreCase, cancellationToken), cancellationToken)",
         ["GetHistoryPageAsync"] =
-            "ExecuteAsync(() => _queries.GetHistoryPageAsync(cursor, pageSize, cancellationToken), cancellationToken)",
+            "ExecuteAsync(() => _queries.GetHistoryPageAsync(cursor, pageSize, cancellationToken, sort), cancellationToken)",
         ["GetHistoryByCidAsync"] =
             "ExecuteAsync(() => _queries.GetHistoryByCidAsync(cid, cancellationToken), cancellationToken)",
         ["GetHistoryByCidsAsync"] =
