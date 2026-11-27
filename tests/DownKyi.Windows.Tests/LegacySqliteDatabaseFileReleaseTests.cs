@@ -42,6 +42,39 @@ public sealed class LegacySqliteDatabaseFileReleaseTests : IDisposable
         Assert.False(File.Exists(movedPath));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void FailedInitializationReleasesFileWithoutCollectionOrRetry(bool usePassword)
+    {
+        Directory.CreateDirectory(_directory);
+        var databasePath = Path.Combine(_directory, "invalid.db");
+        File.WriteAllText(databasePath, "not a SQLite database");
+        var failure = Assert.Throws<SqliteException>(() =>
+        {
+            using var database = CreateProductionHelper(databasePath, usePassword ? SecretKey : null);
+        });
+        Assert.Equal(26, failure.SqliteErrorCode);
+        var movedPath = databasePath + ".preserved";
+        File.Move(databasePath, movedPath);
+        File.Delete(movedPath);
+    }
+
+    [Fact]
+    public void WrongPasswordReleasesEncryptedFileForImmediateMove()
+    {
+        Directory.CreateDirectory(_directory);
+        var databasePath = Path.Combine(_directory, "encrypted.db");
+        CreateLegacyDatabase(databasePath, SecretKey);
+        Assert.Throws<SqliteException>(() =>
+        {
+            using var database = CreateProductionHelper(databasePath, "incorrect-key");
+        });
+        var movedPath = databasePath + ".preserved";
+        File.Move(databasePath, movedPath);
+        File.Delete(movedPath);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_directory))
