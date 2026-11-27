@@ -5,12 +5,26 @@ using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.Themes.Fluent;
 using Avalonia.VisualTree;
+using DownKyi.CustomControl;
 using DownKyi.Views.Toolbox;
 
 namespace DownKyi.Desktop.Tests;
 
 public sealed class ToolboxResponsiveLayoutTests
 {
+    [AvaloniaFact]
+    public void PreviewThresholdCanBeResolvedByItsOwnPropertyName()
+    {
+        var property = AvaloniaPropertyRegistry.Instance.FindRegistered(
+            typeof(VideoFramePreview), nameof(VideoFramePreview.EdgeThreshold));
+        Assert.Same(VideoFramePreview.EdgeThresholdProperty, property);
+        Assert.NotSame(VideoFramePreview.WatermarkRectProperty, property);
+        var preview = new VideoFramePreview();
+        preview.SetValue(VideoFramePreview.EdgeThresholdProperty, 5);
+        Assert.Equal(5, preview.EdgeThreshold);
+        Assert.Null(preview.WatermarkRect);
+    }
+
     [AvaloniaFact]
     public Task PrimaryActionsStayVisibleAtToolboxContentWidth()
     {
