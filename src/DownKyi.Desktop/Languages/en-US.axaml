@@ -421,8 +421,8 @@
     <system:String x:Key="StartupDownloadStoreFailureDescription">The existing download database cannot be read using the current schema. You can keep a full backup, then create an empty database.</system:String>
     <system:String x:Key="StartupDownloadStoreFailureImpact">Downloads are unavailable until the database is rebuilt. Old records will not appear afterward, but the original database remains in the backup.</system:String>
     <system:String x:Key="StartupLegacyMigrationFailureTitle">Old version data migration failed</system:String>
-    <system:String x:Key="StartupLegacyMigrationFailureDescription">The data conversion of some legacy download records could not be completed.</system:String>
-    <system:String x:Key="StartupLegacyMigrationFailureImpact">Some historical downloads may not appear correctly.</system:String>
+    <system:String x:Key="StartupLegacyMigrationFailureDescription">Some legacy download records could not be imported. The source data has been preserved.</system:String>
+    <system:String x:Key="StartupLegacyMigrationFailureImpact">The current download system does not depend on legacy migration. Close this notice to continue using the app.</system:String>
     <system:String x:Key="ViewFullErrorDetails">View full error details</system:String>
     <system:String x:Key="ResetDownloadStore">Back up and create a blank database...</system:String>
     <system:String x:Key="DownloadStoreResetConfirmation">The existing download database will be fully backed up before an empty database is created and DownKyi restarts. The new database will not contain the old queue, history, or resume state. Downloaded media, login information, and settings will remain. Continue?</system:String>
@@ -535,12 +535,10 @@
     <!-- Localized desktop messages -->
     <system:String x:Key="MigrationCancelConfirmation">Are you sure you want to cancel data migration? Data that has been written is retained; remaining migrations can be retried at the next startup.</system:String>
     <system:String x:Key="MigrationCancel">Cancel migration</system:String>
-    <system:String x:Key="MigrationRestartNow">Restart now</system:String>
     <system:String x:Key="MigrationContinue">Continue migration</system:String>
     <system:String x:Key="MigrationInProgress">Migrating data. To stop, select “Cancel migration”.</system:String>
     <system:String x:Key="MigrationDownloadComplete">Download information migration completed</system:String>
     <system:String x:Key="MigrationFailedSeeLogs">Data migration failed. Check the logs.</system:String>
-    <system:String x:Key="MigrationRestarting">Restarting the app</system:String>
     <system:String x:Key="MigrationRestartFailed">Could not restart the app. Check the logs.</system:String>
     <system:String x:Key="OpenVideoFailed">Could not open the video file</system:String>
     <system:String x:Key="OpenFolderFailed">Can't open folder</system:String>
@@ -567,8 +565,6 @@
     <system:String x:Key="MigrationLoginInProgress">Migrating login information</system:String>
     <system:String x:Key="MigrationLoginComplete">Login information migrated</system:String>
     <system:String x:Key="MigrationTryingAlternateConnection">Trying another connection method</system:String>
-    <system:String x:Key="MigrationSkippedCorruptRecord">An old corrupt download record was skipped</system:String>
-    <system:String x:Key="MigrationSkippedCorruptDetail">Skipped a damaged legacy download detail</system:String>
     <system:String x:Key="MigrationDownloadProgress">Migrating download records ({0}/{1})</system:String>
     <system:String x:Key="MigrationBackupCreated">The original database has been backed up as {0}</system:String>
     <system:String x:Key="MigrationSourcePreserved">The old database and WAL have been preserved in their original location. Keep the logs and handle them manually.</system:String>

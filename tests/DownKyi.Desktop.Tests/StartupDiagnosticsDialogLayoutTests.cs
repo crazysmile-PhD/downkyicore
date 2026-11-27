@@ -8,7 +8,6 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 using DownKyi.Application.Desktop;
 using DownKyi.Application.Diagnostics;
-using DownKyi.Application.Lifetime;
 using DownKyi.Infrastructure.Logging;
 using DownKyi.Platform;
 using DownKyi.Services.Migration;
@@ -128,7 +127,6 @@ public sealed class StartupDiagnosticsDialogLayoutTests
         var failure = new InvalidOperationException("migration failed");
         var viewModel = new UpgradingDialogViewModel(
             new FailedMigrationCoordinator(failure),
-            new ApplicationLifecycleStub(),
             NullLogger<UpgradingDialogViewModel>.Instance);
         await using var viewModelScope = viewModel.ConfigureAwait(true);
         viewModel.OnDialogOpened(new AppDialogRequest(AppDialog.LegacyUpgrade));
@@ -257,17 +255,5 @@ public sealed class StartupDiagnosticsDialogLayoutTests
                 "migration failed",
                 failure));
         }
-    }
-
-    private sealed class ApplicationLifecycleStub : IApplicationLifecycle
-    {
-        public Task RequestShutdownAsync(CancellationToken cancellationToken = default) =>
-            Task.CompletedTask;
-
-        public Task ExitAsync(CancellationToken cancellationToken = default) =>
-            Task.CompletedTask;
-
-        public Task<bool> RestartAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult(true);
     }
 }

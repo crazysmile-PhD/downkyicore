@@ -421,8 +421,8 @@
     <system:String x:Key="StartupDownloadStoreFailureDescription">现有下载资料库无法投影为当前结构。可以先保留完整备份，再建立空白资料库。</system:String>
     <system:String x:Key="StartupDownloadStoreFailureImpact">在重建前下载功能无法使用；重建后旧记录不会显示，但原资料库仍保存在备份中。</system:String>
     <system:String x:Key="StartupLegacyMigrationFailureTitle">旧版数据迁移失败</system:String>
-    <system:String x:Key="StartupLegacyMigrationFailureDescription">无法完成部分旧版下载记录的数据转换。</system:String>
-    <system:String x:Key="StartupLegacyMigrationFailureImpact">部分历史下载数据可能无法正常显示。</system:String>
+    <system:String x:Key="StartupLegacyMigrationFailureDescription">部分旧版下载记录无法导入，原始数据已保留。</system:String>
+    <system:String x:Key="StartupLegacyMigrationFailureImpact">新版下载功能不依赖旧数据迁移；关闭此提示即可继续使用。</system:String>
     <system:String x:Key="ViewFullErrorDetails">查看完整错误详情</system:String>
     <system:String x:Key="ResetDownloadStore">备份并建立空白资料库…</system:String>
     <system:String x:Key="DownloadStoreResetConfirmation">将完整备份现有下载资料库，再建立空白资料库并重新启动应用。新资料库不会包含原下载队列、历史或续传状态；已经下载的媒体文件、登录信息和程序设置不会被删除。是否继续？</system:String>
@@ -535,12 +535,10 @@
     <!-- Localized desktop messages -->
     <system:String x:Key="MigrationCancelConfirmation">确定要取消数据迁移吗？已完成写入的数据会保留；剩余迁移可在下次启动时重新尝试。</system:String>
     <system:String x:Key="MigrationCancel">取消迁移</system:String>
-    <system:String x:Key="MigrationRestartNow">立即重启</system:String>
     <system:String x:Key="MigrationContinue">继续迁移</system:String>
     <system:String x:Key="MigrationInProgress">数据迁移中；如需停止，请使用“取消迁移”</system:String>
     <system:String x:Key="MigrationDownloadComplete">下载信息迁移完成</system:String>
     <system:String x:Key="MigrationFailedSeeLogs">数据迁移失败，请查看日志</system:String>
-    <system:String x:Key="MigrationRestarting">正在重新启动应用</system:String>
     <system:String x:Key="MigrationRestartFailed">无法重新启动应用，请查看日志</system:String>
     <system:String x:Key="OpenVideoFailed">无法打开视频文件</system:String>
     <system:String x:Key="OpenFolderFailed">无法打开文件夹</system:String>
@@ -567,8 +565,6 @@
     <system:String x:Key="MigrationLoginInProgress">正在迁移登录信息</system:String>
     <system:String x:Key="MigrationLoginComplete">登录信息迁移完成</system:String>
     <system:String x:Key="MigrationTryingAlternateConnection">尝试备用连接方式</system:String>
-    <system:String x:Key="MigrationSkippedCorruptRecord">已跳过一笔损坏的旧下载记录</system:String>
-    <system:String x:Key="MigrationSkippedCorruptDetail">已跳过一笔损坏的旧下载详情</system:String>
     <system:String x:Key="MigrationDownloadProgress">正在迁移下载信息({0}/{1})</system:String>
     <system:String x:Key="MigrationBackupCreated">原数据库已备份为 {0}</system:String>
     <system:String x:Key="MigrationSourcePreserved">旧数据库及 WAL 已保留在原位置，请保留日志并手动处理</system:String>

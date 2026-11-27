@@ -1,5 +1,4 @@
 using DownKyi.Application.Desktop;
-using DownKyi.Application.Lifetime;
 using DownKyi.Platform;
 using DownKyi.Services.Migration;
 using DownKyi.ViewModels.Dialogs;
@@ -15,7 +14,6 @@ public sealed class LegacyUpgradeViewModelTests
         var coordinator = new BlockingLegacyUpgradeCoordinator();
         var viewModel = new UpgradingDialogViewModel(
             coordinator,
-            new StubApplicationLifecycle(),
             NullLogger<UpgradingDialogViewModel>.Instance);
         await using var viewModelScope = viewModel.ConfigureAwait(true);
 
@@ -172,73 +170,30 @@ public sealed class LegacyUpgradeViewModelTests
         await StopMigrationAsync(viewModel, coordinator).ConfigureAwait(true);
     }
 
-    [Fact]
-    public async Task CompletedMigrationLeavesHistoryForOnDemandPage()
+    [Theory]
+    [InlineData(true, AppDialogOutcome.Accepted)]
+    [InlineData(false, AppDialogOutcome.Canceled)]
+    public async Task MigrationFinishesWithoutRequiringRestart(
+        bool hasMigration,
+        AppDialogOutcome expectedDialogOutcome)
     {
         var viewModel = new UpgradingDialogViewModel(
-            new CompletedLegacyUpgradeCoordinator(),
-            new StubApplicationLifecycle(),
+            new CompletedLegacyUpgradeCoordinator(hasMigration ? LegacyUpgradeOutcome.Completed : LegacyUpgradeOutcome.NoMigration),
             NullLogger<UpgradingDialogViewModel>.Instance);
         await using var viewModelScope = viewModel.ConfigureAwait(true);
-
-        viewModel.OnDialogOpened(new AppDialogRequest(AppDialog.LegacyUpgrade));
-
-        Assert.Equal(100, viewModel.Percent);
-        Assert.True(viewModel.IsProgressVisible);
-        Assert.True(viewModel.RestartVisible);
-        Assert.False(viewModel.IsMigrationActive);
-
         var closed = new TaskCompletionSource<AppDialogResult>(
             TaskCreationOptions.RunContinuationsAsynchronously);
         viewModel.CloseRequested += (_, result) => closed.TrySetResult(result);
-        viewModel.RequestCancelMigrationCommand.Execute(null);
-        Assert.Equal(
-            AppDialogOutcome.Canceled,
-            (await closed.Task.WaitAsync(TestContext.Current.CancellationToken)).Outcome);
-
-        await viewModel.OnDialogClosedAsync().ConfigureAwait(true);
-    }
-
-    [Fact]
-    public async Task RestartFailureRevealsActionableStateInsteadOfLeavingCompletionFrozen()
-    {
-        var lifecycle = new StubApplicationLifecycle(
-            new TimeoutException("Restart cleanup timed out."));
-        var viewModel = new UpgradingDialogViewModel(
-            new CompletedLegacyUpgradeCoordinator(),
-            lifecycle,
-            NullLogger<UpgradingDialogViewModel>.Instance);
-        await using var viewModelScope = viewModel.ConfigureAwait(true);
-        var sawRestartingState = false;
-        var failureVisible = new TaskCompletionSource(
-            TaskCreationOptions.RunContinuationsAsynchronously);
-        viewModel.PropertyChanged += (_, args) =>
-        {
-            if (args.PropertyName == nameof(UpgradingDialogViewModel.Message)
-                && viewModel.Message == "正在重新启动应用")
-            {
-                sawRestartingState = true;
-            }
-
-            if (args.PropertyName == nameof(UpgradingDialogViewModel.RestartVisible)
-                && viewModel.RestartVisible
-                && viewModel.Message == "无法重新启动应用，请查看日志")
-            {
-                failureVisible.TrySetResult();
-            }
-        };
 
         viewModel.OnDialogOpened(new AppDialogRequest(AppDialog.LegacyUpgrade));
-        viewModel.RestartCommand.Execute(null);
-        await failureVisible.Task
+        var result = await closed.Task
             .WaitAsync(TestContext.Current.CancellationToken)
             .ConfigureAwait(true);
 
-        Assert.True(sawRestartingState);
-        Assert.Equal(1, lifecycle.RestartCount);
-        Assert.Equal("无法重新启动应用，请查看日志", viewModel.Message);
-        Assert.True(viewModel.RestartVisible);
-        Assert.True(viewModel.RestartCommand.CanExecute(null));
+        Assert.Equal(expectedDialogOutcome, result.Outcome);
+        Assert.False(viewModel.IsMigrationActive);
+        Assert.True(viewModel.CanCloseDialog());
+        Assert.Empty(result.Parameters);
 
         await viewModel.OnDialogClosedAsync().ConfigureAwait(true);
     }
@@ -260,7 +215,6 @@ public sealed class LegacyUpgradeViewModelTests
 
         Assert.False(viewModel.IsMigrationActive);
         Assert.False(viewModel.CancelConfirmationVisible);
-        Assert.False(viewModel.RestartVisible);
         Assert.True(viewModel.CanCloseDialog());
         Assert.Equal("legacy backup preserved", viewModel.Message);
         Assert.Equal(AppDialogOutcome.Rejected, result.Outcome);
@@ -277,7 +231,6 @@ public sealed class LegacyUpgradeViewModelTests
         var coordinator = new FaultingLegacyUpgradeCoordinator();
         var viewModel = new UpgradingDialogViewModel(
             coordinator,
-            new StubApplicationLifecycle(),
             NullLogger<UpgradingDialogViewModel>.Instance);
         await using var viewModelScope = viewModel.ConfigureAwait(true);
 
@@ -346,7 +299,6 @@ public sealed class LegacyUpgradeViewModelTests
     {
         return new UpgradingDialogViewModel(
             coordinator,
-            new StubApplicationLifecycle(),
             NullLogger<UpgradingDialogViewModel>.Instance);
     }
 
@@ -382,7 +334,7 @@ public sealed class LegacyUpgradeViewModelTests
         }
     }
 
-    private sealed class CompletedLegacyUpgradeCoordinator : ILegacyUpgradeCoordinator
+    private sealed class CompletedLegacyUpgradeCoordinator(LegacyUpgradeOutcome outcome) : ILegacyUpgradeCoordinator
     {
         public bool IsUpgradeRequired() => true;
 
@@ -391,7 +343,7 @@ public sealed class LegacyUpgradeViewModelTests
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(new LegacyUpgradeResult(LegacyUpgradeOutcome.Completed));
+            return Task.FromResult(new LegacyUpgradeResult(outcome));
         }
     }
 
@@ -408,35 +360,6 @@ public sealed class LegacyUpgradeViewModelTests
                 LegacyUpgradeOutcome.Failed,
                 "legacy backup preserved",
                 failure));
-        }
-    }
-
-    private sealed class StubApplicationLifecycle(Exception? restartFailure = null) : IApplicationLifecycle
-    {
-        public int RestartCount { get; private set; }
-
-        public Task RequestShutdownAsync(CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            return Task.CompletedTask;
-        }
-
-        public Task ExitAsync(CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            return Task.CompletedTask;
-        }
-
-        public Task<bool> RestartAsync(CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            RestartCount++;
-            if (restartFailure != null)
-            {
-                return Task.FromException<bool>(restartFailure);
-            }
-
-            return Task.FromResult(true);
         }
     }
 }

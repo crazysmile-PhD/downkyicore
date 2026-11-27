@@ -11,6 +11,19 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DownKyi.Tests;
 
+internal enum LegacyImportFixture
+{
+    Complete,
+    EmptyWithDetails,
+    EmptyWithoutDetails,
+    MissingDetailTable,
+    MissingDetailRecord,
+    CorruptHistory,
+    CorruptDetail,
+    UnsupportedHistory,
+    UnsupportedDetail
+}
+
 public sealed class LegacyDatabaseImportTests : IDisposable
 {
     private static readonly string LegacyKey = LegacyUpgradeCoordinator.GetLegacyDatabasePassword();
@@ -48,6 +61,77 @@ public sealed class LegacyDatabaseImportTests : IDisposable
             Assert.Equal(1, reader.GetInt32(0));
         });
         Assert.Equal(encrypted ? 0 : 1, progress.Messages.Count(message => message == "尝试备用连接方式"));
+    }
+
+    [Fact]
+    public async Task SchemaLessDatabaseIsSkippedWithoutCreatingOrRetiringData()
+    {
+        Directory.CreateDirectory(_directory);
+        var path = Path.Combine(_directory, "Download.db");
+        await File.WriteAllBytesAsync(path, [], TestContext.Current.CancellationToken);
+        var history = new HistoryService();
+
+        var result = await CreateCoordinator(history).UpgradeDatabaseAsync(
+            path, new ProgressRecorder(), TestContext.Current.CancellationToken);
+
+        Assert.Equal(LegacyUpgradeOutcome.NoMigration, result.Outcome);
+        Assert.Null(result.Failure);
+        Assert.Empty(history.Records);
+        Assert.Empty(await File.ReadAllBytesAsync(path, TestContext.Current.CancellationToken));
+        Assert.False(Directory.Exists(Path.Combine(_directory, "Backup")));
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task EmptyCompletedHistoryIsSkippedEvenWhenTheDetailTableWasNeverCreated(
+        bool encrypted,
+        bool hasDetailTable)
+    {
+        var path = CreateDatabase(encrypted, missingTable: false,
+            fixtureData: hasDetailTable ? LegacyImportFixture.EmptyWithDetails : LegacyImportFixture.EmptyWithoutDetails);
+        var original = await File.ReadAllBytesAsync(path, TestContext.Current.CancellationToken);
+        var wal = await File.ReadAllBytesAsync(path + "-wal", TestContext.Current.CancellationToken);
+        var history = new HistoryService();
+
+        var result = await CreateCoordinator(history).UpgradeDatabaseAsync(
+            path, new ProgressRecorder(), TestContext.Current.CancellationToken);
+
+        Assert.Equal(LegacyUpgradeOutcome.NoMigration, result.Outcome);
+        Assert.Null(result.Failure);
+        Assert.Empty(history.Records);
+        Assert.Equal(original, await File.ReadAllBytesAsync(path, TestContext.Current.CancellationToken));
+        Assert.Equal(wal, await File.ReadAllBytesAsync(path + "-wal", TestContext.Current.CancellationToken));
+        Assert.False(Directory.Exists(Path.Combine(_directory, "Backup")));
+    }
+
+    [Theory]
+    [InlineData(LegacyImportFixture.MissingDetailTable)]
+    [InlineData(LegacyImportFixture.MissingDetailRecord)]
+    [InlineData(LegacyImportFixture.CorruptHistory)]
+    [InlineData(LegacyImportFixture.CorruptDetail)]
+    [InlineData(LegacyImportFixture.UnsupportedHistory)]
+    [InlineData(LegacyImportFixture.UnsupportedDetail)]
+    public async Task UnsupportedOrDamagedHistoryPreservesSourceAndReportsFailureWithoutRetry(object fixtureData)
+    {
+        var path = CreateDatabase(encrypted: true, missingTable: false, fixtureData: Assert.IsType<LegacyImportFixture>(fixtureData));
+        var original = await File.ReadAllBytesAsync(path, TestContext.Current.CancellationToken);
+        var wal = await File.ReadAllBytesAsync(path + "-wal", TestContext.Current.CancellationToken);
+        var progress = new ProgressRecorder();
+        var history = new HistoryService();
+
+        var result = await CreateCoordinator(history).UpgradeDatabaseAsync(path, progress, TestContext.Current.CancellationToken);
+
+        Assert.Equal(LegacyUpgradeOutcome.Failed, result.Outcome);
+        Assert.NotNull(result.Failure);
+        Assert.NotNull(result.ErrorMessage);
+        Assert.DoesNotContain("尝试备用连接方式", progress.Messages);
+        Assert.Empty(history.Records);
+        Assert.Equal(original, await File.ReadAllBytesAsync(path, TestContext.Current.CancellationToken));
+        Assert.Equal(wal, await File.ReadAllBytesAsync(path + "-wal", TestContext.Current.CancellationToken));
+        Assert.False(Directory.Exists(Path.Combine(_directory, "Backup")));
     }
 
     [Fact]
@@ -151,7 +235,7 @@ public sealed class LegacyDatabaseImportTests : IDisposable
         }
     }
 
-    private string CreateDatabase(bool encrypted, bool missingTable)
+    private string CreateDatabase(bool encrypted, bool missingTable, LegacyImportFixture fixtureData = LegacyImportFixture.Complete)
     {
         Directory.CreateDirectory(_directory);
         var seed = Path.Combine(_directory, "seed.db");
@@ -186,6 +270,48 @@ public sealed class LegacyDatabaseImportTests : IDisposable
                      ("EpisodeId", 3L), ("CoverUrl", ""), ("PageCoverUrl", ""), ("ZoneId", 1), ("Order", 1),
                      ("MainTitle", "Series"), ("Name", "Episode"), ("Duration", "01:00"), ("VideoCodecName", "AVC"),
                      ("Resolution", null), ("AudioCodec", null), ("FilePath", "fixture"), ("FileSize", "1 GB"), ("Page", 1)]));
+                command.ExecuteNonQuery();
+            }
+            if (fixtureData != LegacyImportFixture.Complete)
+            {
+                switch (fixtureData)
+                {
+                    case LegacyImportFixture.EmptyWithDetails:
+                        command.CommandText = """
+                            CREATE TABLE downloading (id TEXT PRIMARY KEY, data BLOB);
+                            DELETE FROM downloaded;
+                            DELETE FROM download_base;
+                            """;
+                        break;
+                    case LegacyImportFixture.EmptyWithoutDetails:
+                        command.CommandText = """
+                            CREATE TABLE downloading (id TEXT PRIMARY KEY, data BLOB);
+                            DELETE FROM downloaded;
+                            DROP TABLE download_base;
+                            """;
+                        break;
+                    case LegacyImportFixture.MissingDetailTable:
+                        command.CommandText = "DROP TABLE download_base;";
+                        break;
+                    case LegacyImportFixture.MissingDetailRecord:
+                        command.CommandText = "DELETE FROM download_base;";
+                        break;
+                    case LegacyImportFixture.CorruptHistory:
+                        command.CommandText = "UPDATE downloaded SET data = X'00';";
+                        break;
+                    case LegacyImportFixture.CorruptDetail:
+                        command.CommandText = "UPDATE download_base SET data = X'00';";
+                        break;
+                    case LegacyImportFixture.UnsupportedHistory:
+                        command.CommandText = "UPDATE downloaded SET data = (SELECT data FROM download_base);";
+                        break;
+                    case LegacyImportFixture.UnsupportedDetail:
+                        command.CommandText = "UPDATE download_base SET data = (SELECT data FROM downloaded);";
+                        break;
+                    default:
+                        throw new ArgumentOutOfRangeException(nameof(fixtureData));
+                }
+                command.Parameters.Clear();
                 command.ExecuteNonQuery();
             }
             // Copy an idle, committed WAL fixture before closing its writer (which

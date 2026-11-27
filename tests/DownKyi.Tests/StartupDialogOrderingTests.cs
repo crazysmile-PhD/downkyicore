@@ -278,6 +278,60 @@ public sealed class StartupDialogOrderingTests
     }
 
     [Fact]
+    public async Task LegacyFailureWarnsAndContinuesStartupWithTheReadyDownloadRuntime()
+    {
+        using var settings = new TestSettingsStore();
+        settings.Store.Update(current => current with
+        {
+            About = current.About with
+            {
+                AutoUpdateWhenLaunch = AllowStatus.Yes,
+                IsReceiveBetaVersion = AllowStatus.No,
+                SkipVersionOnLaunch = string.Empty
+            }
+        });
+        var navigation = new NavigationStub();
+        var dialogs = new OrderedDialogService();
+        using var handler = new ReleaseHandler();
+        using var httpClient = new HttpClient(handler, disposeHandler: false)
+        {
+            BaseAddress = new Uri("https://api.github.test/")
+        };
+        using var clipboard = new ClipboardMonitorStub();
+        var migrationFailure = new InvalidDataException("Unsupported legacy database.");
+        var availability = new RuntimeAvailabilityStub();
+        using var viewModel = new MainWindowViewModel(
+            navigation,
+            new NotificationStub(),
+            dialogs,
+            settings.Store,
+            clipboard,
+            new SearchService(settings.Store, navigation),
+            new VersionCheckerService(httpClient, "owner", "repo"),
+            new LegacyUpgradeCoordinatorStub(),
+            availability,
+            NullLogger<MainWindowViewModel>.Instance);
+
+        var startup = viewModel.RunStartupDialogsAsync();
+        await dialogs.LegacyDialogStarted.Task.WaitAsync(TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.Equal(1, availability.WaitCallCount);
+        Assert.Equal([AppDialog.LegacyUpgrade], dialogs.Requests);
+
+        dialogs.CompleteLegacyDialogWithFailure(migrationFailure);
+        await startup.ConfigureAwait(true);
+
+        Assert.Equal(
+            [AppDialog.LegacyUpgrade, AppDialog.StartupDiagnostics, AppDialog.NewVersionAvailable],
+            dialogs.Requests);
+        var diagnostic = Assert.Single(dialogs.StartupDiagnostics!);
+        Assert.Equal(StartupDiagnosticSource.LegacyMigration, diagnostic.Source);
+        Assert.False(diagnostic.AllowsDownloadStoreReset);
+        Assert.Same(migrationFailure, diagnostic.Failure);
+        Assert.Equal(1, handler.RequestCount);
+    }
+
+    [Fact]
     public async Task StartupWithoutLegacyDataSkipsMigrationDialog()
     {
         using var settings = new TestSettingsStore();

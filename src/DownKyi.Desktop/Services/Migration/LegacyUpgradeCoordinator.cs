@@ -127,8 +127,12 @@ internal sealed class LegacyUpgradeCoordinator : ILegacyUpgradeCoordinator
         {
             {
                 using var database = OpenLegacyDatabase(databasePath, progress, cancellationToken);
-                ValidateLegacyDatabase(database);
-                var records = ReadLegacyRecords(database, progress, cancellationToken);
+                if (!HasLegacyDownloads(database))
+                {
+                    return new LegacyUpgradeResult(LegacyUpgradeOutcome.NoMigration);
+                }
+
+                var records = ReadLegacyRecords(database, cancellationToken);
                 await PersistRecordsAsync(records, progress, cancellationToken).ConfigureAwait(false);
                 cancellationToken.ThrowIfCancellationRequested();
                 backupPath = BackupMigratedDatabase(database, databasePath);
@@ -321,31 +325,45 @@ internal sealed class LegacyUpgradeCoordinator : ILegacyUpgradeCoordinator
         }
     }
 
-    private static void ValidateLegacyDatabase(SqliteDatabase database)
+    private static bool HasLegacyDownloads(SqliteDatabase database)
     {
-        var hasRequiredTables = false;
+        var tableCount = 0;
+        var hasDownloadedTable = false;
         database.ExecuteQuery(
             command => command.CommandText = """
-                SELECT COUNT(*)
+                SELECT name
                 FROM sqlite_master
-                WHERE type='table' AND name IN ('downloaded', 'download_base')
+                WHERE type='table' AND name NOT LIKE 'sqlite_%'
                 """,
             reader =>
             {
-                if (reader.Read())
+                while (reader.Read())
                 {
-                    hasRequiredTables = reader.GetInt32(0) == 2;
+                    tableCount++;
+                    hasDownloadedTable |= string.Equals(reader.GetString(0), "downloaded", StringComparison.OrdinalIgnoreCase);
                 }
             });
-        if (!hasRequiredTables)
+        if (tableCount == 0)
         {
-            throw new InvalidDataException("缺少必要的数据库表: downloaded, download_base");
+            return false;
         }
+
+        if (!hasDownloadedTable)
+        {
+            throw new InvalidDataException("不支持的旧下载数据库结构: 缺少 downloaded 表");
+        }
+
+        // Old versions created download_base only when a download was used.
+        // An empty completed-history table needs no detail table or conversion.
+        var hasDownloads = false;
+        database.ExecuteQuery(
+            command => command.CommandText = "SELECT EXISTS(SELECT 1 FROM downloaded)",
+            reader => hasDownloads = reader.Read() && reader.GetBoolean(0));
+        return hasDownloads;
     }
 
-    private Dictionary<string, DownloadedWithData> ReadLegacyRecords(
+    private static Dictionary<string, DownloadedWithData> ReadLegacyRecords(
         SqliteDatabase database,
-        IProgress<LegacyUpgradeProgress> progress,
         CancellationToken cancellationToken)
     {
         var records = new Dictionary<string, DownloadedWithData>(StringComparer.Ordinal);
@@ -353,38 +371,30 @@ internal sealed class LegacyUpgradeCoordinator : ILegacyUpgradeCoordinator
             command => command.CommandText = """
                 SELECT d.id, d.data AS downloaded_data, db.data AS download_base_data
                 FROM downloaded d
-                JOIN download_base db ON d.id = db.id
+                LEFT JOIN download_base db ON d.id = db.id
                 """,
             reader =>
             {
                 while (reader.Read())
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    try
+                    using var stream = new MemoryStream((byte[])reader["downloaded_data"]);
+                    var record = NrbfDecoder.DecodeClassRecord(stream);
+                    if (!record.TypeNameMatches(typeof(Downloaded)))
                     {
-                        using var stream = new MemoryStream((byte[])reader["downloaded_data"]);
-                        var record = NrbfDecoder.DecodeClassRecord(stream);
-                        if (!record.TypeNameMatches(typeof(Downloaded)))
-                        {
-                            continue;
-                        }
+                        throw new InvalidDataException("不支持的旧下载记录格式");
+                    }
 
-                        var id = reader["id"].ToString() ?? Guid.NewGuid().ToString("N");
-                        records[id] = new DownloadedWithData(
-                            new Downloaded
-                            {
-                                Id = id,
-                                MaxSpeedDisplay = record.GetString($"<{nameof(Downloaded.MaxSpeedDisplay)}>k__BackingField"),
-                                FinishedTime = record.GetString($"<{nameof(Downloaded.FinishedTime)}>k__BackingField") ?? string.Empty,
-                                FinishedTimestamp = record.GetInt64($"<{nameof(Downloaded.FinishedTimestamp)}>k__BackingField")
-                            },
-                            (byte[])reader["download_base_data"]);
-                    }
-                    catch (Exception e) when (IsLegacyRecordException(e))
-                    {
-                        _logger.LogErrorMessage("A damaged legacy download record was skipped.", e);
-                        progress.Report(new LegacyUpgradeProgress(DictionaryResource.GetString("MigrationSkippedCorruptRecord", "已跳过一笔损坏的旧下载记录")));
-                    }
+                    var id = reader.GetString(reader.GetOrdinal("id"));
+                    records[id] = new DownloadedWithData(
+                        new Downloaded
+                        {
+                            Id = id,
+                            MaxSpeedDisplay = record.GetString($"<{nameof(Downloaded.MaxSpeedDisplay)}>k__BackingField"),
+                            FinishedTime = record.GetString($"<{nameof(Downloaded.FinishedTime)}>k__BackingField") ?? string.Empty,
+                            FinishedTimestamp = record.GetInt64($"<{nameof(Downloaded.FinishedTimestamp)}>k__BackingField")
+                        },
+                        (byte[])reader["download_base_data"]);
                 }
             });
         return records;
@@ -401,20 +411,9 @@ internal sealed class LegacyUpgradeCoordinator : ILegacyUpgradeCoordinator
         {
             cancellationToken.ThrowIfCancellationRequested();
             visited++;
-            try
-            {
-                var downloaded = ConvertDownload(item);
-                if (downloaded != null)
-                {
-                    batch.Add(DownloadHistoryRecord.FromCompletedTask(
-                        LegacyDownloadHistoryTaskFactory.Create(downloaded, _clock.UtcNow)));
-                }
-            }
-            catch (Exception e) when (IsLegacyRecordException(e) || e is SqliteException)
-            {
-                _logger.LogErrorMessage("A damaged legacy download detail was skipped.", e);
-                progress.Report(new LegacyUpgradeProgress(DictionaryResource.GetString("MigrationSkippedCorruptDetail", "已跳过一笔损坏的旧下载详情")));
-            }
+            var downloaded = ConvertDownload(item);
+            batch.Add(DownloadHistoryRecord.FromCompletedTask(
+                LegacyDownloadHistoryTaskFactory.Create(downloaded, _clock.UtcNow)));
 
             if (batch.Count >= BatchSize)
             {
@@ -448,13 +447,13 @@ internal sealed class LegacyUpgradeCoordinator : ILegacyUpgradeCoordinator
         }
     }
 
-    private static Downloaded? ConvertDownload(DownloadedWithData item)
+    private static Downloaded ConvertDownload(DownloadedWithData item)
     {
         using var stream = new MemoryStream(item.DownloadBaseData);
         var record = NrbfDecoder.DecodeClassRecord(stream);
         if (!record.TypeNameMatches(typeof(DownloadBase)))
         {
-            return null;
+            throw new InvalidDataException("不支持的旧下载详情格式");
         }
 
         var needDownloadContentRecord = record.GetClassRecord(
