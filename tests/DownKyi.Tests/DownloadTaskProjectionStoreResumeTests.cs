@@ -4,6 +4,7 @@ using DownKyi.Domain.Downloads;
 using DownKyi.Infrastructure.Downloads;
 using DownKyi.Infrastructure.Time;
 using DownKyi.Models;
+using DownKyi.Platform;
 using DownKyi.Services.Download;
 using DownKyi.ViewModels.DownloadManager;
 using Microsoft.Data.Sqlite;
@@ -17,6 +18,86 @@ public sealed class DownloadTaskProjectionStoreResumeTests : IDisposable
         Path.GetTempPath(),
         "downkyi-storage-resume-tests",
         Guid.NewGuid().ToString("N"));
+
+    [Fact]
+    public async Task BlockedPresentationKeepsOnlyLatestProgressAndItsPeakSpeed()
+    {
+        using var fixture = new LiveProjectionFixture(_directory);
+        await fixture.InitializeAsync();
+        var notifications = 0;
+        fixture.Item.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(DownloadingItem.Progress)) notifications++;
+        };
+        var precedingInvocations = fixture.Dispatcher.Invocations;
+        fixture.Dispatcher.Block();
+        try
+        {
+            for (var sample = 1; sample <= 1000; sample++)
+                fixture.Projections.PublishLiveProgress(fixture.Id, new DownloadProgress(
+                    sample / 10d, sample, 1000, sample == 500 ? 9_000_000 : 1,
+                    downloadedSizeText: sample == 1000 ? "latest" : "superseded"));
+        }
+        finally
+        {
+            fixture.Dispatcher.Release();
+        }
+
+        await fixture.Projections.FlushPresentationAsync();
+        Assert.Equal(1, fixture.Dispatcher.Invocations - precedingInvocations);
+        Assert.Equal(1, notifications);
+        Assert.Equal(100, fixture.Item.Progress);
+        Assert.Equal("latest", fixture.Item.DownloadingFileSize);
+        Assert.Equal(9_000_000, fixture.Item.Downloading.MaxSpeed);
+    }
+
+    [Fact]
+    public async Task BufferedLiveProgressCannotOverwriteCommittedPause()
+    {
+        using var fixture = new LiveProjectionFixture(_directory);
+        await fixture.InitializeAsync();
+        fixture.Dispatcher.Block();
+        try
+        {
+            fixture.Projections.PublishLiveProgress(fixture.Id, new DownloadProgress(80, 80, 100));
+            await fixture.Writer.PauseAsync(fixture.Id, TestContext.Current.CancellationToken);
+            await fixture.Writer.UpdateProgressAsync(fixture.Id, new DownloadProgress(40, 40, 100),
+                TestContext.Current.CancellationToken);
+            await fixture.Writer.ConfirmPausedIfPausingAsync(fixture.Id, TestContext.Current.CancellationToken);
+        }
+        finally
+        {
+            fixture.Dispatcher.Release();
+        }
+
+        await fixture.Projections.FlushPresentationAsync();
+        Assert.Equal(40, fixture.Item.Progress);
+        Assert.Equal(DownloadStatus.Pause, fixture.Item.Downloading.DownloadStatus);
+        Assert.Equal(DownloadPhase.Paused, fixture.Projections.GetRequiredSnapshot(fixture.Id).Phase);
+    }
+
+    [Fact]
+    public async Task BufferedLiveProgressSurvivesActivityOnlyCommit()
+    {
+        using var fixture = new LiveProjectionFixture(_directory);
+        await fixture.InitializeAsync();
+        fixture.Dispatcher.Block();
+        try
+        {
+            fixture.Projections.PublishLiveProgress(fixture.Id, new DownloadProgress(60, 60, 100, 1000));
+            await fixture.Writer.UpdateActivityAsync(fixture.Id, "video", "verifying",
+                TestContext.Current.CancellationToken);
+        }
+        finally
+        {
+            fixture.Dispatcher.Release();
+        }
+
+        await fixture.Projections.FlushPresentationAsync();
+        Assert.Equal(60, fixture.Item.Progress);
+        Assert.Equal(1000, fixture.Item.Downloading.MaxSpeed);
+        Assert.Equal("verifying", fixture.Item.DownloadStatusTitle);
+    }
 
     [Fact]
     public async Task TransferPausePreservesLiveProgressThroughConfirmationAndDatabaseReopen()
@@ -360,6 +441,65 @@ public sealed class DownloadTaskProjectionStoreResumeTests : IDisposable
             }
 
             Directory.Delete(_directory, recursive: true);
+        }
+    }
+
+    private sealed class LiveProjectionFixture : IDisposable
+    {
+        private readonly SqliteDownloadTaskStore _store;
+        private readonly DownloadTaskApplicationService _tasks;
+        public ControllableUiDispatcher Dispatcher { get; } = new();
+        public DownloadTaskProjectionStore Projections { get; }
+        public DownloadTaskStateWriter Writer { get; }
+        public DownloadTaskId Id { get; } = new("coalesced-progress");
+        public DownloadingItem Item { get; } = new()
+        {
+            DownloadBase = new DownloadBase { Id = "coalesced-progress", FilePath = "coalesced-progress" },
+            Downloading = new Downloading { Id = "coalesced-progress", DownloadStatus = DownloadStatus.WaitForDownload }
+        };
+
+        public LiveProjectionFixture(string directory)
+        {
+            Directory.CreateDirectory(directory);
+            Item.DownloadBase.FilePath = Path.Combine(directory, "coalesced-progress");
+            var clock = new SystemClock();
+            _store = new SqliteDownloadTaskStore(new SqliteDownloadTaskStoreOptions(
+                Path.Combine(directory, "coalesced-progress.db")), clock);
+            var history = DownloadHistoryService.CreateForSharedStore(_store);
+            _tasks = new DownloadTaskApplicationService(_store, history, clock);
+            Projections = new DownloadTaskProjectionStore(_tasks, history, clock, Dispatcher);
+            Writer = new DownloadTaskStateWriter(_tasks);
+        }
+
+        public async Task InitializeAsync()
+        {
+            await Projections.AddDownloadingAsync(Item, TestContext.Current.CancellationToken).ConfigureAwait(false);
+            await Writer.StartAsync(Id, TestContext.Current.CancellationToken).ConfigureAwait(false);
+            await Projections.FlushPresentationAsync().ConfigureAwait(false);
+        }
+
+        public void Dispose()
+        {
+            Dispatcher.Release();
+            Projections.Dispose();
+            _tasks.Dispose();
+            _store.Dispose();
+        }
+    }
+
+    private sealed class ControllableUiDispatcher : IUiDispatcher
+    {
+        private TaskCompletionSource? _release;
+        public int Invocations { get; private set; }
+        public void Block() => _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public void Release() => Interlocked.Exchange(ref _release, null)?.TrySetResult();
+
+        public async Task InvokeAsync(Action action)
+        {
+            ArgumentNullException.ThrowIfNull(action);
+            Invocations++;
+            if (_release is { } release) await release.Task.ConfigureAwait(false);
+            action();
         }
     }
 }

@@ -118,7 +118,7 @@ internal static class DownloadTaskProjectionMapper
         }
     }
 
-    public static void ApplyLiveProgress(DownloadProgress progress, DownloadingItem item)
+    public static void ApplyLiveProgress(DownloadProgress progress, DownloadingItem item, long maximumBytesPerSecond = 0)
     {
         ArgumentNullException.ThrowIfNull(progress);
         ArgumentNullException.ThrowIfNull(item);
@@ -127,7 +127,7 @@ internal static class DownloadTaskProjectionMapper
         item.SpeedDisplay = progress.SpeedText;
         item.Downloading.MaxSpeed = Math.Max(
             item.Downloading.MaxSpeed,
-            progress.BytesPerSecond);
+            Math.Max(progress.BytesPerSecond, maximumBytesPerSecond));
     }
 
     private static DownloadTaskMetadata ToMetadata(DownloadBase downloadBase)
