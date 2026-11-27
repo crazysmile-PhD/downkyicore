@@ -11,6 +11,7 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 using DownKyi.Application.Desktop;
 using DownKyi.Application.Downloads;
+using DownKyi.Application.Lifetime;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Domain.Downloads;
 using DownKyi.Infrastructure.Downloads;
@@ -27,6 +28,67 @@ namespace DownKyi.Desktop.Tests;
 
 public sealed class DownloadQueueInteractionTests
 {
+    [AvaloniaFact]
+    public async Task ShutdownDoesNotWaitForAStoppedUiDispatcherOrApplyItsLateCallback()
+    {
+        using var fixture = new Fixture();
+        var directory = Directory.CreateTempSubdirectory("downkyi-projection-shutdown-");
+        try
+        {
+            var clock = new SystemClock();
+            using var store = new SqliteDownloadTaskStore(new(Path.Combine(directory.FullName, "downloads.db")), clock);
+            var history = DownloadHistoryService.CreateForSharedStore(store);
+            using var tasks = new DownloadTaskApplicationService(store, history, clock);
+            using var applicationCancellation = new ApplicationCancellation();
+            var dispatcher = new SuspendedUiDispatcher();
+            var projections = new DownloadTaskProjectionStore(tasks, history, clock, dispatcher,
+                applicationCancellation: applicationCancellation);
+            await using var lifetime = projections.ConfigureAwait(true);
+            var item = Item("BV-shutdown", "Part one", DownloadStatus.WaitForDownload);
+            item.DownloadBase.FilePath = Path.Combine(directory.FullName, "episode");
+            var changes = 0;
+            item.PropertyChanged += (_, _) => changes++;
+            await projections.AddDownloadingAsync(item, TestContext.Current.CancellationToken).ConfigureAwait(true);
+            await dispatcher.Queued.Task.WaitAsync(TestContext.Current.CancellationToken).ConfigureAwait(true);
+            await applicationCancellation.RequestShutdownAsync().ConfigureAwait(true);
+            try
+            {
+                await projections.DisposeAsync().AsTask()
+                    .WaitAsync(TimeSpan.FromSeconds(3), TestContext.Current.CancellationToken).ConfigureAwait(true);
+            }
+            finally
+            {
+                dispatcher.Release();
+            }
+            Assert.Equal(0, changes);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            directory.Delete(recursive: true);
+        }
+    }
+
+    private sealed class SuspendedUiDispatcher : IUiDispatcher
+    {
+        private readonly TaskCompletionSource _released = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private Action? _callback;
+        public TaskCompletionSource Queued { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task InvokeAsync(Action action)
+        {
+            _callback = action;
+            Queued.SetResult();
+            return _released.Task;
+        }
+
+        public void Release()
+        {
+            _callback?.Invoke();
+            _released.SetResult();
+        }
+    }
+
     [AvaloniaFact]
     public async Task BackgroundCommitsUpdateTheBoundQueueOnItsUiThreadWithoutRebuildingUnchangedModels()
     {

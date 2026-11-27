@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Diagnostics;
 using DownKyi.Application.Downloads;
+using DownKyi.Application.Lifetime;
 using DownKyi.Application.Time;
 using DownKyi.Domain.Downloads;
 using DownKyi.Platform;
@@ -27,6 +28,7 @@ internal sealed class DownloadTaskProjectionStore : IDisposable, IAsyncDisposabl
     private readonly IClock _clock;
     private readonly IUiDispatcher? _uiDispatcher;
     private readonly ILogger<DownloadTaskProjectionStore> _logger;
+    private readonly CancellationToken _shutdownToken;
     private readonly Lock _presentationGate = new();
     private Task _presentationUpdates = Task.CompletedTask;
     private readonly ConcurrentDictionary<DownloadTaskId, DownloadTask> _snapshots = new();
@@ -38,13 +40,15 @@ internal sealed class DownloadTaskProjectionStore : IDisposable, IAsyncDisposabl
         IDownloadHistoryService history,
         IClock clock,
         IUiDispatcher? uiDispatcher = null,
-        ILogger<DownloadTaskProjectionStore>? logger = null)
+        ILogger<DownloadTaskProjectionStore>? logger = null,
+        ApplicationCancellation? applicationCancellation = null)
     {
         _tasks = tasks ?? throw new ArgumentNullException(nameof(tasks));
         _history = history ?? throw new ArgumentNullException(nameof(history));
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
         _uiDispatcher = uiDispatcher;
         _logger = logger ?? NullLogger<DownloadTaskProjectionStore>.Instance;
+        _shutdownToken = applicationCancellation?.ShutdownToken ?? CancellationToken.None;
         _tasks.TaskChanged += OnTaskChanged;
     }
 
@@ -294,13 +298,20 @@ internal sealed class DownloadTaskProjectionStore : IDisposable, IAsyncDisposabl
         try
         {
             await preceding.ConfigureAwait(false);
+            if (_disposed || _shutdownToken.IsCancellationRequested) return;
             await _uiDispatcher!.InvokeAsync(() =>
             {
                 if (!_disposed)
                 {
                     update();
                 }
-            }).ConfigureAwait(false);
+            }).WaitAsync(_shutdownToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (_shutdownToken.IsCancellationRequested)
+        {
+            // Shutdown can finish after the dispatcher stops servicing queued work.
+            // The disposed guard also makes any later dispatcher callback inert.
+            return;
         }
         catch (Exception exception) when (exception is InvalidOperationException
             or ArgumentException or KeyNotFoundException or OperationCanceledException)
