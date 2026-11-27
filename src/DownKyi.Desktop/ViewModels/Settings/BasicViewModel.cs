@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Application.Settings;
 using DownKyi.Desktop.Appearance;
+using DownKyi.Platform;
 using DownKyi.Utils;
 
 namespace DownKyi.ViewModels.Settings;
@@ -13,6 +14,7 @@ internal class BasicViewModel : ViewModelBase
 
     private readonly ISettingsStore _settingsStore;
     private readonly DesktopThemeController _themeController;
+    private readonly IClipboardMonitor _clipboardMonitor;
     private bool _isOnNavigatedTo;
 
     #region 页面属性申明
@@ -106,10 +108,12 @@ internal class BasicViewModel : ViewModelBase
     public BasicViewModel(
         IDesktopInteractionContext desktopInteractions,
         ISettingsStore settingsStore,
-        DesktopThemeController themeController) : base(desktopInteractions)
+        DesktopThemeController themeController,
+        IClipboardMonitor clipboardMonitor) : base(desktopInteractions)
     {
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         _themeController = themeController ?? throw new ArgumentNullException(nameof(themeController));
+        _clipboardMonitor = clipboardMonitor ?? throw new ArgumentNullException(nameof(clipboardMonitor));
     }
 
     /// <summary>
@@ -228,7 +232,9 @@ internal class BasicViewModel : ViewModelBase
     {
         var isListenClipboard = ListenClipboard ? AllowStatus.Yes : AllowStatus.No;
 
-        var isSucceed = UpdateBasic(settings => settings with { IsListenClipboard = isListenClipboard }).IsListenClipboard == isListenClipboard;
+        var actual = UpdateBasic(settings => settings with { IsListenClipboard = isListenClipboard }).IsListenClipboard;
+        _clipboardMonitor.SetEnabled(actual == AllowStatus.Yes);
+        var isSucceed = actual == isListenClipboard;
         PublishTip(isSucceed);
     }
 

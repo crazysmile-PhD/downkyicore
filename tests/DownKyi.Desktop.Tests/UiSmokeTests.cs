@@ -1185,6 +1185,14 @@ public sealed class UiSmokeTests
                     Assert.IsType<IndexViewModel>(mainViewModel.MainContent).InputText);
                 Assert.Equal(1, clipboardMonitor.SubscriptionCount);
                 Assert.False(startupIndicator.IsVisible);
+                var basicSettings = host.Services.GetRequiredService<DownKyi.ViewModels.Settings.BasicViewModel>();
+                basicSettings.ListenClipboard = false;
+                basicSettings.ListenClipboardCommand.Execute(null);
+                Assert.False(clipboardMonitor.Enabled);
+                Assert.Equal(AllowStatus.No, settingsStore.Current.Basic.IsListenClipboard);
+                basicSettings.ListenClipboard = true;
+                basicSettings.ListenClipboardCommand.Execute(null);
+                Assert.True(clipboardMonitor.Enabled);
                 Assert.IsType<DiskCachedWebImageLoader>(imageLoader);
                 Assert.NotNull(host.Services.GetRequiredService<IndexViewModel>());
                 var videoDetailViewModel = host.Services.GetRequiredService<VideoDetailViewModel>();
@@ -2025,6 +2033,10 @@ public sealed class UiSmokeTests
         private EventHandler<ClipboardTextChangedEventArgs>? _changed;
 
         public int SubscriptionCount { get; private set; }
+
+        public bool Enabled { get; private set; } = true;
+
+        public void SetEnabled(bool enabled) => Enabled = enabled;
 
         public event EventHandler<ClipboardTextChangedEventArgs>? Changed
         {

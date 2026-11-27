@@ -10,4 +10,6 @@ internal sealed class ClipboardTextChangedEventArgs(string text) : EventArgs
 internal interface IClipboardMonitor : IDisposable
 {
     event EventHandler<ClipboardTextChangedEventArgs>? Changed;
+
+    void SetEnabled(bool enabled);
 }

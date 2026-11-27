@@ -394,6 +394,8 @@ public sealed class StartupDialogOrderingTests
 
     private sealed class ClipboardMonitorStub : IClipboardMonitor
     {
+        public void SetEnabled(bool enabled) { }
+
         public event EventHandler<ClipboardTextChangedEventArgs>? Changed
         {
             add { }
