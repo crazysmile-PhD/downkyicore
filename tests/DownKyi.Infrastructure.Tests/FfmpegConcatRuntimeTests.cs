@@ -287,11 +287,14 @@ public sealed class FfmpegConcatRuntimeTests : IDisposable
     }
 
     [Theory]
-    [InlineData(FfmpegOperationFailureKind.ProcessFailure, 2)]
+    [InlineData(FfmpegOperationFailureKind.EncoderUnavailable, 2)]
+    [InlineData(FfmpegOperationFailureKind.ProcessFailure, 1)]
+    [InlineData(FfmpegOperationFailureKind.OutputIoFailure, 1)]
+    [InlineData(FfmpegOperationFailureKind.DestinationAccessDenied, 1)]
     [InlineData(FfmpegOperationFailureKind.InputInvalid, 1)]
     [InlineData(FfmpegOperationFailureKind.ProcessUnavailable, 1)]
     [InlineData(FfmpegOperationFailureKind.Timeout, 1)]
-    public async Task EncodingFallsBackOnlyForRecoverableProcessFailure(
+    public async Task EncodingFallsBackOnlyForEncoderInitializationFailure(
         FfmpegOperationFailureKind failureKind, int attempts)
     {
         var segment = CreateSegment("encode-failure.flv");
@@ -315,6 +318,31 @@ public sealed class FfmpegConcatRuntimeTests : IDisposable
             Assert.False(File.Exists(output));
         }
         Assert.True(File.Exists(segment));
+        Assert.Empty(Directory.EnumerateFiles(_testDirectory, "*.partial.mp4"));
+    }
+
+    [Fact]
+    public async Task EmptyHardwareOutputDoesNotStartAnotherEncode()
+    {
+        var segment = CreateSegment("empty-hardware.flv");
+        var runner = new RecordingConcatRunner(writeNonEmptyOutput: false);
+        var runtime = new FfmpegConcatRuntime(runner, new AsyncConcurrencyGate(() => 1),
+            NullLogger<FfmpegConcatRuntime>.Instance);
+        var hardware = new FfmpegHardwareEncoderProfile(
+            DownKyi.Application.Settings.FfmpegHardwareAcceleration.NvidiaNvenc, "NVENC", "h264_nvenc",
+            HardwareArguments);
+        var output = Path.Combine(_testDirectory, "empty-hardware.mp4");
+
+        var result = await runtime.ConcatAsync([new(1, segment)], output,
+            _ => Task.FromResult<FfmpegHardwareEncoderProfile?>(hardware),
+            allowStreamCopy: false, overwriteDestination: false,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(FfmpegOperationFailureKind.OutputInvalid, result.FailureKind);
+        Assert.Equal("concat-HardwareEncoder", Assert.Single(runner.Commands).Operation);
+        Assert.True(File.Exists(segment));
+        Assert.False(File.Exists(output));
+        Assert.Empty(Directory.EnumerateFiles(_testDirectory, "*.partial.mp4"));
     }
 
     private sealed class InspectedConcatRunner(
@@ -347,8 +375,14 @@ public sealed class FfmpegConcatRuntimeTests : IDisposable
             if (command.Operation == "concat-HardwareEncoder" && hardwareFailure != FfmpegOperationFailureKind.None)
             {
                 return new(false, 1, string.Empty,
-                    hardwareFailure == FfmpegOperationFailureKind.InputInvalid
-                        ? "Invalid data found when processing input" : "Encoder initialization failed.",
+                    hardwareFailure switch
+                    {
+                        FfmpegOperationFailureKind.InputInvalid => "Invalid data found when processing input",
+                        FfmpegOperationFailureKind.OutputIoFailure => "No space left on device",
+                        FfmpegOperationFailureKind.DestinationAccessDenied => "Permission denied",
+                        FfmpegOperationFailureKind.EncoderUnavailable => "Error while opening encoder",
+                        _ => "Unexpected process failure."
+                    },
                     TimedOut: hardwareFailure == FfmpegOperationFailureKind.Timeout,
                     ProcessStarted: hardwareFailure != FfmpegOperationFailureKind.ProcessUnavailable);
             }
