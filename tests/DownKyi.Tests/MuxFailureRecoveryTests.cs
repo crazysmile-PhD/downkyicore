@@ -56,6 +56,10 @@ public sealed class MuxFailureRecoveryTests
                 GetExpectedEmbeddedAudioMode(needsAudio),
                 test.Muxer?.ConcatEmbeddedAudioMode);
             Assert.Null(test.Muxer?.MergeEmbeddedAudioMode);
+            Assert.NotNull(test.Muxer?.ConcatSegments);
+            Assert.Equal(segmentCount, test.Muxer.ConcatSegments.Count);
+            Assert.All(test.Muxer.ConcatSegments, segment =>
+                Assert.Equal(TimeSpan.FromSeconds(5), segment.ExpectedDuration));
         }
     }
 
@@ -469,6 +473,8 @@ public sealed class MuxFailureRecoveryTests
 
         public string? MergeCover { get; private set; }
 
+        public IReadOnlyList<FfmpegConcatSegment>? ConcatSegments { get; private set; }
+
         public Task<FfmpegOperationResult> ConcatDurlVideosAsync(
             VideoApplicationSettings videoSettings,
             IReadOnlyList<FfmpegConcatSegment> segments,
@@ -481,6 +487,7 @@ public sealed class MuxFailureRecoveryTests
         {
             ConcatEmbeddedAudioMode = embeddedAudioMode;
             ConcatCover = cover;
+            ConcatSegments = segments;
             return Task.FromResult(result);
         }
 

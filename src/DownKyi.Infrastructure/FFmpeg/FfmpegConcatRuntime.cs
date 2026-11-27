@@ -1,3 +1,4 @@
+using System.Globalization;
 using DownKyi.Application.Diagnostics;
 using DownKyi.Application.Media;
 using Microsoft.Extensions.Logging;
@@ -24,7 +25,7 @@ internal sealed class FfmpegConcatRuntime
     public async Task<FfmpegOperationResult> ConcatAsync(
         IReadOnlyList<FfmpegConcatSegment> segments,
         string outputFile,
-        FfmpegHardwareEncoderProfile? hardwareEncoder,
+        Func<CancellationToken, Task<FfmpegHardwareEncoderProfile?>>? resolveHardwareEncoder,
         bool allowStreamCopy,
         bool overwriteDestination,
         Action<string>? progress = null,
@@ -34,6 +35,7 @@ internal sealed class FfmpegConcatRuntime
     {
         ArgumentNullException.ThrowIfNull(segments);
         ArgumentException.ThrowIfNullOrWhiteSpace(outputFile);
+        cancellationToken.ThrowIfCancellationRequested();
         if (segments.Count == 0)
         {
             return FfmpegOperationResult.Failure(
@@ -48,59 +50,86 @@ internal sealed class FfmpegConcatRuntime
         try
         {
             Directory.CreateDirectory(outputDirectory);
+            using var slot = await _concurrencyGate.EnterAsync(cancellationToken).ConfigureAwait(false);
+            var canStreamCopy = false;
+            if (allowStreamCopy)
+            {
+                var inspection = await new FfmpegConcatInputInspector(_processRunner)
+                    .InspectAsync(orderedSegments, embeddedAudioMode, cancellationToken).ConfigureAwait(false);
+                if (inspection.Status == FfmpegConcatInputStatus.Failed)
+                {
+                    return FfmpegOperationResult.Failure(
+                        "A media segment could not be inspected.", inspection.FailureKind);
+                }
+
+                canStreamCopy = inspection.Status == FfmpegConcatInputStatus.Compatible;
+            }
+
+            var hardwareEncoder = !canStreamCopy && resolveHardwareEncoder != null
+                ? await resolveHardwareEncoder(cancellationToken).ConfigureAwait(false)
+                : null;
             await File.WriteAllLinesAsync(
                     listFile,
-                    orderedSegments.Select(segment => ToConcatFileLine(segment.FilePath)),
+                    orderedSegments.SelectMany(ToConcatFileLines),
                     cancellationToken)
                 .ConfigureAwait(false);
 
             var operationFailureKind = FfmpegOperationFailureKind.ProcessFailure;
-            using (await _concurrencyGate.EnterAsync(cancellationToken).ConfigureAwait(false))
+            FfmpegConcatStrategy[] strategies = (canStreamCopy, hardwareEncoder != null) switch
             {
-                foreach (var strategy in FfmpegProcessingPlan.BuildConcatPlan(hardwareEncoder, allowStreamCopy))
+                (true, _) => [FfmpegConcatStrategy.StreamCopy],
+                (false, true) => [FfmpegConcatStrategy.HardwareEncoder, FfmpegConcatStrategy.CpuEncoder],
+                _ => [FfmpegConcatStrategy.CpuEncoder]
+            };
+            foreach (var strategy in strategies)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var temporaryOutput = Path.Combine(
+                    outputDirectory,
+                    $".{Path.GetFileNameWithoutExtension(outputFile)}-{Guid.NewGuid():N}.partial.mp4");
+                try
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    var temporaryOutput = Path.Combine(
-                        outputDirectory,
-                        $".{Path.GetFileNameWithoutExtension(outputFile)}-{Guid.NewGuid():N}.partial.mp4");
-                    try
+                    progress?.Invoke($"FFmpeg {strategy}");
+                    var command = FfmpegCommandFactory.BuildConcat(
+                        listFile,
+                        temporaryOutput,
+                        strategy,
+                        hardwareEncoder,
+                        embeddedAudioMode,
+                        coverFile);
+                    var processResult = await _processRunner
+                        .RunAsync(command, ConcatTimeout, cancellationToken)
+                        .ConfigureAwait(false);
+                    LogProcessResult(command, processResult);
+                    if (!processResult.Succeeded)
                     {
-                        progress?.Invoke($"FFmpeg {strategy}");
-                        var command = FfmpegCommandFactory.BuildConcat(
-                            listFile,
-                            temporaryOutput,
-                            strategy,
-                            hardwareEncoder,
-                            embeddedAudioMode,
-                            coverFile);
-                        var processResult = await _processRunner
-                            .RunAsync(command, ConcatTimeout, cancellationToken)
-                            .ConfigureAwait(false);
-                        LogProcessResult(command, processResult);
-                        if (!processResult.Succeeded)
+                        operationFailureKind = processResult.ToOperationFailureKind();
+                        if (operationFailureKind is FfmpegOperationFailureKind.InputInvalid
+                            or FfmpegOperationFailureKind.ProcessUnavailable or FfmpegOperationFailureKind.Timeout)
                         {
-                            operationFailureKind = processResult.ToOperationFailureKind();
-                            continue;
+                            break;
                         }
 
-                        if (!File.Exists(temporaryOutput) || new FileInfo(temporaryOutput).Length == 0)
-                        {
-                            _logger.LogInformationMessage("FFmpeg did not produce a non-empty output.");
-                            operationFailureKind = FfmpegOperationFailureKind.OutputInvalid;
-                            continue;
-                        }
+                        continue;
+                    }
 
-                        File.Move(temporaryOutput, outputFile, overwrite: overwriteDestination);
-                        return new FfmpegOperationResult(
-                            true,
-                            outputFile,
-                            null,
-                            FfmpegOperationFailureKind.None);
-                    }
-                    finally
+                    if (!File.Exists(temporaryOutput) || new FileInfo(temporaryOutput).Length == 0)
                     {
-                        DeleteFile(temporaryOutput);
+                        _logger.LogInformationMessage("FFmpeg did not produce a non-empty output.");
+                        operationFailureKind = FfmpegOperationFailureKind.OutputInvalid;
+                        continue;
                     }
+
+                    File.Move(temporaryOutput, outputFile, overwrite: overwriteDestination);
+                    return new FfmpegOperationResult(
+                        true,
+                        outputFile,
+                        null,
+                        FfmpegOperationFailureKind.None);
+                }
+                finally
+                {
+                    DeleteFile(temporaryOutput);
                 }
             }
 
@@ -130,10 +159,14 @@ internal sealed class FfmpegConcatRuntime
         }
     }
 
-    private static string ToConcatFileLine(string file)
+    private static IEnumerable<string> ToConcatFileLines(FfmpegConcatSegment segment)
     {
-        var normalizedPath = Path.GetFullPath(file).Replace('\\', '/');
-        return $"file '{normalizedPath.Replace("'", "'\\''", StringComparison.Ordinal)}'";
+        var normalizedPath = Path.GetFullPath(segment.FilePath).Replace('\\', '/');
+        yield return $"file '{normalizedPath.Replace("'", "'\\''", StringComparison.Ordinal)}'";
+        if (segment.ExpectedDuration is { } duration && duration > TimeSpan.Zero)
+        {
+            yield return "duration " + duration.TotalSeconds.ToString("0.#######", CultureInfo.InvariantCulture);
+        }
     }
 
     private void LogProcessResult(FfmpegCommand command, FfmpegProcessResult result)
