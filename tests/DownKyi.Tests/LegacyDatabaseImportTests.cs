@@ -1,4 +1,5 @@
 using DownKyi.Application.Downloads;
+using DownKyi.Application.Settings;
 using DownKyi.Domain.Downloads;
 using DownKyi.Domain.Results;
 using DownKyi.Infrastructure.Storage.Database;
@@ -275,7 +276,9 @@ public sealed class LegacyDatabaseImportTests : IDisposable
             return Write?.Invoke(history, cancellationToken) ?? Task.FromResult(OperationResult.Success());
         }
         public Task<OperationResult> CompleteAsync(DownloadTask completedTask, long expectedVersion, CancellationToken cancellationToken) => throw new NotSupportedException();
-        public Task<DownloadHistoryPage> GetPageAsync(DownloadHistoryCursor? cursor, int pageSize, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<DownloadHistoryPage> GetPageAsync(
+            DownloadHistoryCursor? cursor, int pageSize, CancellationToken cancellationToken,
+            DownloadFinishedSort sort = DownloadFinishedSort.DownloadDesc) => throw new NotSupportedException();
         public Task<IReadOnlyList<DownloadHistoryRecord>> GetByCidAsync(long cid, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<IReadOnlyList<DownloadHistoryRecord>> GetByCidsAsync(IReadOnlyCollection<long> cids, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<OperationResult> DeleteAsync(DownloadTaskId taskId, CancellationToken cancellationToken) => throw new NotSupportedException();
