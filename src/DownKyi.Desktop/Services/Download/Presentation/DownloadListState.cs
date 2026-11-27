@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.Linq;
+using CommunityToolkit.Mvvm.ComponentModel;
 using DownKyi.Application.Settings;
 using DownKyi.Presentation;
 using DownKyi.ViewModels.DownloadManager;
@@ -13,7 +15,7 @@ internal interface IDownloadedListProjection
     void RemoveDownloaded(DownloadedItem item);
 }
 
-internal sealed class DownloadListState : IDownloadedListProjection
+internal sealed class DownloadListState : ObservableObject, IDownloadedListProjection
 {
     private readonly RangeObservableCollection<DownloadingItem> _downloading = new();
     private readonly RangeObservableCollection<DownloadedItem> _downloaded = new();
@@ -21,6 +23,7 @@ internal sealed class DownloadListState : IDownloadedListProjection
     private HashSet<string> _downloadedIds = new(StringComparer.Ordinal);
     private DownloadFinishedSort _finishedSort;
     private Comparison<DownloadedItem> _finishedComparison;
+    private bool _hasMoreDownloadedHistory;
 
     public DownloadListState() : this(DownloadFinishedSort.DownloadAsc)
     {
@@ -32,6 +35,7 @@ internal sealed class DownloadListState : IDownloadedListProjection
         _finishedComparison = GetFinishedComparison(finishedSort);
         Downloading = new ReadOnlyObservableCollection<DownloadingItem>(_downloading);
         Downloaded = new ReadOnlyObservableCollection<DownloadedItem>(_downloaded);
+        _downloaded.CollectionChanged += (_, _) => OnPropertyChanged(nameof(DownloadedCountDisplay));
     }
 
     public ReadOnlyObservableCollection<DownloadingItem> Downloading { get; }
@@ -41,6 +45,23 @@ internal sealed class DownloadListState : IDownloadedListProjection
     public DownloadQueueViewState QueueView { get; } = new();
 
     public bool IsDownloadedHistoryLoaded { get; private set; }
+
+    public DownloadFinishedSort FinishedSort => _finishedSort;
+
+    public bool HasMoreDownloadedHistory
+    {
+        get => _hasMoreDownloadedHistory;
+        set
+        {
+            if (SetProperty(ref _hasMoreDownloadedHistory, value))
+                OnPropertyChanged(nameof(DownloadedCountDisplay));
+        }
+    }
+
+    public string DownloadedCountDisplay => _downloaded.Count.ToString(CultureInfo.CurrentCulture)
+        + (HasMoreDownloadedHistory ? "+" : string.Empty);
+
+    public IReadOnlySet<string> CaptureDownloadedIds() => new HashSet<string>(_downloadedIds, StringComparer.Ordinal);
 
     public void AddDownloading(DownloadingItem item)
     {
@@ -108,6 +129,8 @@ internal sealed class DownloadListState : IDownloadedListProjection
         _removedDownloadedIds.UnionWith(_downloadedIds);
         _downloadedIds.Clear();
         _downloaded.Clear();
+        IsDownloadedHistoryLoaded = true;
+        HasMoreDownloadedHistory = false;
     }
 
     public void LoadDownloadedHistory(IEnumerable<DownloadedItem> items)
@@ -118,10 +141,18 @@ internal sealed class DownloadListState : IDownloadedListProjection
             return;
         }
 
+        ReplaceDownloadedHistoryPage(items, new HashSet<string>(StringComparer.Ordinal));
+    }
+
+    public void ReplaceDownloadedHistoryPage(IEnumerable<DownloadedItem> items, IReadOnlySet<string> precedingIds)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+        ArgumentNullException.ThrowIfNull(precedingIds);
+
         var capacity = checked((items.TryGetNonEnumeratedCount(out var count) ? count : 0) + _downloaded.Count);
         var loadedItems = new List<DownloadedItem>(capacity);
         var loadedIds = new HashSet<string>(capacity, StringComparer.Ordinal);
-        foreach (var item in items.Concat(_downloaded))
+        foreach (var item in items.Concat(_downloaded.Where(item => !precedingIds.Contains(GetTaskId(item)))))
         {
             var taskId = GetTaskId(item);
             if (!_removedDownloadedIds.Contains(taskId) && loadedIds.Add(taskId))
@@ -161,7 +192,8 @@ internal sealed class DownloadListState : IDownloadedListProjection
 
     private static int CompareFinishedAscending(DownloadedItem left, DownloadedItem right)
     {
-        return left.Downloaded.FinishedTimestamp.CompareTo(right.Downloaded.FinishedTimestamp);
+        var comparison = left.Downloaded.FinishedTimestamp.CompareTo(right.Downloaded.FinishedTimestamp);
+        return comparison != 0 ? comparison : string.CompareOrdinal(GetTaskId(left), GetTaskId(right));
     }
 
     private static string GetTaskId(DownloadedItem item)
@@ -171,13 +203,15 @@ internal sealed class DownloadListState : IDownloadedListProjection
 
     private static int CompareFinishedDescending(DownloadedItem left, DownloadedItem right)
     {
-        return right.Downloaded.FinishedTimestamp.CompareTo(left.Downloaded.FinishedTimestamp);
+        return CompareFinishedAscending(right, left);
     }
 
     private static int CompareTitleAndOrder(DownloadedItem left, DownloadedItem right)
     {
         var titleComparison = string.Compare(left.MainTitle, right.MainTitle, StringComparison.Ordinal);
-        return titleComparison == 0 ? left.Order.CompareTo(right.Order) : titleComparison;
+        if (titleComparison != 0) return titleComparison;
+        var orderComparison = left.Order.CompareTo(right.Order);
+        return orderComparison != 0 ? orderComparison : string.CompareOrdinal(GetTaskId(left), GetTaskId(right));
     }
 
     private void ReplaceDownloadedCore(IReadOnlyList<DownloadedItem> items)

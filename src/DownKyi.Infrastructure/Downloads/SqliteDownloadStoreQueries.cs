@@ -1,5 +1,6 @@
 using System.Text.Json;
 using DownKyi.Application.Downloads;
+using DownKyi.Application.Settings;
 using DownKyi.Application.Time;
 using DownKyi.Domain.Downloads;
 using Microsoft.Data.Sqlite;
@@ -119,32 +120,51 @@ internal sealed class SqliteDownloadStoreQueries(
     public async Task<DownloadHistoryPage> GetHistoryPageAsync(
         DownloadHistoryCursor? cursor,
         int pageSize,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        DownloadFinishedSort sort = DownloadFinishedSort.DownloadDesc)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(pageSize, 1);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(pageSize, MaximumHistoryPageSize);
+        const string select = DownloadHistoryRecordMapper.SelectColumns + "\nWHERE "
+            + SqliteDownloadStoreQuarantine.ExcludeDownloadHistoryRecordSql;
+        const string ascending = " ORDER BY h.finished_timestamp ASC, h.id ASC LIMIT @limit";
+        const string descending = " ORDER BY h.finished_timestamp DESC, h.id DESC LIMIT @limit";
+        const string byTitle = " ORDER BY h.main_title COLLATE DOWNKYI_ORDINAL ASC, h.[order] ASC, h.id ASC LIMIT @limit";
+        const string afterTime = " AND (h.finished_timestamp, h.id) > (@cursor_timestamp, @cursor_id)";
+        const string beforeTime = " AND (h.finished_timestamp, h.id) < (@cursor_timestamp, @cursor_id)";
+        const string afterTitle = " AND (h.main_title COLLATE DOWNKYI_ORDINAL, h.[order], h.id) > (@cursor_title, @cursor_order, @cursor_id)";
         using var connection = await _database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        if (sort == DownloadFinishedSort.Number)
+        {
+            // Keep the UI's UTF-16 ordinal ordering, including supplementary Unicode.
+            // Query-only collation leaves old versions and external SQLite readers compatible.
+            connection.CreateCollation("DOWNKYI_ORDINAL", string.CompareOrdinal);
+        }
         using var command = connection.CreateCommand();
-        command.CommandText = DownloadHistoryRecordMapper.SelectColumns + "\n" + $"""
-            WHERE (@cursor_timestamp IS NULL
-                   OR h.finished_timestamp < @cursor_timestamp
-                   OR (h.finished_timestamp = @cursor_timestamp AND h.id < @cursor_id))
-              AND {SqliteDownloadStoreQuarantine.ExcludeDownloadHistoryRecordSql}
-            ORDER BY h.finished_timestamp DESC, h.id DESC
-            LIMIT @limit
-            """;
         var cursorTimestamp = command.Parameters.Add("@cursor_timestamp", SqliteType.Integer);
         var cursorId = command.Parameters.Add("@cursor_id", SqliteType.Text);
+        var cursorTitle = command.Parameters.Add("@cursor_title", SqliteType.Text);
+        var cursorOrder = command.Parameters.Add("@cursor_order", SqliteType.Integer);
         var limit = command.Parameters.Add("@limit", SqliteType.Integer);
         var targetCount = checked(pageSize + 1);
         var items = new List<DownloadHistoryRecord>(targetCount);
         var scanCursor = cursor;
         while (items.Count < targetCount)
         {
-            cursorTimestamp.Value = scanCursor == null
-                ? DBNull.Value
-                : scanCursor.FinishedTimestamp;
+            switch (sort, scanCursor == null)
+            {
+                case (DownloadFinishedSort.DownloadAsc, true): command.CommandText = select + ascending; break;
+                case (DownloadFinishedSort.DownloadAsc, false): command.CommandText = select + afterTime + ascending; break;
+                case (DownloadFinishedSort.DownloadDesc, true): command.CommandText = select + descending; break;
+                case (DownloadFinishedSort.DownloadDesc, false): command.CommandText = select + beforeTime + descending; break;
+                case (DownloadFinishedSort.Number, true): command.CommandText = select + byTitle; break;
+                case (DownloadFinishedSort.Number, false): command.CommandText = select + afterTitle + byTitle; break;
+                default: throw new ArgumentOutOfRangeException(nameof(sort));
+            }
+            cursorTimestamp.Value = scanCursor?.FinishedTimestamp ?? 0;
             cursorId.Value = scanCursor?.TaskId.Value ?? string.Empty;
+            cursorTitle.Value = scanCursor?.MainTitle ?? string.Empty;
+            cursorOrder.Value = scanCursor?.Order ?? 0;
             var remainingCount = targetCount - items.Count;
             limit.Value = remainingCount;
             var batch = await ReadHistoryManyAsync(
@@ -162,7 +182,7 @@ internal sealed class SqliteDownloadStoreQueries(
             if (batch.Records.Count > 0)
             {
                 var last = batch.Records[^1];
-                scanCursor = new DownloadHistoryCursor(last.FinishedTimestamp, last.Id);
+                scanCursor = new DownloadHistoryCursor(last.FinishedTimestamp, last.Id, last.MainTitle, last.Order);
             }
         }
 
@@ -176,7 +196,7 @@ internal sealed class SqliteDownloadStoreQueries(
         if (hasMore && items.Count > 0)
         {
             var last = items[^1];
-            nextCursor = new DownloadHistoryCursor(last.FinishedTimestamp, last.Id);
+            nextCursor = new DownloadHistoryCursor(last.FinishedTimestamp, last.Id, last.MainTitle, last.Order);
         }
 
         return new DownloadHistoryPage(items, nextCursor);

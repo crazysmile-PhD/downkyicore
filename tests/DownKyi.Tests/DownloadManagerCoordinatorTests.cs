@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using DownKyi.Application.Desktop;
 using DownKyi.Application.Downloads;
 using DownKyi.Application.Lifetime;
+using DownKyi.Application.Settings;
 using DownKyi.Core.BiliApi.VideoStream.Models;
 using DownKyi.Domain.Downloads;
 using DownKyi.Infrastructure.Downloads;
@@ -435,6 +436,64 @@ public sealed class DownloadManagerCoordinatorTests
     }
 
     [Fact]
+    public async Task HistoryLoadsBoundedPagesAndChangingSortReloadsTheGlobalFirstPage()
+    {
+        using var context = new CoordinatorContext();
+        var records = Enumerable.Range(0, 205).Select(index => new DownloadHistoryRecord(
+            new DownloadTaskId($"history-{index:D3}"), index + 1, 0, index % 3, $"Title-{index % 5}",
+            "part", "00:01", "avc1", 80, "1080P", "AAC", null, [], index, "finished", null)).ToArray();
+        foreach (var record in records)
+            Assert.True((await context.Store.AddHistoryAsync(record, TestContext.Current.CancellationToken)).IsSuccess);
+
+        await context.Coordinator.LoadDownloadedHistoryAsync();
+        Assert.Equal(records.Take(100).Select(record => record.Id), context.State.Downloaded.Select(item => item.HistoryRecord.Id));
+        Assert.Equal("100+", context.State.DownloadedCountDisplay);
+        // Duplicate detection can query a CID whose record has never been loaded into the UI.
+        Assert.Equal(records[^1].Id, Assert.Single(await context.Store.GetHistoryByCidAsync(
+            records[^1].Cid, TestContext.Current.CancellationToken)).Id);
+        await context.Coordinator.LoadMoreDownloadedHistoryAsync();
+        Assert.Equal(200, context.State.Downloaded.Count);
+        await context.Coordinator.LoadMoreDownloadedHistoryAsync();
+        Assert.Equal(205, context.State.Downloaded.Count);
+        Assert.False(context.State.HasMoreDownloadedHistory);
+
+        context.State.SortDownloaded(DownloadFinishedSort.DownloadDesc);
+        await context.Coordinator.LoadDownloadedHistoryAsync();
+        Assert.Equal(records.Reverse().Take(100).Select(record => record.Id),
+            context.State.Downloaded.Select(item => item.HistoryRecord.Id));
+        context.State.SortDownloaded(DownloadFinishedSort.Number);
+        await context.Coordinator.LoadDownloadedHistoryAsync();
+        Assert.Equal(records.OrderBy(record => record.MainTitle, StringComparer.Ordinal).ThenBy(record => record.Order)
+            .ThenBy(record => record.Id.Value, StringComparer.Ordinal).Take(100).Select(record => record.Id),
+            context.State.Downloaded.Select(item => item.HistoryRecord.Id));
+    }
+
+    [Fact]
+    public async Task ClearInvalidatesAPageAlreadyWaitingToUpdateTheUi()
+    {
+        var dispatcher = new BlockingUiDispatcher();
+        using var context = new CoordinatorContext(uiDispatcher: dispatcher);
+        await context.CreateCompletedItemAsync("history-before-clear", "media", "history-before-clear.mp4");
+        var load = context.Coordinator.LoadDownloadedHistoryAsync();
+        await dispatcher.Invoked.WaitAsync(TestContext.Current.CancellationToken);
+        var clear = context.Coordinator.ClearDownloadedAsync(TestContext.Current.CancellationToken);
+        try
+        {
+            await dispatcher.SecondInvoked.WaitAsync(TestContext.Current.CancellationToken);
+        }
+        finally
+        {
+            dispatcher.Release();
+        }
+        await Task.WhenAll(load, clear);
+        Assert.Empty(context.State.Downloaded);
+        Assert.True(context.State.IsDownloadedHistoryLoaded);
+        Assert.False(context.State.HasMoreDownloadedHistory);
+        await context.Coordinator.LoadDownloadedHistoryAsync();
+        Assert.Empty(context.State.Downloaded);
+    }
+
+    [Fact]
     public async Task CompleteHistoryLoadStopsBeforeUiMutationDuringShutdown()
     {
         using var context = new CoordinatorContext();
@@ -721,17 +780,21 @@ public sealed class DownloadManagerCoordinatorTests
             new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly TaskCompletionSource _release =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
-        private Action? _action;
+        private readonly TaskCompletionSource _secondInvoked =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _invocations;
 
         public Task Invoked => _invoked.Task;
+
+        public Task SecondInvoked => _secondInvoked.Task;
 
         public async Task InvokeAsync(Action action)
         {
             ArgumentNullException.ThrowIfNull(action);
-            _action = action;
+            if (Interlocked.Increment(ref _invocations) == 2) _secondInvoked.TrySetResult();
             _invoked.TrySetResult();
             await _release.Task.ConfigureAwait(false);
-            _action();
+            action();
         }
 
         public void Release() => _release.TrySetResult();

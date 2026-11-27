@@ -44,7 +44,7 @@ internal static class DownloadTaskProjectionMapper
     public static DownloadingItem ToDownloadingItem(DownloadTask task)
     {
         ArgumentNullException.ThrowIfNull(task);
-        var item = new DownloadingItem();
+        var item = new DownloadingItem { Downloading = new Downloading() };
         Apply(task, item);
         return item;
     }
@@ -68,32 +68,54 @@ internal static class DownloadTaskProjectionMapper
         };
     }
 
-    public static void Apply(DownloadTask task, DownloadingItem item)
+    public static void Apply(DownloadTask task, DownloadingItem item, DownloadTask? preceding = null)
     {
         ArgumentNullException.ThrowIfNull(task);
         ArgumentNullException.ThrowIfNull(item);
-        var downloadBase = ToDownloadBase(task);
-        item.DownloadBase = downloadBase;
-        item.Metadata = ToMovieMetadata(task.Plan.NfoRequest);
+        if (preceding == null || preceding.Metadata != task.Metadata ||
+            preceding.Plan.RequestedContent != task.Plan.RequestedContent ||
+            preceding.Output.BasePath != task.Output.BasePath ||
+            preceding.Output.FileSizeText != task.Output.FileSizeText)
+        {
+            item.DownloadBase = ToDownloadBase(task);
+        }
+        if (preceding == null || preceding.Plan.NfoRequest != task.Plan.NfoRequest)
+        {
+            item.Metadata = ToMovieMetadata(task.Plan.NfoRequest);
+        }
         item.IsToggleVisible = !task.Transfer.HasLegacyProvenance
                                && (task.Phase != DownloadPhase.Failed
                                    || task.Failure?.IsTransient != false);
         item.Failure = task.Failure;
-        item.Downloading = new Downloading
+        var downloading = item.Downloading;
+        downloading.Id = task.Id.Value;
+        if (preceding == null || preceding.Plan.TransferFiles != task.Plan.TransferFiles)
         {
-            Id = task.Id.Value,
-            DownloadFiles = task.Plan.TransferFiles.ToDictionary(entry => entry.Key, entry => entry.Value),
-            DownloadedFiles = task.Transfer.CompletedFileKeys.ToList(),
-            PlayStreamType = (PlayStreamType)task.Plan.StreamType,
-            DownloadStatus = MapPhase(task.Phase),
-            DownloadContent = task.Transfer.ActiveContent,
-            DownloadStatusTitle = MapStatusText(task),
-            Progress = checked((float)task.Progress.Percentage),
-            DownloadingFileSize = task.Progress.DownloadedSizeText,
-            MaxSpeed = task.Transfer.MaximumBytesPerSecond,
-            SpeedDisplay = task.Progress.SpeedText,
-            DownloadBase = downloadBase
-        };
+            downloading.DownloadFiles = task.Plan.TransferFiles.ToDictionary(entry => entry.Key, entry => entry.Value);
+        }
+        if (preceding == null || preceding.Transfer.CompletedFileKeys != task.Transfer.CompletedFileKeys)
+        {
+            downloading.DownloadedFiles = task.Transfer.CompletedFileKeys.ToList();
+        }
+        downloading.PlayStreamType = (PlayStreamType)task.Plan.StreamType;
+        if (preceding == null || preceding.Transfer.MaximumBytesPerSecond != task.Transfer.MaximumBytesPerSecond)
+        {
+            downloading.MaxSpeed = task.Transfer.MaximumBytesPerSecond;
+        }
+        downloading.DownloadBase = item.DownloadBase;
+        item.DownloadContent = task.Transfer.ActiveContent;
+        item.DownloadStatusTitle = MapStatusText(task);
+        if (preceding == null || preceding.Progress != task.Progress)
+        {
+            ApplyLiveProgress(task.Progress, item);
+        }
+
+        var status = MapPhase(task.Phase);
+        if (preceding == null || downloading.DownloadStatus != status)
+        {
+            downloading.DownloadStatus = status;
+            item.Downloading = downloading;
+        }
     }
 
     public static void ApplyLiveProgress(DownloadProgress progress, DownloadingItem item)

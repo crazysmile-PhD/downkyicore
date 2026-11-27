@@ -16,7 +16,7 @@ internal static class DownloadOutputPathResolver
         Func<string, CancellationToken, Task<bool>> hasOutputClaimConflictAsync,
         Func<CancellationToken, Task<IReadOnlyList<string>>> getReservationKeysAsync,
         CancellationToken cancellationToken,
-        Func<string, bool>? hasExistingOutputClaimConflict = null,
+        DownloadActionClaims requestedClaims = default,
         StringComparer? comparer = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(basePath);
@@ -24,12 +24,14 @@ internal static class DownloadOutputPathResolver
         ArgumentNullException.ThrowIfNull(getReservationKeysAsync);
         cancellationToken.ThrowIfCancellationRequested();
         comparer ??= PlatformComparer;
-        hasExistingOutputClaimConflict ??= static _ => false;
-        var occupiedPaths = GetExistingBasePaths(basePath)
+        var files = await Task.Run(() => GetExistingFiles(basePath, cancellationToken), cancellationToken)
+            .ConfigureAwait(false);
+        var directory = Path.GetDirectoryName(basePath)!;
+        var occupiedPaths = files.Select(file => Path.Combine(directory, Path.GetFileNameWithoutExtension(file)))
             .Select(CreateComparisonKey)
             .ToHashSet(comparer);
         var baseKey = CreateComparisonKey(basePath);
-        var baseHasOutputClaimConflict = hasExistingOutputClaimConflict(basePath);
+        var baseHasOutputClaimConflict = HasExistingOutputClaimConflict(basePath);
         if (baseHasOutputClaimConflict)
         {
             occupiedPaths.Add(baseKey);
@@ -49,11 +51,14 @@ internal static class DownloadOutputPathResolver
             var candidate = suffix == 0 ? basePath : $"{basePath}({suffix})";
             var comparisonKey = CreateComparisonKey(candidate);
             if (!occupiedPaths.Contains(comparisonKey)
-                && !hasExistingOutputClaimConflict(candidate))
+                && !HasExistingOutputClaimConflict(candidate))
             {
                 return candidate;
             }
         }
+
+        bool HasExistingOutputClaimConflict(string path) => requestedClaims.HasAny && files.Any(file =>
+            DownloadOutputLayout.HasOutputClaimConflict(path, file, requestedClaims));
     }
 
     internal static StringComparer PlatformComparer =>
@@ -61,22 +66,7 @@ internal static class DownloadOutputPathResolver
             ? StringComparer.OrdinalIgnoreCase
             : StringComparer.Ordinal;
 
-    internal static bool HasExistingOutputClaimConflict(
-        string basePath,
-        DownloadActionClaims requestedClaims)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(basePath);
-        var directory = Path.GetDirectoryName(basePath);
-        if (directory == null || !Directory.Exists(directory))
-        {
-            return false;
-        }
-
-        return Directory.EnumerateFiles(directory).Any(file =>
-            DownloadOutputLayout.HasOutputClaimConflict(basePath, file, requestedClaims));
-    }
-
-    private static string[] GetExistingBasePaths(string basePath)
+    private static string[] GetExistingFiles(string basePath, CancellationToken cancellationToken)
     {
         var directory = Path.GetDirectoryName(basePath);
         if (directory == null || !Directory.Exists(directory))
@@ -84,10 +74,13 @@ internal static class DownloadOutputPathResolver
             return [];
         }
 
-        return Directory
-            .EnumerateFiles(directory)
-            .Select(file => Path.Combine(directory, Path.GetFileNameWithoutExtension(file)))
-            .ToArray();
+        var files = new List<string>();
+        foreach (var file in Directory.EnumerateFiles(directory))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            files.Add(file);
+        }
+        return files.ToArray();
     }
 
     private static string CreateComparisonKey(string path)

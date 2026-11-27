@@ -10,18 +10,155 @@ using Avalonia.Themes.Fluent;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using DownKyi.Application.Desktop;
+using DownKyi.Application.Downloads;
+using DownKyi.Application.Lifetime;
 using DownKyi.Core.BiliApi.BiliUtils;
+using DownKyi.Domain.Downloads;
+using DownKyi.Infrastructure.Downloads;
+using DownKyi.Infrastructure.Time;
 using DownKyi.Models;
 using DownKyi.Platform;
 using DownKyi.Services.Download;
 using DownKyi.ViewModels.DownloadManager;
 using DownKyi.Views.DownloadManager;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DownKyi.Desktop.Tests;
 
 public sealed class DownloadQueueInteractionTests
 {
+    [AvaloniaFact]
+    public async Task ShutdownDoesNotWaitForAStoppedUiDispatcherOrApplyItsLateCallback()
+    {
+        using var fixture = new Fixture();
+        var directory = Directory.CreateTempSubdirectory("downkyi-projection-shutdown-");
+        try
+        {
+            var clock = new SystemClock();
+            using var store = new SqliteDownloadTaskStore(new(Path.Combine(directory.FullName, "downloads.db")), clock);
+            var history = DownloadHistoryService.CreateForSharedStore(store);
+            using var tasks = new DownloadTaskApplicationService(store, history, clock);
+            using var applicationCancellation = new ApplicationCancellation();
+            var dispatcher = new SuspendedUiDispatcher();
+            var projections = new DownloadTaskProjectionStore(tasks, history, clock, dispatcher,
+                applicationCancellation: applicationCancellation);
+            await using var lifetime = projections.ConfigureAwait(true);
+            var item = Item("BV-shutdown", "Part one", DownloadStatus.WaitForDownload);
+            item.DownloadBase.FilePath = Path.Combine(directory.FullName, "episode");
+            var changes = 0;
+            item.PropertyChanged += (_, _) => changes++;
+            await projections.AddDownloadingAsync(item, TestContext.Current.CancellationToken).ConfigureAwait(true);
+            await dispatcher.Queued.Task.WaitAsync(TestContext.Current.CancellationToken).ConfigureAwait(true);
+            await applicationCancellation.RequestShutdownAsync().ConfigureAwait(true);
+            try
+            {
+                await projections.DisposeAsync().AsTask()
+                    .WaitAsync(TimeSpan.FromSeconds(3), TestContext.Current.CancellationToken).ConfigureAwait(true);
+            }
+            finally
+            {
+                dispatcher.Release();
+            }
+            Assert.Equal(0, changes);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            directory.Delete(recursive: true);
+        }
+    }
+
+    private sealed class SuspendedUiDispatcher : IUiDispatcher
+    {
+        private readonly TaskCompletionSource _released = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private Action? _callback;
+        public TaskCompletionSource Queued { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task InvokeAsync(Action action)
+        {
+            _callback = action;
+            Queued.SetResult();
+            return _released.Task;
+        }
+
+        public void Release()
+        {
+            _callback?.Invoke();
+            _released.SetResult();
+        }
+    }
+
+    [AvaloniaFact]
+    public async Task BackgroundCommitsUpdateTheBoundQueueOnItsUiThreadWithoutRebuildingUnchangedModels()
+    {
+        using var fixture = new Fixture();
+        var directory = Directory.CreateTempSubdirectory("downkyi-queue-projection-");
+        try
+        {
+            var clock = new SystemClock();
+            using var store = new SqliteDownloadTaskStore(new(Path.Combine(directory.FullName, "downloads.db")), clock);
+            var history = DownloadHistoryService.CreateForSharedStore(store);
+            using var tasks = new DownloadTaskApplicationService(store, history, clock);
+            var projections = new DownloadTaskProjectionStore(tasks, history, clock, new AvaloniaUiDispatcher());
+            await using var projectionLifetime = projections.ConfigureAwait(true);
+            var item = Item("BV-source-a", "Part one", DownloadStatus.WaitForDownload);
+            item.DownloadBase.FilePath = Path.Combine(directory.FullName, "episode");
+            await projections.AddDownloadingAsync(item, TestContext.Current.CancellationToken).ConfigureAwait(true);
+            await projections.FlushPresentationAsync().ConfigureAwait(true);
+            fixture.State.AddDownloading(item);
+            fixture.ViewModel.FailedOnly = true;
+            fixture.Show();
+            var metadata = item.DownloadBase;
+            var runtime = item.Downloading;
+            var offThreadChanges = 0;
+            var metadataChanges = 0;
+            item.PropertyChanged += (_, args) =>
+            {
+                if (!Dispatcher.UIThread.CheckAccess()) Interlocked.Increment(ref offThreadChanges);
+                if (args.PropertyName == nameof(DownloadingItem.DownloadBase)) metadataChanges++;
+            };
+            ((INotifyCollectionChanged)fixture.ViewModel.QueueRows).CollectionChanged += (_, _) =>
+            {
+                if (!Dispatcher.UIThread.CheckAccess()) Interlocked.Increment(ref offThreadChanges);
+            };
+            var id = new DownloadTaskId(item.DownloadBase.Id);
+            await Task.Run(async () =>
+            {
+                Assert.True((await tasks.StartAsync(id, TestContext.Current.CancellationToken).ConfigureAwait(false)).IsSuccess);
+                Assert.Equal(DownloadPhase.Downloading, projections.GetRequiredSnapshot(id).Phase);
+                Assert.True((await tasks.UpdateActivityAsync(id, "video", "Downloading", TestContext.Current.CancellationToken)
+                    .ConfigureAwait(false)).IsSuccess);
+            }, TestContext.Current.CancellationToken).ConfigureAwait(true);
+            await projections.FlushPresentationAsync().ConfigureAwait(true);
+            await Task.Run(() => projections.PublishLiveProgress(id, new DownloadProgress(60, 60, 100)),
+                TestContext.Current.CancellationToken).ConfigureAwait(true);
+            await projections.FlushPresentationAsync().ConfigureAwait(true);
+            Assert.Equal(60, item.Progress);
+            await Task.Run(async () =>
+            {
+                Assert.True((await tasks.UpdateActivityAsync(id, "video", "Finishing", TestContext.Current.CancellationToken)
+                    .ConfigureAwait(false)).IsSuccess);
+                Assert.True((await tasks.FailAsync(id, new DownloadFailure("test.failure", "Synthetic failure", true),
+                    TestContext.Current.CancellationToken).ConfigureAwait(false)).IsSuccess);
+            }, TestContext.Current.CancellationToken).ConfigureAwait(true);
+            await projections.FlushPresentationAsync().ConfigureAwait(true);
+
+            Assert.Equal(0, offThreadChanges);
+            Assert.Equal(0, metadataChanges);
+            Assert.Same(metadata, item.DownloadBase);
+            Assert.Same(runtime, item.Downloading);
+            Assert.Equal(60, item.Progress);
+            Assert.Equal(DownloadStatus.DownloadFailed, item.Downloading.DownloadStatus);
+            Assert.Equal([item], fixture.ViewModel.QueueRows);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            directory.Delete(true);
+        }
+    }
+
     [AvaloniaFact]
     public void SourceIdentityCollapseAndSearchKeepSelectionScopePredictable()
     {
@@ -342,6 +479,8 @@ public sealed class DownloadQueueInteractionTests
         public Task DeleteAsync(DownloadingItem item, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task ClearDownloadedAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task LoadDownloadedHistoryAsync() => throw new NotSupportedException();
+
+        public Task LoadMoreDownloadedHistoryAsync() => throw new NotSupportedException();
         public Task RemoveDownloadedAsync(DownloadedItem item, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<DownloadArtifactOpenResult> OpenVideoAsync(DownloadedItem item, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<DownloadArtifactOpenResult> OpenFolderAsync(DownloadedItem item, CancellationToken cancellationToken = default) => throw new NotSupportedException();

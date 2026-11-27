@@ -578,7 +578,8 @@ public sealed class MuxFailureRecoveryTests
         public Task<DownloadHistoryPage> GetHistoryPageAsync(
             DownloadHistoryCursor? cursor,
             int pageSize,
-            CancellationToken cancellationToken) =>
+            CancellationToken cancellationToken,
+            DownloadFinishedSort sort = DownloadFinishedSort.DownloadDesc) =>
             Task.FromResult(new DownloadHistoryPage([], null));
 
         public Task<OperationResult> DeleteAsync(

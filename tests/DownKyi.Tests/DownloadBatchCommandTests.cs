@@ -90,6 +90,8 @@ public sealed class DownloadBatchCommandTests
 
         public Task LoadDownloadedHistoryAsync() => Task.CompletedTask;
 
+        public Task LoadMoreDownloadedHistoryAsync() => Task.CompletedTask;
+
         public Task RemoveDownloadedAsync(
             DownloadedItem item,
             CancellationToken cancellationToken = default) => Task.CompletedTask;

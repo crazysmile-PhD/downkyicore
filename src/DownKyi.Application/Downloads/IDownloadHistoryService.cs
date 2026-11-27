@@ -1,3 +1,4 @@
+using DownKyi.Application.Settings;
 using DownKyi.Domain.Downloads;
 using DownKyi.Domain.Results;
 
@@ -17,7 +18,8 @@ public interface IDownloadHistoryService
     Task<DownloadHistoryPage> GetPageAsync(
         DownloadHistoryCursor? cursor,
         int pageSize,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        DownloadFinishedSort sort = DownloadFinishedSort.DownloadDesc);
 
     Task<IReadOnlyList<DownloadHistoryRecord>> GetByCidAsync(
         long cid,

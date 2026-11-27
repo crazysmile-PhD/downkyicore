@@ -79,6 +79,15 @@ public sealed class DownloadNavigationVisibilityTests
                 AssertCounts(view, "0", "2");
                 AssertVisibleItem<ViewDownloadFinished>(view, "DownloadedList", finished);
             }
+            state.HasMoreDownloadedHistory = true;
+            Settle(window);
+            AssertCounts(view, "0", "2+");
+            var loadMore = view.GetVisualDescendants().OfType<Button>().Single(button => button.Name == "NameLoadMoreHistory");
+            Assert.True(loadMore.IsEffectivelyVisible);
+            loadMore.Command!.Execute(null);
+            Settle(window);
+            AssertCounts(view, "0", "3");
+            Assert.False(loadMore.IsVisible);
         }
         finally
         {
@@ -121,6 +130,13 @@ public sealed class DownloadNavigationVisibilityTests
 
     private sealed class Coordinator(DownloadListState state) : IDownloadManagerCoordinator
     {
+        public Task LoadMoreDownloadedHistoryAsync()
+        {
+            state.AddDownloaded(Finished("next-page"));
+            state.HasMoreDownloadedHistory = false;
+            return Task.CompletedTask;
+        }
+
         public Task LoadDownloadedHistoryAsync()
         {
             if (!state.IsDownloadedHistoryLoaded) { state.LoadDownloadedHistory([Finished("old-task")]); }

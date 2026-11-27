@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using DownKyi.Application.Downloads;
+using DownKyi.Application.Settings;
 using DownKyi.Application.Time;
 using DownKyi.Domain.Downloads;
 using DownKyi.Domain.Results;
@@ -1303,7 +1304,8 @@ public sealed class DownloadBootstrapHostedServiceTests
         public Task<DownloadHistoryPage> GetHistoryPageAsync(
             DownloadHistoryCursor? cursor,
             int pageSize,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            DownloadFinishedSort sort = DownloadFinishedSort.DownloadDesc)
         {
             HistoryPageRequestCount++;
             return Task.FromResult(new DownloadHistoryPage(_history, null));
