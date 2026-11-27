@@ -479,6 +479,8 @@ public sealed class DownloadQueueInteractionTests
         public Task DeleteAsync(DownloadingItem item, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task ClearDownloadedAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task LoadDownloadedHistoryAsync() => throw new NotSupportedException();
+
+        public Task LoadMoreDownloadedHistoryAsync() => throw new NotSupportedException();
         public Task RemoveDownloadedAsync(DownloadedItem item, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<DownloadArtifactOpenResult> OpenVideoAsync(DownloadedItem item, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<DownloadArtifactOpenResult> OpenFolderAsync(DownloadedItem item, CancellationToken cancellationToken = default) => throw new NotSupportedException();

@@ -5,7 +5,9 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Desktop;
+using DownKyi.Application.Downloads;
 using DownKyi.Application.Lifetime;
+using DownKyi.Application.Settings;
 using DownKyi.Domain.Downloads;
 using DownKyi.Models;
 using DownKyi.Platform;
@@ -44,6 +46,8 @@ internal interface IDownloadManagerCoordinator
 
     Task LoadDownloadedHistoryAsync();
 
+    Task LoadMoreDownloadedHistoryAsync();
+
     Task RemoveDownloadedAsync(DownloadedItem item, CancellationToken cancellationToken = default);
 
     Task<DownloadArtifactOpenResult> OpenVideoAsync(
@@ -69,7 +73,12 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator, 
     private readonly IPlatformLauncher _platformLauncher;
     private readonly IUiDispatcher _uiDispatcher;
     private readonly object _downloadedHistoryLoadGate = new();
-    private Task<IReadOnlyList<DownloadedItem>>? _downloadedHistoryLoadTask;
+    private HistoryRead? _downloadedHistoryRead;
+    private DownloadHistoryCursor? _historyCursor;
+    private DownloadFinishedSort? _loadedHistorySort;
+    private long _historyGeneration;
+    private long _historyReadVersion;
+    private long _appliedHistoryReadVersion;
     private int _disposed;
 
     public DownloadManagerCoordinator(
@@ -244,51 +253,87 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator, 
     public async Task ClearDownloadedAsync(CancellationToken cancellationToken = default)
     {
         await _storage.ClearDownloadedAsync(cancellationToken).ConfigureAwait(true);
-        _downloadLists.ClearDownloaded();
-    }
-
-    public async Task LoadDownloadedHistoryAsync()
-    {
-        Task<IReadOnlyList<DownloadedItem>> loadTask;
         lock (_downloadedHistoryLoadGate)
         {
-            if (_downloadLists.IsDownloadedHistoryLoaded)
-            {
-                return;
-            }
+            _historyGeneration++;
+            _historyCursor = null;
+            _loadedHistorySort = _downloadLists.FinishedSort;
+        }
+        await _uiDispatcher.InvokeAsync(_downloadLists.ClearDownloaded).ConfigureAwait(true);
+    }
 
-            if (_downloadedHistoryLoadTask != null)
+    public Task LoadDownloadedHistoryAsync() => LoadDownloadedPageAsync(loadMore: false);
+
+    public Task LoadMoreDownloadedHistoryAsync() => LoadDownloadedPageAsync(loadMore: true);
+
+    private async Task LoadDownloadedPageAsync(bool loadMore)
+    {
+        var cancellationToken = _applicationCancellation.ShutdownToken;
+        if (cancellationToken.IsCancellationRequested || Volatile.Read(ref _disposed) != 0) return;
+
+        IReadOnlySet<string> precedingIds = new HashSet<string>(StringComparer.Ordinal);
+        if (_downloadLists.IsDownloadedHistoryLoaded && _loadedHistorySort != _downloadLists.FinishedSort)
+        {
+            await _uiDispatcher.InvokeAsync(() => precedingIds = _downloadLists.CaptureDownloadedIds())
+                .ConfigureAwait(false);
+        }
+
+        HistoryRead read;
+        lock (_downloadedHistoryLoadGate)
+        {
+            if (cancellationToken.IsCancellationRequested || Volatile.Read(ref _disposed) != 0) return;
+            if (_downloadedHistoryRead != null)
             {
-                loadTask = _downloadedHistoryLoadTask;
+                read = _downloadedHistoryRead;
             }
             else
             {
-                loadTask = LoadDownloadedHistoryCoreAsync();
-                _downloadedHistoryLoadTask = loadTask;
+                var sort = _downloadLists.FinishedSort;
+                var reset = !_downloadLists.IsDownloadedHistoryLoaded || _loadedHistorySort != sort;
+                if (!reset && (!loadMore || _historyCursor == null)) return;
+                read = new HistoryRead(
+                    _storage.GetDownloadedPageAsync(reset ? null : _historyCursor, 100, sort, cancellationToken),
+                    _historyGeneration, ++_historyReadVersion, sort, reset, precedingIds);
+                _downloadedHistoryRead = read;
             }
         }
 
         try
         {
-            var items = await loadTask.ConfigureAwait(false);
-            var cancellationToken = _applicationCancellation.ShutdownToken;
-            if (cancellationToken.IsCancellationRequested)
-            {
-                return;
-            }
-
+            var page = await read.Task.ConfigureAwait(false);
+            if (cancellationToken.IsCancellationRequested || Volatile.Read(ref _disposed) != 0) return;
             await _uiDispatcher.InvokeAsync(() =>
             {
-                if (!cancellationToken.IsCancellationRequested)
+                lock (_downloadedHistoryLoadGate)
                 {
-                    _downloadLists.LoadDownloadedHistory(items);
+                    if (cancellationToken.IsCancellationRequested || Volatile.Read(ref _disposed) != 0
+                        || read.Generation != _historyGeneration || read.Sort != _downloadLists.FinishedSort
+                        || read.Version <= _appliedHistoryReadVersion) return;
+                    var items = page.Items.Select(DownloadTaskProjectionMapper.ToDownloadedItem).ToArray();
+                    _appliedHistoryReadVersion = read.Version;
+                    if (read.Reset) _downloadLists.ReplaceDownloadedHistoryPage(items, read.PrecedingIds);
+                    else foreach (var item in items) _downloadLists.AddDownloaded(item);
+                    _historyCursor = page.NextCursor;
+                    _loadedHistorySort = read.Sort;
+                    _downloadLists.HasMoreDownloadedHistory = page.NextCursor != null;
                 }
             }).ConfigureAwait(false);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
         finally
         {
-            ReleaseDownloadedHistoryLoad(loadTask);
+            lock (_downloadedHistoryLoadGate)
+            {
+                if (ReferenceEquals(_downloadedHistoryRead, read)) _downloadedHistoryRead = null;
+            }
         }
+
+        // A sort changed while this page was in flight. Start from the new global order.
+        if (_loadedHistorySort != _downloadLists.FinishedSort)
+            await LoadDownloadedPageAsync(loadMore: false).ConfigureAwait(false);
     }
 
     public async Task RemoveDownloadedAsync(
@@ -297,7 +342,7 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator, 
     {
         ArgumentNullException.ThrowIfNull(item);
         await _storage.RemoveDownloadedAsync(item, cancellationToken).ConfigureAwait(true);
-        _downloadLists.RemoveDownloaded(item);
+        await _uiDispatcher.InvokeAsync(() => _downloadLists.RemoveDownloaded(item)).ConfigureAwait(true);
     }
 
     public async Task<DownloadArtifactOpenResult> OpenVideoAsync(
@@ -371,32 +416,6 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator, 
         await _committedTaskDispatcher.EnqueueCommittedAsync(resumed.Id).ConfigureAwait(true);
     }
 
-    private async Task<IReadOnlyList<DownloadedItem>> LoadDownloadedHistoryCoreAsync()
-    {
-        var cancellationToken = _applicationCancellation.ShutdownToken;
-        try
-        {
-            return await _storage
-                .GetDownloadedAsync(cancellationToken)
-                .ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            return [];
-        }
-    }
-
-    private void ReleaseDownloadedHistoryLoad(Task<IReadOnlyList<DownloadedItem>> completed)
-    {
-        lock (_downloadedHistoryLoadGate)
-        {
-            if (ReferenceEquals(_downloadedHistoryLoadTask, completed))
-            {
-                _downloadedHistoryLoadTask = null;
-            }
-        }
-    }
-
     public void Dispose()
     {
         Interlocked.Exchange(ref _disposed, 1);
@@ -404,18 +423,25 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator, 
 
     public async ValueTask DisposeAsync()
     {
+        Dispose();
         Task? historyLoadTask;
         lock (_downloadedHistoryLoadGate)
         {
-            historyLoadTask = _downloadedHistoryLoadTask;
+            historyLoadTask = _downloadedHistoryRead?.Task;
         }
 
         if (historyLoadTask != null)
         {
-            await historyLoadTask.ConfigureAwait(false);
+            try
+            {
+                await historyLoadTask.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (_applicationCancellation.ShutdownToken.IsCancellationRequested)
+            {
+                // Only the owned database read is drained; the UI may already be stopped.
+            }
         }
 
-        Dispose();
         GC.SuppressFinalize(this);
     }
 
@@ -428,4 +454,7 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator, 
         DownloadingItem Item,
         DownloadTaskId TaskId,
         Task Cancellation);
+
+    private sealed record HistoryRead(Task<DownloadHistoryPage> Task, long Generation, long Version,
+        DownloadFinishedSort Sort, bool Reset, IReadOnlySet<string> PrecedingIds);
 }

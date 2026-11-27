@@ -261,7 +261,7 @@
                             VerticalAlignment="Center"
                             FontSize="14"
                             Foreground="{DynamicResource SpaceInk}"
-                            Text="{DynamicResource DownloadCompletedLabel}" />
+                            Text="{DynamicResource DownloadHistoryLoadedLabel}" />
                         <TextBlock
                             Name="NameDownloadedCount"
                             Margin="4,0"
@@ -283,6 +283,9 @@
                         VerticalAlignment="Center"
                         Orientation="Horizontal"
                         Spacing="10">
+                        <Button Name="NameLoadMoreHistory" Content="{DynamicResource LoadMoreHistory}"
+                                IsVisible="{Binding DownloadLists.HasMoreDownloadedHistory}"
+                                Command="{Binding LoadMoreHistoryCommand}" />
                         <ComboBox
                             Name="NameFinishedSort"
                             MinWidth="120"

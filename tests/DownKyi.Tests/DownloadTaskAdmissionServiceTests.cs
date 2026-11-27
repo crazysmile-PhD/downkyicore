@@ -1,4 +1,5 @@
 using DownKyi.Application.Downloads;
+using DownKyi.Application.Settings;
 using DownKyi.Core.BiliApi.VideoStream.Models;
 using DownKyi.Domain.Downloads;
 using DownKyi.Domain.Results;
@@ -1451,8 +1452,9 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         public Task<DownloadHistoryPage> GetHistoryPageAsync(
             DownloadHistoryCursor? cursor,
             int pageSize,
-            CancellationToken cancellationToken) =>
-            _history.GetHistoryPageAsync(cursor, pageSize, cancellationToken);
+            CancellationToken cancellationToken,
+            DownloadFinishedSort sort = DownloadFinishedSort.DownloadDesc) =>
+            _history.GetHistoryPageAsync(cursor, pageSize, cancellationToken, sort);
 
         public Task<OperationResult> DeleteAsync(
             DownloadTaskId taskId,

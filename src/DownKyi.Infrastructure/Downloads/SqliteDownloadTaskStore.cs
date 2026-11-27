@@ -1,4 +1,5 @@
 using DownKyi.Application.Downloads;
+using DownKyi.Application.Settings;
 using DownKyi.Application.Time;
 using DownKyi.Domain.Downloads;
 using DownKyi.Domain.Results;
@@ -134,8 +135,9 @@ public sealed class SqliteDownloadTaskStore :
     public Task<DownloadHistoryPage> GetHistoryPageAsync(
         DownloadHistoryCursor? cursor,
         int pageSize,
-        CancellationToken cancellationToken) =>
-        ExecuteAsync(() => _queries.GetHistoryPageAsync(cursor, pageSize, cancellationToken), cancellationToken);
+        CancellationToken cancellationToken,
+        DownloadFinishedSort sort = DownloadFinishedSort.DownloadDesc) =>
+        ExecuteAsync(() => _queries.GetHistoryPageAsync(cursor, pageSize, cancellationToken, sort), cancellationToken);
 
     public Task<IReadOnlyList<DownloadHistoryRecord>> GetHistoryByCidAsync(
         long cid,

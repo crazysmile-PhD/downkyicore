@@ -1,4 +1,5 @@
 using DownKyi.Application.Downloads;
+using DownKyi.Application.Settings;
 using DownKyi.Application.Time;
 using DownKyi.Domain.Downloads;
 using DownKyi.Domain.Results;
@@ -664,7 +665,8 @@ public sealed class DownloadTaskApplicationServiceTests
         public Task<DownloadHistoryPage> GetHistoryPageAsync(
             DownloadHistoryCursor? cursor,
             int pageSize,
-            CancellationToken cancellationToken) =>
+            CancellationToken cancellationToken,
+            DownloadFinishedSort sort = DownloadFinishedSort.DownloadDesc) =>
             Task.FromResult(new DownloadHistoryPage([], null));
 
         public Task<OperationResult> DeleteAsync(

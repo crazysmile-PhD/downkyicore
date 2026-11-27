@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using DownKyi.Application.Downloads;
+using DownKyi.Application.Settings;
 using DownKyi.Application.Time;
 using DownKyi.Domain.Downloads;
 using DownKyi.Infrastructure.Downloads;
@@ -9,6 +10,7 @@ namespace DownKyi.Infrastructure.Tests;
 
 public sealed class SqliteDownloadStoreHistoryTests : IDisposable
 {
+    private static readonly string[] PagingTitles = ["alpha", "alpha", "\U00010000", "\uE000", "omega", "alpha"];
     private readonly SqliteDownloadStoreFixture _fixture = new();
 
     public void Dispose() => _fixture.Dispose();
@@ -238,6 +240,46 @@ public sealed class SqliteDownloadStoreHistoryTests : IDisposable
         Assert.Equal(["history-b", "history-c"], first.Items.Select(task => task.Id.Value));
         Assert.Equal("history-a", Assert.Single(second.Items).Id.Value);
         Assert.Null(second.NextCursor);
+    }
+
+    [Theory]
+    [InlineData(DownloadFinishedSort.DownloadAsc)]
+    [InlineData(DownloadFinishedSort.DownloadDesc)]
+    [InlineData(DownloadFinishedSort.Number)]
+    public async Task EveryHistoryOrderPagesThroughTiesUnicodeAndCorruptRows(DownloadFinishedSort sort)
+    {
+        using var store = _fixture.CreateStore();
+        var records = PagingTitles
+            .Select((title, index) => new DownloadHistoryRecord(
+                new DownloadTaskId($"ordered-{index}"), index + 1, 0, index % 2, title, "part", "00:01", "avc1",
+                80, "1080P", "AAC", null, [], 100 + index % 2, "finished", null)).ToArray();
+        foreach (var record in records)
+            Assert.True((await store.AddHistoryAsync(record, TestContext.Current.CancellationToken)).IsSuccess);
+        await _fixture.CorruptHistoryPublishedArtifactsAsync("ordered-5");
+        var valid = records.Where(record => record.Id.Value != "ordered-5");
+        var expected = sort switch
+        {
+            DownloadFinishedSort.DownloadAsc => valid.OrderBy(record => record.FinishedTimestamp)
+                .ThenBy(record => record.Id.Value, StringComparer.Ordinal),
+            DownloadFinishedSort.DownloadDesc => valid.OrderByDescending(record => record.FinishedTimestamp)
+                .ThenByDescending(record => record.Id.Value, StringComparer.Ordinal),
+            _ => valid.OrderBy(record => record.MainTitle, StringComparer.Ordinal).ThenBy(record => record.Order)
+                .ThenBy(record => record.Id.Value, StringComparer.Ordinal)
+        };
+        var actual = new List<DownloadHistoryRecord>();
+        DownloadHistoryCursor? cursor = null;
+        do
+        {
+            var page = await store.GetHistoryPageAsync(cursor, 2, TestContext.Current.CancellationToken, sort);
+            Assert.InRange(page.Items.Count, 0, 2);
+            actual.AddRange(page.Items);
+            Assert.InRange(actual.Count, 0, records.Length);
+            cursor = page.NextCursor;
+        } while (cursor != null);
+
+        Assert.Equal(expected.Select(record => record.Id), actual.Select(record => record.Id));
+        Assert.Equal("ordered-5", Assert.Single(await store.GetQuarantinedRecordsAsync(
+            TestContext.Current.CancellationToken)).RecordId);
     }
 
     [Fact]

@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using DownKyi.Application.Diagnostics;
 using DownKyi.Application.Downloads;
 using DownKyi.Application.Lifetime;
+using DownKyi.Application.Settings;
 using DownKyi.Application.Time;
 using DownKyi.Domain.Downloads;
 using DownKyi.Platform;
@@ -104,13 +105,20 @@ internal sealed class DownloadTaskProjectionStore : IDisposable, IAsyncDisposabl
         RequireSuccess(result.IsSuccess, result.Error?.Message);
     }
 
+    public Task<DownloadHistoryPage> GetDownloadedPageAsync(
+        DownloadHistoryCursor? cursor,
+        int pageSize,
+        CancellationToken cancellationToken = default) =>
+        GetDownloadedPageAsync(cursor, pageSize, DownloadFinishedSort.DownloadDesc, cancellationToken);
+
     public async Task<DownloadHistoryPage> GetDownloadedPageAsync(
         DownloadHistoryCursor? cursor,
         int pageSize,
+        DownloadFinishedSort sort,
         CancellationToken cancellationToken = default)
     {
         var page = await _history
-            .GetPageAsync(cursor, pageSize, cancellationToken)
+            .GetPageAsync(cursor, pageSize, cancellationToken, sort)
             .ConfigureAwait(false);
         return page;
     }
