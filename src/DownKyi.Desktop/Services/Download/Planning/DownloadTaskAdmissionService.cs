@@ -102,9 +102,7 @@ internal sealed class DownloadTaskAdmissionService : IDisposable
                     DownloadOutputPathKey.UsesCaseInsensitiveComparison,
                     token),
                 cancellationToken,
-                path => DownloadOutputPathResolver.HasExistingOutputClaimConflict(
-                    path,
-                    requestedClaims)).ConfigureAwait(true);
+                requestedClaims).ConfigureAwait(true);
             item.DownloadBase.FilePath = admittedBasePath;
 
             await _projections.AddDownloadingAsync(item, cancellationToken).ConfigureAwait(true);

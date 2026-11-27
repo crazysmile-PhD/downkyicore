@@ -737,20 +737,24 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
     [InlineData(DownloadActionClaim.DanmakuXml, ".xml")]
     [InlineData(DownloadActionClaim.Cover, ".Cover.png")]
     [InlineData(DownloadActionClaim.Nfo, ".nfo")]
-    public void ExistingOutputClaimsUseCanonicalUnicodeNormalization(
+    public async Task ExistingOutputClaimsUseCanonicalUnicodeNormalization(
         DownloadActionClaim claim,
         string outputSuffix)
     {
         Directory.CreateDirectory(_directory);
         var requestedBasePath = Path.Combine(_directory, "caf\u00e9-output");
         var existingBasePath = Path.Combine(_directory, "cafe\u0301-output");
-        File.WriteAllText(existingBasePath + outputSuffix, "occupied");
+        await File.WriteAllTextAsync(existingBasePath + outputSuffix, "occupied", TestContext.Current.CancellationToken);
+        await File.WriteAllTextAsync(existingBasePath + "(1)" + outputSuffix, "also occupied", TestContext.Current.CancellationToken);
 
-        var hasConflict = DownloadOutputPathResolver.HasExistingOutputClaimConflict(
+        var resolved = await DownloadOutputPathResolver.ResolveAdmissionCollisionAsync(
             requestedBasePath,
+            static (_, _) => Task.FromResult(false),
+            static _ => Task.FromResult<IReadOnlyList<string>>([]),
+            TestContext.Current.CancellationToken,
             new DownloadActionClaims(claim));
 
-        Assert.True(hasConflict);
+        Assert.Equal(requestedBasePath + "(2)", resolved);
     }
 
     [Fact]
