@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Avalonia;
 using Avalonia.Media.Imaging;
 
 namespace DownKyi.CustomControl.AsyncImageLoader.Loaders;
@@ -19,14 +20,15 @@ internal class DiskCachedWebImageLoader : BaseWebImageLoader
     }
 
     /// <inheritdoc />
-    protected override Bitmap? LoadFromGlobalCache(string url)
+    protected override Bitmap? LoadFromGlobalCache(string url, PixelSize? decodeSize)
     {
         var path = Path.Combine(_cacheFolder, CreateCacheKey(url));
 
         if (!File.Exists(path)) return null;
         try
         {
-            return new Bitmap(path);
+            using var stream = File.OpenRead(path);
+            return DecodeBitmap(stream, decodeSize);
         }
         catch (ArgumentException)
         {

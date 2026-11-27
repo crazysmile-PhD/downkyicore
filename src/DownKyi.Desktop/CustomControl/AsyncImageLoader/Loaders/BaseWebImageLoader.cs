@@ -3,6 +3,7 @@ using System.IO;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using Avalonia;
 using Avalonia.Logging;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
@@ -33,9 +34,9 @@ internal class BaseWebImageLoader : IAsyncImageLoader
     protected HttpClient HttpClient { get; }
 
     /// <inheritdoc />
-    public virtual async Task<Bitmap?> ProvideImageAsync(string url, CancellationToken cancellationToken = default)
+    public virtual async Task<Bitmap?> ProvideImageAsync(string url, PixelSize? decodeSize = null, CancellationToken cancellationToken = default)
     {
-        return await LoadAsync(url, cancellationToken).ConfigureAwait(false);
+        return await LoadAsync(url, decodeSize, cancellationToken).ConfigureAwait(false);
     }
 
     public void Dispose()
@@ -49,14 +50,14 @@ internal class BaseWebImageLoader : IAsyncImageLoader
     /// </summary>
     /// <param name="url">Target url</param>
     /// <returns>Bitmap</returns>
-    protected virtual async Task<Bitmap?> LoadAsync(string url, CancellationToken cancellationToken)
+    protected virtual async Task<Bitmap?> LoadAsync(string url, PixelSize? decodeSize, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         try
         {
             var internalOrCachedBitmap = ImageSourceUriResolver.ResolveExternal(url) == null
-                ? LoadFromLocal(url) ?? LoadFromInternal(url) ?? LoadFromGlobalCache(url)
-                : LoadFromGlobalCache(url);
+                ? LoadFromLocal(url, decodeSize) ?? LoadFromInternal(url, decodeSize) ?? LoadFromGlobalCache(url, decodeSize)
+                : LoadFromGlobalCache(url, decodeSize);
             if (internalOrCachedBitmap != null) return internalOrCachedBitmap;
 
             var externalBytes = await LoadDataFromExternalAsync(url, cancellationToken).ConfigureAwait(false);
@@ -64,7 +65,7 @@ internal class BaseWebImageLoader : IAsyncImageLoader
 
             cancellationToken.ThrowIfCancellationRequested();
             using var memoryStream = new MemoryStream(externalBytes);
-            var bitmap = new Bitmap(memoryStream);
+            var bitmap = DecodeBitmap(memoryStream, decodeSize);
             try
             {
                 await SaveToGlobalCache(url, externalBytes, cancellationToken).ConfigureAwait(false);
@@ -105,9 +106,11 @@ internal class BaseWebImageLoader : IAsyncImageLoader
     /// </summary>
     /// <param name="url"></param>
     /// <returns></returns>
-    private static Bitmap? LoadFromLocal(string url)
+    private static Bitmap? LoadFromLocal(string url, PixelSize? decodeSize)
     {
-        return File.Exists(url) ? new Bitmap(url) : null;
+        if (!File.Exists(url)) return null;
+        using var stream = File.OpenRead(url);
+        return DecodeBitmap(stream, decodeSize);
     }
 
     /// <summary>
@@ -117,7 +120,7 @@ internal class BaseWebImageLoader : IAsyncImageLoader
     /// </summary>
     /// <param name="url">Target url</param>
     /// <returns>Bitmap</returns>
-    protected virtual Bitmap? LoadFromInternal(string url)
+    protected virtual Bitmap? LoadFromInternal(string url, PixelSize? decodeSize)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(url);
 
@@ -130,10 +133,10 @@ internal class BaseWebImageLoader : IAsyncImageLoader
                 ? new Uri(url, UriKind.Relative)
                 : new Uri(url, UriKind.RelativeOrAbsolute);
 
-            if (uri is { IsAbsoluteUri: true, IsFile: true })
-                return new Bitmap(uri.LocalPath);
-
-            return new Bitmap(AssetLoader.Open(uri));
+            using var stream = uri is { IsAbsoluteUri: true, IsFile: true }
+                ? File.OpenRead(uri.LocalPath)
+                : AssetLoader.Open(uri);
+            return DecodeBitmap(stream, decodeSize);
         }
         catch (UriFormatException e)
         {
@@ -201,10 +204,36 @@ internal class BaseWebImageLoader : IAsyncImageLoader
     /// </summary>
     /// <param name="url">Target url</param>
     /// <returns>Bitmap</returns>
-    protected virtual Bitmap? LoadFromGlobalCache(string url)
+    protected virtual Bitmap? LoadFromGlobalCache(string url, PixelSize? decodeSize)
     {
         // Current implementation does not provide global caching
         return null;
+    }
+
+    protected static Bitmap DecodeBitmap(Stream stream, PixelSize? decodeSize)
+    {
+        if (decodeSize is not { } size || size.Width <= 0 && size.Height <= 0)
+            return new Bitmap(stream);
+
+        if (size.Width <= 0) return Bitmap.DecodeToHeight(stream, size.Height);
+        if (size.Height <= 0) return Bitmap.DecodeToWidth(stream, size.Width);
+
+        // Cover both target dimensions without distorting the source aspect ratio.
+        // A second bounded decode is needed only when width alone is insufficient.
+        if (!stream.CanSeek)
+        {
+            using var buffered = new MemoryStream();
+            stream.CopyTo(buffered);
+            buffered.Position = 0;
+            return DecodeBitmap(buffered, size);
+        }
+
+        var position = stream.Position;
+        var bitmap = Bitmap.DecodeToWidth(stream, size.Width);
+        if (bitmap.PixelSize.Height >= size.Height) return bitmap;
+        bitmap.Dispose();
+        stream.Position = position;
+        return Bitmap.DecodeToHeight(stream, size.Height);
     }
 
     /// <summary>

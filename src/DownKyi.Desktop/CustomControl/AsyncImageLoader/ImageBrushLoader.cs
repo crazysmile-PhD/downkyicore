@@ -59,16 +59,7 @@ internal static class ImageBrushLoader
 
                 bitmap = await Task.Run(async () =>
                 {
-                    var loaded = await AsyncImageLoader.ProvideImageAsync(newValue, cancellation.Token).ConfigureAwait(false);
-                    if (loaded == null || !size.HasValue)
-                    {
-                        return loaded;
-                    }
-
-                    using (loaded)
-                    {
-                        return loaded.CreateScaledBitmap(size.Value);
-                    }
+                    return await AsyncImageLoader.ProvideImageAsync(newValue, size, cancellation.Token).ConfigureAwait(false);
                 }, CancellationToken.None).ConfigureAwait(true);
             }
 

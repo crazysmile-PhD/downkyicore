@@ -32,6 +32,7 @@ internal sealed class DownloadTaskProjectionStore : IDisposable, IAsyncDisposabl
     private readonly CancellationToken _shutdownToken;
     private readonly Lock _presentationGate = new();
     private Task _presentationUpdates = Task.CompletedTask;
+    private readonly Dictionary<DownloadTaskId, PendingLiveProgress> _pendingProgress = new();
     private readonly ConcurrentDictionary<DownloadTaskId, DownloadTask> _snapshots = new();
     private readonly ConcurrentDictionary<DownloadTaskId, DownloadingItem> _downloadingProjections = new();
     private volatile bool _disposed;
@@ -182,18 +183,51 @@ internal sealed class DownloadTaskProjectionStore : IDisposable, IAsyncDisposabl
     {
         ArgumentNullException.ThrowIfNull(taskId);
         ArgumentNullException.ThrowIfNull(progress);
-        if (_snapshots.TryGetValue(taskId, out var snapshot) &&
-            snapshot.Phase is DownloadPhase.Downloading or DownloadPhase.Pausing &&
-            _downloadingProjections.ContainsKey(taskId))
+        lock (_presentationGate)
         {
-            UpdatePresentation(taskId, item =>
+            if (_disposed || _shutdownToken.IsCancellationRequested ||
+                !_snapshots.TryGetValue(taskId, out var snapshot) ||
+                snapshot.Phase is not (DownloadPhase.Downloading or DownloadPhase.Pausing) ||
+                !_downloadingProjections.ContainsKey(taskId))
             {
-                if (_snapshots.TryGetValue(taskId, out var current) && current.Version == snapshot.Version &&
-                    current.Phase is DownloadPhase.Downloading or DownloadPhase.Pausing)
-                {
-                    DownloadTaskProjectionMapper.ApplyLiveProgress(progress, item);
-                }
-            });
+                return;
+            }
+
+            if (_pendingProgress.TryGetValue(taskId, out var pending) && pending.Version == snapshot.Version)
+            {
+                pending.Latest = progress;
+                pending.MaximumBytesPerSecond = Math.Max(pending.MaximumBytesPerSecond, progress.BytesPerSecond);
+                return;
+            }
+
+            pending = new PendingLiveProgress(snapshot.Version, progress);
+            _pendingProgress[taskId] = pending;
+            QueuePresentationUpdate(() => ApplyPendingProgress(taskId, pending));
+        }
+    }
+
+    private void ApplyPendingProgress(DownloadTaskId taskId, PendingLiveProgress pending)
+    {
+        DownloadProgress progress;
+        long maximumBytesPerSecond;
+        lock (_presentationGate)
+        {
+            if (!_pendingProgress.TryGetValue(taskId, out var currentPending) ||
+                !ReferenceEquals(currentPending, pending))
+            {
+                return;
+            }
+
+            _pendingProgress.Remove(taskId);
+            progress = pending.Latest;
+            maximumBytesPerSecond = pending.MaximumBytesPerSecond;
+        }
+
+        if (_snapshots.TryGetValue(taskId, out var current) && current.Version == pending.Version &&
+            current.Phase is DownloadPhase.Downloading or DownloadPhase.Pausing &&
+            _downloadingProjections.TryGetValue(taskId, out var item))
+        {
+            DownloadTaskProjectionMapper.ApplyLiveProgress(progress, item, maximumBytesPerSecond);
         }
     }
 
@@ -228,6 +262,7 @@ internal sealed class DownloadTaskProjectionStore : IDisposable, IAsyncDisposabl
         lock (_presentationGate)
         {
             _disposed = true;
+            _pendingProgress.Clear();
         }
         _tasks.TaskChanged -= OnTaskChanged;
         _downloadingProjections.Clear();
@@ -257,8 +292,12 @@ internal sealed class DownloadTaskProjectionStore : IDisposable, IAsyncDisposabl
         }
         if (args.Kind == DownloadTaskChangeKind.Deleted)
         {
-            _snapshots.TryRemove(args.TaskId, out _);
-            _downloadingProjections.TryRemove(args.TaskId, out _);
+            lock (_presentationGate)
+            {
+                _pendingProgress.Remove(args.TaskId);
+                _snapshots.TryRemove(args.TaskId, out _);
+                _downloadingProjections.TryRemove(args.TaskId, out _);
+            }
             return;
         }
 
@@ -270,16 +309,31 @@ internal sealed class DownloadTaskProjectionStore : IDisposable, IAsyncDisposabl
 
     private void Publish(DownloadTask task)
     {
-        _snapshots.TryGetValue(task.Id, out var preceding);
-        if (task.Phase == DownloadPhase.Completed)
+        lock (_presentationGate)
         {
-            _snapshots.TryRemove(task.Id, out _);
+            if (_disposed) return;
+            _snapshots.TryGetValue(task.Id, out var preceding);
+            if (_pendingProgress.TryGetValue(task.Id, out var pending) &&
+                preceding != null && pending.Version == preceding.Version && task.Progress == preceding.Progress &&
+                task.Phase is DownloadPhase.Downloading or DownloadPhase.Pausing)
+            {
+                // Activity-only commits do not supersede accepted live progress.
+                pending.Version = task.Version;
+            }
+            else
+            {
+                _pendingProgress.Remove(task.Id);
+            }
+            if (task.Phase == DownloadPhase.Completed)
+            {
+                _snapshots.TryRemove(task.Id, out _);
+            }
+            else
+            {
+                _snapshots[task.Id] = task;
+            }
+            UpdatePresentation(task.Id, item => DownloadTaskProjectionMapper.Apply(task, item, preceding));
         }
-        else
-        {
-            _snapshots[task.Id] = task;
-        }
-        UpdatePresentation(task.Id, item => DownloadTaskProjectionMapper.Apply(task, item, preceding));
     }
 
     private void QueuePresentationUpdate(Action update)
@@ -342,6 +396,13 @@ internal sealed class DownloadTaskProjectionStore : IDisposable, IAsyncDisposabl
     private static void ThrowStoreFailure(string? message)
     {
         throw new InvalidOperationException(message ?? "Download storage operation failed.");
+    }
+
+    private sealed class PendingLiveProgress(long version, DownloadProgress progress)
+    {
+        public long Version { get; set; } = version;
+        public DownloadProgress Latest { get; set; } = progress;
+        public long MaximumBytesPerSecond { get; set; } = progress.BytesPerSecond;
     }
 }
 

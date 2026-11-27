@@ -69,7 +69,7 @@ internal class VideoFramePreview : Control
 
     public static readonly DirectProperty<VideoFramePreview, double> EdgeThresholdProperty =
         AvaloniaProperty.RegisterDirect<VideoFramePreview, double>(
-            nameof(WatermarkRect),
+            nameof(EdgeThreshold),
             o => o.EdgeThreshold,
             (o, v) => o.EdgeThreshold = v);
 

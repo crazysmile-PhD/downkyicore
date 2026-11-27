@@ -250,7 +250,7 @@ public sealed class MediaListInteractionTests
     private sealed class CoverLoader : IAsyncImageLoader
     {
         public int RequestCount { get; private set; }
-        public Task<Bitmap?> ProvideImageAsync(string url, CancellationToken cancellationToken = default)
+        public Task<Bitmap?> ProvideImageAsync(string url, PixelSize? decodeSize = null, CancellationToken cancellationToken = default)
         {
             RequestCount++;
             return Task.FromResult<Bitmap?>(new WriteableBitmap(new PixelSize(16, 10), new Vector(96, 96)));

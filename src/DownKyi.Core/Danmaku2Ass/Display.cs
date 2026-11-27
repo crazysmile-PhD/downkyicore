@@ -56,13 +56,14 @@ public abstract class Display
         ArgumentNullException.ThrowIfNull(config);
         ArgumentNullException.ThrowIfNull(danmaku);
 
-        var dict = new Dictionary<string, Display>
+        ArgumentNullException.ThrowIfNull(danmaku.Style);
+        return danmaku.Style switch
         {
-            { "scroll", new ScrollDisplay(config, danmaku) },
-            { "top", new TopDisplay(config, danmaku) },
-            { "bottom", new BottomDisplay(config, danmaku) }
+            "scroll" => new ScrollDisplay(config, danmaku),
+            "top" => new TopDisplay(config, danmaku),
+            "bottom" => new BottomDisplay(config, danmaku),
+            _ => throw new KeyNotFoundException()
         };
-        return dict[danmaku.Style];
     }
 
     /// <summary>

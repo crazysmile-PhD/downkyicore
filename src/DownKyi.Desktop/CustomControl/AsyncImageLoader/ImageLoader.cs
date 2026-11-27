@@ -5,7 +5,10 @@ using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Layout;
 using Avalonia.Logging;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
 using DownKyi.CustomControl.AsyncImageLoader.Loaders;
 
 namespace DownKyi.CustomControl.AsyncImageLoader;
@@ -60,29 +63,14 @@ internal static class ImageLoader
         SetIsLoading(sender, true);
         try
         {
-            var desiredSize = sender.DesiredSize;
-            var scale = (TopLevel.GetTopLevel(sender) as Window)?.DesktopScaling ?? 1d;
-            var targetSize = desiredSize.Width > 0 && desiredSize.Height > 0
-                ? new PixelSize(
-                    Convert.ToInt32(desiredSize.Width * scale),
-                    Convert.ToInt32(desiredSize.Height * scale))
-                : (PixelSize?)null;
+            var targetSize = await GetDecodeSizeAfterLayoutAsync(sender, cts.Token).ConfigureAwait(true);
 
             var bitmap = await Task.Run(async () =>
             {
                 try
                 {
                     await Task.Delay(10, cts.Token).ConfigureAwait(false);
-                    var loaded = await AsyncImageLoader.ProvideImageAsync(url, cts.Token).ConfigureAwait(false);
-                    if (loaded == null || !targetSize.HasValue)
-                    {
-                        return loaded;
-                    }
-
-                    using (loaded)
-                    {
-                        return loaded.CreateScaledBitmap(targetSize.Value);
-                    }
+                    return await AsyncImageLoader.ProvideImageAsync(url, targetSize, cts.Token).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (cts.IsCancellationRequested)
                 {
@@ -117,6 +105,10 @@ internal static class ImageLoader
                 }
             }
         }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        {
+            return;
+        }
         finally
         {
             if (CompletePendingOperation(sender, cts))
@@ -124,6 +116,53 @@ internal static class ImageLoader
                 SetIsLoading(sender, false);
             }
         }
+    }
+
+    private static async Task<PixelSize?> GetDecodeSizeAfterLayoutAsync(Image image, CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            if (!image.IsAttachedToVisualTree())
+            {
+                var attached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                EventHandler<VisualTreeAttachmentEventArgs> onAttached = (_, _) => attached.TrySetResult();
+                image.AttachedToVisualTree += onAttached;
+                try
+                {
+                    await attached.Task.WaitAsync(cancellationToken).ConfigureAwait(true);
+                }
+                finally
+                {
+                    image.AttachedToVisualTree -= onAttached;
+                }
+            }
+
+            // Even fixed dimensions need the visual root's scale. Read both scale
+            // and layout together, and wait again if the image detached meanwhile.
+            var state = await Dispatcher.UIThread.InvokeAsync(
+                () => image.IsAttachedToVisualTree()
+                    ? (Attached: true, Size: GetDecodeSize(image))
+                    : (Attached: false, Size: (PixelSize?)null),
+                DispatcherPriority.Loaded, cancellationToken);
+            if (state.Attached) return state.Size;
+        }
+    }
+
+    private static PixelSize? GetDecodeSize(Image image)
+    {
+        // An Image without a Source arranges itself to zero even inside a fixed
+        // slot. Use the framework's allocation, including margin and constraints.
+        var available = LayoutInformation.GetPreviousArrangeBounds(image)?.Size
+            ?? LayoutInformation.GetPreviousMeasureConstraint(image)
+            ?? image.Bounds.Size;
+        var size = LayoutHelper.ApplyLayoutConstraints(image, available.Deflate(image.Margin));
+        var width = double.IsFinite(size.Width) && size.Width > 0 ? size.Width : 0;
+        var height = double.IsFinite(size.Height) && size.Height > 0 ? size.Height : 0;
+        if (width <= 0 && height <= 0) return null;
+        var scale = LayoutHelper.GetLayoutScale(image);
+        return new PixelSize(
+            width > 0 ? checked((int)Math.Ceiling(width * scale)) : 0,
+            height > 0 ? checked((int)Math.Ceiling(height * scale)) : 0);
     }
 
     internal static CancellationTokenSource ReplacePendingOperation(AvaloniaObject image)
@@ -186,31 +225,4 @@ internal static class ImageLoader
         element.SetValue(IsLoadingProperty, value);
     }
 
-    public static readonly AttachedProperty<int> WidthProperty = AvaloniaProperty.RegisterAttached<Image, int>("Width", typeof(ImageLoader));
-
-    public static int GetWidth(Image element)
-    {
-        ArgumentNullException.ThrowIfNull(element);
-        return element.GetValue(WidthProperty);
-    }
-
-    public static void SetWidth(Image element, int value)
-    {
-        ArgumentNullException.ThrowIfNull(element);
-        element.SetValue(WidthProperty, value);
-    }
-
-    public static readonly AttachedProperty<int> HeightProperty = AvaloniaProperty.RegisterAttached<Image, int>("Height", typeof(ImageLoader));
-
-    public static int GetHeight(Image element)
-    {
-        ArgumentNullException.ThrowIfNull(element);
-        return element.GetValue(HeightProperty);
-    }
-
-    public static void SetHeight(Image element, int value)
-    {
-        ArgumentNullException.ThrowIfNull(element);
-        element.SetValue(HeightProperty, value);
-    }
 }

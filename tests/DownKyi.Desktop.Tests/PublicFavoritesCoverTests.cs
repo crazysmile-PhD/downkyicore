@@ -86,7 +86,7 @@ public sealed class PublicFavoritesCoverTests
     {
         public string? RequestedUrl { get; private set; }
 
-        public Task<Bitmap?> ProvideImageAsync(string url, CancellationToken cancellationToken = default)
+        public Task<Bitmap?> ProvideImageAsync(string url, PixelSize? decodeSize = null, CancellationToken cancellationToken = default)
         {
             RequestedUrl = url;
             return Task.FromResult<Bitmap?>(new WriteableBitmap(new PixelSize(16, 10), new Vector(96, 96)));

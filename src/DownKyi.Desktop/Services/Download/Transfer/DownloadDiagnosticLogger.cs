@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using DownKyi.Application.Diagnostics;
@@ -11,8 +10,7 @@ namespace DownKyi.Services.Download;
 
 internal sealed class DownloadDiagnosticLogger
 {
-    private static readonly TimeSpan SpeedLogInterval = TimeSpan.FromSeconds(30);
-    private readonly ConcurrentDictionary<string, DateTimeOffset> _lastSpeedLogTimes = new();
+    public static readonly TimeSpan SpeedLogInterval = TimeSpan.FromSeconds(30);
     private readonly ILogger<DownloadDiagnosticLogger> _logger;
 
     public DownloadDiagnosticLogger(ILogger<DownloadDiagnosticLogger> logger)
@@ -44,15 +42,11 @@ internal sealed class DownloadDiagnosticLogger
 
     public void LogSpeed(string source, string taskId, long completedLength, long totalLength, long bytesPerSecond)
     {
-        var key = $"{source}:{taskId}";
-        var now = DateTimeOffset.UtcNow;
-
-        if (_lastSpeedLogTimes.TryGetValue(key, out var last) && now - last < SpeedLogInterval)
+        if (!_logger.IsEnabled(LogLevel.Information))
         {
             return;
         }
 
-        _lastSpeedLogTimes[key] = now;
         var safeTaskId = ShortId(taskId);
         using var scope = _logger.BeginOperationScope(safeTaskId, safeTaskId);
         _logger.LogInformationMessage(
