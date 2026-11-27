@@ -554,7 +554,7 @@ public sealed class DurlDownloadIdentityTests
 
         public async Task ReopenForRestartAsync(TestBilibiliApiClient client)
         {
-            _projections.Dispose();
+            await _projections.DisposeAsync().ConfigureAwait(true);
             _tasks.Dispose();
             _store.Dispose();
 

@@ -193,6 +193,7 @@ flowchart LR
 
 - 擁有 Views、ViewModels、typed navigation、dialogs、dispatcher、projections 與 app lifecycle。
 - View 只取得 read-only projection；background runtime 不得讀寫 UI collection 取得工作。
+- 下載提交立即更新 runtime 的 Domain snapshots；綁定中的狀態、進度與 activity 投影由既有 UI dispatcher 有序套用，投影 owner 在非同步 dispose 時停止並 drain 待處理更新。UI 更新失敗不得改變已提交 command 的結果。未變 metadata 不重建 projection，activity-only 更新保留尚未落盤的 live progress。
 
 ## Compatibility invariant
 
