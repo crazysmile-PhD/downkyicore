@@ -134,7 +134,11 @@ internal sealed class MuxStage : IDownloadPipelineStage
             .OrderBy(download => download.Durl.Order)
             .Select(download => new FfmpegConcatSegment(
                 download.Durl.Order,
-                download.FilePath))
+                download.FilePath,
+                download.Durl.Length > 0 &&
+                download.Durl.Length <= TimeSpan.MaxValue.Ticks / TimeSpan.TicksPerMillisecond
+                    ? TimeSpan.FromTicks(download.Durl.Length * TimeSpan.TicksPerMillisecond)
+                    : null))
             .ToArray();
         var result = await _ffmpegProcessor.ConcatDurlVideosAsync(
             context.Input.VideoSettings,

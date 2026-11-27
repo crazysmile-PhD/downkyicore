@@ -3,6 +3,13 @@ using DownKyi.Application.Media;
 
 namespace DownKyi.Infrastructure.FFmpeg;
 
+internal enum FfmpegConcatStrategy
+{
+    StreamCopy,
+    HardwareEncoder,
+    CpuEncoder
+}
+
 internal static class FfmpegCommandFactory
 {
     public static FfmpegCommand BuildMerge(
@@ -129,6 +136,15 @@ internal static class FfmpegCommandFactory
         return new FfmpegCommand(FfmpegExecutableLocator.Ffmpeg, arguments, "normalize-cover");
     }
 
+    public static FfmpegCommand BuildConcatInputProbe(string inputFile)
+    {
+        return new FfmpegCommand(FfmpegExecutableLocator.Ffprobe,
+        [
+            "-v", "error", "-show_streams", "-show_data_hash", "sha256",
+            "-of", "json", inputFile
+        ], "probe-concat-input");
+    }
+
     public static FfmpegCommand BuildConcat(
         string listFile,
         string outputFile,
@@ -162,18 +178,14 @@ internal static class FfmpegCommandFactory
             arguments.AddRange(["-i", coverFile]);
         }
 
-        arguments.AddRange(["-map", "0:v:0"]);
-        if (embeddedAudioMode == FfmpegEmbeddedAudioMode.Required)
+        AddConcatStreamMapping(arguments, embeddedAudioMode);
+        if (strategy == FfmpegConcatStrategy.StreamCopy)
         {
-            arguments.AddRange(["-map", "0:a:0"]);
-        }
-        else if (embeddedAudioMode == FfmpegEmbeddedAudioMode.Excluded)
-        {
-            arguments.Add("-an");
-        }
-        else
-        {
-            arguments.AddRange(["-map", "0:a?"]);
+            // Stream copy alone never decodes damaged packets. Validate the same
+            // selected streams in this process while preserving their packets in
+            // the MP4 output; a decode error still aborts the operation.
+            arguments.AddRange(["-f", "null", "-"]);
+            AddConcatStreamMapping(arguments, embeddedAudioMode);
         }
 
         switch (strategy)
@@ -212,6 +224,23 @@ internal static class FfmpegCommandFactory
         ]);
 
         return new FfmpegCommand(FfmpegExecutableLocator.Ffmpeg, arguments, $"concat-{strategy}");
+    }
+
+    private static void AddConcatStreamMapping(List<string> arguments, FfmpegEmbeddedAudioMode audioMode)
+    {
+        arguments.AddRange(["-map", "0:v:0"]);
+        if (audioMode == FfmpegEmbeddedAudioMode.Required)
+        {
+            arguments.AddRange(["-map", "0:a:0"]);
+        }
+        else if (audioMode == FfmpegEmbeddedAudioMode.Excluded)
+        {
+            arguments.Add("-an");
+        }
+        else
+        {
+            arguments.AddRange(["-map", "0:a?"]);
+        }
     }
 
     private static List<string> CreateBaseArguments()

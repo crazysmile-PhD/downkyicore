@@ -54,24 +54,17 @@ public sealed class FfmpegProcessor : IFfmpegMediaMuxer
         return await RunWithPreparedCoverAsync(
                 NormalizeOptionalInput(cover),
                 outputVideo,
-                async normalizedCover =>
-                {
-                    var encoder = await _hardwareEncoderDetector.SelectAsync(
-                            videoSettings.FfmpegHardwareAcceleration,
-                            cancellationToken)
-                        .ConfigureAwait(false);
-                    return await _concatRuntime.ConcatAsync(
-                            segments,
-                            outputVideo,
-                            encoder,
-                            allowStreamCopy: false,
-                            overwriteDestination,
-                            action,
-                            embeddedAudioMode,
-                            normalizedCover,
-                            cancellationToken)
-                        .ConfigureAwait(false);
-                },
+                normalizedCover => _concatRuntime.ConcatAsync(
+                    segments,
+                    outputVideo,
+                    token => _hardwareEncoderDetector.SelectAsync(
+                        videoSettings.FfmpegHardwareAcceleration, token),
+                    allowStreamCopy: true,
+                    overwriteDestination,
+                    action,
+                    embeddedAudioMode,
+                    normalizedCover,
+                    cancellationToken),
                 cancellationToken)
             .ConfigureAwait(false);
     }

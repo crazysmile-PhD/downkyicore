@@ -1,6 +1,6 @@
 namespace DownKyi.Application.Media;
 
-public sealed record FfmpegConcatSegment(int Order, string FilePath);
+public sealed record FfmpegConcatSegment(int Order, string FilePath, TimeSpan? ExpectedDuration = null);
 
 public enum FfmpegOperationFailureKind
 {

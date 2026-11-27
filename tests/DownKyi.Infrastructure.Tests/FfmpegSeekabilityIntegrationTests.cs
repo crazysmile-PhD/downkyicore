@@ -1,3 +1,5 @@
+using System.Buffers.Binary;
+using System.Globalization;
 using System.Text.Json;
 using DownKyi.Application.Media;
 using DownKyi.Infrastructure.FFmpeg;
@@ -262,7 +264,7 @@ public sealed class FfmpegSeekabilityIntegrationTests : IDisposable
                 new FfmpegConcatSegment(1, first)
             ],
             output,
-            hardwareEncoder: null,
+            resolveHardwareEncoder: null,
             allowStreamCopy: false,
             overwriteDestination: true,
             cancellationToken: cancellationToken).ConfigureAwait(true);
@@ -274,6 +276,82 @@ public sealed class FfmpegSeekabilityIntegrationTests : IDisposable
             processRunner,
             output,
             cancellationToken).ConfigureAwait(true);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Category", "FfmpegIntegration")]
+    public async Task KnownDurlTimelineCopiesOriginalStreamsAndSeeksIntoTheLastSegment(bool wrongContainerDuration)
+    {
+        var token = TestContext.Current.CancellationToken;
+        var realRunner = new FfmpegProcessRunner();
+        if (!await AreMediaToolsAvailableAsync(realRunner, token).ConfigureAwait(true))
+        {
+            Assert.Skip("ffmpeg and ffprobe are required for the DURL remux regression.");
+        }
+
+        var first = Path.Combine(_testDirectory, "first.flv");
+        var second = Path.Combine(_testDirectory, "second.flv");
+        foreach (var (path, color) in new[] { (first, "red"), (second, "blue") })
+        {
+            var source = await realRunner.RunAsync(new FfmpegCommand(FfmpegExecutableLocator.Ffmpeg,
+                ["-v", "error", "-nostdin", "-y", "-f", "lavfi", "-i", $"color=c={color}:s=320x240:r=30:d=2",
+                    "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=2",
+                    "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", path], "create-durl-segment"),
+                ProcessTimeout, token).ConfigureAwait(true);
+            Assert.True(source.Succeeded, source.StandardError);
+        }
+
+        var originalFrames = (await GetFrameHashesAsync(realRunner, first, token).ConfigureAwait(true))
+            .Concat(await GetFrameHashesAsync(realRunner, second, token).ConfigureAwait(true)).ToArray();
+        var originalAudio = (await GetAudioPacketHashesAsync(realRunner, first, token).ConfigureAwait(true))
+            .Concat(await GetAudioPacketHashesAsync(realRunner, second, token).ConfigureAwait(true)).ToArray();
+        // Preserve independent source timing before damaging the header. The
+        // lavfi content duration is not the duration of the muxed media segment.
+        var firstDuration = await GetDurationSecondsAsync(realRunner, first, token).ConfigureAwait(true);
+        var secondDuration = await GetDurationSecondsAsync(realRunner, second, token).ConfigureAwait(true);
+        if (wrongContainerDuration)
+        {
+            var bytes = await File.ReadAllBytesAsync(first, token).ConfigureAwait(true);
+            var durationOffset = bytes.AsSpan().IndexOf("\0\bduration\0"u8);
+            Assert.True(durationOffset >= 0);
+            BinaryPrimitives.WriteInt64BigEndian(bytes.AsSpan(durationOffset + 11, 8),
+                BitConverter.DoubleToInt64Bits(12));
+            await File.WriteAllBytesAsync(first, bytes, token).ConfigureAwait(true);
+
+            // The old list omits duration directives: FFmpeg succeeds but leaves
+            // a ten-second gap. Exit code and a frame hash alone miss this bug.
+            var oldList = Path.Combine(_testDirectory, "old-list.txt");
+            await File.WriteAllLinesAsync(oldList, ["file 'first.flv'", "file 'second.flv'"], token)
+                .ConfigureAwait(true);
+            var oldOutput = Path.Combine(_testDirectory, "old-timeline.mp4");
+            var oldResult = await realRunner.RunAsync(FfmpegCommandFactory.BuildConcat(
+                oldList, oldOutput, FfmpegConcatStrategy.StreamCopy, null, FfmpegEmbeddedAudioMode.Required),
+                ProcessTimeout, token).ConfigureAwait(true);
+            Assert.True(oldResult.Succeeded, oldResult.StandardError);
+            Assert.True(await GetDurationSecondsAsync(realRunner, oldOutput, token).ConfigureAwait(true) > 10);
+            Assert.True(await GetSeekFrameOffsetAsync(realRunner, oldOutput, 3.5, token).ConfigureAwait(true) > 1);
+        }
+
+        var runner = new RecordingMediaRunner(realRunner);
+        using var settings = new SettingsStore(Path.Combine(_testDirectory, "durl-remux-settings.json"));
+        var processor = new FfmpegProcessor(settings, NullLoggerFactory.Instance, runner);
+        var output = Path.Combine(_testDirectory, "lossless-durl.mp4");
+        var result = await processor.ConcatDurlVideosAsync(settings.Current.Video,
+            [new(2, second, TimeSpan.FromSeconds(secondDuration)), new(1, first, TimeSpan.FromSeconds(firstDuration))],
+            output, overwriteDestination: false, embeddedAudioMode: FfmpegEmbeddedAudioMode.Required,
+            cancellationToken: token).ConfigureAwait(true);
+
+        Assert.True(result.Succeeded, result.FailureReason);
+        Assert.Equal(["probe-concat-input", "probe-concat-input", "concat-StreamCopy"], runner.Operations);
+        Assert.InRange(await GetDurationSecondsAsync(realRunner, output, token).ConfigureAwait(true),
+            firstDuration + secondDuration - 0.15, firstDuration + secondDuration + 0.15);
+        Assert.Equal(originalFrames, await GetFrameHashesAsync(realRunner, output, token).ConfigureAwait(true));
+        Assert.Equal(originalAudio, await GetAudioPacketHashesAsync(realRunner, output, token).ConfigureAwait(true));
+        await AssertCanSeekAsync(realRunner, output, token).ConfigureAwait(true);
+        Assert.True(File.Exists(first));
+        Assert.True(File.Exists(second));
     }
 
     [Fact]
@@ -376,8 +454,8 @@ public sealed class FfmpegSeekabilityIntegrationTests : IDisposable
         var result = await processor.ConcatDurlVideosAsync(
             settings.Current.Video,
             [
-                new FfmpegConcatSegment(2, second),
-                new FfmpegConcatSegment(1, first)
+                new FfmpegConcatSegment(2, second, TimeSpan.FromSeconds(2)),
+                new FfmpegConcatSegment(1, first, TimeSpan.FromSeconds(2))
             ],
             outputVideo: output,
             overwriteDestination: true,
@@ -397,18 +475,17 @@ public sealed class FfmpegSeekabilityIntegrationTests : IDisposable
             cancellationToken).ConfigureAwait(true);
     }
 
-    [Fact]
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     [Trait("Category", "FfmpegIntegration")]
-    public async Task CorruptSegmentDoesNotCommitConcatOutput()
+    public async Task CorruptSegmentDoesNotCommitConcatOutput(bool copy)
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         var processRunner = new FfmpegProcessRunner();
-        if (!await IsToolAvailableAsync(
-                processRunner,
-                FfmpegExecutableLocator.Ffmpeg,
-                cancellationToken).ConfigureAwait(true))
+        if (!await AreMediaToolsAvailableAsync(processRunner, cancellationToken).ConfigureAwait(true))
         {
-            Assert.Skip("ffmpeg is required for the concat integration test.");
+            Assert.Skip("ffmpeg and ffprobe are required for the concat integration test.");
         }
 
         var clean = Path.Combine(_testDirectory, "clean.ts");
@@ -416,20 +493,21 @@ public sealed class FfmpegSeekabilityIntegrationTests : IDisposable
         await CreateTransportStreamSegmentAsync(processRunner, clean, cancellationToken).ConfigureAwait(true);
         await CreateCorruptSegmentAsync(processRunner, clean, corrupt, cancellationToken).ConfigureAwait(true);
 
+        var recordingRunner = new RecordingMediaRunner(processRunner);
         var runtime = new FfmpegConcatRuntime(
-            processRunner,
+            recordingRunner,
             new AsyncConcurrencyGate(() => 1),
             NullLogger<FfmpegConcatRuntime>.Instance);
         var output = Path.Combine(_testDirectory, "must-not-exist.mp4");
 
         var result = await runtime.ConcatAsync(
             [
-                new FfmpegConcatSegment(1, clean),
-                new FfmpegConcatSegment(2, corrupt)
+                new FfmpegConcatSegment(1, clean, TimeSpan.FromSeconds(2)),
+                new FfmpegConcatSegment(2, corrupt, TimeSpan.FromSeconds(2))
             ],
             output,
-            hardwareEncoder: null,
-            allowStreamCopy: false,
+            resolveHardwareEncoder: null,
+            allowStreamCopy: copy,
             overwriteDestination: true,
             embeddedAudioMode: FfmpegEmbeddedAudioMode.Excluded,
             cancellationToken: cancellationToken).ConfigureAwait(true);
@@ -437,6 +515,9 @@ public sealed class FfmpegSeekabilityIntegrationTests : IDisposable
         Assert.False(result.Succeeded);
         Assert.Equal(FfmpegOperationFailureKind.InputInvalid, result.FailureKind);
         Assert.False(File.Exists(output));
+        Assert.True(File.Exists(clean));
+        Assert.True(File.Exists(corrupt));
+        Assert.Equal(copy ? "concat-StreamCopy" : "concat-CpuEncoder", recordingRunner.Operations[^1]);
     }
 
     [Fact]
@@ -482,7 +563,7 @@ public sealed class FfmpegSeekabilityIntegrationTests : IDisposable
         var concatResult = await concatRuntime.ConcatAsync(
             [new FfmpegConcatSegment(1, emptyVideo)],
             concatOutput,
-            hardwareEncoder: null,
+            resolveHardwareEncoder: null,
             allowStreamCopy: false,
             overwriteDestination: true,
             embeddedAudioMode: FfmpegEmbeddedAudioMode.Required,
@@ -643,24 +724,82 @@ public sealed class FfmpegSeekabilityIntegrationTests : IDisposable
         string mediaFile,
         CancellationToken cancellationToken)
     {
-        foreach (var timestamp in new[] { "1", "1.9" })
+        var duration = await GetDurationSecondsAsync(processRunner, mediaFile, cancellationToken).ConfigureAwait(false);
+        foreach (var timestamp in new[] { duration / 2, duration * 0.9 })
         {
-            var result = await processRunner.RunAsync(
-                new FfmpegCommand(
-                    FfmpegExecutableLocator.Ffmpeg,
-                    [
-                        "-v", "error",
-                        "-ss", timestamp,
-                        "-i", mediaFile,
-                        "-map", "0:v:0",
-                        "-frames:v", "1",
-                        "-f", "null",
-                        "-"
-                    ],
-                    "seek-primary-video"),
-                ProcessTimeout,
-                cancellationToken).ConfigureAwait(false);
-            Assert.True(result.Succeeded, result.StandardError);
+            var offset = await GetSeekFrameOffsetAsync(processRunner, mediaFile, timestamp, cancellationToken)
+                .ConfigureAwait(false);
+            Assert.InRange(offset, 0, 0.1);
+        }
+    }
+
+    private static async Task<double> GetDurationSecondsAsync(
+        FfmpegProcessRunner runner, string path, CancellationToken token)
+    {
+        var result = await runner.RunAsync(new FfmpegCommand(FfmpegExecutableLocator.Ffprobe,
+            ["-v", "error", "-show_entries", "format=duration", "-of", "json", path], "probe-duration"),
+            ProcessTimeout, token).ConfigureAwait(false);
+        Assert.True(result.Succeeded, result.StandardError);
+        using var document = JsonDocument.Parse(result.StandardOutput);
+        return double.Parse(document.RootElement.GetProperty("format").GetProperty("duration").GetString()!,
+            CultureInfo.InvariantCulture);
+    }
+
+    private static async Task<double> GetSeekFrameOffsetAsync(
+        FfmpegProcessRunner runner, string path, double timestamp, CancellationToken token)
+    {
+        var result = await runner.RunAsync(new FfmpegCommand(FfmpegExecutableLocator.Ffmpeg,
+            ["-v", "error", "-ss", timestamp.ToString("0.#######", CultureInfo.InvariantCulture), "-i", path,
+                "-map", "0:v:0", "-frames:v", "1", "-f", "framehash", "-hash", "sha256", "-"], "seek-primary-video"),
+            ProcessTimeout, token).ConfigureAwait(false);
+        Assert.True(result.Succeeded, result.StandardError);
+        var lines = result.StandardOutput.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        var row = Assert.Single(lines, line => !line.StartsWith('#', StringComparison.Ordinal));
+        var timeBase = Assert.Single(lines, line => line.StartsWith("#tb 0:", StringComparison.Ordinal))
+            ["#tb 0:".Length..].Trim().Split('/');
+        var pts = long.Parse(row.Split(',')[2].Trim(), CultureInfo.InvariantCulture);
+        return pts * double.Parse(timeBase[0], CultureInfo.InvariantCulture) /
+            double.Parse(timeBase[1], CultureInfo.InvariantCulture);
+    }
+
+    private static async Task<string[]> GetFrameHashesAsync(
+        FfmpegProcessRunner runner, string path, CancellationToken token)
+    {
+        var result = await runner.RunAsync(new FfmpegCommand(FfmpegExecutableLocator.Ffmpeg,
+            ["-v", "error", "-i", path, "-map", "0:v:0", "-fps_mode", "passthrough",
+                "-f", "framehash", "-hash", "sha256", "-"], "hash-decoded-video-frames"),
+            ProcessTimeout, token).ConfigureAwait(false);
+        Assert.True(result.Succeeded, result.StandardError);
+        var hashes = result.StandardOutput.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Where(line => !line.StartsWith('#', StringComparison.Ordinal)).Select(line => line.Split(',')[^1].Trim()).ToArray();
+        Assert.NotEmpty(hashes);
+        return hashes;
+    }
+
+    private static async Task<string[]> GetAudioPacketHashesAsync(
+        FfmpegProcessRunner runner, string path, CancellationToken token)
+    {
+        var result = await runner.RunAsync(new FfmpegCommand(FfmpegExecutableLocator.Ffprobe,
+            ["-v", "error", "-select_streams", "a:0", "-show_packets", "-show_data_hash", "sha256",
+                "-show_entries", "packet=data_hash", "-of", "json", path], "hash-original-audio-packets"),
+            ProcessTimeout, token).ConfigureAwait(false);
+        Assert.True(result.Succeeded, result.StandardError);
+        using var document = JsonDocument.Parse(result.StandardOutput);
+        var hashes = document.RootElement.GetProperty("packets").EnumerateArray()
+            .Select(packet => packet.GetProperty("data_hash").GetString()!).ToArray();
+        Assert.NotEmpty(hashes);
+        return hashes;
+    }
+
+    private sealed class RecordingMediaRunner(FfmpegProcessRunner inner) : IFfmpegProcessRunner
+    {
+        public List<string> Operations { get; } = [];
+
+        public Task<FfmpegProcessResult> RunAsync(
+            FfmpegCommand command, TimeSpan timeout, CancellationToken cancellationToken = default)
+        {
+            Operations.Add(command.Operation);
+            return inner.RunAsync(command, timeout, cancellationToken);
         }
     }
 
