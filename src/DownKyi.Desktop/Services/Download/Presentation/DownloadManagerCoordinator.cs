@@ -430,19 +430,22 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator, 
             historyLoadTask = _downloadedHistoryRead?.Task;
         }
 
-        if (historyLoadTask != null)
+        try
         {
-            try
+            if (historyLoadTask != null)
             {
                 await historyLoadTask.ConfigureAwait(false);
             }
-            catch (OperationCanceledException) when (_applicationCancellation.ShutdownToken.IsCancellationRequested)
-            {
-                // Only the owned database read is drained; the UI may already be stopped.
-            }
         }
-
-        GC.SuppressFinalize(this);
+        catch (OperationCanceledException) when (_applicationCancellation.ShutdownToken.IsCancellationRequested)
+        {
+            // Only the owned database read is drained; the UI may already be stopped.
+            return;
+        }
+        finally
+        {
+            GC.SuppressFinalize(this);
+        }
     }
 
     private static DownloadTaskId GetTaskId(DownloadingItem item)
