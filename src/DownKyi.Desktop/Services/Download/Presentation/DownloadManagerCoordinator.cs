@@ -63,6 +63,7 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator, 
 {
     private readonly ApplicationCancellation _applicationCancellation;
     private readonly DownloadTaskProjectionStore _storage;
+    private readonly IDownloadTaskLookup _tasks;
     private readonly DownloadTaskStateWriter _stateWriter;
     private readonly IDownloadTaskQueue _taskQueue;
     private readonly DownloadCommittedTaskDispatcher _committedTaskDispatcher;
@@ -92,11 +93,13 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator, 
         DownloadTaskFileService fileService,
         DownloadListState downloadLists,
         IPlatformLauncher platformLauncher,
-        IUiDispatcher uiDispatcher)
+        IUiDispatcher uiDispatcher,
+        IDownloadTaskLookup tasks)
     {
         _applicationCancellation = applicationCancellation
             ?? throw new ArgumentNullException(nameof(applicationCancellation));
         _storage = storage ?? throw new ArgumentNullException(nameof(storage));
+        _tasks = tasks ?? throw new ArgumentNullException(nameof(tasks));
         _stateWriter = stateWriter ?? throw new ArgumentNullException(nameof(stateWriter));
         _taskQueue = taskQueue ?? throw new ArgumentNullException(nameof(taskQueue));
         _committedTaskDispatcher = committedTaskDispatcher
@@ -159,7 +162,7 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator, 
         cancellationToken.ThrowIfCancellationRequested();
 
         var taskId = GetTaskId(item);
-        if (_storage.GetRequiredSnapshot(taskId).Phase != DownloadPhase.Canceled)
+        if (_tasks.GetRequiredSnapshot(taskId).Phase != DownloadPhase.Canceled)
         {
             await _stateWriter.CancelAsync(taskId, cancellationToken).ConfigureAwait(true);
         }
@@ -174,7 +177,7 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator, 
 
         // Once physical deletion starts, finish the database/list transaction even if app shutdown is requested.
         var deletion = await _fileService
-            .DeleteGeneratedFilesAsync(item, _storage.GetRequiredSnapshot(taskId), CancellationToken.None)
+            .DeleteGeneratedFilesAsync(item, _tasks.GetRequiredSnapshot(taskId), CancellationToken.None)
             .ConfigureAwait(true);
         if (!deletion.Succeeded)
         {
@@ -198,7 +201,7 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator, 
             var taskId = GetTaskId(item);
             try
             {
-                if (_storage.GetRequiredSnapshot(taskId).Phase != DownloadPhase.Canceled)
+                if (_tasks.GetRequiredSnapshot(taskId).Phase != DownloadPhase.Canceled)
                 {
                     await _stateWriter.CancelAsync(taskId, cancellationToken).ConfigureAwait(true);
                 }

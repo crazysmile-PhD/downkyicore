@@ -380,8 +380,7 @@ public sealed class MuxFailureRecoveryTests
                 "resume-identity",
                 TestContext.Current.CancellationToken).ConfigureAwait(true);
 
-            var execution = new DownloadExecutionContextFactory(
-                projectionStore,
+            var execution = new DownloadExecutionContextFactory(tasks,
                 settings.Store).Create(taskId);
             execution.StagingDirectory = directory;
             execution.MediaKind = DownloadMediaKind.Dash;

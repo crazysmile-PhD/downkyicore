@@ -61,7 +61,8 @@ internal static class SqliteProgressScenario
             {
                 var request = DownloadTransferRequestFactory.Create(taskId,
                     ["https://synthetic.invalid/media"], dataRoot, dataRoot, $"media-{index}", 1000,
-                    projections, writer, static () => { }, cancellationToken);
+                    tasks, progress => projections.PublishLiveProgress(taskId, progress), writer,
+                    static () => { }, cancellationToken);
                 var result = await coordinator.TransferAsync(request,
                     static _ => throw new InvalidOperationException("The sampling backend cannot refresh."),
                     cancellationToken).ConfigureAwait(false);

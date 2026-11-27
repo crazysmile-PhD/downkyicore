@@ -24,6 +24,9 @@ internal sealed class DownloadActivityPresenter
         _stateWriter = stateWriter ?? throw new ArgumentNullException(nameof(stateWriter));
     }
 
+    public void PublishProgress(DownloadTaskId taskId, DownloadProgress progress) =>
+        _projectionStore.PublishLiveProgress(taskId, progress);
+
     public void Reset(DownloadExecutionContext context)
     {
         ArgumentNullException.ThrowIfNull(context);

@@ -73,7 +73,7 @@ public sealed class DownloadTaskProjectionStoreResumeTests : IDisposable
         await fixture.Projections.FlushPresentationAsync();
         Assert.Equal(40, fixture.Item.Progress);
         Assert.Equal(DownloadStatus.Pause, fixture.Item.Downloading.DownloadStatus);
-        Assert.Equal(DownloadPhase.Paused, fixture.Projections.GetRequiredSnapshot(fixture.Id).Phase);
+        Assert.Equal(DownloadPhase.Paused, fixture.Tasks.GetRequiredSnapshot(fixture.Id).Phase);
     }
 
     [Fact]
@@ -131,7 +131,8 @@ public sealed class DownloadTaskProjectionStoreResumeTests : IDisposable
             var coordinator = new DownloadTransferCoordinator(backend, new DownloadRetryPolicy(),
                 TimeProvider.System, NullLogger<DownloadTransferCoordinator>.Instance);
             var request = DownloadTransferRequestFactory.Create(id, ["https://media.invalid/file"],
-                _directory, _directory, "media", 100, projections, writer, static () => { },
+                _directory, _directory, "media", 100, tasks,
+                progress => projections.PublishLiveProgress(id, progress), writer, static () => { },
                 TestContext.Current.CancellationToken);
 
             var transfer = coordinator.TransferAsync(request,
@@ -139,14 +140,14 @@ public sealed class DownloadTaskProjectionStoreResumeTests : IDisposable
                 TestContext.Current.CancellationToken);
             await backend.Started.Task.ConfigureAwait(true);
             Assert.Equal(60, item.Progress);
-            Assert.Equal(0, projections.GetRequiredSnapshot(id).Progress.Percentage);
+            Assert.Equal(0, tasks.GetRequiredSnapshot(id).Progress.Percentage);
             await writer.PauseAsync(id, TestContext.Current.CancellationToken);
             Assert.Equal(DownloadTransferOutcome.Paused, (await transfer.ConfigureAwait(true)).Outcome);
             Assert.True(backend.Stopped);
             await writer.ConfirmPausedIfPausingAsync(id, TestContext.Current.CancellationToken);
 
-            Assert.Equal(DownloadPhase.Paused, projections.GetRequiredSnapshot(id).Phase);
-            Assert.Equal(60, projections.GetRequiredSnapshot(id).Progress.DownloadedBytes);
+            Assert.Equal(DownloadPhase.Paused, tasks.GetRequiredSnapshot(id).Phase);
+            Assert.Equal(60, tasks.GetRequiredSnapshot(id).Progress.DownloadedBytes);
             Assert.Equal(60, item.Progress);
             Assert.Equal("60 B/100 B", item.DownloadingFileSize);
         }
@@ -444,6 +445,7 @@ public sealed class DownloadTaskProjectionStoreResumeTests : IDisposable
     {
         private readonly SqliteDownloadTaskStore _store;
         private readonly DownloadTaskApplicationService _tasks;
+        public DownloadTaskApplicationService Tasks => _tasks;
         public ControllableUiDispatcher Dispatcher { get; } = new();
         public DownloadTaskProjectionStore Projections { get; }
         public DownloadTaskStateWriter Writer { get; }

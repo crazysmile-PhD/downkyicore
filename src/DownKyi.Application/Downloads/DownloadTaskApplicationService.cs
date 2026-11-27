@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using DownKyi.Application.Time;
 using DownKyi.Domain.Downloads;
 using DownKyi.Domain.Results;
@@ -12,6 +14,7 @@ public sealed partial class DownloadTaskApplicationService : IDownloadTaskApplic
     private readonly IClock _clock;
     // Serialize durable mutations without retaining a lock for each historical ID.
     private readonly SemaphoreSlim _mutationGate = new(1, 1);
+    private readonly ConcurrentDictionary<DownloadTaskId, DownloadTask> _snapshots = new();
     private bool _disposed;
 
     public DownloadTaskApplicationService(
@@ -43,14 +46,34 @@ public sealed partial class DownloadTaskApplicationService : IDownloadTaskApplic
                 OperationErrorKind.Validation));
         }
 
-        var result = await _store.AddAsync(task, cancellationToken).ConfigureAwait(false);
-        if (!result.IsSuccess)
+        await _mutationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            return OperationResult.Failure<DownloadTask>(RequireError(result));
-        }
+            var result = await _store.AddAsync(task, cancellationToken).ConfigureAwait(false);
+            if (!result.IsSuccess)
+            {
+                return OperationResult.Failure<DownloadTask>(RequireError(result));
+            }
 
-        Publish(task, DownloadTaskChangeKind.Added);
-        return OperationResult.Success(task);
+            Publish(task, DownloadTaskChangeKind.Added);
+            return OperationResult.Success(task);
+        }
+        finally
+        {
+            _mutationGate.Release();
+        }
+    }
+
+    public DownloadTask GetRequiredSnapshot(DownloadTaskId taskId) =>
+        TryGetSnapshot(taskId, out var task)
+            ? task
+            : throw new InvalidOperationException($"Download task '{taskId.Value}' is not loaded.");
+
+    public bool TryGetSnapshot(DownloadTaskId taskId, [NotNullWhen(true)] out DownloadTask? task)
+    {
+        ArgumentNullException.ThrowIfNull(taskId);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return _snapshots.TryGetValue(taskId, out task);
     }
 
     public Task<DownloadTask?> FindAsync(
@@ -62,10 +85,25 @@ public sealed partial class DownloadTaskApplicationService : IDownloadTaskApplic
         return _store.FindAsync(taskId, cancellationToken);
     }
 
-    public Task<IReadOnlyList<DownloadTask>> GetUnfinishedAsync(CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<DownloadTask>> GetUnfinishedAsync(CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        return _store.GetUnfinishedAsync(cancellationToken);
+        // Loading and publication share the command gate so an older startup
+        // read cannot reintroduce a task after its completion or deletion.
+        await _mutationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var tasks = await _store.GetUnfinishedAsync(cancellationToken).ConfigureAwait(false);
+            foreach (var task in tasks)
+            {
+                _snapshots[task.Id] = task;
+            }
+            return tasks;
+        }
+        finally
+        {
+            _mutationGate.Release();
+        }
     }
 
     public Task<IReadOnlyList<DownloadTask>> GetUnfinishedByCidAsync(
@@ -402,6 +440,7 @@ public sealed partial class DownloadTaskApplicationService : IDownloadTaskApplic
         }
 
         _mutationGate.Dispose();
+        _snapshots.Clear();
         _disposed = true;
     }
 
@@ -494,7 +533,16 @@ public sealed partial class DownloadTaskApplicationService : IDownloadTaskApplic
 
     private void Publish(DownloadTask task, DownloadTaskChangeKind kind)
     {
-        TaskChanged?.Invoke(this, new DownloadTaskChangedEventArgs(task.Id, task, kind));
+        _snapshots.TryGetValue(task.Id, out var previous);
+        if (kind == DownloadTaskChangeKind.Deleted || task.Phase == DownloadPhase.Completed)
+        {
+            _snapshots.TryRemove(task.Id, out _);
+        }
+        else
+        {
+            _snapshots[task.Id] = task;
+        }
+        TaskChanged?.Invoke(this, new DownloadTaskChangedEventArgs(task.Id, task, kind, previous));
     }
 
     private static DownloadTransferState CopyTransfer(

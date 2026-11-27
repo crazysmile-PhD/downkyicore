@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Immutable;
 using System.Threading;
+using DownKyi.Application.Downloads;
 using DownKyi.Application.Settings;
 using DownKyi.Domain.Downloads;
 
@@ -8,17 +9,17 @@ namespace DownKyi.Services.Download;
 
 internal sealed class DownloadExecutionContextFactory
 {
-    private readonly DownloadTaskProjectionStore _projectionStore;
+    private readonly IDownloadTaskLookup _tasks;
     private readonly ISettingsStore _settingsStore;
     private readonly DownloadTaskStaging? _staging;
 
     public DownloadExecutionContextFactory(
-        DownloadTaskProjectionStore projectionStore,
+        IDownloadTaskLookup tasks,
         ISettingsStore settingsStore,
         DownloadTaskStaging? staging = null)
     {
-        _projectionStore = projectionStore
-            ?? throw new ArgumentNullException(nameof(projectionStore));
+        _tasks = tasks
+            ?? throw new ArgumentNullException(nameof(tasks));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         _staging = staging;
     }
@@ -26,7 +27,7 @@ internal sealed class DownloadExecutionContextFactory
     public DownloadExecutionContext Create(DownloadTaskId taskId)
     {
         ArgumentNullException.ThrowIfNull(taskId);
-        var task = _projectionStore.GetRequiredSnapshot(taskId);
+        var task = _tasks.GetRequiredSnapshot(taskId);
         var settings = _settingsStore.Current;
         var context = new DownloadExecutionContext(
             taskId,
@@ -105,7 +106,7 @@ internal sealed class DownloadExecutionContextFactory
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var task = _projectionStore.GetRequiredSnapshot(taskId);
+        var task = _tasks.GetRequiredSnapshot(taskId);
         if (task.Phase != DownloadPhase.Downloading)
         {
             throw new OperationCanceledException("Task is paused or deleted.");

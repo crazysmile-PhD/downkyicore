@@ -243,7 +243,7 @@ internal static class DownloadPipelineTestSupport
             }
 
             var previous = Context;
-            Context = new DownloadExecutionContextFactory(_projections, _settings.Store)
+            Context = new DownloadExecutionContextFactory(_tasks, _settings.Store)
                 .Create(previous.TaskId);
             Context.PlayUrl = previous.PlayUrl;
             Context.DownloadDirectory = previous.DownloadDirectory;
@@ -333,8 +333,7 @@ internal static class DownloadPipelineTestSupport
             context.StagingDirectory = directory;
             var backend = new RecordingMediaBackend(backendResults);
             var presenter = new DownloadActivityPresenter(projections, stateWriter);
-            var stage = new DownloadMediaStage(
-                projections,
+            var stage = new DownloadMediaStage(tasks,
                 stateWriter,
                 new DownloadTransferArtifactInvalidator(
                     stateWriter,

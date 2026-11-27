@@ -571,7 +571,7 @@ public sealed class DownloadArtifactStageTests
             Assert.Single(startup.Projections);
             var stateWriter = new DownloadTaskStateWriter(reopenedTasks);
             await stateWriter.ResumeAsync(taskId, TestContext.Current.CancellationToken);
-            var execution = new DownloadExecutionContextFactory(reopenedProjections, settings)
+            var execution = new DownloadExecutionContextFactory(reopenedTasks, settings)
                 .Create(taskId);
             await stateWriter.StartAsync(taskId, TestContext.Current.CancellationToken);
             var stage = new DownloadArtifactsStage(

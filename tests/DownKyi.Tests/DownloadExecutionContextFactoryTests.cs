@@ -20,6 +20,35 @@ public sealed class DownloadExecutionContextFactoryTests : IDisposable
         Guid.NewGuid().ToString("N"));
 
     [Fact]
+    public async Task RuntimeObservesCommittedPauseWithoutAnyUiProjection()
+    {
+        Directory.CreateDirectory(_directory);
+        using var settings = new TestSettingsStore();
+        using var store = new SqliteDownloadTaskStore(
+            new SqliteDownloadTaskStoreOptions(Path.Combine(_directory, "download.db")), new SystemClock());
+        var history = DownloadHistoryService.CreateForSharedStore(store);
+        using var tasks = new DownloadTaskApplicationService(store, history, new SystemClock());
+        var id = new DownloadTaskId("headless-state");
+        var queued = DownloadTask.Create(id,
+            new DownloadTaskMetadata(new DownloadMediaIdentity("BV-headless", 1, 2, -1, 1, 1),
+                "collection", "episode", "01:00", "AVC", new DownloadQuality(80, "1080P"),
+                new DownloadQuality(0, ""), "", "", 0),
+            new DownloadPlan(DownloadContentSelection.None with { Video = true, MediaKind = DownloadMediaKind.Dash }, [], 1, null),
+            new DownloadOutput(Path.Combine(_directory, "headless-output"), null), DateTimeOffset.UnixEpoch);
+        Assert.True((await tasks.AddAsync(queued, TestContext.Current.CancellationToken)).IsSuccess);
+        Assert.True((await tasks.StartAsync(id, TestContext.Current.CancellationToken)).IsSuccess);
+
+        var context = new DownloadExecutionContextFactory(tasks, settings.Store).Create(id);
+        context.EnsureActive(TestContext.Current.CancellationToken);
+        Assert.True((await tasks.PauseAsync(id, TestContext.Current.CancellationToken)).IsSuccess);
+
+        Assert.Equal(DownloadPhase.Pausing, tasks.GetRequiredSnapshot(id).Phase);
+        Assert.Throws<OperationCanceledException>(() => context.EnsureActive(TestContext.Current.CancellationToken));
+        Assert.True((await tasks.ConfirmPausedAsync(id, TestContext.Current.CancellationToken)).IsSuccess);
+        Assert.Equal(DownloadPhase.Paused, tasks.GetRequiredSnapshot(id).Phase);
+    }
+
+    [Fact]
     public async Task CreateUsesDomainSnapshotAndSettingsWithoutPlaybackProjection()
     {
         Directory.CreateDirectory(_directory);
@@ -120,7 +149,7 @@ public sealed class DownloadExecutionContextFactoryTests : IDisposable
         Assert.Equal("Hi-Res", activeProjection.DownloadBase.AudioCodec.Name);
         Assert.Equal("HEVC", activeProjection.DownloadBase.VideoCodecName);
         Assert.Equal(PlayStreamType.Cheese, activeProjection.Downloading.PlayStreamType);
-        var context = new DownloadExecutionContextFactory(projections, settings.Store).Create(taskId);
+        var context = new DownloadExecutionContextFactory(tasks, settings.Store).Create(taskId);
 
         var replacementSettings = settings.Store.Update(current => current with
         {

@@ -55,7 +55,7 @@ public sealed class DownloadTaskFileServiceTests : IDisposable
                 Path.Combine(_directory, "settings.json"));
             var context = DownloadExecutionContextTestFactory.Create(item, settings.Current);
             context.StagingDirectory = staging.GetDirectory(taskId, outputBase,
-                projections.GetRequiredSnapshot(taskId).Output.StagingToken);
+                tasks.GetRequiredSnapshot(taskId).Output.StagingToken);
             context.MarkArtifactsValidated();
             stagedFile = context.WorkingBasePath + ".mp4";
             await File.WriteAllBytesAsync(stagedFile, originalBytes,

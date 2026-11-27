@@ -21,17 +21,21 @@ public sealed class DownloadTaskChangedEventArgs : EventArgs
     public DownloadTaskChangedEventArgs(
         DownloadTaskId taskId,
         DownloadTask? snapshot,
-        DownloadTaskChangeKind kind)
+        DownloadTaskChangeKind kind,
+        DownloadTask? previousSnapshot = null)
     {
         ArgumentNullException.ThrowIfNull(taskId);
         TaskId = taskId;
         Snapshot = snapshot;
+        PreviousSnapshot = previousSnapshot;
         Kind = kind;
     }
 
     public DownloadTaskId TaskId { get; }
 
     public DownloadTask? Snapshot { get; }
+
+    public DownloadTask? PreviousSnapshot { get; }
 
     public DownloadTaskChangeKind Kind { get; }
 }

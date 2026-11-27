@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Diagnostics;
+using DownKyi.Application.Downloads;
 using DownKyi.Core.BiliApi.VideoStream.Models;
 using DownKyi.Domain.Downloads;
 using DownKyi.Domain.Results;
@@ -14,7 +15,7 @@ namespace DownKyi.Services.Download;
 
 internal sealed class DownloadMediaStage : IDownloadPipelineStage
 {
-    private readonly DownloadTaskProjectionStore _projectionStore;
+    private readonly IDownloadTaskLookup _tasks;
     private readonly DownloadTaskStateWriter _stateWriter;
     private readonly DownloadTransferArtifactInvalidator _artifactInvalidator;
     private readonly DownloadTransferCoordinator _transferCoordinator;
@@ -23,7 +24,7 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
     private readonly ILogger _logger;
 
     public DownloadMediaStage(
-        DownloadTaskProjectionStore projectionStore,
+        IDownloadTaskLookup tasks,
         DownloadTaskStateWriter stateWriter,
         DownloadTransferArtifactInvalidator artifactInvalidator,
         DownloadTransferCoordinator transferCoordinator,
@@ -31,8 +32,8 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
         DownloadActivityPresenter presenter,
         ILogger logger)
     {
-        _projectionStore = projectionStore
-            ?? throw new ArgumentNullException(nameof(projectionStore));
+        _tasks = tasks
+            ?? throw new ArgumentNullException(nameof(tasks));
         _stateWriter = stateWriter ?? throw new ArgumentNullException(nameof(stateWriter));
         _artifactInvalidator = artifactInvalidator
             ?? throw new ArgumentNullException(nameof(artifactInvalidator));
@@ -240,7 +241,7 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
 
         var fileName = Guid.NewGuid().ToString("N");
         var key = DownloadTransferKey.Create(media.Id, media.Codecs);
-        var snapshot = _projectionStore.GetRequiredSnapshot(context.TaskId);
+        var snapshot = _tasks.GetRequiredSnapshot(context.TaskId);
         if (snapshot.Plan.TransferFiles.TryGetValue(key, out var existingFileName))
         {
             if (existingFileName != Path.GetFileName(existingFileName))
@@ -291,7 +292,8 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
                 context.StagingDirectory,
                 fileName,
                 media.ExpectedSize,
-                _projectionStore,
+                _tasks,
+                progress => _presenter.PublishProgress(context.TaskId, progress),
                 _stateWriter,
                 () => context.EnsureActive(cancellationToken),
                 cancellationToken);

@@ -91,7 +91,7 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
             _stateWriter);
         var presenter = new DownloadActivityPresenter(_projectionStore, _stateWriter);
         var contextFactory = new DownloadExecutionContextFactory(
-            _projectionStore,
+            _taskLookup,
             _settingsStore,
             _staging);
         var completionProjector = new DownloadCompletionProjector(
@@ -120,7 +120,7 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
                 playbackResolver,
                 _loggerFactory.CreateLogger<ResolvePlaybackStage>()),
             new DownloadMediaStage(
-                _projectionStore,
+                _taskLookup,
                 _stateWriter,
                 _artifactInvalidator,
                 transferCoordinator,
@@ -134,7 +134,7 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
                 _stateWriter),
             new ValidateStage(),
             new FinalizeStage(
-                _projectionStore,
+                _taskLookup,
                 _stateWriter,
                 completionProjector,
                 _fileService,

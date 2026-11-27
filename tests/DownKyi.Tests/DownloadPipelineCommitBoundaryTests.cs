@@ -379,7 +379,7 @@ public sealed class DownloadPipelineCommitBoundaryTests
             var staging = new DownloadTaskStaging(NullLogger<DownloadTaskStaging>.Instance);
             context.StagingDirectory = staging.GetDirectory(
                 taskId, downloadBase.FilePath,
-                projectionStore.GetRequiredSnapshot(taskId).Output.StagingToken);
+                tasks.GetRequiredSnapshot(taskId).Output.StagingToken);
             Directory.CreateDirectory(context.StagingDirectory);
             var audio = CreateTransferFile(context.StagingDirectory, "audio.m4s");
             var video = CreateTransferFile(context.StagingDirectory, "video.m4s");
@@ -398,8 +398,7 @@ public sealed class DownloadPipelineCommitBoundaryTests
                 NullLogger<DownloadTaskFileService>.Instance,
                 staging,
                 stateWriter);
-            var finalizeStage = new FinalizeStage(
-                projectionStore,
+            var finalizeStage = new FinalizeStage(tasks,
                 stateWriter,
                 new DownloadCompletionProjector(
                     lists,
@@ -429,7 +428,7 @@ public sealed class DownloadPipelineCommitBoundaryTests
         public DownloadPipeline CreatePipeline(params IDownloadPipelineStage[] stages)
         {
             return new DownloadPipeline(
-                new DownloadExecutionContextFactory(_projectionStore, _settings, Staging),
+                new DownloadExecutionContextFactory(_tasks, _settings, Staging),
                 stages,
                 StateWriter,
                 FileService,
