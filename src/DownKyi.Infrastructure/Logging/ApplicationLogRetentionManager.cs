@@ -127,22 +127,22 @@ internal sealed class ApplicationLogRetentionManager
 
         try
         {
-            foreach (var dayDirectory in Directory.GetDirectories(
-                         _options.LogDirectory,
-                         "????-??-??",
-                         SearchOption.TopDirectoryOnly))
-            {
-                units.AddRange(Directory.GetFiles(
-                        dayDirectory,
-                        EventFilePattern,
-                        SearchOption.TopDirectoryOnly)
-                    .Select(static path => new FileInfo(path))
-                    .Select(static file => new RetentionUnit(
-                        file.FullName,
-                        IsDirectory: false,
-                        file.LastWriteTimeUtc,
-                        file.Length)));
-            }
+            // Older releases wrote loose files in Logs. They share the same
+            // retention policy as current day files; Diagnostics remains a
+            // collection of indivisible bundles below.
+            var logFiles = Directory.EnumerateFiles(
+                    _options.LogDirectory, "*", SearchOption.TopDirectoryOnly)
+                .Concat(Directory.EnumerateDirectories(
+                        _options.LogDirectory, "????-??-??", SearchOption.TopDirectoryOnly)
+                    .SelectMany(static directory => Directory.EnumerateFiles(
+                        directory, EventFilePattern, SearchOption.TopDirectoryOnly)));
+            units.AddRange(logFiles
+                .Select(static path => new FileInfo(path))
+                .Select(static file => new RetentionUnit(
+                    file.FullName,
+                    IsDirectory: false,
+                    file.LastWriteTimeUtc,
+                    file.Length)));
 
             var diagnosticsRoot = Path.Combine(_options.LogDirectory, DiagnosticDirectoryName);
             if (Directory.Exists(diagnosticsRoot))

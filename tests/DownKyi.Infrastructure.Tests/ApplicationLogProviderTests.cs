@@ -709,6 +709,37 @@ public sealed class ApplicationLogProviderTests : IDisposable
     }
 
     [Fact]
+    public void LegacyRootLogsShareAgeAndCapacityPolicyWithCurrentLogs()
+    {
+        var now = new DateTimeOffset(2026, 7, 18, 0, 0, 0, TimeSpan.Zero);
+        Directory.CreateDirectory(_directory);
+        var expired = Path.Combine(_directory, "2026-07-01.log");
+        var legacy = Path.Combine(_directory, "2026-07-18.log");
+        var day = Directory.CreateDirectory(Path.Combine(_directory, "2026-07-18"));
+        var current = Path.Combine(day.FullName, "events-001.jsonl");
+        File.WriteAllText(expired, new string('x', 30));
+        File.WriteAllText(legacy, new string('x', 30));
+        File.WriteAllText(current, new string('x', 30));
+        File.SetLastWriteTimeUtc(expired, now.AddDays(-8).UtcDateTime);
+        File.SetLastWriteTimeUtc(legacy, now.AddMinutes(-2).UtcDateTime);
+        File.SetLastWriteTimeUtc(current, now.AddMinutes(-1).UtcDateTime);
+        var retention = new ApplicationLogRetentionManager(new ApplicationLogOptions(_directory)
+        {
+            MaxTotalBytes = 40
+        });
+
+        retention.Apply(activePath: null, now);
+
+        Assert.False(File.Exists(expired));
+        Assert.False(File.Exists(legacy));
+        Assert.True(File.Exists(current));
+        var metrics = retention.GetMetrics();
+        Assert.Equal(1, metrics.AgeDeletionCount);
+        Assert.Equal(1, metrics.CapacityDeletionCount);
+        Assert.Equal(30, metrics.RetainedBytes);
+    }
+
+    [Fact]
     public void RetentionPreservesActiveDayDirectoryBeforeFirstEntryIsCreated()
     {
         var now = new DateTimeOffset(2026, 7, 18, 0, 0, 0, TimeSpan.Zero);
