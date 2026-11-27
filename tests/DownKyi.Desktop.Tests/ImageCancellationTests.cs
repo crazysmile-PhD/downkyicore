@@ -30,16 +30,6 @@ public sealed class ImageCancellationTests
         }).ConfigureAwait(true);
     }
 
-    [AvaloniaFact]
-    public async Task ClearingAdvancedImageSourceCancelsItsStartedHttpRequest()
-    {
-        await AssertStartedRequestIsCanceledAsync(loader =>
-        {
-            var image = new AdvancedImage(baseUri: null) { Loader = loader };
-            return source => image.Source = source;
-        }).ConfigureAwait(true);
-    }
-
     private static async Task AssertStartedRequestIsCanceledAsync(
         Func<IAsyncImageLoader, Action<string?>> createSourceSetter)
     {

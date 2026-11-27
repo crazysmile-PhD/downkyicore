@@ -3,18 +3,6 @@
   "description": "Reviewed CA1501 and CA1506 findings present when the advisory code-metrics baseline was established.",
   "findings": [
     {
-      "identity": "CA1501|src/DownKyi.Desktop/CustomControl/AsyncImageLoader/Loaders/AdvancedImage.axaml.cs|AdvancedImage",
-      "rule": "CA1501",
-      "path": "src/DownKyi.Desktop/CustomControl/AsyncImageLoader/Loaders/AdvancedImage.axaml.cs",
-      "symbol": "AdvancedImage",
-      "observedMetric": 10,
-      "groupId": "ca1501-framework-4515adf0e32cb966",
-      "groupTitle": "Avalonia framework inheritance rooted at ContentControl",
-      "classification": "framework-inheritance",
-      "reviewStatus": "reviewed-reasonable",
-      "rationale": "The reported depth comes from a shared Avalonia framework inheritance chain, not a DownKyi-owned hierarchy."
-    },
-    {
       "identity": "CA1501|src/DownKyi.Desktop/CustomControl/CustomPager.axaml.cs|CustomPager",
       "rule": "CA1501",
       "path": "src/DownKyi.Desktop/CustomControl/CustomPager.axaml.cs",
