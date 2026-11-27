@@ -24,7 +24,7 @@ public sealed class DownloadManagerCoordinatorTests
         using var context = new CoordinatorContext();
         var queued = context.CreateDownloadingItem("pause-queued", DownloadStatus.WaitForDownload);
         context.State.AddDownloading(queued);
-        await context.Storage.AddDownloadingAsync(queued, TestContext.Current.CancellationToken);
+        await context.Storage.AddDownloadingAsync(context.TaskService, queued, TestContext.Current.CancellationToken);
 
         await context.Coordinator.PauseAllAsync(
             context.State.Downloading,
@@ -42,7 +42,7 @@ public sealed class DownloadManagerCoordinatorTests
         using var context = new CoordinatorContext();
         var queued = context.CreateDownloadingItem("resume-queued", DownloadStatus.WaitForDownload);
         context.State.AddDownloading(queued);
-        await context.Storage.AddDownloadingAsync(queued, TestContext.Current.CancellationToken);
+        await context.Storage.AddDownloadingAsync(context.TaskService, queued, TestContext.Current.CancellationToken);
 
         await context.Coordinator.ResumeAllAsync(
             context.State.Downloading,
@@ -60,7 +60,7 @@ public sealed class DownloadManagerCoordinatorTests
         using var context = new CoordinatorContext(new RuntimeUnavailableTaskQueue());
         var item = context.CreateDownloadingItem("resume-runtime-failure", DownloadStatus.WaitForDownload);
         context.State.AddDownloading(item);
-        await context.Storage.AddDownloadingAsync(item, TestContext.Current.CancellationToken);
+        await context.Storage.AddDownloadingAsync(context.TaskService, item, TestContext.Current.CancellationToken);
         var taskId = new DownloadTaskId(item.DownloadBase.Id);
         await context.StateWriter.StartAsync(taskId, TestContext.Current.CancellationToken);
         await context.StateWriter.FailAsync(
@@ -86,7 +86,7 @@ public sealed class DownloadManagerCoordinatorTests
             "resume-known-runtime-failure",
             DownloadStatus.WaitForDownload);
         context.State.AddDownloading(item);
-        await context.Storage.AddDownloadingAsync(item, TestContext.Current.CancellationToken);
+        await context.Storage.AddDownloadingAsync(context.TaskService, item, TestContext.Current.CancellationToken);
         var taskId = new DownloadTaskId(item.DownloadBase.Id);
         await context.StateWriter.StartAsync(taskId, TestContext.Current.CancellationToken);
         await context.StateWriter.FailAsync(
@@ -108,9 +108,11 @@ public sealed class DownloadManagerCoordinatorTests
     {
         using var context = new CoordinatorContext();
         var item = context.CreateDownloadingItem("delete-retry", DownloadStatus.WaitForDownload);
-        item.Downloading.DownloadFiles["video"] = "delete-retry.mp4";
         context.State.AddDownloading(item);
-        await context.Storage.AddDownloadingAsync(item, TestContext.Current.CancellationToken);
+        await context.Storage.AddDownloadingAsync(context.TaskService, item, TestContext.Current.CancellationToken);
+        await context.StateWriter.RecordTransferFileAsync(
+            new DownloadTaskId(item.DownloadBase.Id), "video", "delete-retry.mp4",
+            TestContext.Current.CancellationToken);
         await context.StateWriter.CancelAsync(
             new DownloadTaskId(item.DownloadBase.Id),
             TestContext.Current.CancellationToken);
@@ -134,9 +136,11 @@ public sealed class DownloadManagerCoordinatorTests
         using var context = new CoordinatorContext();
         var item = context.CreateDownloadingItem("delete-complete", DownloadStatus.WaitForDownload);
         item.DownloadBase.NeedDownloadContent = DownloadContentSelection.None;
-        item.Downloading.DownloadFiles["video"] = "delete-complete.mp4";
         context.State.AddDownloading(item);
-        await context.Storage.AddDownloadingAsync(item, TestContext.Current.CancellationToken);
+        await context.Storage.AddDownloadingAsync(context.TaskService, item, TestContext.Current.CancellationToken);
+        await context.StateWriter.RecordTransferFileAsync(
+            new DownloadTaskId(item.DownloadBase.Id), "video", "delete-complete.mp4",
+            TestContext.Current.CancellationToken);
         var media = context.CreateFile("delete-complete.mp4", "partial media");
         var sidecar = context.CreateFile("delete-complete.mp4.legacy-partial", "resume state");
 
@@ -158,8 +162,8 @@ public sealed class DownloadManagerCoordinatorTests
         var second = context.CreateDownloadingItem("stale-second", DownloadStatus.WaitForDownload);
         context.State.AddDownloading(first);
         context.State.AddDownloading(second);
-        await context.Storage.AddDownloadingAsync(first, TestContext.Current.CancellationToken);
-        await context.Storage.AddDownloadingAsync(second, TestContext.Current.CancellationToken);
+        await context.Storage.AddDownloadingAsync(context.TaskService, first, TestContext.Current.CancellationToken);
+        await context.Storage.AddDownloadingAsync(context.TaskService, second, TestContext.Current.CancellationToken);
         await context.StateWriter.SetBackendIdentityAsync(
             new DownloadTaskId(first.DownloadBase.Id),
             "stale-gid-first",
@@ -190,8 +194,8 @@ public sealed class DownloadManagerCoordinatorTests
         var second = context.CreateDownloadingItem("timeout-second", DownloadStatus.WaitForDownload);
         context.State.AddDownloading(first);
         context.State.AddDownloading(second);
-        await context.Storage.AddDownloadingAsync(first, TestContext.Current.CancellationToken);
-        await context.Storage.AddDownloadingAsync(second, TestContext.Current.CancellationToken);
+        await context.Storage.AddDownloadingAsync(context.TaskService, first, TestContext.Current.CancellationToken);
+        await context.Storage.AddDownloadingAsync(context.TaskService, second, TestContext.Current.CancellationToken);
         await context.StateWriter.StartAsync(
             new DownloadTaskId(first.DownloadBase.Id),
             TestContext.Current.CancellationToken);
@@ -219,8 +223,8 @@ public sealed class DownloadManagerCoordinatorTests
         var second = context.CreateDownloadingItem("concurrent-second", DownloadStatus.WaitForDownload);
         context.State.AddDownloading(first);
         context.State.AddDownloading(second);
-        await context.Storage.AddDownloadingAsync(first, TestContext.Current.CancellationToken);
-        await context.Storage.AddDownloadingAsync(second, TestContext.Current.CancellationToken);
+        await context.Storage.AddDownloadingAsync(context.TaskService, first, TestContext.Current.CancellationToken);
+        await context.Storage.AddDownloadingAsync(context.TaskService, second, TestContext.Current.CancellationToken);
 
         var deletion = context.Coordinator.DeleteAllAsync(
             context.State.Downloading,
@@ -242,7 +246,7 @@ public sealed class DownloadManagerCoordinatorTests
         using var context = new CoordinatorContext(useStaging: true);
         var item = context.CreateDownloadingItem("delete-publish-collision", DownloadStatus.WaitForDownload);
         context.State.AddDownloading(item);
-        await context.Storage.AddDownloadingAsync(item, TestContext.Current.CancellationToken);
+        await context.Storage.AddDownloadingAsync(context.TaskService, item, TestContext.Current.CancellationToken);
         var taskId = new DownloadTaskId(item.DownloadBase.Id);
         var task = await context.StateWriter.StartAsync(taskId, TestContext.Current.CancellationToken);
         var staged = Path.Combine(context.Staging!.GetDirectory(
@@ -274,9 +278,11 @@ public sealed class DownloadManagerCoordinatorTests
     {
         using var context = new CoordinatorContext();
         var item = context.CreateDownloadingItem("delete-canceled", DownloadStatus.WaitForDownload);
-        item.Downloading.DownloadFiles["video"] = "delete-canceled.mp4";
         context.State.AddDownloading(item);
-        await context.Storage.AddDownloadingAsync(item, TestContext.Current.CancellationToken);
+        await context.Storage.AddDownloadingAsync(context.TaskService, item, TestContext.Current.CancellationToken);
+        await context.StateWriter.RecordTransferFileAsync(
+            new DownloadTaskId(item.DownloadBase.Id), "video", "delete-canceled.mp4",
+            TestContext.Current.CancellationToken);
         var media = context.CreateFile("delete-canceled.mp4", "partial media");
         using var cancellation = new CancellationTokenSource();
         await cancellation.CancelAsync();
@@ -380,7 +386,7 @@ public sealed class DownloadManagerCoordinatorTests
     {
         using var context = new CoordinatorContext();
         var downloading = context.CreateDownloadingItem("legacy-no-map", DownloadStatus.WaitForDownload);
-        await context.Storage.AddDownloadingAsync(downloading, TestContext.Current.CancellationToken);
+        await context.Storage.AddDownloadingAsync(context.TaskService, downloading, TestContext.Current.CancellationToken);
         var taskId = new DownloadTaskId(downloading.DownloadBase!.Id);
         await context.StateWriter.StartAsync(taskId, TestContext.Current.CancellationToken);
         await context.StateWriter.CompleteAsync(
@@ -577,8 +583,7 @@ public sealed class DownloadManagerCoordinatorTests
                 clock);
             Storage = new DownloadTaskProjectionStore(
                 TaskService,
-                historyService,
-                clock);
+                historyService);
             StateWriter = new DownloadTaskStateWriter(TaskService);
             Queue = new RecordingDownloadTaskQueue();
             Scheduler = new RecordingSchedulerControl();
@@ -649,8 +654,7 @@ public sealed class DownloadManagerCoordinatorTests
             TaskService = new DownloadTaskApplicationService(Store, historyService, clock);
             Storage = new DownloadTaskProjectionStore(
                 TaskService,
-                historyService,
-                clock);
+                historyService);
             StateWriter = new DownloadTaskStateWriter(TaskService);
             Coordinator = new DownloadManagerCoordinator(
                 ApplicationCancellation, Storage, StateWriter, Queue,
@@ -690,7 +694,7 @@ public sealed class DownloadManagerCoordinatorTests
                     DownloadContentSelection.None with { Subtitle = true },
                 _ => downloading.DownloadBase.NeedDownloadContent
             };
-            await Storage.AddDownloadingAsync(downloading, TestContext.Current.CancellationToken)
+            await Storage.AddDownloadingAsync(TaskService, downloading, TestContext.Current.CancellationToken)
                 .ConfigureAwait(true);
             var taskId = new DownloadTaskId(id);
             await StateWriter.StartAsync(taskId, TestContext.Current.CancellationToken)

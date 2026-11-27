@@ -342,8 +342,7 @@ public sealed class DownloadPipelineCommitBoundaryTests
             var tasks = new DownloadTaskApplicationService(store, historyService, clock);
             var projectionStore = new DownloadTaskProjectionStore(
                 tasks,
-                historyService,
-                clock);
+                historyService);
             var stateWriter = new DownloadTaskStateWriter(tasks);
             var taskId = new DownloadTaskId(Guid.NewGuid().ToString("N"));
             var downloadBase = new DownloadBase
@@ -366,7 +365,7 @@ public sealed class DownloadPipelineCommitBoundaryTests
                     DownloadStatus = DownloadStatus.WaitForDownload
                 }
             };
-            await projectionStore.AddDownloadingAsync(
+            await projectionStore.AddDownloadingAsync(tasks,
                 downloading,
                 TestContext.Current.CancellationToken).ConfigureAwait(true);
             await stateWriter.StartAsync(

@@ -9,7 +9,6 @@ using DownKyi.Application.Diagnostics;
 using DownKyi.Application.Downloads;
 using DownKyi.Application.Lifetime;
 using DownKyi.Application.Settings;
-using DownKyi.Application.Time;
 using DownKyi.Domain.Downloads;
 using DownKyi.Platform;
 using DownKyi.ViewModels.DownloadManager;
@@ -26,7 +25,6 @@ internal sealed class DownloadTaskProjectionStore : IDisposable, IAsyncDisposabl
 {
     private readonly IDownloadTaskCatalog _tasks;
     private readonly IDownloadHistoryService _history;
-    private readonly IClock _clock;
     private readonly IUiDispatcher? _uiDispatcher;
     private readonly ILogger<DownloadTaskProjectionStore> _logger;
     private readonly CancellationToken _shutdownToken;
@@ -40,46 +38,30 @@ internal sealed class DownloadTaskProjectionStore : IDisposable, IAsyncDisposabl
     public DownloadTaskProjectionStore(
         IDownloadTaskCatalog tasks,
         IDownloadHistoryService history,
-        IClock clock,
         IUiDispatcher? uiDispatcher = null,
         ILogger<DownloadTaskProjectionStore>? logger = null,
         ApplicationCancellation? applicationCancellation = null)
     {
         _tasks = tasks ?? throw new ArgumentNullException(nameof(tasks));
         _history = history ?? throw new ArgumentNullException(nameof(history));
-        _clock = clock ?? throw new ArgumentNullException(nameof(clock));
         _uiDispatcher = uiDispatcher;
         _logger = logger ?? NullLogger<DownloadTaskProjectionStore>.Instance;
         _shutdownToken = applicationCancellation?.ShutdownToken ?? CancellationToken.None;
         _tasks.TaskChanged += OnTaskChanged;
     }
 
-    public async Task AddDownloadingAsync(
-        DownloadingItem? downloadingItem,
-        CancellationToken cancellationToken = default)
+    public DownloadingItem Track(DownloadTask task, DownloadingItem? item = null)
     {
-        if (downloadingItem?.DownloadBase == null)
+        ArgumentNullException.ThrowIfNull(task);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (item != null && item.DownloadBase.Id != task.Id.Value)
         {
-            return;
+            throw new ArgumentException("The projection must represent the committed task.", nameof(item));
         }
-
-        var task = DownloadTaskProjectionMapper.CreateNewTask(downloadingItem, _clock.UtcNow);
-        _downloadingProjections[task.Id] = downloadingItem;
-        var result = await _tasks.AddAsync(task, cancellationToken).ConfigureAwait(true);
-        if (result.IsSuccess)
-        {
-            return;
-        }
-
-        var existing = await _tasks.FindAsync(task.Id, cancellationToken).ConfigureAwait(true);
-        if (existing != null)
-        {
-            Publish(existing);
-            return;
-        }
-
-        _downloadingProjections.TryRemove(task.Id, out _);
-        ThrowStoreFailure(result.Error?.Message);
+        var projection = _downloadingProjections.GetOrAdd(
+            task.Id, _ => item ?? DownloadTaskProjectionMapper.ToDownloadingItem(task));
+        Publish(task);
+        return projection;
     }
 
     public async Task<DownloadTaskProjectionStartupState> GetDownloadingStateAsync(

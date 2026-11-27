@@ -24,8 +24,7 @@ internal static class DownloadRestoreScenario
         var tasks = new DownloadTaskApplicationService(store, historyService, clock);
         var projection = new DownloadTaskProjectionStore(
             tasks,
-            historyService,
-            clock);
+            historyService);
         try
         {
             await store.InitializeAsync(cancellationToken).ConfigureAwait(false);

@@ -22,6 +22,8 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <Using Include="DownKyi.Testing" />
+    <Compile Include="../Shared/DownloadTaskTestFactory.cs" Link="DownloadTaskTestFactory.cs" />
   </ItemGroup>
 
 </Project>

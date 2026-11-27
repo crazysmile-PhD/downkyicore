@@ -20,6 +20,7 @@ using DownKyi.Services;
 using DownKyi.Services.Download;
 using DownKyi.Services.Video;
 using DownKyi.Utils;
+using DownKyi.ViewModels.DownloadManager;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using CoreVideoPage = DownKyi.Core.BiliApi.Video.Models.VideoPage;
@@ -98,7 +99,7 @@ public sealed class VideoTagLoadingTests : IDisposable
 
         Assert.Equal(1, added);
         Assert.Equal(operation.Token, observedToken);
-        Assert.Equal("current", Assert.Single(Assert.Single(context.ListState.Downloading).Metadata!.Tags));
+        Assert.Equal("current", Assert.Single(context.GetNfo(Assert.Single(context.ListState.Downloading))!.Tags));
         Assert.Single(context.Queue.Enqueued);
     }
 
@@ -217,7 +218,7 @@ public sealed class VideoTagLoadingTests : IDisposable
             .ConfigureAwait(true);
 
         Assert.Equal(1, added);
-        Assert.Empty(Assert.Single(context.ListState.Downloading).Metadata!.Tags);
+        Assert.Empty(context.GetNfo(Assert.Single(context.ListState.Downloading))!.Tags);
         var warning = Assert.Single(context.Logger.Entries);
         Assert.Equal(LogLevel.Warning, warning.Level);
         Assert.IsType<HttpRequestException>(warning.Exception);
@@ -372,7 +373,7 @@ public sealed class VideoTagLoadingTests : IDisposable
             .ConfigureAwait(true);
 
         Assert.Equal(1, added);
-        Assert.Equal(["one", "two"], Assert.Single(context.ListState.Downloading).Metadata!.Tags);
+        Assert.Equal(["one", "two"], context.GetNfo(Assert.Single(context.ListState.Downloading))!.Tags);
     }
 
     [Fact]
@@ -408,7 +409,7 @@ public sealed class VideoTagLoadingTests : IDisposable
             .ConfigureAwait(true);
 
         Assert.Equal(1, added);
-        Assert.Equal(["kept"], Assert.Single(context.ListState.Downloading).Metadata!.Tags);
+        Assert.Equal(["kept"], context.GetNfo(Assert.Single(context.ListState.Downloading))!.Tags);
         Assert.Single(context.Queue.Enqueued);
     }
 
@@ -432,7 +433,7 @@ public sealed class VideoTagLoadingTests : IDisposable
 
         Assert.Equal(1, added);
         Assert.Equal(0, loadCount);
-        Assert.Null(Assert.Single(context.ListState.Downloading).Metadata);
+        Assert.Null(context.GetNfo(Assert.Single(context.ListState.Downloading)));
     }
 
     [Fact]
@@ -522,7 +523,7 @@ public sealed class VideoTagLoadingTests : IDisposable
         Assert.Equal(0, result.DuplicateCount);
         Assert.Equal(1, loadCount);
         var download = Assert.Single(context.ListState.Downloading);
-        Assert.Equal(["kept"], download.Metadata!.Tags);
+        Assert.Equal(["kept"], context.GetNfo(download)!.Tags);
         Assert.Equal(Path.Combine(oldDirectory, page.Name + "(1)"), download.DownloadBase.FilePath);
         Assert.Equal("previous-quality", await File.ReadAllTextAsync(oldPath, TestContext.Current.CancellationToken));
         Assert.Single(context.Dialogs.Requests);
@@ -1388,8 +1389,8 @@ public sealed class VideoTagLoadingTests : IDisposable
             Assert.Equal(expectedName, item.DownloadBase.Name);
             Assert.Equal(expected.Pic, item.DownloadBase.CoverUrl);
             Assert.Equal(published, page.OriginalPublishTime);
-            Assert.Equal(expected.Desc, item.Metadata!.Plot);
-            Assert.Equal(published.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), item.Metadata.Premiered);
+            Assert.Equal(expected.Desc, context.GetNfo(item)!.Plot);
+            Assert.Equal(published.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), context.GetNfo(item)!.Premiered);
             Assert.Equal(
                 Path.Combine(_directory, section.Title, expected.Title, expectedName, page.PublishTime),
                 item.DownloadBase.FilePath);
@@ -1616,8 +1617,7 @@ public sealed class VideoTagLoadingTests : IDisposable
             _taskService = new DownloadTaskApplicationService(Store, historyService, clock);
             _projectionStore = new DownloadTaskProjectionStore(
                 _taskService,
-                historyService,
-                clock);
+                historyService);
             ListState = new DownloadListState();
             Queue = new RecordingDownloadTaskQueue();
             Logger = new RecordingLogger<DownloadMovieMetadataBuilder>();
@@ -1635,7 +1635,8 @@ public sealed class VideoTagLoadingTests : IDisposable
                 _projectionStore,
                 new DownloadCommittedTaskDispatcher(queue, stateWriter),
                 runtimeAvailability ?? new ReadyDownloadRuntimeAvailability(),
-                physicalOutputPathResolver);
+                physicalOutputPathResolver,
+                clock);
             Service = new AddToDownloadService(
                 DownKyi.Core.BiliApi.VideoStream.PlayStreamType.Video,
                 _admission,
@@ -1647,6 +1648,9 @@ public sealed class VideoTagLoadingTests : IDisposable
                 Dialogs,
                 new RecordingLogger<AddToDownloadService>());
         }
+
+        public DownloadNfoRequest? GetNfo(DownloadingItem item) =>
+            _projectionStore.GetRequiredSnapshot(new DownloadTaskId(item.DownloadBase.Id)).Plan.NfoRequest;
 
         public AddToDownloadService Service { get; }
 

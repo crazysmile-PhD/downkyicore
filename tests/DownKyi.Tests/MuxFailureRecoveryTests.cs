@@ -311,8 +311,7 @@ public sealed class MuxFailureRecoveryTests
             var tasks = new DownloadTaskApplicationService(store, historyService, clock);
             var projectionStore = new DownloadTaskProjectionStore(
                 tasks,
-                historyService,
-                clock);
+                historyService);
             var stateWriter = new DownloadTaskStateWriter(tasks);
             var taskId = new DownloadTaskId("mux-recovery");
             var downloadBase = new DownloadBase
@@ -335,7 +334,7 @@ public sealed class MuxFailureRecoveryTests
                     PlayStreamType = streamType
                 }
             };
-            await projectionStore.AddDownloadingAsync(
+            await projectionStore.AddDownloadingAsync(tasks,
                 downloading,
                 TestContext.Current.CancellationToken).ConfigureAwait(true);
             await stateWriter.StartAsync(taskId, TestContext.Current.CancellationToken)

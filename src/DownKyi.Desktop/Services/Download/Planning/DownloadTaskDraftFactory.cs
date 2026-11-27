@@ -9,16 +9,14 @@ using DownKyi.Core.BiliApi.Zone;
 using DownKyi.Core.FileName;
 using DownKyi.Core.Utils;
 using DownKyi.Domain.Downloads;
-using DownKyi.Models;
 using DownKyi.Presentation;
 using DownKyi.Utils;
-using DownKyi.ViewModels.DownloadManager;
 
 namespace DownKyi.Services.Download;
 
 internal static class DownloadTaskDraftFactory
 {
-    public static DownloadingItem Create(
+    public static DownloadTaskDraft Create(
         string directory,
         VideoInfoView video,
         VideoSection section,
@@ -63,16 +61,29 @@ internal static class DownloadTaskDraftFactory
         var selectedVideo = content.Video ? videoQuality : null;
         var audioCodec = PlaybackQualityCatalog.GetAudioQualities()
             .FirstOrDefault(quality => quality.Name == audioQualityFormat) ?? new Quality();
-        var downloadBase = new DownloadBase
-        {
-            Bvid = page.Bvid,
-            Avid = page.Avid,
-            Cid = page.Cid,
-            EpisodeId = page.EpisodeId,
-            CoverUrl = video.CoverUrl,
-            PageCoverUrl = page.FirstFrame,
-            ZoneId = ResolveZoneId(video.TypeId),
-            FilePath = BuildFilePath(
+        var metadata = new DownloadTaskMetadata(
+            new DownloadMediaIdentity(page.Bvid, page.Avid, page.Cid, page.EpisodeId, page.Page, page.Order),
+            video.Title,
+            page.Name,
+            page.Duration,
+            selectedVideo?.SelectedVideoCodec ?? string.Empty,
+            new DownloadQuality(selectedVideo?.Quality ?? 0, selectedVideo?.QualityFormat ?? string.Empty),
+            new DownloadQuality(content.Audio ? audioCodec.Id : 0, content.Audio ? audioCodec.Name : string.Empty),
+            video.CoverUrl,
+            page.FirstFrame,
+            ResolveZoneId(video.TypeId));
+        return new DownloadTaskDraft(
+            new DownloadTaskId(Guid.NewGuid().ToString("N")),
+            metadata,
+            content with
+            {
+                MediaKind = mediaKind,
+                DanmakuOutputFormat = content.Danmaku
+                    ? ToDomainDanmakuOutputFormat(settings.Danmaku.OutputFormat)
+                    : null
+            },
+            (int)ResolvePlayStreamType(video.TypeId),
+            BuildFilePath(
                 directory,
                 video,
                 section,
@@ -80,37 +91,7 @@ internal static class DownloadTaskDraftFactory
                 page,
                 selectedVideo,
                 audioQualityFormat,
-                settings),
-            Order = page.Order,
-            MainTitle = video.Title,
-            Name = page.Name,
-            Duration = page.Duration,
-            VideoCodecName = selectedVideo?.SelectedVideoCodec ?? string.Empty,
-            Resolution = new Quality
-            {
-                Name = selectedVideo?.QualityFormat ?? string.Empty,
-                Id = selectedVideo?.Quality ?? 0
-            },
-            AudioCodec = content.Audio ? audioCodec : new Quality(),
-            Page = page.Page
-        };
-        downloadBase.NeedDownloadContent = content with
-        {
-            MediaKind = mediaKind,
-            DanmakuOutputFormat = content.Danmaku
-                ? ToDomainDanmakuOutputFormat(settings.Danmaku.OutputFormat)
-                : null
-        };
-
-        return new DownloadingItem
-        {
-            DownloadBase = downloadBase,
-            Downloading = new Downloading
-            {
-                PlayStreamType = ResolvePlayStreamType(video.TypeId),
-                DownloadStatus = DownloadStatus.NotStarted
-            }
-        };
+                settings));
     }
 
     private static int ResolveZoneId(int typeId)
