@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 
 namespace DownKyi.Core.Danmaku2Ass;
 
@@ -7,13 +8,23 @@ namespace DownKyi.Core.Danmaku2Ass;
 /// </summary>
 public class Creater
 {
+    private readonly CancellationToken _cancellationToken;
     public Config Config { get; }
     public IReadOnlyList<Danmaku> Danmakus { get; }
     public IReadOnlyList<Subtitle> Subtitles { get; }
     public string Text { get; }
 
     public Creater(Config config, IReadOnlyList<Danmaku> danmakus)
+        : this(config, danmakus, CancellationToken.None)
     {
+    }
+
+    public Creater(Config config, IReadOnlyList<Danmaku> danmakus, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        ArgumentNullException.ThrowIfNull(danmakus);
+        cancellationToken.ThrowIfCancellationRequested();
+        _cancellationToken = cancellationToken;
         Config = config;
         Danmakus = danmakus;
         Subtitles = SetSubtitles();
@@ -31,9 +42,10 @@ public class Creater
             { "bottom", stayed }
         };
 
-        var subtitles = new List<Subtitle>();
+        var subtitles = new List<Subtitle>(Danmakus.Count);
         foreach (var danmaku in Danmakus)
         {
+            _cancellationToken.ThrowIfCancellationRequested();
             // 丢弃不支持的
             if (danmaku.Style == "none")
             {
@@ -64,6 +76,7 @@ public class Creater
 
     protected string SetText()
     {
+        _cancellationToken.ThrowIfCancellationRequested();
         var header = Config.HeaderTemplate
             .Replace("{title}", Config.Title, StringComparison.Ordinal)
             .Replace("{width}", Config.ScreenWidth.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal)
@@ -71,8 +84,16 @@ public class Creater
             .Replace("{fontname}", Config.FontName, StringComparison.Ordinal)
             .Replace("{fontsize}", Config.BaseFontSize.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal);
 
-        var events = Subtitles.Aggregate(string.Empty, (current, subtitle) => current + "\n" + subtitle.Text);
+        var text = new StringBuilder(header);
+        foreach (var subtitle in Subtitles)
+        {
+            _cancellationToken.ThrowIfCancellationRequested();
+            text.Append('\n').Append(subtitle.Text);
+        }
 
-        return header + events;
+        _cancellationToken.ThrowIfCancellationRequested();
+        var result = text.ToString();
+        _cancellationToken.ThrowIfCancellationRequested();
+        return result;
     }
 }

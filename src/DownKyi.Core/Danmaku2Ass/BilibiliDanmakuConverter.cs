@@ -163,7 +163,7 @@ public sealed class BilibiliDanmakuConverter
         producer.StartHandle();
 
         // 字幕生成
-        return new Creater(subtitleConfig, producer.KeepedDanmakus).Text;
+        return new Creater(subtitleConfig, producer.KeepedDanmakus, cancellationToken).Text;
     }
 
     private bool IsExplicitlyFiltered(int mode)
