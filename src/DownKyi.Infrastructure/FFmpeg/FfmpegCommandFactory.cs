@@ -12,6 +12,10 @@ internal enum FfmpegConcatStrategy
 
 internal static class FfmpegCommandFactory
 {
+    // A 128x128 black PNG uses the bundled decoder without an input device or temporary file.
+    private const string HardwareProbeFrame = "data:image/png;base64," +
+        "iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAIAAABMXPacAAAARklEQVR4nO3BAQEAAACCIP+vbkhAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABA9wbAgAABWam+hQAAAABJRU5ErkJggg==";
+
     public static FfmpegCommand BuildMerge(
         string? audioFile,
         string? videoFile,
@@ -145,6 +149,20 @@ internal static class FfmpegCommandFactory
         ], "probe-concat-input");
     }
 
+    public static FfmpegCommand BuildHardwareEncoderProbe(FfmpegHardwareEncoderProfile encoder)
+    {
+        ArgumentNullException.ThrowIfNull(encoder);
+        var arguments = CreateBaseArguments();
+        AddRequiredOutputContract(arguments);
+        arguments.AddRange([
+            "-v", "error", "-xerror", "-i", HardwareProbeFrame,
+            "-frames:v", "1", "-an"
+        ]);
+        arguments.AddRange(encoder.OutputArguments);
+        arguments.AddRange(["-f", "null", "-"]);
+        return new FfmpegCommand(FfmpegExecutableLocator.Ffmpeg, arguments, "probe-hardware-encoder");
+    }
+
     public static FfmpegCommand BuildConcat(
         string listFile,
         string outputFile,
@@ -205,6 +223,7 @@ internal static class FfmpegCommandFactory
                     "-preset", "veryfast",
                     "-crf", "23",
                     "-threads", "2",
+                    "-pix_fmt:v:0", "yuv420p",
                     "-c:a", "aac"
                 ]);
                 break;
@@ -218,7 +237,6 @@ internal static class FfmpegCommandFactory
         }
 
         arguments.AddRange([
-            "-pix_fmt:v:0", "yuv420p",
             "-avoid_negative_ts", "make_zero",
             outputFile
         ]);
