@@ -11,12 +11,23 @@ public sealed class ImageCancellationTests
     [AvaloniaFact]
     public async Task ClearingImageSourceCancelsItsStartedHttpRequest()
     {
-        await AssertStartedRequestIsCanceledAsync(loader =>
+        var window = new Window();
+        try
         {
-            ImageLoader.AsyncImageLoader = loader;
-            var image = new Image();
-            return source => ImageLoader.SetSource(image, source);
-        }).ConfigureAwait(true);
+            await AssertStartedRequestIsCanceledAsync(loader =>
+            {
+                ImageLoader.AsyncImageLoader = loader;
+                var image = new Image();
+                window.Content = image;
+                window.Show();
+                window.UpdateLayout();
+                return source => ImageLoader.SetSource(image, source);
+            }).ConfigureAwait(true);
+        }
+        finally
+        {
+            window.Close();
+        }
     }
 
     [AvaloniaFact]

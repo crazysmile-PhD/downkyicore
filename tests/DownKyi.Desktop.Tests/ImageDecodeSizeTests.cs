@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Headless;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
@@ -10,22 +11,41 @@ namespace DownKyi.Desktop.Tests;
 public sealed class ImageDecodeSizeTests
 {
     [AvaloniaFact]
-    public async Task DeclaredDimensionsReachDecoderBeforeFirstMeasure()
+    public Task SourceAssignedBeforeAttachmentUsesUnitScaling()
+        => AssertPhysicalDecodeSizeAsync(1, 64);
+
+    [AvaloniaFact]
+    public Task SourceAssignedBeforeAttachmentUsesFractionalScaling()
+        => AssertPhysicalDecodeSizeAsync(1.25, 80);
+
+    [AvaloniaFact]
+    public Task SourceAssignedBeforeAttachmentUsesDoubleScaling()
+        => AssertPhysicalDecodeSizeAsync(2, 128);
+
+    private static async Task AssertPhysicalDecodeSizeAsync(double scale, int expectedPixels)
     {
         using var loader = new CapturingLoader();
         var preceding = ImageLoader.AsyncImageLoader;
         ImageLoader.AsyncImageLoader = loader;
+        var image = new Image { Width = 64, Height = 64 };
+        var window = new Window();
         try
         {
-            var image = new Image { Width = 64, Height = 64 };
+            window.SetRenderScaling(scale);
             Assert.Equal(default, image.DesiredSize);
+            Assert.Null(TopLevel.GetTopLevel(image));
             ImageLoader.SetSource(image, "https://images.invalid/avatar");
+            window.Content = image;
+            window.Show();
+            window.UpdateLayout();
 
             var size = await loader.Requested.Task.WaitAsync(TestContext.Current.CancellationToken).ConfigureAwait(true);
-            Assert.Equal(new PixelSize(64, 64), size);
+            Assert.Equal(scale, window.RenderScaling);
+            Assert.Equal(new PixelSize(expectedPixels, expectedPixels), size);
         }
         finally
         {
+            window.Close();
             ImageLoader.AsyncImageLoader = preceding;
         }
     }

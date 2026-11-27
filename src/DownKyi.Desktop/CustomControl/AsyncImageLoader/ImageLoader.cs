@@ -8,6 +8,7 @@ using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Logging;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using DownKyi.CustomControl.AsyncImageLoader.Loaders;
 
 namespace DownKyi.CustomControl.AsyncImageLoader;
@@ -62,14 +63,7 @@ internal static class ImageLoader
         SetIsLoading(sender, true);
         try
         {
-            var targetSize = GetDecodeSize(sender);
-            if (!targetSize.HasValue)
-            {
-                // Source bindings commonly run before the first layout. Read the
-                // allocated slot after layout instead of retaining a zero size.
-                targetSize = await Dispatcher.UIThread.InvokeAsync(
-                    () => GetDecodeSize(sender), DispatcherPriority.Loaded, cts.Token);
-            }
+            var targetSize = await GetDecodeSizeAfterLayoutAsync(sender, cts.Token).ConfigureAwait(true);
 
             var bitmap = await Task.Run(async () =>
             {
@@ -121,6 +115,36 @@ internal static class ImageLoader
             {
                 SetIsLoading(sender, false);
             }
+        }
+    }
+
+    private static async Task<PixelSize?> GetDecodeSizeAfterLayoutAsync(Image image, CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            if (!image.IsAttachedToVisualTree())
+            {
+                var attached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                EventHandler<VisualTreeAttachmentEventArgs> onAttached = (_, _) => attached.TrySetResult();
+                image.AttachedToVisualTree += onAttached;
+                try
+                {
+                    await attached.Task.WaitAsync(cancellationToken).ConfigureAwait(true);
+                }
+                finally
+                {
+                    image.AttachedToVisualTree -= onAttached;
+                }
+            }
+
+            // Even fixed dimensions need the visual root's scale. Read both scale
+            // and layout together, and wait again if the image detached meanwhile.
+            var state = await Dispatcher.UIThread.InvokeAsync(
+                () => image.IsAttachedToVisualTree()
+                    ? (Attached: true, Size: GetDecodeSize(image))
+                    : (Attached: false, Size: (PixelSize?)null),
+                DispatcherPriority.Loaded, cancellationToken);
+            if (state.Attached) return state.Size;
         }
     }
 
