@@ -81,6 +81,7 @@ internal sealed partial class BuiltinTransferBackend : ITransferBackend, IDownlo
             DownloadProgressUiUpdater.DefaultMinimumInterval);
         var speedSampler = new BuiltinDownloadSpeedSampler(_clock);
         var progressSync = new Lock();
+        long? lastSpeedLogTimestamp = null;
 
         void ReportProgress(long received, long total)
         {
@@ -99,12 +100,13 @@ internal sealed partial class BuiltinTransferBackend : ITransferBackend, IDownlo
                 }
 
                 request.PublishProgress(progress);
-                _diagnosticLogger.LogSpeed(
-                    Name,
-                    request.FileName,
-                    received,
-                    total,
-                    speed);
+                var now = _clock.GetTimestamp();
+                if (lastSpeedLogTimestamp is not { } last ||
+                    _clock.GetElapsedTime(last, now) >= DownloadDiagnosticLogger.SpeedLogInterval)
+                {
+                    lastSpeedLogTimestamp = now;
+                    _diagnosticLogger.LogSpeed(Name, request.FileName, received, total, speed);
+                }
             }
         }
 
