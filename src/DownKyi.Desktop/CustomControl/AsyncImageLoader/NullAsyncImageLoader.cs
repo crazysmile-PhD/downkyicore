@@ -1,5 +1,6 @@
 using System.Threading;
 using System.Threading.Tasks;
+using Avalonia;
 using Avalonia.Media.Imaging;
 
 namespace DownKyi.CustomControl.AsyncImageLoader;
@@ -12,7 +13,7 @@ internal sealed class NullAsyncImageLoader : IAsyncImageLoader
     {
     }
 
-    public Task<Bitmap?> ProvideImageAsync(string url, CancellationToken cancellationToken = default)
+    public Task<Bitmap?> ProvideImageAsync(string url, PixelSize? decodeSize = null, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         return Task.FromResult<Bitmap?>(null);

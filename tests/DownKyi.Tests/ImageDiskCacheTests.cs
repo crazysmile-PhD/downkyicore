@@ -10,6 +10,48 @@ namespace DownKyi.Tests;
 
 public sealed class ImageDiskCacheTests
 {
+    [Theory]
+    [InlineData(1024, 1024, 64, 64, 64, 64)]
+    [InlineData(2048, 1024, 64, 64, 128, 64)]
+    [InlineData(1024, 2048, 64, 64, 64, 128)]
+    [InlineData(1024, 512, 0, 64, 128, 64)]
+    [InlineData(512, 1024, 64, 0, 64, 128)]
+    public async Task NetworkAndCachedBytesDecodeToRequestedSizeWithoutChangingCachedOriginal(
+        int sourceWidth, int sourceHeight, int targetWidth, int targetHeight, int expectedWidth, int expectedHeight)
+    {
+        SkiaPlatform.Initialize();
+        var directory = Directory.CreateTempSubdirectory("downkyi-thumbnail-cache-");
+        try
+        {
+            using var source = new WriteableBitmap(new PixelSize(sourceWidth, sourceHeight), new Vector(96, 96));
+            using var stream = new MemoryStream();
+            source.Save(stream, PngBitmapEncoderOptions.Default);
+            using var handler = new ImageHandler(stream.ToArray());
+            using var client = new HttpClient(handler);
+            using var loader = new DiskCachedWebImageLoader(client, false, directory.FullName);
+            const string url = "https://images.invalid/thumbnail.png";
+            var target = new PixelSize(targetWidth, targetHeight);
+            using (var downloaded = await loader.ProvideImageAsync(url, target, TestContext.Current.CancellationToken))
+            {
+                Assert.NotNull(downloaded);
+                Assert.Equal(new PixelSize(expectedWidth, expectedHeight), downloaded.PixelSize);
+            }
+            using (var cached = await loader.ProvideImageAsync(url, target, TestContext.Current.CancellationToken))
+            {
+                Assert.NotNull(cached);
+                Assert.Equal(new PixelSize(expectedWidth, expectedHeight), cached.PixelSize);
+            }
+
+            Assert.Equal(1, handler.Requests);
+            using var original = new Bitmap(Assert.Single(Directory.GetFiles(directory.FullName)));
+            Assert.Equal(new PixelSize(sourceWidth, sourceHeight), original.PixelSize);
+        }
+        finally
+        {
+            directory.Delete(recursive: true);
+        }
+    }
+
     [Fact]
     public async Task CorruptCacheIsRefetchedAndConcurrentWritesPublishOnlyCompleteImages()
     {
@@ -31,13 +73,13 @@ public sealed class ImageDiskCacheTests
             using var handler = new ImageHandler(png);
             using var client = new HttpClient(handler);
             using var loader = new DiskCachedWebImageLoader(client, false, directory.FullName);
-            using (var recovered = await loader.ProvideImageAsync(url, cancellationToken).ConfigureAwait(true))
+            using (var recovered = await loader.ProvideImageAsync(url, cancellationToken: cancellationToken).ConfigureAwait(true))
             {
                 Assert.NotNull(recovered);
                 Assert.Equal(new PixelSize(1, 1), recovered.PixelSize);
                 Assert.Equal(1, handler.Requests);
             }
-            using (var hit = await loader.ProvideImageAsync(url, cancellationToken).ConfigureAwait(true))
+            using (var hit = await loader.ProvideImageAsync(url, cancellationToken: cancellationToken).ConfigureAwait(true))
             {
                 Assert.NotNull(hit);
                 Assert.Equal(1, handler.Requests);
