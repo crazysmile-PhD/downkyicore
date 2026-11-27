@@ -29,7 +29,8 @@ internal static class FfmpegConcurrencyScenario
             cancellationToken).ConfigureAwait(false));
 
         var detector = new FfmpegHardwareEncoderDetector(
-            NullLogger<FfmpegHardwareEncoderDetector>.Instance);
+            NullLogger<FfmpegHardwareEncoderDetector>.Instance,
+            new FfmpegProcessRunner());
         var profile = await detector
             .SelectAsync(FfmpegHardwareAcceleration.Auto, cancellationToken)
             .ConfigureAwait(false);
@@ -51,7 +52,7 @@ internal static class FfmpegConcurrencyScenario
             {
                 hardwareResult = hardwareResult with
                 {
-                    Notes = "The encoder is present in the FFmpeg build but the runtime hardware/driver probe failed; production must fall back to CPU encoding."
+                    Notes = "The encoder passed the one-frame probe, but the requested concurrent encoding workload failed."
                 };
             }
 
@@ -258,7 +259,7 @@ internal static class FfmpegConcurrencyScenario
                 ["peak_child_working_set_bytes"] = "bytes",
                 ["elapsed_milliseconds"] = "ms"
             },
-            "No supported hardware encoder was exposed by the current FFmpeg build and OS; production fallback remains CPU encoding.");
+            "No supported hardware encoder passed the one-frame runtime probe; production fallback remains CPU encoding.");
     }
 
     private static void UpdateMaximum(ref int location, int candidate)

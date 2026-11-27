@@ -13,7 +13,8 @@ public enum FfmpegOperationFailureKind
     OutputInvalid,
     DestinationConflict,
     DestinationAccessDenied,
-    OutputIoFailure
+    OutputIoFailure,
+    EncoderUnavailable
 }
 
 public enum FfmpegOperationFailureStage

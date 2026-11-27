@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 using DownKyi.Application.Diagnostics;
 using DownKyi.Application.Settings;
@@ -13,16 +14,16 @@ internal sealed record FfmpegHardwareEncoderProfile(
 
 internal sealed class FfmpegHardwareEncoderDetector
 {
-    private static readonly char[] EncoderLineSeparators = { '\r', '\n' };
     private static readonly TimeSpan DetectionTimeout = TimeSpan.FromSeconds(5);
-    private readonly Lazy<Task<HashSet<string>>> _availableEncoders;
+    private readonly ConcurrentDictionary<FfmpegHardwareAcceleration, bool> _usableEncoders = new();
+    private readonly IFfmpegProcessRunner _processRunner;
     private readonly ILogger<FfmpegHardwareEncoderDetector> _logger;
     private static readonly IReadOnlyList<string> NvidiaArguments =
-        Array.AsReadOnly(new[] { "-c:v", "h264_nvenc", "-preset", "p4", "-cq", "23" });
+        Array.AsReadOnly(new[] { "-c:v", "h264_nvenc", "-preset", "p4", "-cq", "23", "-pix_fmt:v:0", "yuv420p" });
     private static readonly IReadOnlyList<string> IntelQsvArguments =
-        Array.AsReadOnly(new[] { "-c:v", "h264_qsv", "-global_quality", "23" });
+        Array.AsReadOnly(new[] { "-c:v", "h264_qsv", "-global_quality", "23", "-pix_fmt:v:0", "yuv420p" });
     private static readonly IReadOnlyList<string> AmdAmfArguments =
-        Array.AsReadOnly(new[] { "-c:v", "h264_amf", "-quality", "balanced" });
+        Array.AsReadOnly(new[] { "-c:v", "h264_amf", "-quality", "balanced", "-pix_fmt:v:0", "yuv420p" });
     private static readonly IReadOnlyList<string> VaapiArguments = Array.AsReadOnly(new[]
     {
         "-vaapi_device", GetVaapiDevice(),
@@ -31,12 +32,14 @@ internal sealed class FfmpegHardwareEncoderDetector
         "-qp", "23"
     });
     private static readonly IReadOnlyList<string> VideoToolboxArguments =
-        Array.AsReadOnly(new[] { "-c:v", "h264_videotoolbox", "-b:v", "6M" });
+        Array.AsReadOnly(new[] { "-c:v", "h264_videotoolbox", "-b:v", "6M", "-pix_fmt:v:0", "yuv420p" });
 
-    public FfmpegHardwareEncoderDetector(ILogger<FfmpegHardwareEncoderDetector> logger)
+    public FfmpegHardwareEncoderDetector(
+        ILogger<FfmpegHardwareEncoderDetector> logger,
+        IFfmpegProcessRunner processRunner)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _availableEncoders = new Lazy<Task<HashSet<string>>>(LoadAvailableEncodersAsync);
+        _processRunner = processRunner ?? throw new ArgumentNullException(nameof(processRunner));
     }
 
     public async Task<FfmpegHardwareEncoderProfile?> SelectAsync(
@@ -52,12 +55,33 @@ internal sealed class FfmpegHardwareEncoderDetector
             ? GetAutoCandidates()
             : GetManualCandidates(mode);
 
-        var availableEncoders = await _availableEncoders.Value
-            .WaitAsync(cancellationToken)
-            .ConfigureAwait(false);
         foreach (var candidate in candidates)
         {
-            if (availableEncoders.Contains(candidate.EncoderName))
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!_usableEncoders.TryGetValue(candidate.Mode, out var usable))
+            {
+                var result = await _processRunner.RunAsync(
+                    FfmpegCommandFactory.BuildHardwareEncoderProbe(candidate),
+                    DetectionTimeout,
+                    cancellationToken).ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!result.ProcessStarted || result.TimedOut)
+                {
+                    _logger.LogInformationMessage(
+                        $"FFmpeg hardware probe could not complete: {candidate.DisplayName}; failure={result.ToOperationFailureKind()}");
+                    return null;
+                }
+
+                usable = result.Succeeded;
+                _usableEncoders.TryAdd(candidate.Mode, usable);
+                if (!usable)
+                {
+                    _logger.LogInformationMessage(
+                        $"FFmpeg hardware encoder failed its one-frame probe: {candidate.DisplayName}; exit={result.ExitCode}");
+                }
+            }
+
+            if (usable)
             {
                 _logger.LogInformationMessage($"Selected FFmpeg hardware encoder: {candidate.DisplayName}");
                 return candidate;
@@ -146,39 +170,6 @@ internal sealed class FfmpegHardwareEncoderDetector
             "macOS VideoToolbox",
             "h264_videotoolbox",
             VideoToolboxArguments);
-    }
-
-    private async Task<HashSet<string>> LoadAvailableEncodersAsync()
-    {
-        var processRunner = new FfmpegProcessRunner();
-        var result = await processRunner.RunAsync(
-                new FfmpegCommand(
-                    FfmpegExecutableLocator.Ffmpeg,
-                    ["-hide_banner", "-encoders"],
-                    "detect-hardware-encoders"),
-                DetectionTimeout,
-                CancellationToken.None)
-            .ConfigureAwait(false);
-        var output = result.StandardOutput + Environment.NewLine + result.StandardError;
-        var encoders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var line in output.Split(EncoderLineSeparators, StringSplitOptions.RemoveEmptyEntries))
-        {
-            var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length >= 2)
-            {
-                encoders.Add(parts[1]);
-            }
-        }
-
-        _logger.LogInformationMessage(
-            $"Detected FFmpeg hardware encoders: {string.Join(",", encoders.Where(IsKnownHardwareEncoder))}");
-        return encoders;
-    }
-
-    private static bool IsKnownHardwareEncoder(string encoder)
-    {
-        return encoder is "h264_nvenc" or "h264_qsv" or "h264_amf" or "h264_vaapi" or "h264_videotoolbox";
     }
 
     private static string GetVaapiDevice()

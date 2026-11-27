@@ -134,7 +134,7 @@ public sealed class FfmpegProcessorMergeTests : IDisposable
     }
 
     [Fact]
-    public async Task CoverOutputProcessFailureRemainsRetryable()
+    public async Task CoverOutputIoFailurePreservesSourcesAndCleansTemporaryFiles()
     {
         var audio = CreateInput("cover-output-failure-audio.m4s");
         var video = CreateInput("cover-output-failure-video.m4s");
@@ -154,7 +154,7 @@ public sealed class FfmpegProcessorMergeTests : IDisposable
             cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.False(result.Succeeded);
-        Assert.Equal(FfmpegOperationFailureKind.ProcessFailure, result.FailureKind);
+        Assert.Equal(FfmpegOperationFailureKind.OutputIoFailure, result.FailureKind);
         Assert.Equal(FfmpegOperationFailureStage.Cover, result.FailureStage);
         Assert.Equal(["normalize-cover"], runner.Operations);
         Assert.True(File.Exists(audio));

@@ -192,6 +192,8 @@ public sealed class MuxFailureRecoveryTests
     [Theory]
     [InlineData(FfmpegOperationFailureKind.ProcessFailure)]
     [InlineData(FfmpegOperationFailureKind.OutputInvalid)]
+    [InlineData(FfmpegOperationFailureKind.OutputIoFailure)]
+    [InlineData(FfmpegOperationFailureKind.DestinationAccessDenied)]
     public async Task UnconfirmedCoverFailureRemainsRetryableAndDistinctFromMuxFailure(
         FfmpegOperationFailureKind failureKind)
     {
@@ -219,13 +221,17 @@ public sealed class MuxFailureRecoveryTests
             ? FfmpegEmbeddedAudioMode.Required
             : FfmpegEmbeddedAudioMode.Excluded;
 
-    [Fact]
-    public async Task InfrastructureFailurePreservesCompletedSourcesAndResumeIdentity()
+    [Theory]
+    [InlineData(FfmpegOperationFailureKind.ProcessFailure)]
+    [InlineData(FfmpegOperationFailureKind.OutputIoFailure)]
+    [InlineData(FfmpegOperationFailureKind.DestinationAccessDenied)]
+    [InlineData(FfmpegOperationFailureKind.EncoderUnavailable)]
+    public async Task InfrastructureFailurePreservesCompletedSourcesAndResumeIdentity(FfmpegOperationFailureKind failureKind)
     {
         var test = await MuxTestContext.CreateAsync().ConfigureAwait(true);
         await using var testLifetime = test.ConfigureAwait(true);
         var stage = test.CreateStage(FfmpegOperationResult.Failure(
-            "ffmpeg unavailable"));
+            "ffmpeg failed", failureKind));
 
         var result = await stage.ExecuteAsync(
             test.Execution,

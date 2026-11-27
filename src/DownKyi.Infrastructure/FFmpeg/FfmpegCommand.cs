@@ -37,6 +37,15 @@ internal sealed record FfmpegProcessResult(
         "Error while decoding stream",
         "matches no streams"
     ];
+    private static readonly string[] AccessDeniedIndicators = ["Permission denied", "Access is denied"];
+    private static readonly string[] IoFailureIndicators =
+    [
+        "No space left on device", "Disk quota exceeded", "Input/output error", "Read-only file system"
+    ];
+    private static readonly string[] EncoderUnavailableIndicators =
+    [
+        "Error while opening encoder", "Encoder initialization failed", "Encoding hardware device setup failed"
+    ];
 
     public static FfmpegProcessResult Timeout(string standardOutput, string standardError)
     {
@@ -60,11 +69,16 @@ internal sealed record FfmpegProcessResult(
             return FfmpegOperationFailureKind.Timeout;
         }
 
-        return InvalidInputIndicators.Any(indicator =>
-            StandardError.Contains(indicator, StringComparison.OrdinalIgnoreCase))
-            ? FfmpegOperationFailureKind.InputInvalid
+        if (ContainsAny(InvalidInputIndicators)) return FfmpegOperationFailureKind.InputInvalid;
+        if (ContainsAny(AccessDeniedIndicators)) return FfmpegOperationFailureKind.DestinationAccessDenied;
+        if (ContainsAny(IoFailureIndicators)) return FfmpegOperationFailureKind.OutputIoFailure;
+        return ContainsAny(EncoderUnavailableIndicators)
+            ? FfmpegOperationFailureKind.EncoderUnavailable
             : FfmpegOperationFailureKind.ProcessFailure;
     }
+
+    private bool ContainsAny(string[] indicators) => indicators.Any(indicator =>
+        StandardError.Contains(indicator, StringComparison.OrdinalIgnoreCase));
 }
 
 internal interface IFfmpegProcessRunner

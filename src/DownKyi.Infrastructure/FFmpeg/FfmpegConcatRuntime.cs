@@ -104,8 +104,7 @@ internal sealed class FfmpegConcatRuntime
                     if (!processResult.Succeeded)
                     {
                         operationFailureKind = processResult.ToOperationFailureKind();
-                        if (operationFailureKind is FfmpegOperationFailureKind.InputInvalid
-                            or FfmpegOperationFailureKind.ProcessUnavailable or FfmpegOperationFailureKind.Timeout)
+                        if (operationFailureKind != FfmpegOperationFailureKind.EncoderUnavailable)
                         {
                             break;
                         }
@@ -117,7 +116,7 @@ internal sealed class FfmpegConcatRuntime
                     {
                         _logger.LogInformationMessage("FFmpeg did not produce a non-empty output.");
                         operationFailureKind = FfmpegOperationFailureKind.OutputInvalid;
-                        continue;
+                        break;
                     }
 
                     File.Move(temporaryOutput, outputFile, overwrite: overwriteDestination);

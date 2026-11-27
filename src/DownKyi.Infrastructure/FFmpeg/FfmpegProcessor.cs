@@ -31,7 +31,8 @@ public sealed class FfmpegProcessor : IFfmpegMediaMuxer
         _logger = loggerFactory.CreateLogger<FfmpegProcessor>();
         _processRunner = processRunner ?? throw new ArgumentNullException(nameof(processRunner));
         _hardwareEncoderDetector = new FfmpegHardwareEncoderDetector(
-            loggerFactory.CreateLogger<FfmpegHardwareEncoderDetector>());
+            loggerFactory.CreateLogger<FfmpegHardwareEncoderDetector>(),
+            _processRunner);
         _operationGate = new AsyncConcurrencyGate(
             () => _settingsStore.Current.Video.FfmpegMaxParallelJobs);
         _concatRuntime = new FfmpegConcatRuntime(
