@@ -3,6 +3,7 @@ using System.IO;
 using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
 
@@ -22,14 +23,45 @@ internal class DiskCachedWebImageLoader : BaseWebImageLoader
     {
         var path = Path.Combine(_cacheFolder, CreateCacheKey(url));
 
-        return File.Exists(path) ? new Bitmap(path) : null;
+        if (!File.Exists(path)) return null;
+        try
+        {
+            return new Bitmap(path);
+        }
+        catch (ArgumentException)
+        {
+            // Encoded cache bytes are disposable; an incomplete older write must not
+            // prevent the authoritative HTTP source from being loaded again.
+            File.Delete(path);
+            return null;
+        }
     }
 
-    protected override async Task SaveToGlobalCache(string url, byte[] imageBytes)
+    protected override async Task SaveToGlobalCache(string url, byte[] imageBytes, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var path = Path.Combine(_cacheFolder, CreateCacheKey(url));
+        if (File.Exists(path)) return;
         Directory.CreateDirectory(_cacheFolder);
-        await File.WriteAllBytesAsync(path, imageBytes).ConfigureAwait(false);
+        var temporaryPath = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            await File.WriteAllBytesAsync(temporaryPath, imageBytes, cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                File.Move(temporaryPath, path);
+            }
+            catch (IOException) when (File.Exists(path))
+            {
+                // Another writer already published a complete image for this key.
+                return;
+            }
+        }
+        finally
+        {
+            File.Delete(temporaryPath);
+        }
     }
 
     protected static string CreateCacheKey(string input)

@@ -52,13 +52,13 @@ internal class BaseWebImageLoader : IAsyncImageLoader
     protected virtual async Task<Bitmap?> LoadAsync(string url, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var internalOrCachedBitmap = ImageSourceUriResolver.ResolveExternal(url) == null
-            ? LoadFromLocal(url) ?? LoadFromInternal(url) ?? LoadFromGlobalCache(url)
-            : LoadFromGlobalCache(url);
-        if (internalOrCachedBitmap != null) return internalOrCachedBitmap;
-
         try
         {
+            var internalOrCachedBitmap = ImageSourceUriResolver.ResolveExternal(url) == null
+                ? LoadFromLocal(url) ?? LoadFromInternal(url) ?? LoadFromGlobalCache(url)
+                : LoadFromGlobalCache(url);
+            if (internalOrCachedBitmap != null) return internalOrCachedBitmap;
+
             var externalBytes = await LoadDataFromExternalAsync(url, cancellationToken).ConfigureAwait(false);
             if (externalBytes == null) return null;
 
@@ -67,7 +67,7 @@ internal class BaseWebImageLoader : IAsyncImageLoader
             var bitmap = new Bitmap(memoryStream);
             try
             {
-                await SaveToGlobalCache(url, externalBytes).ConfigureAwait(false);
+                await SaveToGlobalCache(url, externalBytes, cancellationToken).ConfigureAwait(false);
                 cancellationToken.ThrowIfCancellationRequested();
                 return bitmap;
             }
@@ -213,7 +213,7 @@ internal class BaseWebImageLoader : IAsyncImageLoader
     /// <param name="url">Target url</param>
     /// <param name="imageBytes">Bytes to save</param>
     /// <returns>Bitmap</returns>
-    protected virtual Task SaveToGlobalCache(string url, byte[] imageBytes)
+    protected virtual Task SaveToGlobalCache(string url, byte[] imageBytes, CancellationToken cancellationToken)
     {
         // Current implementation does not provide global caching
         return Task.CompletedTask;
