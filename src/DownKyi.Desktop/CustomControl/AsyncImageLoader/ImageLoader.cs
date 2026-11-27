@@ -31,6 +31,9 @@ internal static class ImageLoader
             "PendingOperation",
             typeof(ImageLoader));
 
+    private static readonly AttachedProperty<bool> NeedsLoadProperty =
+        AvaloniaProperty.RegisterAttached<Image, bool>("NeedsLoad", typeof(ImageLoader));
+
     public static IAsyncImageLoader AsyncImageLoader { get; set; } = NullAsyncImageLoader.Instance;
 
     static ImageLoader()
@@ -40,36 +43,56 @@ internal static class ImageLoader
 
     private static void OnSourceChanged(Image sender, AvaloniaPropertyChangedEventArgs args)
     {
-        _ = OnSourceChangedAsync(sender, args);
-    }
-
-    private static async Task OnSourceChangedAsync(Image sender, AvaloniaPropertyChangedEventArgs args)
-    {
+        sender.AttachedToVisualTree -= OnImageAttached;
+        sender.DetachedFromVisualTree -= OnImageDetached;
+        CancelPendingImageOperation(sender);
         var url = args.GetNewValue<string?>();
-
-        var cts = ReplacePendingOperation(sender);
-
+        sender.SetValue(NeedsLoadProperty, url != null);
         if (url == null)
         {
-            if (CompletePendingOperation(sender, cts))
-            {
-                SetIsLoading(sender, false);
-            }
-
             sender.Source = null;
             return;
         }
 
+        sender.AttachedToVisualTree += OnImageAttached;
+        sender.DetachedFromVisualTree += OnImageDetached;
+        if (sender.IsAttachedToVisualTree()) _ = LoadImageAsync(sender, url);
+    }
+
+    private static void OnImageAttached(object? sender, VisualTreeAttachmentEventArgs args)
+    {
+        if (sender is Image image && image.GetValue(NeedsLoadProperty) && GetSource(image) is { } url)
+        {
+            _ = LoadImageAsync(image, url);
+        }
+    }
+
+    private static void OnImageDetached(object? sender, VisualTreeAttachmentEventArgs args)
+    {
+        if (sender is Image image) CancelPendingImageOperation(image);
+    }
+
+    private static void CancelPendingImageOperation(Image image)
+    {
+        var pending = image.GetValue(PendingOperationProperty);
+        image.SetValue(PendingOperationProperty, null);
+        if (pending != null) CancelBestEffort(pending);
+        SetIsLoading(image, false);
+    }
+
+    private static async Task LoadImageAsync(Image sender, string url)
+    {
+        var cts = ReplacePendingOperation(sender);
         SetIsLoading(sender, true);
         try
         {
-            var targetSize = await GetDecodeSizeAfterLayoutAsync(sender, cts.Token).ConfigureAwait(true);
+            var targetSize = await Dispatcher.UIThread.InvokeAsync(
+                () => GetDecodeSize(sender), DispatcherPriority.Loaded, cts.Token);
 
             var bitmap = await Task.Run(async () =>
             {
                 try
                 {
-                    await Task.Delay(10, cts.Token).ConfigureAwait(false);
                     return await AsyncImageLoader.ProvideImageAsync(url, targetSize, cts.Token).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (cts.IsCancellationRequested)
@@ -104,6 +127,8 @@ internal static class ImageLoader
                     sender.Source = bitmap;
                 }
             }
+
+            if (!cts.IsCancellationRequested) sender.SetValue(NeedsLoadProperty, false);
         }
         catch (OperationCanceledException) when (cts.IsCancellationRequested)
         {
@@ -115,36 +140,6 @@ internal static class ImageLoader
             {
                 SetIsLoading(sender, false);
             }
-        }
-    }
-
-    private static async Task<PixelSize?> GetDecodeSizeAfterLayoutAsync(Image image, CancellationToken cancellationToken)
-    {
-        while (true)
-        {
-            if (!image.IsAttachedToVisualTree())
-            {
-                var attached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-                EventHandler<VisualTreeAttachmentEventArgs> onAttached = (_, _) => attached.TrySetResult();
-                image.AttachedToVisualTree += onAttached;
-                try
-                {
-                    await attached.Task.WaitAsync(cancellationToken).ConfigureAwait(true);
-                }
-                finally
-                {
-                    image.AttachedToVisualTree -= onAttached;
-                }
-            }
-
-            // Even fixed dimensions need the visual root's scale. Read both scale
-            // and layout together, and wait again if the image detached meanwhile.
-            var state = await Dispatcher.UIThread.InvokeAsync(
-                () => image.IsAttachedToVisualTree()
-                    ? (Attached: true, Size: GetDecodeSize(image))
-                    : (Attached: false, Size: (PixelSize?)null),
-                DispatcherPriority.Loaded, cancellationToken);
-            if (state.Attached) return state.Size;
         }
     }
 

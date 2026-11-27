@@ -157,6 +157,7 @@ flowchart LR
 - FFmpeg 在最終 mux 前以獨立的封面命令把實際輸入內容標準化為單幀 JPEG，再於唯一一次影音 mux 寫入 `attached_pic`；不得按下載副檔名猜測 codec，也不得為封面二次複製或重寫完整 MP4。中間 JPEG 必須在 mux operation 返回前清理，轉換失敗以 `download.cover.convert` 與影音 mux 失敗分流；本地成品的 seekability 以中段／片尾解碼驗證，不以 `+faststart` 搬移 `moov` 作為契約。
 - 只有 finalize 成功提交 Domain `Completed` 後，既有 file service 才能清理該任務的精確來源與 sidecars。
 - `FfmpegProcessRunner` 是 FFmpeg concurrency、timeout、cancellation 與 process tree 的唯一 owner。
+- 必須轉碼時，`FfmpegHardwareEncoderDetector` 以內嵌 PNG 的單幀編碼驗證硬體可用性，按既有候選順序選擇，並只快取已完成探測的可用／不可用結果；取消、程序無法啟動與逾時不快取。探測沿用同一 process runner 與 encoder arguments，不建立實體輸出。只有明確的 `EncoderUnavailable` 允許影音轉碼回退 CPU；輸入、輸出、權限、逾時、未知失敗與空產物都立即停止，保留來源。
 
 ### Runtime lifecycle
 
@@ -195,6 +196,7 @@ flowchart LR
 - 擁有 Views、ViewModels、typed navigation、dialogs、dispatcher、projections 與 app lifecycle。
 - View 只取得 read-only projection；background runtime 不得讀寫 UI collection 取得工作。
 - 下載提交立即更新 runtime 的 Domain snapshots；綁定中的狀態、進度與 activity 投影由既有 UI dispatcher 有序套用，投影 owner 在非同步 dispose 時停止並 drain 待處理更新。UI 更新失敗不得改變已提交 command 的結果。未變 metadata 不重建 projection，activity-only 更新保留尚未落盤的 live progress。同一 task 的待呈現 live progress 合併為最新值並保留速度峰值；只有不改變 progress 的活動中提交可沿用該樣本，持久化進度或終態提交會撤銷舊樣本。已提交狀態與 activity 仍依序套用，不得隨進度樣本一起丟棄。
+- `ImageLoader` 由 Source 與 Image 的掛載／移除事件擁有載入生命週期；未掛載不啟動載入，移除先撤銷並取消目前 operation。重新掛載只重啟尚未完成的來源；已載入的 Bitmap 保留，舊 operation 不可覆蓋新來源或載入狀態。
 
 ## Compatibility invariant
 
