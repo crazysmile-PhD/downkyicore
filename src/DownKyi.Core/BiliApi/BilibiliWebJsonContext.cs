@@ -1,4 +1,3 @@
-using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace DownKyi.Core.BiliApi;
@@ -14,10 +13,4 @@ internal sealed class BilibiliResponseMetadata
 
     [JsonPropertyName("message")]
     public string? Message { get; init; }
-
-    [JsonPropertyName("data")]
-    public JsonElement? Data { get; init; }
-
-    [JsonPropertyName("result")]
-    public JsonElement? Result { get; init; }
 }
