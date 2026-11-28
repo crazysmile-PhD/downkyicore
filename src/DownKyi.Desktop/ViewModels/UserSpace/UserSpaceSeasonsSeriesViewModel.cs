@@ -1,192 +1,180 @@
 using System;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Globalization;
+using System.Net.Http;
+using System.Threading;
 using System.Threading.Tasks;
-using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
-using DownKyi.Core.BiliApi.Users.Models;
+using DownKyi.Application.Diagnostics;
+using DownKyi.CustomControl;
 using DownKyi.Images;
+using DownKyi.Services.UserSpace;
 using DownKyi.Utils;
+using Microsoft.Extensions.Logging;
 
 namespace DownKyi.ViewModels.UserSpace;
 
-/// <summary>
-/// 合集和列表
-/// </summary>
-internal class UserSpaceSeasonsSeriesViewModel : ViewModelBase
+internal sealed class UserSpaceSeasonsSeriesViewModel : ViewModelBase, IUserSpacePageLifetime
 {
     public const string Tag = "PageUserSpaceSeasonsSeries";
-
-    private long mid = -1;
-
-    #region 页面属性申明
-
-    private ObservableCollection<SeasonsSeries> _seasonsSeries = new();
-
-    public ObservableCollection<SeasonsSeries> SeasonsSeries
-    {
-        get => _seasonsSeries;
-        private set => SetProperty(ref _seasonsSeries, value);
-    }
-
-    private int _selectedItem;
-
-    public int SelectedItem
-    {
-        get => _selectedItem;
-        set => SetProperty(ref _selectedItem, value);
-    }
-
-    #endregion
-
-    public UserSpaceSeasonsSeriesViewModel(IDesktopInteractionContext desktopInteractions)
-        : base(desktopInteractions)
-    {
-        #region 属性初始化
-
-        SeasonsSeries = new ObservableCollection<SeasonsSeries>();
-
-        #endregion
-    }
-
-    #region 命令申明
-
-    // 视频选择事件
+    public ObservableCollection<SeasonsSeries> SeasonsSeries { get; } = [];
     private RelayCommand<object>? _seasonsSeriesCommand;
-
-    public RelayCommand<object> SeasonsSeriesCommand => _seasonsSeriesCommand ??= RequiredParameterCommand.Create<object>(ExecuteSeasonsSeriesCommand);
-
-    /// <summary>
-    /// 视频选择事件
-    /// </summary>
-    /// <param name="parameter"></param>
-    private void ExecuteSeasonsSeriesCommand(object parameter)
+    public RelayCommand<object> SeasonsSeriesCommand => _seasonsSeriesCommand ??= RequiredParameterCommand.Create<object>(OpenCollection);
+    private void OpenCollection(object parameter)
     {
-        if (parameter is not SeasonsSeries seasonsSeries)
-        {
-            return;
-        }
-
-        object payload;
-        if (seasonsSeries.TypeImage == NormalIcon.Current.SeasonsSeries)
-        {
-            payload = new SeasonNavigationPayload(mid, seasonsSeries.Id);
-        }
-        else if (seasonsSeries.TypeImage == NormalIcon.Current.Channel1)
-        {
-            payload = new SeriesNavigationPayload(mid, seasonsSeries.Id);
-        }
-        else
-        {
-            return;
-        }
-
-        // 进入视频页面
-        Navigation.Navigate(new AppNavigationRequest(
-            AppRoute.SeasonsSeries,
-            AppRoute.UserSpace,
-            payload));
-
+        if (parameter is not SeasonsSeries item) return;
+        object payload = item.TypeImage == NormalIcon.Current.SeasonsSeries
+            ? new SeasonNavigationPayload(_mid, item.Id) : new SeriesNavigationPayload(_mid, item.Id);
+        Navigation.Navigate(new AppNavigationRequest(AppRoute.SeasonsSeries, AppRoute.UserSpace, payload));
         SelectedItem = -1;
     }
+    private readonly IUserSpaceLoadCoordinator _coordinator;
+    private readonly ILogger<UserSpaceSeasonsSeriesViewModel> _logger;
+    private CancellationTokenSource? _loadCancellation;
+    private CancellationToken _pageLifetime;
+    private long _mid;
+    private bool _active;
+    private bool _hasLoadedPage;
+    public long Mid => _mid;
+    public int Page => Pager.Current;
+    public AppRoute Route { get; private set; }
+    private bool _isLoading;
+    private bool _isEmpty;
+    private bool _hasError;
+    private int _selectedItem = -1;
+    private CustomPagerViewModel _pager = new(1, 1);
+    private RelayCommand? _retryCommand;
 
-    #endregion
-
-    public override void OnNavigatedFrom(AppNavigationContext navigationContext)
+    public bool IsLoading
     {
-        base.OnNavigatedFrom(navigationContext);
+        get => _isLoading;
+        private set { if (SetProperty(ref _isLoading, value)) _retryCommand?.NotifyCanExecuteChanged(); }
+    }
+    public bool IsEmpty { get => _isEmpty; private set => SetProperty(ref _isEmpty, value); }
+    public bool HasError { get => _hasError; private set => SetProperty(ref _hasError, value); }
+    public int SelectedItem { get => _selectedItem; set => SetProperty(ref _selectedItem, value); }
+    public CustomPagerViewModel Pager { get => _pager; private set => SetProperty(ref _pager, value); }
+    public RelayCommand RetryCommand => _retryCommand ??= new RelayCommand(
+        () => RunFireAndForget(LoadPageAsync(Pager.Current), nameof(LoadPageAsync), _logger), () => !IsLoading);
 
-        SeasonsSeries.Clear();
-        SelectedItem = -1;
+    public UserSpaceSeasonsSeriesViewModel(IDesktopInteractionContext desktopInteractions, IUserSpaceLoadCoordinator coordinator,
+        ILogger<UserSpaceSeasonsSeriesViewModel> logger) : base(desktopInteractions)
+    {
+        _coordinator = coordinator ?? throw new ArgumentNullException(nameof(coordinator));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <summary>
-    /// 接收mid参数
-    /// </summary>
-    /// <param name="navigationContext"></param>
-    public override void OnNavigatedTo(AppNavigationContext navigationContext)
+    public override void OnNavigatedTo(AppNavigationContext context)
     {
-        ArgumentNullException.ThrowIfNull(navigationContext);
-        base.OnNavigatedTo(navigationContext);
-
-        SeasonsSeries.Clear();
+        base.OnNavigatedTo(context);
+        _active = false;
+        CancelAndDispose(ref _loadCancellation);
+        Pager.PropertyChanged -= PagerChanged;
+        Pager.CurrentChanging -= PagerChanging;
+        _mid = context.Parameters.GetValue<long>("mid");
+        Route = context.Route;
+        _hasLoadedPage = false;
+        HasError = false;
+        var page = Math.Max(1, context.Parameters.GetValue<int>("page"));
+        Pager = new CustomPagerViewModel(page, page);
+        Pager.PropertyChanged += PagerChanged;
+        Pager.CurrentChanging += PagerChanging;
         SelectedItem = -1;
+        ResumePage(context.Parameters.GetValue<CancellationToken>("lifetime"));
+    }
 
-        // 根据传入参数不同执行不同任务
-        var parameter = navigationContext.Parameters.GetValue<SpaceSeasonsSeries>("object");
-        if (parameter == null)
+    public void ResumePage(CancellationToken lifetime)
+    {
+        _pageLifetime = lifetime;
+        _active = _mid > 0;
+        if (_active && !_hasLoadedPage && !HasError)
+            RunFireAndForget(LoadPageAsync(Pager.Current), nameof(LoadPageAsync), _logger);
+    }
+
+    private void PagerChanging(object? sender, CancelEventArgs args) => args.Cancel = IsLoading;
+    private void PagerChanged(object? sender, PropertyChangedEventArgs args)
+    {
+        if (_active && args.PropertyName == nameof(CustomPagerViewModel.Current))
+            RunFireAndForget(LoadPageAsync(Pager.Current), nameof(LoadPageAsync), _logger);
+    }
+
+    private async Task LoadPageAsync(int page)
+    {
+        var requestedMid = _mid;
+        var token = ReplaceCancellationSource(ref _loadCancellation, _pageLifetime);
+        try
         {
-            return;
+            token.ThrowIfCancellationRequested();
+            IsLoading = true;
+            _hasLoadedPage = false;
+            IsEmpty = false;
+            HasError = false;
+            SeasonsSeries.Clear();
+            var result = await _coordinator.LoadSeasonsSeriesPageAsync(requestedMid, page, 20, token).ConfigureAwait(true);
+            token.ThrowIfCancellationRequested();
+            if (requestedMid != _mid) return;
+            foreach (var item in result.Items.SeasonsList)
+            {
+                if (item.Meta.Total <= 0) continue;
+                SeasonsSeries.Add(new SeasonsSeries
+                {
+                    Id = item.Meta.SeasonId,
+                    Cover = string.IsNullOrEmpty(item.Meta.Cover) ? "avares://DownKyi.Desktop/Resources/video-placeholder.png" : item.Meta.Cover,
+                    TypeImage = NormalIcon.Current.SeasonsSeries,
+                    Name = item.Meta.Name,
+                    Count = item.Meta.Total,
+                    Ctime = DateTimeOffset.FromUnixTimeSeconds(item.Meta.Ptime).ToLocalTime().ToString("yyyy-MM-dd", CultureInfo.CurrentCulture)
+                });
+            }
+            foreach (var item in result.Items.SeriesList)
+            {
+                if (item.Meta.Total <= 0) continue;
+                SeasonsSeries.Add(new SeasonsSeries
+                {
+                    Id = item.Meta.SeriesId,
+                    Cover = string.IsNullOrEmpty(item.Meta.Cover) ? "avares://DownKyi.Desktop/Resources/video-placeholder.png" : item.Meta.Cover,
+                    TypeImage = NormalIcon.Current.Channel1,
+                    Name = item.Meta.Name,
+                    Count = item.Meta.Total,
+                    Ctime = DateTimeOffset.FromUnixTimeSeconds(item.Meta.Mtime).ToLocalTime().ToString("yyyy-MM-dd", CultureInfo.CurrentCulture)
+                });
+            }
+            Pager.Count = result.PageCount;
+            IsEmpty = SeasonsSeries.Count == 0;
+            _hasLoadedPage = true;
         }
-
-        // 传入mid
-        mid = navigationContext.Parameters.GetValue<long>("mid");
-
-        foreach (var item in parameter.SeasonsList)
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { return; }
+        catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException
+            or ArgumentException or FormatException or Newtonsoft.Json.JsonException)
         {
-            if (item.Meta.Total <= 0)
-            {
-                continue;
-            }
-
-            string? image;
-            if (string.IsNullOrEmpty(item.Meta.Cover))
-            {
-                image = "avares://DownKyi.Desktop/Resources/video-placeholder.png";
-            }
-            else
-            {
-                image = item.Meta.Cover;
-            }
-
-            // 当地时区
-            var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local);
-            var dateCTime = startTime.AddSeconds(item.Meta.Ptime);
-            var mtime = dateCTime.ToString("yyyy-MM-dd", CultureInfo.CurrentCulture);
-
-            SeasonsSeries.Add(new SeasonsSeries
-            {
-                Id = item.Meta.SeasonId,
-                Cover = image,
-                TypeImage = NormalIcon.Current.SeasonsSeries,
-                Name = item.Meta.Name,
-                Count = item.Meta.Total,
-                Ctime = mtime
-            });
+            token.ThrowIfCancellationRequested();
+            HasError = true;
+            _logger.LogErrorMessage("User space section could not be loaded.", exception);
         }
-
-        foreach (var item in parameter.SeriesList)
+        finally
         {
-            if (item.Meta.Total <= 0)
-            {
-                continue;
-            }
-
-            string? image;
-            if (string.IsNullOrEmpty(item.Meta.Cover))
-            {
-                image = "avares://DownKyi.Desktop/Resources/video-placeholder.png";
-            }
-            else
-            {
-                image = item.Meta.Cover;
-            }
-
-            // 当地时区
-            var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); ;
-            var dateCTime = startTime.AddSeconds(item.Meta.Mtime);
-            var mtime = dateCTime.ToString("yyyy-MM-dd", CultureInfo.CurrentCulture);
-
-            SeasonsSeries.Add(new SeasonsSeries
-            {
-                Id = item.Meta.SeriesId,
-                Cover = image,
-                TypeImage = NormalIcon.Current.Channel1,
-                Name = item.Meta.Name,
-                Count = item.Meta.Total,
-                Ctime = mtime
-            });
+            if (_loadCancellation?.Token == token) IsLoading = false;
         }
+    }
+
+    public override void OnNavigatedFrom(AppNavigationContext context)
+    {
+        _active = false;
+        CancelAndDispose(ref _loadCancellation);
+        IsLoading = false;
+        base.OnNavigatedFrom(context);
+    }
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing && !IsDisposed)
+        {
+            _active = false;
+            CancelAndDispose(ref _loadCancellation);
+            Pager.PropertyChanged -= PagerChanged;
+            Pager.CurrentChanging -= PagerChanging;
+        }
+        base.Dispose(disposing);
     }
 }

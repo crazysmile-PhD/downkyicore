@@ -1738,23 +1738,25 @@ public sealed class UiSmokeTests
 
     private sealed class UserSpaceLoadCoordinatorStub : IUserSpaceLoadCoordinator
     {
-        public Task<UserSpaceSnapshot> LoadAsync(long mid, CancellationToken cancellationToken)
+        public Task<UserSpaceProfileSnapshot> LoadProfileAsync(long mid, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(new UserSpaceSnapshot(
+            return Task.FromResult(new UserSpaceProfileSnapshot(
                 new UserInfoForSpace
                 {
                     Mid = mid,
                     Name = "fixture uploader",
                     Level = 0
                 },
-                string.Empty,
-                null,
-                null,
-                [],
-                null,
-                null));
+                string.Empty));
         }
+
+        public Task<UserSpaceOverviewSnapshot> LoadOverviewAsync(long mid, CancellationToken cancellationToken) =>
+            Task.FromResult(new UserSpaceOverviewSnapshot([], null, null));
+        public Task<UserSpaceFavoriteFolderPage> LoadFavoriteFoldersPageAsync(long mid, int page, int pageSize, CancellationToken cancellationToken) =>
+            Task.FromResult(new UserSpaceFavoriteFolderPage([], 1));
+        public Task<UserSpaceSeasonsPage> LoadSeasonsSeriesPageAsync(long mid, int page, int pageSize, CancellationToken cancellationToken) =>
+            Task.FromResult(new UserSpaceSeasonsPage(new SpaceSeasonsSeries(), 1));
     }
 
     private sealed class SeriesPageCoordinatorStub : ISeasonsSeriesCoordinator

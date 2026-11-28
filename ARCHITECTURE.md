@@ -82,6 +82,7 @@ GitHub release 的 HTTP、JSON contract 與解析由 Infrastructure 擁有；Des
 - ViewModel／caller 只依賴 Application 的 `IAppNavigationService` 與 `IAppDialogService`。只有 local composition 的 factories 可依 typed enum 選擇已註冊的 transient View／ViewModel；adapter 不得持有 container。
 - Main-region back 必須先縮減既有 history 並恢復原 View／ViewModel instance；只有沒有 history 時才建立 typed parent route。違反會遺失頁面、查詢與選取狀態。
 - UserSpace 公開收藏由單一 coordinator 映射成 snapshot；返回相同 MID 時保留原頁面與清單。失效收藏仍可辨識，但不可選取、開啟或加入下載。
+- 使用者空間先顯示 profile，再載入概要；合集與收藏夾保留固定入口，僅在開啟標籤時讀取所需分頁。父頁以 identity、頁碼與頁面 lifetime 導航，子頁的讀取連結該 lifetime；離開父頁會取消在途讀取。`IUserSpacePageLifetime` 只提供目前的頁面 identity／位置與恢復入口，不建立資料快取。返回時復用仍屬於同一 MID／route 的已載入子頁，只補載被取消的未完成頁；巢狀導航已替換 region 時按保存的標籤與頁碼重建，不能顯示另一個使用者的資料。空資料與載入失敗分別顯示，失敗需由重試或重新選頁觸發請求。
 - 裸 `/list/<MID>` 使用 `PublicationNavigationPayload` 表示全部投稿；帶正整數 `sid` 的 URL 使用獨立 `SeriesNavigationPayload` 載入指定系列。無效 `sid`、API failure 或 MID／series identity 不匹配都 fail closed，不得退回全部投稿。
 - 投稿分頁以 WBI `page.count` 為準；收藏的 `media_count` 不是 filtered count，只能依 `has_more` 擴展。返回時保留 query、頁碼與既有 media instances；只有被取消的未完成頁補載。
 - 可變 `PathIconData` geometry 必須由 factory 為各 ViewModel 建立獨立 instance，避免主題更新污染其他頁面。

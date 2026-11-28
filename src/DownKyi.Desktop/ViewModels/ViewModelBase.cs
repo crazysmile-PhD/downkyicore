@@ -167,10 +167,12 @@ internal class ViewModelBase : ObservableObject, IAppNavigationAware, IDisposabl
         }
     }
 
-    protected static CancellationToken ReplaceCancellationSource(ref CancellationTokenSource? source)
+    protected static CancellationToken ReplaceCancellationSource(ref CancellationTokenSource? source, CancellationToken cancellationToken = default)
     {
         CancelAndDispose(ref source);
-        var replacement = new CancellationTokenSource();
+        var replacement = cancellationToken.CanBeCanceled
+            ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
+            : new CancellationTokenSource();
         source = replacement;
         return replacement.Token;
     }

@@ -23,6 +23,9 @@
     <system:String x:Key="DownloadManager">下载管理</system:String>
     <system:String x:Key="Toolbox">工具箱</system:String>
 
+    <system:String x:Key="UserSpaceLoadFailed">无法加载此栏目，请检查网络后重试。</system:String>
+    <system:String x:Key="UserSpaceRetry">重试</system:String>
+
     <!--  Login  -->
     <system:String x:Key="LoginStudioHeadline" xml:space="preserve">登录&#x000A;你的空间</system:String>
     <system:String x:Key="LoginScannedConfirmation">已扫码，请在手机上确认</system:String>

@@ -29,6 +29,23 @@ public static class FavoritesInfo
         return BiliApiRequest.RequirePayload(info.Data);
     }
 
+    public static async Task<FavoritesList> GetCreatedFavoritesPageAsync(
+        this IBilibiliApiClient client,
+        long mid,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(page, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(pageSize, 1);
+        var url = $"https://api.bilibili.com/x/v3/fav/folder/created/list?up_mid={mid}&pn={page}&ps={pageSize}";
+        const string referer = "https://www.bilibili.com";
+        var response = await BiliApiRequest.RequestJsonAsync<FavoritesListOrigin>(
+            client, url, referer, nameof(GetCreatedFavoritesPageAsync), "FavoritesInfo",
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        return BiliApiRequest.RequirePayload(response.Data);
+    }
+
     /// <summary>
     /// 查询所有的用户创建的视频收藏夹
     /// </summary>
@@ -48,16 +65,8 @@ public static class FavoritesInfo
             const int ps = 50;
 
             cancellationToken.ThrowIfCancellationRequested();
-            var url = $"https://api.bilibili.com/x/v3/fav/folder/created/list?up_mid={mid}&pn={i}&ps={ps}";
-            const string referer = "https://www.bilibili.com";
-            var favorites = await BiliApiRequest.RequestJsonAsync<FavoritesListOrigin>(
-                client,
-                url,
-                referer,
-                nameof(GetAllCreatedFavoritesAsync),
-                "FavoritesInfo",
-                cancellationToken: cancellationToken).ConfigureAwait(false);
-            var data = BiliApiRequest.RequirePayload(favorites.Data);
+            var data = await client.GetCreatedFavoritesPageAsync(mid, i, ps, cancellationToken)
+                .ConfigureAwait(false);
             if (data.List.Count == 0)
             {
                 break;

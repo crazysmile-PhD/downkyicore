@@ -1,6 +1,7 @@
 <UserControl
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:custom="clr-namespace:DownKyi.CustomControl"
     xmlns:vmu="clr-namespace:DownKyi.ViewModels.UserSpace"
     xmlns:asyncImageLoader="clr-namespace:DownKyi.CustomControl.AsyncImageLoader"
     x:Class="DownKyi.Views.UserSpace.ViewFavorites"
@@ -9,88 +10,97 @@
     <UserControl.Styles>
         <StyleInclude Source="/Themes/Styles/Studio.axaml" />
     </UserControl.Styles>
-    <ListBox
-        x:Name="NameFavorites"
-        ItemsSource="{Binding Favorites}"
-        ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-        SelectedIndex="{Binding SelectedItem}"
-        Margin="0"
-        Background="Transparent">
-        <Interaction.Behaviors>
-            <EventTriggerBehavior EventName="SelectionChanged">
-                <InvokeCommandAction Command="{Binding FavoritesCommand}" CommandParameter="{Binding ElementName=NameFavorites, Path=SelectedItem}" />
-            </EventTriggerBehavior>
-        </Interaction.Behaviors>
-        <ListBox.ItemsPanel>
-            <ItemsPanelTemplate>
-                <WrapPanel />
-            </ItemsPanelTemplate>
-        </ListBox.ItemsPanel>
-        <ListBox.Theme>
-            <ControlTheme TargetType="ListBox">
-                <Setter Property="Background" Value="Transparent" />
-                <Setter Property="BorderThickness" Value="0" />
-                <Setter Property="Template">
-                    <ControlTemplate TargetType="ListBox">
-                        <Border BorderThickness="{TemplateBinding BorderThickness}">
-                            <ScrollViewer Focusable="False">
-                                <ItemsPresenter ItemsPanel="{TemplateBinding ItemsPanel}" />
-                            </ScrollViewer>
-                        </Border>
-                    </ControlTemplate>
-                </Setter>
-            </ControlTheme>
-        </ListBox.Theme>
-        <ListBox.ItemContainerTheme>
-            <ControlTheme TargetType="ListBoxItem" x:DataType="vmu:FavoriteFolder">
-                <Setter Property="Background" Value="Transparent" />
-                <Setter Property="Template">
-                    <ControlTemplate TargetType="ListBoxItem">
-                        <StackPanel Margin="0,12,24,20" Background="{TemplateBinding Background}" Cursor="Hand" HorizontalAlignment="Left" Width="208">
-                            <Border Width="208" Height="130" HorizontalAlignment="Center" CornerRadius="0" Cursor="Hand">
-                                <Border.Background>
-                                    <ImageBrush
-                                        asyncImageLoader:ImageBrushLoader.Source="{Binding Cover}"
-                                        asyncImageLoader:ImageBrushLoader.Width="190"
-                                        asyncImageLoader:ImageBrushLoader.Height="119"
-                                        Stretch="UniformToFill" />
-                                </Border.Background>
-                                <Border Height="32" Padding="8,4" VerticalAlignment="Bottom" HorizontalAlignment="Right" Background="{DynamicResource SpaceCarbon}" CornerRadius="0">
-                                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Orientation="Horizontal" Spacing="8">
-                                        <TextBlock FontSize="16" Foreground="{DynamicResource SpaceCream}" Text="{Binding Count}" />
-                                        <Path
-                                            Width="20"
-                                            Height="20"
-                                            Margin="0"
-                                            Data="{Binding TypeImage.Data}"
-                                            Fill="{DynamicResource SpaceCream}"
-                                            Stretch="Uniform" />
-                                    </StackPanel>
-                                </Border>
+    <Grid RowDefinitions="Auto,*,Auto">
+        <ListBox Grid.Row="1"
+            x:Name="NameFavorites"
+            ItemsSource="{Binding Favorites}"
+            ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+            SelectedIndex="{Binding SelectedItem}"
+            Margin="0"
+            Background="Transparent">
+            <Interaction.Behaviors>
+                <EventTriggerBehavior EventName="SelectionChanged">
+                    <InvokeCommandAction Command="{Binding FavoritesCommand}" CommandParameter="{Binding ElementName=NameFavorites, Path=SelectedItem}" />
+                </EventTriggerBehavior>
+            </Interaction.Behaviors>
+            <ListBox.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <WrapPanel />
+                </ItemsPanelTemplate>
+            </ListBox.ItemsPanel>
+            <ListBox.Theme>
+                <ControlTheme TargetType="ListBox">
+                    <Setter Property="Background" Value="Transparent" />
+                    <Setter Property="BorderThickness" Value="0" />
+                    <Setter Property="Template">
+                        <ControlTemplate TargetType="ListBox">
+                            <Border BorderThickness="{TemplateBinding BorderThickness}">
+                                <ScrollViewer Focusable="False">
+                                    <ItemsPresenter ItemsPanel="{TemplateBinding ItemsPanel}" />
+                                </ScrollViewer>
                             </Border>
-                            <TextBlock
-                                MaxWidth="208" Height="44"
-                                Margin="0,5,0,0"
-                                Cursor="Hand"
-                                Foreground="{DynamicResource SpaceInk}"
-                                Text="{Binding Title}"
-                                TextTrimming="CharacterEllipsis"
-                                ToolTip.Tip="{Binding Title}"
-                                MaxLines="2"
-                                TextWrapping="Wrap"
-                                FontSize="16"
-                                FontWeight="SemiBold" />
-                            <TextBlock Margin="0,5,0,0" Foreground="{DynamicResource SpaceMuted}" Text="{Binding UpdatedAt}" />
-                        </StackPanel>
-                    </ControlTemplate>
-                </Setter>
-                <Style Selector="^:pointerover">
-                    <Setter Property="Background" Value="{DynamicResource SpaceHover}" />
-                </Style>
-                <Style Selector="^:focus-visible">
-                    <Setter Property="Background" Value="{DynamicResource SpaceSelection}" />
-                </Style>
-            </ControlTheme>
-        </ListBox.ItemContainerTheme>
-    </ListBox>
+                        </ControlTemplate>
+                    </Setter>
+                </ControlTheme>
+            </ListBox.Theme>
+            <ListBox.ItemContainerTheme>
+                <ControlTheme TargetType="ListBoxItem" x:DataType="vmu:FavoriteFolder">
+                    <Setter Property="Background" Value="Transparent" />
+                    <Setter Property="Template">
+                        <ControlTemplate TargetType="ListBoxItem">
+                            <StackPanel Margin="0,12,24,20" Background="{TemplateBinding Background}" Cursor="Hand" HorizontalAlignment="Left" Width="208">
+                                <Border Width="208" Height="130" HorizontalAlignment="Center" CornerRadius="0" Cursor="Hand">
+                                    <Border.Background>
+                                        <ImageBrush
+                                            asyncImageLoader:ImageBrushLoader.Source="{Binding Cover}"
+                                            asyncImageLoader:ImageBrushLoader.Width="190"
+                                            asyncImageLoader:ImageBrushLoader.Height="119"
+                                            Stretch="UniformToFill" />
+                                    </Border.Background>
+                                    <Border Height="32" Padding="8,4" VerticalAlignment="Bottom" HorizontalAlignment="Right" Background="{DynamicResource SpaceCarbon}" CornerRadius="0">
+                                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Orientation="Horizontal" Spacing="8">
+                                            <TextBlock FontSize="16" Foreground="{DynamicResource SpaceCream}" Text="{Binding Count}" />
+                                            <Path
+                                                Width="20"
+                                                Height="20"
+                                                Margin="0"
+                                                Data="{Binding TypeImage.Data}"
+                                                Fill="{DynamicResource SpaceCream}"
+                                                Stretch="Uniform" />
+                                        </StackPanel>
+                                    </Border>
+                                </Border>
+                                <TextBlock
+                                    MaxWidth="208" Height="44"
+                                    Margin="0,5,0,0"
+                                    Cursor="Hand"
+                                    Foreground="{DynamicResource SpaceInk}"
+                                    Text="{Binding Title}"
+                                    TextTrimming="CharacterEllipsis"
+                                    ToolTip.Tip="{Binding Title}"
+                                    MaxLines="2"
+                                    TextWrapping="Wrap"
+                                    FontSize="16"
+                                    FontWeight="SemiBold" />
+                                <TextBlock Margin="0,5,0,0" Foreground="{DynamicResource SpaceMuted}" Text="{Binding UpdatedAt}" />
+                            </StackPanel>
+                        </ControlTemplate>
+                    </Setter>
+                    <Style Selector="^:pointerover">
+                        <Setter Property="Background" Value="{DynamicResource SpaceHover}" />
+                    </Style>
+                    <Style Selector="^:focus-visible">
+                        <Setter Property="Background" Value="{DynamicResource SpaceSelection}" />
+                    </Style>
+                </ControlTheme>
+            </ListBox.ItemContainerTheme>
+        </ListBox>
+        <ProgressBar Grid.Row="0" Height="4" IsIndeterminate="True" IsVisible="{Binding IsLoading}" />
+        <ContentControl Name="SectionEmpty" Grid.Row="1" Theme="{StaticResource StudioEmptyState}" IsVisible="{Binding IsEmpty}" />
+        <StackPanel Name="SectionError" Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12" IsVisible="{Binding HasError}">
+            <TextBlock Text="{DynamicResource UserSpaceLoadFailed}" TextWrapping="Wrap" MaxWidth="400" />
+            <Button Content="{DynamicResource UserSpaceRetry}" Command="{Binding RetryCommand}" HorizontalAlignment="Center" />
+        </StackPanel>
+        <custom:CustomPager Grid.Row="2" Classes="personal" DataContext="{Binding Pager}" Margin="0,12" />
+    </Grid>
 </UserControl>
