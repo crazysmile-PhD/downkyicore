@@ -607,7 +607,7 @@ public sealed class DownloadManagerCoordinatorTests
                 fileService,
                 State,
                 Launcher,
-                uiDispatcher ?? new ImmediateUiDispatcher());
+                uiDispatcher ?? new ImmediateUiDispatcher(), TaskService);
         }
 
         public SqliteDownloadTaskStore Store { get; private set; }
@@ -663,7 +663,7 @@ public sealed class DownloadManagerCoordinatorTests
                 new ReadyDownloadRuntimeAvailability(),
                 new DownloadTaskFileService(
                     NullLogger<DownloadTaskFileService>.Instance),
-                State, Launcher, new ImmediateUiDispatcher());
+                State, Launcher, new ImmediateUiDispatcher(), TaskService);
         }
 
         public DownloadingItem CreateDownloadingItem(string id, DownloadStatus status)

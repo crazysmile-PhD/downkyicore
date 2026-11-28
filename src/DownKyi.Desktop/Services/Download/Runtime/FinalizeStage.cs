@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Diagnostics;
+using DownKyi.Application.Downloads;
 using DownKyi.Core.Utils;
 using DownKyi.Domain.Downloads;
 using DownKyi.Domain.Results;
@@ -12,7 +13,7 @@ namespace DownKyi.Services.Download;
 
 internal sealed class FinalizeStage : IDownloadPipelineStage
 {
-    private readonly DownloadTaskProjectionStore _projectionStore;
+    private readonly IDownloadTaskLookup _tasks;
     private readonly DownloadTaskStateWriter _stateWriter;
     private readonly DownloadCompletionProjector _completionProjector;
     private readonly DownloadTaskFileService _fileService;
@@ -20,15 +21,15 @@ internal sealed class FinalizeStage : IDownloadPipelineStage
     private readonly ILogger<FinalizeStage> _logger;
 
     public FinalizeStage(
-        DownloadTaskProjectionStore projectionStore,
+        IDownloadTaskLookup tasks,
         DownloadTaskStateWriter stateWriter,
         DownloadCompletionProjector completionProjector,
         DownloadTaskFileService fileService,
         TimeProvider timeProvider,
         ILogger<FinalizeStage> logger)
     {
-        _projectionStore = projectionStore
-            ?? throw new ArgumentNullException(nameof(projectionStore));
+        _tasks = tasks
+            ?? throw new ArgumentNullException(nameof(tasks));
         _stateWriter = stateWriter ?? throw new ArgumentNullException(nameof(stateWriter));
         _completionProjector = completionProjector
             ?? throw new ArgumentNullException(nameof(completionProjector));
@@ -94,7 +95,7 @@ internal sealed class FinalizeStage : IDownloadPipelineStage
         }
 
         var completion = CreateCompletionSummary(
-            _projectionStore
+            _tasks
                 .GetRequiredSnapshot(context.TaskId)
                 .Transfer
                 .MaximumBytesPerSecond,

@@ -31,7 +31,6 @@ internal sealed class DownloadTaskProjectionStore : IDisposable, IAsyncDisposabl
     private readonly Lock _presentationGate = new();
     private Task _presentationUpdates = Task.CompletedTask;
     private readonly Dictionary<DownloadTaskId, PendingLiveProgress> _pendingProgress = new();
-    private readonly ConcurrentDictionary<DownloadTaskId, DownloadTask> _snapshots = new();
     private readonly ConcurrentDictionary<DownloadTaskId, DownloadingItem> _downloadingProjections = new();
     private volatile bool _disposed;
 
@@ -129,22 +128,6 @@ internal sealed class DownloadTaskProjectionStore : IDisposable, IAsyncDisposabl
         RequireSuccess(result.IsSuccess, result.Error?.Message);
     }
 
-    public DownloadTask GetRequiredSnapshot(DownloadTaskId taskId)
-    {
-        ArgumentNullException.ThrowIfNull(taskId);
-        return TryGetSnapshot(taskId, out var task)
-            ? task
-            : throw new InvalidOperationException($"Download task '{taskId.Value}' is not loaded.");
-    }
-
-    public bool TryGetSnapshot(
-        DownloadTaskId taskId,
-        [NotNullWhen(true)] out DownloadTask? task)
-    {
-        ArgumentNullException.ThrowIfNull(taskId);
-        return _snapshots.TryGetValue(taskId, out task);
-    }
-
     public DownloadingItem GetRequiredDownloadingProjection(DownloadTaskId taskId)
     {
         ArgumentNullException.ThrowIfNull(taskId);
@@ -168,7 +151,7 @@ internal sealed class DownloadTaskProjectionStore : IDisposable, IAsyncDisposabl
         lock (_presentationGate)
         {
             if (_disposed || _shutdownToken.IsCancellationRequested ||
-                !_snapshots.TryGetValue(taskId, out var snapshot) ||
+                !_tasks.TryGetSnapshot(taskId, out var snapshot) ||
                 snapshot.Phase is not (DownloadPhase.Downloading or DownloadPhase.Pausing) ||
                 !_downloadingProjections.ContainsKey(taskId))
             {
@@ -205,7 +188,7 @@ internal sealed class DownloadTaskProjectionStore : IDisposable, IAsyncDisposabl
             maximumBytesPerSecond = pending.MaximumBytesPerSecond;
         }
 
-        if (_snapshots.TryGetValue(taskId, out var current) && current.Version == pending.Version &&
+        if (_tasks.TryGetSnapshot(taskId, out var current) && current.Version == pending.Version &&
             current.Phase is DownloadPhase.Downloading or DownloadPhase.Pausing &&
             _downloadingProjections.TryGetValue(taskId, out var item))
         {
@@ -248,7 +231,6 @@ internal sealed class DownloadTaskProjectionStore : IDisposable, IAsyncDisposabl
         }
         _tasks.TaskChanged -= OnTaskChanged;
         _downloadingProjections.Clear();
-        _snapshots.Clear();
     }
 
     public async ValueTask DisposeAsync()
@@ -260,7 +242,6 @@ internal sealed class DownloadTaskProjectionStore : IDisposable, IAsyncDisposabl
 
     private DownloadingItem CreateDownloadingProjection(DownloadTask task)
     {
-        _snapshots[task.Id] = task;
         return _downloadingProjections.GetOrAdd(
             task.Id,
             _ => DownloadTaskProjectionMapper.ToDownloadingItem(task));
@@ -277,7 +258,6 @@ internal sealed class DownloadTaskProjectionStore : IDisposable, IAsyncDisposabl
             lock (_presentationGate)
             {
                 _pendingProgress.Remove(args.TaskId);
-                _snapshots.TryRemove(args.TaskId, out _);
                 _downloadingProjections.TryRemove(args.TaskId, out _);
             }
             return;
@@ -285,16 +265,15 @@ internal sealed class DownloadTaskProjectionStore : IDisposable, IAsyncDisposabl
 
         if (args.Snapshot != null)
         {
-            Publish(args.Snapshot);
+            Publish(args.Snapshot, args.PreviousSnapshot);
         }
     }
 
-    private void Publish(DownloadTask task)
+    private void Publish(DownloadTask task, DownloadTask? preceding = null)
     {
         lock (_presentationGate)
         {
             if (_disposed) return;
-            _snapshots.TryGetValue(task.Id, out var preceding);
             if (_pendingProgress.TryGetValue(task.Id, out var pending) &&
                 preceding != null && pending.Version == preceding.Version && task.Progress == preceding.Progress &&
                 task.Phase is DownloadPhase.Downloading or DownloadPhase.Pausing)
@@ -305,14 +284,6 @@ internal sealed class DownloadTaskProjectionStore : IDisposable, IAsyncDisposabl
             else
             {
                 _pendingProgress.Remove(task.Id);
-            }
-            if (task.Phase == DownloadPhase.Completed)
-            {
-                _snapshots.TryRemove(task.Id, out _);
-            }
-            else
-            {
-                _snapshots[task.Id] = task;
             }
             UpdatePresentation(task.Id, item => DownloadTaskProjectionMapper.Apply(task, item, preceding));
         }

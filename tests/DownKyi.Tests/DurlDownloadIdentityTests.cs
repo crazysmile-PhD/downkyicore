@@ -154,8 +154,7 @@ public sealed class DurlDownloadIdentityTests
                     TimeProvider.System,
                     client),
                 NullLogger<ResolvePlaybackStage>.Instance);
-            var context = new DownloadExecutionContextFactory(
-                projectionStore,
+            var context = new DownloadExecutionContextFactory(tasks,
                 settings.Store).Create(taskId);
 
             var result = await stage.ExecuteAsync(
@@ -377,8 +376,7 @@ public sealed class DurlDownloadIdentityTests
                     TimeProvider.System,
                     new TestBilibiliApiClient()),
                 NullLogger<ResolvePlaybackStage>.Instance);
-            var context = new DownloadExecutionContextFactory(
-                projectionStore,
+            var context = new DownloadExecutionContextFactory(tasks,
                 settings.Store).Create(taskId);
 
             var result = await stage.ExecuteAsync(
@@ -454,8 +452,7 @@ public sealed class DurlDownloadIdentityTests
                     TimeProvider.System,
                     new TestBilibiliApiClient()),
                 NullLogger<ResolvePlaybackStage>.Instance);
-            var context = new DownloadExecutionContextFactory(
-                projectionStore,
+            var context = new DownloadExecutionContextFactory(tasks,
                 settings.Store).Create(taskId);
 
             var result = await stage.ExecuteAsync(
@@ -574,8 +571,7 @@ public sealed class DurlDownloadIdentityTests
                 TestContext.Current.CancellationToken).ConfigureAwait(true);
             _staging = new DownloadTaskStaging(
                 NullLogger<DownloadTaskStaging>.Instance);
-            Context = new DownloadExecutionContextFactory(
-                _projections,
+            Context = new DownloadExecutionContextFactory(_tasks,
                 _settings.Store,
                 _staging).Create(_taskId);
             var resolver = new DownloadPlaybackResolver(
@@ -589,8 +585,7 @@ public sealed class DurlDownloadIdentityTests
                 resolver,
                 NullLogger<ResolvePlaybackStage>.Instance);
             Backend = new RestartRecordingBackend();
-            MediaStage = new DownloadMediaStage(
-                _projections,
+            MediaStage = new DownloadMediaStage(_tasks,
                 writer,
                 new DownloadTransferArtifactInvalidator(
                     writer,
@@ -673,7 +668,7 @@ public sealed class DurlDownloadIdentityTests
                     TimeProvider.System,
                     client),
                 NullLogger<ResolvePlaybackStage>.Instance);
-            var context = new DownloadExecutionContextFactory(projections, settings.Store)
+            var context = new DownloadExecutionContextFactory(tasks, settings.Store)
                 .Create(taskId);
             return new PlaybackStageFixture(
                 directory,

@@ -111,7 +111,8 @@ flowchart LR
 
 - 新任務以 Domain 值完成 admission；持久化成功後才建立 UI 投影。NFO 請求、傳輸檔案與已完成檔案清單由任務保存，UI 不保留這些資料的副本。
 
-- SQLite adapter 將前景或具有 synchronization context 的呼叫排入背景；已在沒有 synchronization context 的 thread-pool 上則直接執行同步資料庫工作。Application 的單一 mutation gate 序列化 aggregate 讀取、transition、持久化與 committed snapshot 發布，不為每個歷史 task 保存 lock。讀取查詢仍獨立執行；既有 optimistic version 與 transaction 邊界保持有效。
+- SQLite adapter 將前景或具有 synchronization context 的呼叫排入背景；已在沒有 synchronization context 的 thread-pool 上則直接執行同步資料庫工作。Application 的單一 mutation gate 序列化 aggregate 讀取、transition、持久化與 committed snapshot 發布，不為每個歷史 task 保存 lock。未完成任務的快照載入與命令共用此 gate，避免舊載入結果重新引入已完成或刪除的任務；其他查詢維持獨立執行。既有 optimistic version 與 transaction 邊界保持有效。
+- Application 持有未完成任務的最新已提交快照，供 runtime 與 UI 透過既有查詢介面讀取；完成或刪除後釋放。變更事件攜帶前後快照，UI 只負責有序投影與即時進度，不擁有執行控制所依賴的 Domain 快照。
 - 完成清單的目前排序與 ID 索引由 `DownloadListState` 擁有。歷史首批與後續按需載入均限 100 筆；排序變更從全體歷史重新取得首批，後續以同一排序游標續讀，筆數的 `+` 表示尚有未載入紀錄。時間排序使用 timestamp／ID tuple seek；標題／集數排序保留 UTF-16 ordinal 語義，query-only collation 不寫入 schema。單筆完成與後續頁採排序插入；清除會使在途頁失效，刪除 tombstone 阻止延遲結果復活。排序偏好不屬於下載 execution input。完成投影移除活躍項目後釋放對應 projection；歷史載入 Task 僅保留到 UI 套用完成，shutdown 仍只等待背景讀取。判重獨立查詢 CID 索引，不依賴 UI 已載入的頁面。
 - 下載項目的分區圖示與操作提示沿用既有 UI 屬性，只在分區或按鈕型態改變時重新解析資源，避免一般進度與活動更新同步往返 UI thread。語言仍依既有設定要求重啟後套用。
 

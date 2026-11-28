@@ -521,7 +521,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         using var tasks = new DownloadTaskApplicationService(store, historyService, clock);
         using var projections = new DownloadTaskProjectionStore(tasks, historyService);
         var list = new DownloadListState();
-        var queue = new AdmissionObservingQueue(list, projections);
+        var queue = new AdmissionObservingQueue(list, tasks);
         using var admission = CreateAdmission(list, tasks, historyService, projections, queue);
         var directory = Path.Combine(_directory, "series");
         var first = CreateItem("first-page", Path.Combine(directory, "section", "page-1"), cid: 1);
@@ -792,7 +792,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
             tasks,
             historyService);
         var listState = new DownloadListState();
-        var queue = new AdmissionObservingQueue(listState, projections);
+        var queue = new AdmissionObservingQueue(listState, tasks);
         var logicalBasePath = Path.Combine(_directory, "logical-alias", "cafe\u0301-output");
         var frozenBasePath = Path.Combine(_directory, "physical-target", "cafe\u0301-output");
         var resolver = new RecordingPhysicalOutputPathResolver(_ => frozenBasePath);
@@ -812,7 +812,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         Assert.Equal(frozenBasePath, persisted.Output.BasePath, ignoreCase: false);
         Assert.Equal(
             frozenBasePath,
-            projections.GetRequiredSnapshot(taskId).Output.BasePath,
+            tasks.GetRequiredSnapshot(taskId).Output.BasePath,
             ignoreCase: false);
         Assert.Equal(item.DownloadBase.Id, Assert.Single(listState.Downloading).DownloadBase.Id);
         Assert.Equal(taskId, Assert.Single(queue.Enqueued));
@@ -1007,7 +1007,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         Assert.Equal(frozenBasePath, first.DownloadBase.FilePath, ignoreCase: false);
         Assert.Equal(
             frozenBasePath,
-            projections.GetRequiredSnapshot(new DownloadTaskId(first.DownloadBase.Id)).Output.BasePath,
+            tasks.GetRequiredSnapshot(new DownloadTaskId(first.DownloadBase.Id)).Output.BasePath,
             ignoreCase: false);
         currentTarget = frozenBasePath;
         await admission.AdmitAsync(second, TestContext.Current.CancellationToken)
@@ -1467,7 +1467,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
 
     private sealed class AdmissionObservingQueue(
         DownloadListState listState,
-        DownloadTaskProjectionStore projections) : IDownloadTaskQueue
+        IDownloadTaskLookup tasks) : IDownloadTaskQueue
     {
         public List<DownloadTaskId> Enqueued { get; } = [];
 
@@ -1483,7 +1483,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
                 item => item.DownloadBase.Id == taskId.Value);
             Assert.Equal(
                 listItem.DownloadBase.FilePath,
-                projections.GetRequiredSnapshot(taskId).Output.BasePath,
+                tasks.GetRequiredSnapshot(taskId).Output.BasePath,
                 ignoreCase: false);
             Enqueued.Add(taskId);
             ObservedPaths.Add(listItem.DownloadBase.FilePath);

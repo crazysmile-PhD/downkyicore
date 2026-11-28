@@ -1650,7 +1650,7 @@ public sealed class VideoTagLoadingTests : IDisposable
         }
 
         public DownloadNfoRequest? GetNfo(DownloadingItem item) =>
-            _projectionStore.GetRequiredSnapshot(new DownloadTaskId(item.DownloadBase.Id)).Plan.NfoRequest;
+            _taskService.GetRequiredSnapshot(new DownloadTaskId(item.DownloadBase.Id)).Plan.NfoRequest;
 
         public AddToDownloadService Service { get; }
 

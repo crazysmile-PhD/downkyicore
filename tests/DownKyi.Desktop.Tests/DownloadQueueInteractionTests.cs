@@ -126,7 +126,7 @@ public sealed class DownloadQueueInteractionTests
             await Task.Run(async () =>
             {
                 Assert.True((await tasks.StartAsync(id, TestContext.Current.CancellationToken).ConfigureAwait(false)).IsSuccess);
-                Assert.Equal(DownloadPhase.Downloading, projections.GetRequiredSnapshot(id).Phase);
+                Assert.Equal(DownloadPhase.Downloading, tasks.GetRequiredSnapshot(id).Phase);
                 Assert.True((await tasks.UpdateActivityAsync(id, "video", "Downloading", TestContext.Current.CancellationToken)
                     .ConfigureAwait(false)).IsSuccess);
             }, TestContext.Current.CancellationToken).ConfigureAwait(true);

@@ -494,6 +494,101 @@ public sealed class DownloadTaskApplicationServiceTests
         Assert.Equal(DownloadPhase.Pausing, store.Current?.Phase);
     }
 
+    [Fact]
+    public async Task CommittedSnapshotsAreVisibleBeforeEventsAndReleasedOnCompletion()
+    {
+        var store = new RecordingStore();
+        using var service = new DownloadTaskApplicationService(store,
+            DownloadHistoryService.CreateForSharedStore(store), new AdvancingClock());
+        var events = new List<DownloadTaskChangedEventArgs>();
+        service.TaskChanged += (sender, args) =>
+        {
+            if (args.Snapshot?.Phase == DownloadPhase.Completed)
+                Assert.False(service.TryGetSnapshot(args.TaskId, out _));
+            else
+                Assert.Same(args.Snapshot, service.GetRequiredSnapshot(args.TaskId));
+            events.Add(args);
+        };
+        var queued = CreateTask();
+        (await service.AddAsync(queued, TestContext.Current.CancellationToken)).RequireValue();
+        var started = (await service.StartAsync(queued.Id, TestContext.Current.CancellationToken)).RequireValue();
+
+        Assert.Null(events[0].PreviousSnapshot);
+        Assert.Same(queued, events[1].PreviousSnapshot);
+        Assert.Same(started, service.GetRequiredSnapshot(queued.Id));
+        (await service.CompleteAsync(queued.Id, new DownloadCompletion(1, "finished", null),
+            TestContext.Current.CancellationToken)).RequireValue();
+
+        Assert.Same(started, events[2].PreviousSnapshot);
+        Assert.False(service.TryGetSnapshot(queued.Id, out _));
+        Assert.NotNull(store.CompletedHistory);
+    }
+
+    [Fact]
+    public async Task RejectedPersistenceKeepsTheLastCommittedSnapshot()
+    {
+        var store = new RecordingStore();
+        using var service = new DownloadTaskApplicationService(store,
+            DownloadHistoryService.CreateForSharedStore(store), new AdvancingClock());
+        var queued = CreateTask();
+        (await service.AddAsync(queued, TestContext.Current.CancellationToken)).RequireValue();
+        store.UpdateError = new OperationError("test.write-failed", "Synthetic write failure.");
+        var events = 0;
+        service.TaskChanged += (_, _) => events++;
+
+        var result = await service.StartAsync(queued.Id, TestContext.Current.CancellationToken);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("test.write-failed", result.Error?.Code);
+        Assert.Same(queued, service.GetRequiredSnapshot(queued.Id));
+        Assert.Same(queued, store.Current);
+        Assert.Equal(0, events);
+    }
+
+    [Fact]
+    public async Task LoadingUnfinishedTasksRestoresSnapshotsWithoutPresentation()
+    {
+        var store = new RecordingStore();
+        var paused = CreateTask().Pause(Epoch.AddSeconds(1)).RequireValue();
+        Assert.True((await store.AddAsync(paused, TestContext.Current.CancellationToken)).IsSuccess);
+        using var service = new DownloadTaskApplicationService(store,
+            DownloadHistoryService.CreateForSharedStore(store), new AdvancingClock());
+        Assert.False(service.TryGetSnapshot(paused.Id, out _));
+
+        var restored = await service.GetUnfinishedAsync(TestContext.Current.CancellationToken);
+
+        Assert.Same(paused, Assert.Single(restored));
+        Assert.Same(paused, service.GetRequiredSnapshot(paused.Id));
+        (await service.CancelAsync(paused.Id, TestContext.Current.CancellationToken)).RequireValue();
+        (await service.DeleteAsync(paused.Id, TestContext.Current.CancellationToken)).RequireValue();
+        Assert.False(service.TryGetSnapshot(paused.Id, out _));
+    }
+
+    [Fact]
+    public async Task AnOlderUnfinishedReadCannotReintroduceACompletedSnapshot()
+    {
+        var store = new RecordingStore();
+        using var service = new DownloadTaskApplicationService(store,
+            DownloadHistoryService.CreateForSharedStore(store), new AdvancingClock());
+        var queued = CreateTask();
+        (await service.AddAsync(queued, TestContext.Current.CancellationToken)).RequireValue();
+        var started = (await service.StartAsync(queued.Id, TestContext.Current.CancellationToken)).RequireValue();
+        var pendingRead = new TaskCompletionSource<IReadOnlyList<DownloadTask>>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        store.NextUnfinished = pendingRead;
+
+        var loading = service.GetUnfinishedAsync(TestContext.Current.CancellationToken);
+        var completing = service.CompleteAsync(queued.Id, new DownloadCompletion(1, "finished", null),
+            TestContext.Current.CancellationToken);
+        var completedBeforeRead = completing.IsCompleted;
+        pendingRead.SetResult([started]);
+        await Task.WhenAll(loading, completing);
+
+        Assert.False(completedBeforeRead);
+        Assert.True((await completing.ConfigureAwait(true)).IsSuccess);
+        Assert.False(service.TryGetSnapshot(queued.Id, out _));
+    }
+
     private static DownloadTask CreateTask()
     {
         return DownloadTask.Create(
@@ -550,7 +645,11 @@ public sealed class DownloadTaskApplicationServiceTests
 
         public DownloadTask? ConcurrentUpdate { get; set; }
 
+        public OperationError? UpdateError { get; set; }
+
         public TaskCompletionSource<DownloadTask?>? NextFind { get; set; }
+
+        public TaskCompletionSource<IReadOnlyList<DownloadTask>>? NextUnfinished { get; set; }
 
         public List<long> ExpectedVersions { get; } = [];
 
@@ -600,6 +699,10 @@ public sealed class DownloadTaskApplicationServiceTests
             lock (_sync)
             {
                 ExpectedVersions.Add(expectedVersion);
+                if (UpdateError is { } error)
+                {
+                    return Task.FromResult(OperationResult.Failure(error));
+                }
                 if (ConcurrentUpdate is { } concurrent)
                 {
                     Current = concurrent;
@@ -649,8 +752,15 @@ public sealed class DownloadTaskApplicationServiceTests
             }
         }
 
-        public Task<IReadOnlyList<DownloadTask>> GetUnfinishedAsync(CancellationToken cancellationToken) =>
-            Task.FromResult<IReadOnlyList<DownloadTask>>(Current == null ? [] : [Current]);
+        public Task<IReadOnlyList<DownloadTask>> GetUnfinishedAsync(CancellationToken cancellationToken)
+        {
+            if (NextUnfinished is { } pending)
+            {
+                NextUnfinished = null;
+                return pending.Task.WaitAsync(cancellationToken);
+            }
+            return Task.FromResult<IReadOnlyList<DownloadTask>>(Current == null ? [] : [Current]);
+        }
 
         public Task<bool> IsOutputPathReservedAsync(
             string basePath,

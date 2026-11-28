@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using DownKyi.Application.Downloads;
 using DownKyi.Domain.Downloads;
 
 namespace DownKyi.Services.Download;
@@ -14,13 +15,15 @@ internal static class DownloadTransferRequestFactory
         string? stagingDirectory,
         string localFileName,
         long expectedBytes,
-        DownloadTaskProjectionStore projections,
+        IDownloadTaskLookup tasks,
+        Action<DownloadProgress> publishProgress,
         DownloadTaskStateWriter stateWriter,
         Action ensureActive,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(taskId);
-        ArgumentNullException.ThrowIfNull(projections);
+        ArgumentNullException.ThrowIfNull(tasks);
+        ArgumentNullException.ThrowIfNull(publishProgress);
         ArgumentNullException.ThrowIfNull(stateWriter);
         ArgumentNullException.ThrowIfNull(ensureActive);
         return new DownloadTransferRequest(
@@ -30,9 +33,9 @@ internal static class DownloadTransferRequestFactory
             localFileName,
             expectedBytes,
             ensureActive,
-            () => projections.GetRequiredSnapshot(taskId).Phase is
+            () => tasks.GetRequiredSnapshot(taskId).Phase is
                 DownloadPhase.Pausing or DownloadPhase.Paused,
-            progress => projections.PublishLiveProgress(taskId, progress),
+            publishProgress,
             (progress, token) => stateWriter.UpdateProgressAsync(taskId, progress, token),
             cancellationToken,
             stagingDirectory);
