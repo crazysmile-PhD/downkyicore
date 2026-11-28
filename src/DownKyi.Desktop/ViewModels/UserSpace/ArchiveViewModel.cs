@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Threading;
 using Avalonia.Media;
 using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
@@ -14,11 +15,15 @@ namespace DownKyi.ViewModels.UserSpace;
 /// <summary>
 /// 投稿页面
 /// </summary>
-internal class ArchiveViewModel : ViewModelBase
+internal class ArchiveViewModel : ViewModelBase, IUserSpacePageLifetime
 {
     public const string Tag = "PageUserSpaceArchive";
 
     private long _mid = -1;
+    public long Mid => _mid;
+    public int Page => 1;
+    public AppRoute Route { get; private set; }
+    public void ResumePage(CancellationToken lifetime) => lifetime.ThrowIfCancellationRequested();
 
     #region 页面属性申明
 
@@ -102,6 +107,7 @@ internal class ArchiveViewModel : ViewModelBase
     {
         ArgumentNullException.ThrowIfNull(navigationContext);
         base.OnNavigatedTo(navigationContext);
+        Route = navigationContext.Route;
 
         PublicationZones.Clear();
         SelectedItem = -1;

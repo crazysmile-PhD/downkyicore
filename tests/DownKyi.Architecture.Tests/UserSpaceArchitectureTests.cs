@@ -15,7 +15,11 @@ public sealed class UserSpaceArchitectureTests
 
         Assert.DoesNotContain("Task.Run", source, StringComparison.Ordinal);
         Assert.Contains("IUserSpaceLoadCoordinator", source, StringComparison.Ordinal);
-        Assert.Contains(".LoadAsync(mid, cancellationToken)", source, StringComparison.Ordinal);
+        Assert.Contains(".LoadProfileAsync(requestedMid, cancellationToken)", source, StringComparison.Ordinal);
+        Assert.Contains(".LoadOverviewAsync(requestedMid, cancellationToken)", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("snapshot.SeasonsSeries", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("snapshot.FavoriteFolders", source, StringComparison.Ordinal);
+        Assert.Contains("[\"lifetime\"] = lifetime", source, StringComparison.Ordinal);
         Assert.DoesNotContain("IWbiKeyProvider", source, StringComparison.Ordinal);
         Assert.Contains("if (_loadedMid == parameter)", source, StringComparison.Ordinal);
         Assert.Contains("OnNavigatedFrom", source, StringComparison.Ordinal);

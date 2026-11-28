@@ -23,6 +23,9 @@
     <system:String x:Key="DownloadManager">Download manager</system:String>
     <system:String x:Key="Toolbox">Toolbox</system:String>
 
+    <system:String x:Key="UserSpaceLoadFailed">Could not load this section. Check your connection and try again.</system:String>
+    <system:String x:Key="UserSpaceRetry">Try again</system:String>
+
     <!--  Login  -->
     <system:String x:Key="LoginStudioHeadline" xml:space="preserve">Log in&#x000A;to your space</system:String>
     <system:String x:Key="LoginScannedConfirmation">QR code scanned. Confirm on your phone.</system:String>

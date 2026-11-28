@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
+using DownKyi.Application.Diagnostics;
 using DownKyi.Application.Settings;
 using DownKyi.Core.BiliApi.Users;
 using DownKyi.Core.BiliApi.Users.Models;
@@ -26,6 +27,8 @@ internal partial class UserSpaceViewModel : ViewModelBase
     private readonly IUserSpaceLoadCoordinator _loadCoordinator;
     private CancellationTokenSource? _loadCancellation;
     private long? _loadedMid;
+    private int _activeTabId = -1;
+    private int _activePage = 1;
 
     // mid
     private long mid = -1;
@@ -101,24 +104,33 @@ internal partial class UserSpaceViewModel : ViewModelBase
             return;
         }
 
+        if (banner.Id is 0 or 2 or 3) NavigateTab(banner.Id);
+    }
+
+    private void NavigateTab(int id, int page = 1, bool restore = false)
+    {
+        if (!restore && id == _activeTabId && Navigation.GetActiveView(AppNavigationRegion.UserSpace) != null) return;
+        var lifetime = _loadCancellation?.Token ?? CancellationToken.None;
+        if (lifetime.IsCancellationRequested) return;
+        _activeTabId = id;
+        _activePage = page;
         var parameters = new Dictionary<string, object?>
         {
-            ["object"] = banner.NavigationData,
-            ["mid"] = mid
+            ["mid"] = mid,
+            ["page"] = page,
+            ["lifetime"] = lifetime
         };
-
-        var route = banner.Id switch
-        {
-            0 => AppRoute.Archive,
-            2 => AppRoute.UserSpaceSeasonsSeries,
-            3 => AppRoute.UserSpaceFavorites,
-            _ => (AppRoute?)null
-        };
-        if (route != null)
-        {
-            Navigation.NavigateRegion(AppNavigationRegion.UserSpace, route.Value, parameters);
-        }
+        if (id == 0) parameters["object"] = TabLeftBanners.First(banner => banner.Id == 0).NavigationData;
+        Navigation.NavigateRegion(AppNavigationRegion.UserSpace, GetTabRoute(id), parameters);
     }
+
+    private static AppRoute GetTabRoute(int id) => id switch
+    {
+        0 => AppRoute.Archive,
+        2 => AppRoute.UserSpaceSeasonsSeries,
+        3 => AppRoute.UserSpaceFavorites,
+        _ => throw new ArgumentOutOfRangeException(nameof(id))
+    };
 
     // 右侧tab点击事件
     private RelayCommand<object>? _tabRightBannersCommand;
@@ -173,6 +185,9 @@ internal partial class UserSpaceViewModel : ViewModelBase
     /// </summary>
     private void InitView()
     {
+        _loadedMid = null;
+        _activeTabId = -1;
+        _activePage = 1;
         Background = null;
 
         Header = null;
@@ -203,18 +218,38 @@ internal partial class UserSpaceViewModel : ViewModelBase
     private async Task UpdateSpaceInfoAsync()
     {
         var cancellationToken = ResetLoadCancellation();
-        UserSpaceSnapshot snapshot;
+        var requestedMid = mid;
         try
         {
-            snapshot = await _loadCoordinator
-                .LoadAsync(mid, cancellationToken)
-                .ConfigureAwait(true);
+            var profile = await _loadCoordinator.LoadProfileAsync(requestedMid, cancellationToken).ConfigureAwait(true);
+            cancellationToken.ThrowIfCancellationRequested();
+            ApplyProfile(profile);
+            if (profile.User == null)
+            {
+                _loadedMid = requestedMid;
+                return;
+            }
+            var overview = await _loadCoordinator.LoadOverviewAsync(requestedMid, cancellationToken).ConfigureAwait(true);
+            cancellationToken.ThrowIfCancellationRequested();
+            ApplyOverview(overview);
+            _loadedMid = requestedMid;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             return;
         }
+        catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException
+            or ArgumentException or FormatException or Newtonsoft.Json.JsonException)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            LoadingVisibility = false;
+            _logger.LogErrorMessage("User space could not be loaded.", exception);
+            Notifications.Show(DictionaryResource.GetString("UserSpaceLoadFailed"));
+        }
+    }
 
+    private void ApplyProfile(UserSpaceProfileSnapshot snapshot)
+    {
         var userInfo = snapshot.User;
 
         // 是否获取到数据
@@ -225,7 +260,6 @@ internal partial class UserSpaceViewModel : ViewModelBase
             ViewVisibility = false;
             LoadingVisibility = false;
             NoDataVisibility = true;
-            _loadedMid = mid;
             return;
         }
         else
@@ -257,23 +291,19 @@ internal partial class UserSpaceViewModel : ViewModelBase
             NoDataVisibility = false;
         }
 
-        ContentVisibility = true;
+    }
 
-        // 投稿视频
-        var publicationTypes = snapshot.PublicationTypes;
-        if (publicationTypes is { Count: > 0 })
+    private void ApplyOverview(UserSpaceOverviewSnapshot snapshot)
+    {
+        TabLeftBanners.Add(new TabLeftBanner
         {
-            TabLeftBanners.Add(new TabLeftBanner
-            {
-                NavigationData = publicationTypes,
-                Id = 0,
-                Icon = NormalIcon.Current.VideoUp,
-                IconColor = "#FF02B5DA",
-                Title = DictionaryResource.GetString("Publication"),
-                IsSelected = true
-            });
-        }
-
+            NavigationData = snapshot.PublicationTypes ?? [],
+            Id = 0,
+            Icon = NormalIcon.Current.VideoUp,
+            IconColor = "#FF02B5DA",
+            Title = DictionaryResource.GetString("Publication"),
+            IsSelected = true
+        });
         TabLeftBanners.Add(new TabLeftBanner
         {
             Id = 1,
@@ -281,25 +311,20 @@ internal partial class UserSpaceViewModel : ViewModelBase
             IconColor = "#FF7B61FF",
             Title = DictionaryResource.GetString("DynamicVideos")
         });
-
-        // 合集和列表
-        var seasonsSeries = snapshot.SeasonsSeries;
-        if (seasonsSeries is { Page.Total: > 0 })
+        TabLeftBanners.Add(new TabLeftBanner
         {
-            TabLeftBanners.Add(new TabLeftBanner
-            {
-                NavigationData = seasonsSeries,
-                Id = 2,
-                Icon = NormalIcon.Current.Channel,
-                IconColor = "#FF23C9ED",
-                Title = DictionaryResource.GetString("SeasonsSeries")
-            });
-        }
-
-        AddFavoriteFolders(snapshot.FavoriteFolders);
-
-        // 订阅
-
+            Id = 2,
+            Icon = NormalIcon.Current.Channel,
+            IconColor = "#FF23C9ED",
+            Title = DictionaryResource.GetString("SeasonsSeries")
+        });
+        TabLeftBanners.Add(new TabLeftBanner
+        {
+            Id = 3,
+            Icon = NormalIcon.Current.FavoriteOutline,
+            IconColor = "#FFFF6699",
+            Title = DictionaryResource.GetString("PublicFavorites")
+        });
         // 关系状态数
         var relationStat = snapshot.Relation;
         if (relationStat != null)
@@ -349,7 +374,8 @@ internal partial class UserSpaceViewModel : ViewModelBase
             });
         }
 
-        _loadedMid = mid;
+        ContentVisibility = true;
+        NavigateTab(0);
     }
 
     /// <summary>
@@ -370,6 +396,20 @@ internal partial class UserSpaceViewModel : ViewModelBase
 
         if (_loadedMid == parameter)
         {
+            var lifetime = ResetLoadCancellation();
+            if (_activeTabId >= 0)
+            {
+                if (Navigation.GetActiveView(AppNavigationRegion.UserSpace) is IUserSpacePageLifetime page
+                    && page.Mid == mid && page.Route == GetTabRoute(_activeTabId))
+                {
+                    page.ResumePage(lifetime);
+                }
+                else
+                {
+                    NavigateTab(_activeTabId, _activePage, restore: true);
+                }
+                foreach (var banner in TabLeftBanners) banner.IsSelected = banner.Id == _activeTabId;
+            }
             return;
         }
 
@@ -381,6 +421,11 @@ internal partial class UserSpaceViewModel : ViewModelBase
 
     public override void OnNavigatedFrom(AppNavigationContext navigationContext)
     {
+        if (_activeTabId >= 0 && Navigation.GetActiveView(AppNavigationRegion.UserSpace) is IUserSpacePageLifetime page
+            && page.Mid == mid && page.Route == GetTabRoute(_activeTabId))
+        {
+            _activePage = page.Page;
+        }
         _loadCancellation?.Cancel();
         base.OnNavigatedFrom(navigationContext);
     }

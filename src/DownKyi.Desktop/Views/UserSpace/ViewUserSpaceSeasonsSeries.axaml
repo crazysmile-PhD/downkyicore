@@ -1,6 +1,7 @@
 <UserControl
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:custom="clr-namespace:DownKyi.CustomControl"
     xmlns:vmu="clr-namespace:DownKyi.ViewModels.UserSpace"
     xmlns:asyncImageLoader="clr-namespace:DownKyi.CustomControl.AsyncImageLoader"
     x:Class="DownKyi.Views.UserSpace.ViewUserSpaceSeasonsSeries"
@@ -9,8 +10,8 @@
     <UserControl.Styles>
         <StyleInclude Source="/Themes/Styles/Studio.axaml" />
     </UserControl.Styles>
-    <Grid RowDefinitions="*">
-        <ListBox
+    <Grid RowDefinitions="Auto,*,Auto">
+        <ListBox Grid.Row="1"
             x:Name="NameSeasonsSeries"
             ItemsSource="{Binding SeasonsSeries}"
             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
@@ -117,5 +118,12 @@
                 </ControlTheme>
             </ListBox.ItemContainerTheme>
         </ListBox>
+        <ProgressBar Grid.Row="0" Height="4" IsIndeterminate="True" IsVisible="{Binding IsLoading}" />
+        <ContentControl Grid.Row="1" Theme="{StaticResource StudioEmptyState}" IsVisible="{Binding IsEmpty}" />
+        <StackPanel Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12" IsVisible="{Binding HasError}">
+            <TextBlock Text="{DynamicResource UserSpaceLoadFailed}" TextWrapping="Wrap" MaxWidth="400" />
+            <Button Content="{DynamicResource UserSpaceRetry}" Command="{Binding RetryCommand}" HorizontalAlignment="Center" />
+        </StackPanel>
+        <custom:CustomPager Grid.Row="2" Classes="personal" DataContext="{Binding Pager}" Margin="0,12" />
     </Grid>
 </UserControl>

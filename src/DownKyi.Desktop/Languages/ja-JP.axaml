@@ -23,6 +23,9 @@
     <system:String x:Key="DownloadManager">ダウンロード管理</system:String>
     <system:String x:Key="Toolbox">ツールボックス</system:String>
 
+    <system:String x:Key="UserSpaceLoadFailed">この項目を読み込めませんでした。接続を確認して再試行してください。</system:String>
+    <system:String x:Key="UserSpaceRetry">再試行</system:String>
+
     <!--  Login  -->
     <system:String x:Key="LoginStudioHeadline" xml:space="preserve">ログインして&#x000A;マイスペースへ</system:String>
     <system:String x:Key="LoginScannedConfirmation">コードがスキャンされました。携帯電話で確認してください</system:String>

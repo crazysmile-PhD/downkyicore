@@ -23,6 +23,9 @@
     <system:String x:Key="DownloadManager">下載管理</system:String>
     <system:String x:Key="Toolbox">工具箱</system:String>
 
+    <system:String x:Key="UserSpaceLoadFailed">無法載入此欄目，請檢查網路後重試。</system:String>
+    <system:String x:Key="UserSpaceRetry">重試</system:String>
+
     <!--  Login  -->
     <system:String x:Key="LoginStudioHeadline" xml:space="preserve">登入&#x000A;你的空間</system:String>
     <system:String x:Key="LoginScannedConfirmation">已掃碼，請在手機上確認</system:String>
