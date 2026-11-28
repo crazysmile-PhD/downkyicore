@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Application.Diagnostics;
+using DownKyi.Application.Settings;
 using DownKyi.Commands;
 using DownKyi.Images;
 using DownKyi.Presentation;
@@ -24,8 +25,11 @@ internal class MyToViewVideoViewModel : ViewModelBase
     private readonly IContentDownloadCoordinator _downloadCoordinator;
     private readonly ILogger<MyToViewVideoViewModel> _logger;
     private readonly IPersonalMediaCoordinator _personalMediaCoordinator;
+    private readonly ISettingsStore _settingsStore;
     private CancellationTokenSource? _loadCancellation;
     private CancellationTokenSource? _downloadCancellation;
+    private long _mid;
+    private bool _hasLoaded;
 
     public DownKyiAsyncCommandGate DownloadCommandGate { get; } = new();
 
@@ -101,11 +105,13 @@ internal class MyToViewVideoViewModel : ViewModelBase
         IDesktopInteractionContext desktopInteractions,
         IContentDownloadCoordinator downloadCoordinator,
         IPersonalMediaCoordinator personalMediaCoordinator,
+        ISettingsStore settingsStore,
         ILogger<MyToViewVideoViewModel> logger) : base(desktopInteractions)
     {
         _downloadCoordinator = downloadCoordinator ?? throw new ArgumentNullException(nameof(downloadCoordinator));
         _personalMediaCoordinator = personalMediaCoordinator
             ?? throw new ArgumentNullException(nameof(personalMediaCoordinator));
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         #region 属性初始化
@@ -303,9 +309,10 @@ internal class MyToViewVideoViewModel : ViewModelBase
                 .LoadToViewAsync(cancellationToken)
                 .ConfigureAwait(true);
             cancellationToken.ThrowIfCancellationRequested();
+            if (!IsCurrentAccount) return;
             Medias.ReplaceRange(medias);
+            _hasLoaded = true;
             ContentVisibility = medias.Count > 0;
-            LoadingVisibility = false;
             NoDataVisibility = medias.Count == 0;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -315,9 +322,13 @@ internal class MyToViewVideoViewModel : ViewModelBase
         catch (Exception e) when (e is HttpRequestException or InvalidOperationException or ArgumentException
             or FormatException or Newtonsoft.Json.JsonException)
         {
-            LoadingVisibility = false;
+            if (cancellationToken.IsCancellationRequested || !IsCurrentAccount) return;
             NoDataVisibility = true;
             _logger.LogErrorMessage("Watch-later page loading failed.", e);
+        }
+        finally
+        {
+            if (_loadCancellation?.Token == cancellationToken) LoadingVisibility = false;
         }
     }
 
@@ -330,6 +341,7 @@ internal class MyToViewVideoViewModel : ViewModelBase
         ContentVisibility = false;
         LoadingVisibility = false;
         NoDataVisibility = false;
+        _hasLoaded = false;
 
         Medias.Clear();
         IsSelectAll = false;
@@ -348,22 +360,19 @@ internal class MyToViewVideoViewModel : ViewModelBase
         DownloadManage.Height = 24;
         DownloadManage.Width = 24;
 
-        // 根据传入参数不同执行不同任务
-        var mid = navigationContext.Parameters.GetValue<long>("Parameter");
-        if (mid == 0)
+        CancelOperations();
+        var user = _settingsStore.Current.User;
+        var mid = user.IsLogin ? user.Mid : 0;
+        if (mid != _mid)
         {
-            IsSelectAll = false;
-            foreach (var media in Medias)
-            {
-                media.IsSelected = false;
-            }
-
-            return;
+            InitView();
+            _mid = mid;
         }
 
-        InitView();
-
-        RunFireAndForget(UpdateToViewMediaListAsync(), nameof(UpdateToViewMediaListAsync), _logger);
+        if (_mid != 0 && !_hasLoaded)
+        {
+            RunFireAndForget(UpdateToViewMediaListAsync(), nameof(UpdateToViewMediaListAsync), _logger);
+        }
     }
 
     public override void OnNavigatedFrom(AppNavigationContext navigationContext)
@@ -377,6 +386,8 @@ internal class MyToViewVideoViewModel : ViewModelBase
     {
         CancelAndDispose(ref _loadCancellation);
     }
+
+    private bool IsCurrentAccount => _settingsStore.Current.User is { IsLogin: true } user && user.Mid == _mid;
 
     protected override void Dispose(bool disposing)
     {
