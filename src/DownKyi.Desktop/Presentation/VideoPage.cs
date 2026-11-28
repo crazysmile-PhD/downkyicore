@@ -22,6 +22,9 @@ internal class VideoPage : ObservableObject
     public string Bvid { get; set; } = string.Empty;
     public long Cid { get; set; }
     public long EpisodeId { get; set; }
+    // The season entry identity remains stable when playback redirects to an ordinary video.
+    [JsonIgnore]
+    public long SourceEpisodeId { get; init; }
     public VideoOwner? Owner { get; set; }
     public string PublishTime { get; set; } = string.Empty;
 
