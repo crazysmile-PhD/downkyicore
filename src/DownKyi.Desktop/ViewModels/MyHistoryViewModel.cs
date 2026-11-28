@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Application.Diagnostics;
+using DownKyi.Application.Settings;
 using DownKyi.Commands;
 using DownKyi.Images;
 using DownKyi.Presentation;
@@ -24,6 +25,7 @@ internal class MyHistoryViewModel : ViewModelBase
     private readonly IContentDownloadCoordinator _downloadCoordinator;
     private readonly ILogger<MyHistoryViewModel> _logger;
     private readonly IPersonalMediaCoordinator _personalMediaCoordinator;
+    private readonly ISettingsStore _settingsStore;
 
     // 每页视频数量，暂时在此写死，以后在设置中增加选项
     private const int VideoNumberInPage = 30;
@@ -34,6 +36,9 @@ internal class MyHistoryViewModel : ViewModelBase
     private bool _isLoadingPage;
     private bool _hasMoreHistory = true;
     private int _loadVersion;
+    private long _mid;
+    private bool _hasLoadedPage;
+    private bool _resumeInterruptedPage;
 
     #region 页面属性申明
 
@@ -107,11 +112,13 @@ internal class MyHistoryViewModel : ViewModelBase
         IDesktopInteractionContext desktopInteractions,
         IContentDownloadCoordinator downloadCoordinator,
         IPersonalMediaCoordinator personalMediaCoordinator,
+        ISettingsStore settingsStore,
         ILogger<MyHistoryViewModel> logger) : base(desktopInteractions)
     {
         _downloadCoordinator = downloadCoordinator ?? throw new ArgumentNullException(nameof(downloadCoordinator));
         _personalMediaCoordinator = personalMediaCoordinator
             ?? throw new ArgumentNullException(nameof(personalMediaCoordinator));
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         #region 属性初始化
@@ -267,7 +274,8 @@ internal class MyHistoryViewModel : ViewModelBase
 
     private async Task ExecuteLoadMoreCommand()
     {
-        if (NoDataVisibility || _isLoadingPage || !_hasMoreHistory || _loadCancellation == null)
+        if (NoDataVisibility || _isLoadingPage || !_hasMoreHistory || _loadCancellation == null
+            || !IsCurrentAccount)
         {
             return;
         }
@@ -327,17 +335,6 @@ internal class MyHistoryViewModel : ViewModelBase
         }
     }
 
-    private async Task UpdateHistoryMediaListAsync()
-    {
-        var cancellationToken = ReplaceCancellationSource(ref _loadCancellation);
-        var loadVersion = Interlocked.Increment(ref _loadVersion);
-        _isLoadingPage = false;
-        _nextMax = 0;
-        _nextViewAt = 0;
-        _hasMoreHistory = true;
-        await LoadHistoryPageAsync(reset: true, loadVersion, cancellationToken).ConfigureAwait(true);
-    }
-
     private async Task LoadHistoryPageAsync(bool reset, int loadVersion, CancellationToken cancellationToken)
     {
         if (_isLoadingPage) return;
@@ -353,7 +350,7 @@ internal class MyHistoryViewModel : ViewModelBase
                 VideoNumberInPage,
                 cancellationToken).ConfigureAwait(true);
             cancellationToken.ThrowIfCancellationRequested();
-            if (loadVersion != Volatile.Read(ref _loadVersion))
+            if (loadVersion != Volatile.Read(ref _loadVersion) || !IsCurrentAccount)
             {
                 return;
             }
@@ -371,6 +368,7 @@ internal class MyHistoryViewModel : ViewModelBase
 
             _nextMax = result.NextMax;
             _nextViewAt = result.NextViewAt;
+            _hasLoadedPage = true;
 
             ContentVisibility = Medias.Count > 0;
             NoDataVisibility = Medias.Count == 0;
@@ -382,6 +380,12 @@ internal class MyHistoryViewModel : ViewModelBase
         catch (Exception e) when (e is HttpRequestException or InvalidOperationException or ArgumentException
             or FormatException or Newtonsoft.Json.JsonException)
         {
+            if (cancellationToken.IsCancellationRequested || loadVersion != Volatile.Read(ref _loadVersion)
+                || !IsCurrentAccount)
+            {
+                return;
+            }
+
             _logger.LogErrorMessage("History page loading failed.", e);
             if (reset)
             {
@@ -415,6 +419,8 @@ internal class MyHistoryViewModel : ViewModelBase
         _nextMax = 0;
         _nextViewAt = 0;
         _hasMoreHistory = true;
+        _hasLoadedPage = false;
+        _resumeInterruptedPage = false;
         Medias.Clear();
         IsSelectAll = false;
     }
@@ -432,36 +438,42 @@ internal class MyHistoryViewModel : ViewModelBase
         DownloadManage.Height = 24;
         DownloadManage.Width = 24;
 
-        // 根据传入参数不同执行不同任务
-        var mid = navigationContext.Parameters.GetValue<long>("Parameter");
-        if (mid == 0)
+        CancelOperations();
+        var user = _settingsStore.Current.User;
+        var mid = user.IsLogin ? user.Mid : 0;
+        if (mid != _mid)
         {
-            IsSelectAll = false;
-            foreach (var media in Medias)
-            {
-                media.IsSelected = false;
-            }
-
-            return;
+            InitView();
+            _mid = mid;
         }
 
-        InitView();
+        if (_mid == 0) return;
 
-        RunFireAndForget(UpdateHistoryMediaListAsync(), nameof(UpdateHistoryMediaListAsync), _logger);
+        // Navigation history retains this instance. Renew reads without discarding committed pages.
+        var cancellationToken = ReplaceCancellationSource(ref _loadCancellation);
+        if (!_hasLoadedPage || _resumeInterruptedPage)
+        {
+            _resumeInterruptedPage = false;
+            RunFireAndForget(LoadHistoryPageAsync(!_hasLoadedPage, Volatile.Read(ref _loadVersion), cancellationToken),
+                nameof(LoadHistoryPageAsync), _logger);
+        }
     }
 
     public override void OnNavigatedFrom(AppNavigationContext navigationContext)
     {
         CancelOperations();
-        LoadingVisibility = false;
-        _isLoadingPage = false;
         base.OnNavigatedFrom(navigationContext);
     }
 
+    private bool IsCurrentAccount => _settingsStore.Current.User is { IsLogin: true } user && user.Mid == _mid;
+
     private void CancelOperations()
     {
+        _resumeInterruptedPage |= _isLoadingPage;
         Interlocked.Increment(ref _loadVersion);
         CancelAndDispose(ref _loadCancellation);
+        LoadingVisibility = false;
+        _isLoadingPage = false;
     }
 
     protected override void Dispose(bool disposing)
