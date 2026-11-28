@@ -95,6 +95,7 @@ public sealed class SearchInputTests
     [InlineData("fixture ftp://www.bilibili.com/video/BV17x411w7KC")]
     [InlineData("fixture https://evil.invalid/?next=https://www.bilibili.com/video/BV17x411w7KC")]
     [InlineData("prefixhttps://www.bilibili.com/video/BV17x411w7KC")]
+    [InlineData(VideoAddress + " trailing words")]
     [InlineData(VideoAddress + "?fixture=one https://www.bilibili.com/bangumi/play/ep1002")]
     [InlineData(VideoAddress + " https://evil.invalid/other")]
     [InlineData(VideoAddress + "?fixture=one " + VideoAddress + "?fixture=two")]
@@ -152,6 +153,72 @@ public sealed class SearchInputTests
         var request = Assert.Single(navigation.Requests);
         Assert.Equal(AppRoute.SeasonsSeries, request.Route);
         Assert.Equal(new SeriesNavigationPayload(42, 99), request.Parameter);
+    }
+
+    [Theory]
+    [InlineData("invalid")]
+    [InlineData("-1")]
+    [InlineData("0")]
+    [InlineData("")]
+    public void RejectedQueryNeverNavigatesUsingATruncatedPrefix(string seriesId)
+    {
+        using var settings = new TestSettingsStore();
+        var navigation = new TestNavigationService();
+        var search = new SearchService(settings.Store, navigation);
+        using var index = CreateIndex(settings.Store, navigation, search);
+        foreach (var separator in new[] { " ", "】" })
+        {
+            var address = $"https://www.bilibili.com/list/42?fixture=a{separator}b&sid={seriesId}";
+            Assert.Null(BilibiliInputParser.Parse(address));
+            foreach (var prefix in new[] { string.Empty, "【fixture】", "分享 " })
+            {
+                var text = prefix + address;
+                Assert.False(search.BiliInput(text, AppRoute.Index));
+                index.InputText = text;
+                index.InputCommand.Execute(null);
+                Assert.Equal(text, index.InputText);
+                Assert.Empty(navigation.Requests);
+            }
+        }
+    }
+
+    [Theory]
+    [InlineData("【fixture】")]
+    [InlineData("分享 ")]
+    public void SharedQueryKeepsItsCompleteValidatedIdentity(string prefix)
+    {
+        using var settings = new TestSettingsStore();
+        var navigation = new TestNavigationService();
+        var search = new SearchService(settings.Store, navigation);
+
+        Assert.True(search.BiliInput(prefix + "https://www.bilibili.com/list/42?fixture=a b&sid=99", AppRoute.Index));
+
+        var request = Assert.Single(navigation.Requests);
+        Assert.Equal(AppRoute.SeasonsSeries, request.Route);
+        Assert.Equal(new SeriesNavigationPayload(42, 99), request.Parameter);
+    }
+
+    [Theory]
+    [InlineData(VideoAddress + "?fixture=a b")]
+    [InlineData("https://www.bilibili.com/list/42?fixture=a b&sid=99")]
+    public void RepeatedIdenticalQueriesRemainOneCompleteLink(string address)
+    {
+        using var settings = new TestSettingsStore();
+        var navigation = new TestNavigationService();
+        var search = new SearchService(settings.Store, navigation);
+
+        Assert.True(search.BiliInput(address + "\n" + address, AppRoute.Index));
+
+        var request = Assert.Single(navigation.Requests);
+        if (BilibiliInputParser.Parse(address) is BilibiliMediaInput media)
+        {
+            Assert.Equal(media, Assert.IsType<VideoNavigationPayload>(request.Parameter).Input);
+        }
+        else
+        {
+            Assert.Equal(AppRoute.SeasonsSeries, request.Route);
+            Assert.Equal(new SeriesNavigationPayload(42, 99), request.Parameter);
+        }
     }
 
     [Fact]

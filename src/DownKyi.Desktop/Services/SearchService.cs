@@ -77,12 +77,15 @@ internal class SearchService
     {
         var value = input.Trim();
         var direct = BilibiliInputParser.Parse(value);
-        if (direct != null && !value.Any(char.IsWhiteSpace))
+        if (direct != null && !value.Any(char.IsWhiteSpace) && !value.Contains('】', StringComparison.Ordinal))
         {
             return direct;
         }
 
         string? link = null;
+        Range? previous = null;
+        var count = 0;
+        var standalone = false;
         for (var offset = 0; offset < value.Length;)
         {
             var separator = value.IndexOf("://", offset, StringComparison.Ordinal);
@@ -110,19 +113,52 @@ internal class SearchService
                 end++;
             }
 
-            // Resolve only after checking every candidate, including unsupported links.
-            var candidate = value.AsSpan(start, end - start);
-            if (link != null && !candidate.SequenceEqual(link.AsSpan()))
+            if (previous is { } prior && !KeepSameLink(value, prior, start, ref link))
             {
                 return null;
             }
 
-            link ??= candidate.ToString();
+            if (count++ == 0)
+            {
+                standalone = start == 0;
+            }
+
+            previous = new Range(start, end);
             offset = end;
         }
 
-        // Whitespace can belong to a valid URI query; retain its complete parsed identity.
-        return link == null ? null : direct ?? BilibiliInputParser.Parse(link);
+        if (previous is not { } last)
+        {
+            return null;
+        }
+
+        // A standalone URI is accepted or rejected as a whole, never retried as a prefix.
+        if (count == 1 && standalone)
+        {
+            return direct;
+        }
+
+        return KeepSameLink(value, last, value.Length, ref link) ? BilibiliInputParser.Parse(link) : null;
+    }
+
+    private static bool KeepSameLink(string value, Range token, int boundary, ref string? link)
+    {
+        var start = token.Start.Value;
+        var end = token.End.Value;
+        // Query/fragment whitespace belongs to the URI, including potentially invalid suffixes.
+        if (value.AsSpan(start, end - start).IndexOfAny('?', '#') >= 0)
+        {
+            end = boundary;
+        }
+
+        var candidate = value.AsSpan(start, end - start).Trim();
+        if (link != null)
+        {
+            return candidate.SequenceEqual(link.AsSpan());
+        }
+
+        link = candidate.ToString();
+        return true;
     }
 
     private void NavigateToVideo(
