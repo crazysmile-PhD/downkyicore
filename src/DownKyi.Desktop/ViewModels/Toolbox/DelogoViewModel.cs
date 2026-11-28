@@ -38,6 +38,7 @@ internal class DelogoViewModel : ViewModelBase
     private readonly IFilePickerService _filePickerService;
     private readonly FfmpegProcessor _ffmpegProcessor;
     private readonly ILogger<DelogoViewModel> _logger;
+    private readonly ToolboxOutputBuffer _output;
 
     private IImage _source = null!;
 
@@ -157,6 +158,7 @@ internal class DelogoViewModel : ViewModelBase
         _filePickerService = filePickerService ?? throw new ArgumentNullException(nameof(filePickerService));
         _ffmpegProcessor = ffmpegProcessor ?? throw new ArgumentNullException(nameof(ffmpegProcessor));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _output = new ToolboxOutputBuffer(value => Status = value, PropertyChangeAsync);
         #region 属性初始化
 
         VideoPath = string.Empty;
@@ -282,7 +284,7 @@ internal class DelogoViewModel : ViewModelBase
 
         // 新文件名
         var newFileName = VideoPath.Insert(VideoPath.Length - 4, "_delogo");
-        Status = string.Empty;
+        var appendOutput = _output.BeginOperation();
 
         _isDelogo = true;
         try
@@ -294,7 +296,7 @@ internal class DelogoViewModel : ViewModelBase
                 _logoY,
                 _logoWidth,
                 _logoHeight,
-                output => { Status += output + "\n"; }).ConfigureAwait(true);
+                appendOutput).ConfigureAwait(true);
         }
         finally
         {
