@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Text.Json;
 using DownKyi.Application.FileName;
 using DownKyi.Application.Settings;
@@ -8,6 +9,117 @@ namespace DownKyi.Infrastructure.Tests;
 
 public sealed class SettingsStoreTests
 {
+    [Fact]
+    public async Task EqualValuesAndRecreatedCollectionsPreserveThePublishedSnapshotAndFile()
+    {
+        var directory = CreateTestDirectory();
+        var settingsPath = Path.Combine(directory, "settings.json");
+        try
+        {
+            using var manager = new SettingsManager(settingsPath);
+            using var store = new SettingsStore(manager);
+            store.Update(settings => settings with
+            {
+                Video = settings.Video with { HistoryVideoRootPaths = ["fixture-output"] },
+                Danmaku = settings.Danmaku with { BlockedKeywords = ["fixture"], BlockedSenderUids = [42] }
+            });
+            await store.FlushAsync(TestContext.Current.CancellationToken);
+            var before = store.Current;
+            var persisted = await File.ReadAllTextAsync(settingsPath, TestContext.Current.CancellationToken);
+            var changes = 0;
+            manager.Changed += () => changes++;
+
+            var updated = store.Update(settings => settings with
+            {
+                Network = settings.Network with { Split = settings.Network.Split },
+                Video = settings.Video with
+                {
+                    HistoryVideoRootPaths = settings.Video.HistoryVideoRootPaths.ToArray().ToImmutableArray(),
+                    FileNameParts = settings.Video.FileNameParts.ToArray().ToImmutableArray()
+                },
+                Danmaku = settings.Danmaku with
+                {
+                    BlockedKeywords = settings.Danmaku.BlockedKeywords.ToArray().ToImmutableArray(),
+                    BlockedSenderUids = settings.Danmaku.BlockedSenderUids.ToArray().ToImmutableArray()
+                }
+            });
+            await store.FlushAsync(TestContext.Current.CancellationToken);
+
+            Assert.Same(before, updated);
+            Assert.Same(before, store.Current);
+            Assert.Equal(0, changes);
+            Assert.Equal(persisted, await File.ReadAllTextAsync(settingsPath, TestContext.Current.CancellationToken));
+        }
+        finally
+        {
+            DeleteDirectory(directory);
+        }
+    }
+
+    [Fact]
+    public async Task CommittingTheCurrentSnapshotStillPersistsPendingChangesWithoutRepublishing()
+    {
+        var directory = CreateTestDirectory();
+        var settingsPath = Path.Combine(directory, "settings.json");
+        try
+        {
+            using var manager = new SettingsManager(settingsPath);
+            using var store = new SettingsStore(manager);
+            var pending = store.Update(settings => settings with
+            {
+                Video = settings.Video with { Quality = 80 }
+            });
+            var changes = 0;
+            manager.Changed += () => changes++;
+
+            var committed = await store.CommitAsync(settings => settings, TestContext.Current.CancellationToken);
+
+            Assert.True(committed.Succeeded);
+            Assert.Same(pending, store.Current);
+            Assert.Equal(0, changes);
+            using var reopened = new SettingsStore(settingsPath);
+            Assert.Equal(80, reopened.Current.Video.Quality);
+        }
+        finally
+        {
+            DeleteDirectory(directory);
+        }
+    }
+
+    [Fact]
+    public async Task RejectedValueNormalizingToCurrentDoesNotRepublishOrDiscardPendingChanges()
+    {
+        var directory = CreateTestDirectory();
+        var settingsPath = Path.Combine(directory, "settings.json");
+        try
+        {
+            using var manager = new SettingsManager(settingsPath);
+            using var store = new SettingsStore(manager);
+            var pending = store.Update(settings => settings with
+            {
+                Basic = settings.Basic with { ThemeMode = ThemeMode.Dark }
+            });
+            var changes = 0;
+            manager.Changed += () => changes++;
+
+            var updated = store.Update(settings => settings with
+            {
+                Network = settings.Network with { MaxCurrentDownloads = 0 }
+            });
+            await store.FlushAsync(TestContext.Current.CancellationToken);
+
+            Assert.Same(pending, updated);
+            Assert.Equal(0, changes);
+            using var reopened = new SettingsStore(settingsPath);
+            Assert.Equal(ThemeMode.Dark, reopened.Current.Basic.ThemeMode);
+            Assert.Equal(3, reopened.Current.Network.MaxCurrentDownloads);
+        }
+        finally
+        {
+            DeleteDirectory(directory);
+        }
+    }
+
     [Theory]
     [InlineData("{}", true)]
     [InlineData("{\"EmbedCover\":false}", false)]
