@@ -34,6 +34,9 @@ Keeping the former BCL channel sink would retain custom queue／rolling maintena
 2. Queue and recent buffer are bounded；producer paths cannot block UI／download indefinitely, and overflow is counted.
 3. Flush drains accepted events and reports the first persistence failure. Shutdown uses bounded async flush／dispose without `.Wait()`、`.Result` or fire-and-forget cleanup.
 4. Files roll by UTC day and configured size. Retention applies age and one joint total-byte cap to closed logs and complete diagnostic bundles.
+   Legacy loose files in the Logs root share that policy. General storage
+   maintenance leaves Logs to this owner so active files and diagnostic bundles
+   remain protected.
 5. Export flushes first, then reads bounded valid redacted JSONL from persisted files；malformed lines are skipped with a count.
 6. `ApplicationRecentLogBuffer` is only an in-process view, never the durable export source.
 7. One private sink instance owns queue、file handles and lifecycle. A second provider／sink would duplicate events and split failure ownership.

@@ -2,7 +2,6 @@ namespace DownKyi.Infrastructure.Storage;
 
 public static class ApplicationStorage
 {
-    private const long MaxLogBytes = 64L * 1024 * 1024;
     private const long MaxCacheBytes = 512L * 1024 * 1024;
     private const long MaxAriaLogBytes = 32L * 1024 * 1024;
 
@@ -108,7 +107,6 @@ public static class ApplicationStorage
 
     private static void RunMaintenance(CancellationToken cancellationToken)
     {
-        CleanupDirectory(ApplicationDataPaths.Logs, TimeSpan.FromDays(30), MaxLogBytes, "*", cancellationToken);
         CleanupDirectory(ApplicationDataPaths.Cache, TimeSpan.FromDays(14), MaxCacheBytes, "*", cancellationToken);
         CleanupDirectory(ApplicationDataPaths.Aria, TimeSpan.FromDays(14), MaxAriaLogBytes, "*.log", cancellationToken);
         CleanupTemporaryFiles(ApplicationDataPaths.Database, TimeSpan.FromDays(3), cancellationToken);
