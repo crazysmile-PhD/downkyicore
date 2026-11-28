@@ -18,6 +18,20 @@ namespace DownKyi.Tests;
 public sealed class ContentDownloadCoordinatorTests
 {
     [Fact]
+    public async Task EpisodeIdentityReachesPreparationInSelectionOrder()
+    {
+        var session = new RecordingSession(@"D:\Downloads");
+        var coordinator = CreateCoordinator(new RecordingFactory(session), new RecordingInfoServiceFactory());
+        var first = Item("https://www.bilibili.com/bangumi/play/ep1002");
+        var second = Item("https://www.bilibili.com/bangumi/play/ep1003");
+        await coordinator.AddAsync([first, second], onlySelected: true,
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+        Assert.Collection(session.PreparedInputs,
+            input => Assert.Same(first.Input, input),
+            input => Assert.Same(second.Input, input));
+    }
+
+    [Fact]
     public async Task PreCanceledRequestDoesNotCreateDownloadSession()
     {
         var factory = new RecordingFactory(new RecordingSession(@"D:\Downloads"));
@@ -459,6 +473,7 @@ public sealed class ContentDownloadCoordinatorTests
         public int DirectorySelectionCount { get; private set; }
 
         public int PrepareCount { get; private set; }
+        public List<BilibiliMediaInput> PreparedInputs { get; } = [];
 
         public int AddCount { get; private set; }
 
@@ -493,12 +508,14 @@ public sealed class ContentDownloadCoordinatorTests
             throw new NotSupportedException();
 
         public Task<PreparedDownload?> PrepareAsync(
+            BilibiliMediaInput input,
             IInfoService videoInfoService,
             DownloadContentSelection requestedContent,
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
             Assert.NotNull(videoInfoService);
+            PreparedInputs.Add(input);
             Assert.Equal(Selection.RequestedContent, requestedContent);
             PrepareCount++;
             if (skippedPreparationCalls?.Contains(PrepareCount) == true)

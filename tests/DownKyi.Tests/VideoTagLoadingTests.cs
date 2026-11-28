@@ -5,6 +5,7 @@ using System.Web;
 using DownKyi.Application.Desktop;
 using DownKyi.Application.Downloads;
 using DownKyi.Application.FileName;
+using DownKyi.Application.Media;
 using DownKyi.Application.Settings;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.Video.Models;
@@ -1101,7 +1102,7 @@ public sealed class VideoTagLoadingTests : IDisposable
             });
 
         var preparedDownload = await context.Service.PrepareAsync(
-            infoService,
+            new BilibiliBvidInput("BV17x411w7KC"), infoService,
             DownloadContentSelection.All,
             TestContext.Current.CancellationToken);
 
@@ -1174,7 +1175,7 @@ public sealed class VideoTagLoadingTests : IDisposable
             });
 
         var prepared = await context.Service.PrepareAsync(
-            infoService,
+            new BilibiliBvidInput("BV17x411w7KC"), infoService,
             DownloadContentSelection.None with { Video = true, Audio = true },
             TestContext.Current.CancellationToken);
 
@@ -1217,7 +1218,7 @@ public sealed class VideoTagLoadingTests : IDisposable
             });
 
         var prepared = await context.Service.PrepareAsync(
-            infoService,
+            new BilibiliBvidInput("BV17x411w7KC"), infoService,
             DownloadContentSelection.None with { Video = true },
             TestContext.Current.CancellationToken);
 
@@ -1252,7 +1253,7 @@ public sealed class VideoTagLoadingTests : IDisposable
         };
 
         var prepared = await context.Service.PrepareAsync(
-            infoService,
+            new BilibiliBvidInput("BV17x411w7KC"), infoService,
             requested,
             TestContext.Current.CancellationToken);
 

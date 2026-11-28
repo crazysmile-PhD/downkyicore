@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Bilibili;
 using DownKyi.Application.Downloads;
+using DownKyi.Application.Media;
 using DownKyi.Domain.Downloads;
 using DownKyi.Presentation;
 
@@ -22,6 +23,7 @@ internal interface IAddToDownloadSession
         CancellationToken cancellationToken = default);
 
     Task<PreparedDownload?> PrepareAsync(
+        BilibiliMediaInput input,
         IInfoService videoInfoService,
         DownloadContentSelection requestedContent,
         CancellationToken cancellationToken = default);

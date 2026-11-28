@@ -131,6 +131,7 @@ internal class BangumiInfoService : IInfoService
                 Bvid = episode.Bvid,
                 Cid = episode.Cid,
                 EpisodeId = ResolveEpisodeId(episode),
+                SourceEpisodeId = ResolveEpisodeId(episode),
                 FirstFrame = episode.Cover,
                 Order = order,
                 Name = name,
@@ -237,6 +238,7 @@ internal class BangumiInfoService : IInfoService
                     EpisodeId = isOrdinaryVideo
                         ? -1
                         : ResolveEpisodeId(episode),
+                    SourceEpisodeId = ResolveEpisodeId(episode),
                     FirstFrame = episode.Cover,
                     Order = order,
                     Name = name,

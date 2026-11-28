@@ -63,10 +63,12 @@ internal sealed class DownloadPreparationService
             _playbackService, videoInfoView, videoSections, requestedContent, isAll, cancellationToken);
 
     public async Task<PreparedDownload?> PrepareAsync(
+        BilibiliMediaInput input,
         IInfoService videoInfoService,
         DownloadContentSelection requestedContent,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(videoInfoService);
         ArgumentNullException.ThrowIfNull(requestedContent);
         cancellationToken.ThrowIfCancellationRequested();
@@ -77,7 +79,13 @@ internal sealed class DownloadPreparationService
             return null;
         }
 
-        var videoSections = videoInfoService.GetVideoSections(true, cancellationToken);
+        var episodeId = input switch
+        {
+            BilibiliBangumiEpisodeInput episode => (long?)episode.EpisodeId,
+            BilibiliCheeseEpisodeInput episode => episode.EpisodeId,
+            _ => null
+        };
+        var videoSections = videoInfoService.GetVideoSections(episodeId == null, cancellationToken);
         if (videoSections == null)
         {
             _logger.LogDebugMessage("Video sections do not exist.");
@@ -92,6 +100,9 @@ internal sealed class DownloadPreparationService
                 }
             ];
         }
+
+        if (episodeId is { } selectedEpisodeId)
+            videoSections = SelectEpisode(videoSections, selectedEpisodeId, cancellationToken);
 
         foreach (var section in videoSections)
         {
@@ -174,6 +185,23 @@ internal sealed class DownloadPreparationService
         }
 
         return new PreparedDownload(preparedSections);
+    }
+
+    private static IList<VideoSection> SelectEpisode(
+        IList<VideoSection> sections, long episodeId, CancellationToken cancellationToken)
+    {
+        foreach (var section in sections)
+        {
+            foreach (var page in section.VideoPages)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (page.SourceEpisodeId != episodeId) continue;
+                section.VideoPages = [page];
+                return [section];
+            }
+        }
+        throw new BilibiliApiResponseException(nameof(PrepareAsync),
+            "The metadata did not contain the requested episode.");
     }
 
     private async Task<ResolvedVideo> ResolveCollectionVideoAsync(

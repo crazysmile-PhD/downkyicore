@@ -139,6 +139,7 @@ public sealed class VideoDetailDownloadCoordinatorTests
         }
 
         public Task<PreparedDownload?> PrepareAsync(
+            BilibiliMediaInput input,
             IInfoService videoInfoService,
             DownloadContentSelection requestedContent,
             CancellationToken cancellationToken = default) =>

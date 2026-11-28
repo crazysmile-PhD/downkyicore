@@ -9,6 +9,7 @@ using DownKyi.Application.Bilibili;
 using DownKyi.Application.Desktop;
 using DownKyi.Application.Diagnostics;
 using DownKyi.Application.Downloads;
+using DownKyi.Application.Media;
 using DownKyi.Application.Settings;
 using DownKyi.Core.BiliApi;
 using DownKyi.Core.BiliApi.Sign;
@@ -77,11 +78,13 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
             cancellationToken);
     }
     public Task<PreparedDownload?> PrepareAsync(
+        BilibiliMediaInput input,
         IInfoService videoInfoService,
         DownloadContentSelection requestedContent,
         CancellationToken cancellationToken = default)
     {
         return _preparationService.PrepareAsync(
+            input,
             videoInfoService,
             requestedContent,
             cancellationToken);

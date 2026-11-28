@@ -396,7 +396,7 @@ public sealed class BangumiEpisodeIdentityTests
             NullLogger.Instance);
 
         var prepared = await preparation.PrepareAsync(
-            videoService,
+            new BilibiliBvidInput("BV18CEY6oEyH"), videoService,
             DownloadContentSelection.None with { Video = true },
             TestContext.Current.CancellationToken);
 
@@ -439,7 +439,7 @@ public sealed class BangumiEpisodeIdentityTests
             NullLogger.Instance);
 
         var prepared = await preparation.PrepareAsync(
-            bangumiService,
+            new BilibiliBangumiSeasonInput(1), bangumiService,
             DownloadContentSelection.None with { Video = true },
             TestContext.Current.CancellationToken);
 

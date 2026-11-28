@@ -198,7 +198,7 @@ internal sealed class ContentDownloadCoordinator : IContentDownloadCoordinator
                         .CreateAsync(item, cancellationToken)
                         .ConfigureAwait(false);
                     preparedDownload = await addToDownloadSession
-                        .PrepareAsync(infoService, selection.RequestedContent, cancellationToken)
+                        .PrepareAsync(item.Input, infoService, selection.RequestedContent, cancellationToken)
                         .ConfigureAwait(false);
                 }
                 catch (Exception exception) when (

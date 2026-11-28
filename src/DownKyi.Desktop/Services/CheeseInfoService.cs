@@ -108,6 +108,7 @@ internal class CheeseInfoService : IInfoService
                 Bvid = string.Empty,
                 Cid = episode.Cid,
                 EpisodeId = episode.Id,
+                SourceEpisodeId = episode.Id,
                 FirstFrame = episode.Cover,
                 Order = order,
                 Name = name,
