@@ -2,6 +2,9 @@ using System;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text;
+using System.Text.RegularExpressions;
+using DownKyi.Application.FileName;
 using DownKyi.Application.Settings;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.VideoStream;
@@ -140,33 +143,38 @@ internal static class DownloadTaskDraftFactory
         string audioQualityFormat,
         ApplicationSettings settings)
     {
-        var sectionName = sectionCount > 1 ? section.Title : string.Empty;
-        var fileName = FileNameBuilder.Create(settings.Video.FileNameParts)
-            .SetSection(Format.FormatFileName(sectionName))
-            .SetMainTitle(Format.FormatFileName(video.Title))
-            .SetPageTitle(Format.FormatFileName(page.Name))
-            .SetVideoZone(video.VideoZone.Split('>')[0])
-            .SetAudioQuality(audioQualityFormat)
-            .SetVideoQuality(videoQuality?.QualityFormat ?? string.Empty)
-            .SetVideoCodec(GetCodecLabel(videoQuality?.SelectedVideoCodec ?? string.Empty))
-            .SetVideoPublishTime(page.PublishTime)
-            .SetAvid(page.Avid)
-            .SetBvid(page.Bvid)
-            .SetCid(page.Cid)
-            .SetUpMid(page.Owner?.Mid ?? -1)
-            .SetUpName(Format.FormatFileName(page.Owner?.Name ?? string.Empty));
-
-        switch (settings.Video.OrderFormat)
+        var path = new StringBuilder();
+        foreach (var part in settings.Video.FileNameParts)
         {
-            case OrderFormat.Natural:
-                fileName.SetOrder(page.Order);
-                break;
-            case OrderFormat.LeadingZeros:
-                fileName.SetOrder(page.Order, section.VideoPages.Count);
-                break;
+            path.Append((int)part >= 100 ? HyphenSeparated.Hyphen[(int)part] : part switch
+            {
+                FileNamePart.Order => settings.Video.OrderFormat switch
+                {
+                    OrderFormat.Natural => page.Order.ToString(CultureInfo.InvariantCulture),
+                    OrderFormat.LeadingZeros => page.Order.ToString(
+                        "D" + Math.Abs(section.VideoPages.Count).ToString(CultureInfo.InvariantCulture).Length,
+                        CultureInfo.InvariantCulture),
+                    // Preserve the legacy placeholder when no order format is selected.
+                    _ => "ORDER"
+                },
+                FileNamePart.Section => Format.FormatFileName(sectionCount > 1 ? section.Title : string.Empty),
+                FileNamePart.MainTitle => Format.FormatFileName(video.Title),
+                FileNamePart.PageTitle => Format.FormatFileName(page.Name),
+                FileNamePart.VideoZone => video.VideoZone.Split('>')[0],
+                FileNamePart.AudioQuality => audioQualityFormat,
+                FileNamePart.VideoQuality => videoQuality?.QualityFormat ?? string.Empty,
+                FileNamePart.VideoCodec => GetCodecLabel(videoQuality?.SelectedVideoCodec ?? string.Empty),
+                FileNamePart.VideoPublishTime => page.PublishTime,
+                FileNamePart.Avid => string.Create(CultureInfo.InvariantCulture, $"av{page.Avid}"),
+                FileNamePart.Bvid => page.Bvid,
+                FileNamePart.Cid => page.Cid.ToString(CultureInfo.InvariantCulture),
+                FileNamePart.UpMid => (page.Owner?.Mid ?? -1).ToString(CultureInfo.InvariantCulture),
+                FileNamePart.UpName => Format.FormatFileName(page.Owner?.Name ?? string.Empty),
+                _ => string.Empty
+            });
         }
 
-        var relativePath = fileName.RelativePath();
+        var relativePath = Regex.Replace(path.ToString(), @"//+", "/").TrimEnd('/').TrimStart('/');
         if (!relativePath.Any(char.IsLetterOrDigit))
         {
             relativePath = page.Cid.ToString(CultureInfo.InvariantCulture);

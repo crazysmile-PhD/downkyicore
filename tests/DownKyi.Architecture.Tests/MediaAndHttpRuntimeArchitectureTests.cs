@@ -86,6 +86,7 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
         Assert.DoesNotContain("DownloadTaskProjectionStore", sessionSource, StringComparison.Ordinal);
         Assert.DoesNotContain("IUserNotificationService", sessionSource, StringComparison.Ordinal);
         Assert.DoesNotContain("FileNameBuilder", sessionSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("FileNameParts", sessionSource, StringComparison.Ordinal);
         Assert.DoesNotContain("VideoZone.Instance", sessionSource, StringComparison.Ordinal);
         Assert.DoesNotContain("new DownloadBase", sessionSource, StringComparison.Ordinal);
         Assert.DoesNotContain("page.LoadTagsAsync", sessionSource, StringComparison.Ordinal);
@@ -104,7 +105,7 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
         Assert.DoesNotContain("ISettingsStore", admissionSource, StringComparison.Ordinal);
 
         Assert.Contains("ApplicationSettings settings", draftSource, StringComparison.Ordinal);
-        Assert.Contains("FileNameBuilder", draftSource, StringComparison.Ordinal);
+        Assert.Contains("settings.Video.FileNameParts", draftSource, StringComparison.Ordinal);
         Assert.Contains("new DownloadBase", draftSource, StringComparison.Ordinal);
         Assert.DoesNotContain("ISettingsStore", draftSource, StringComparison.Ordinal);
         Assert.DoesNotContain("IAppDialogService", draftSource, StringComparison.Ordinal);
