@@ -54,7 +54,7 @@ flowchart TD
 - `DownKyi.Application` 擁有 use cases，以及 Bilibili HTTP、cookie／buvid、logging、physical output path、媒體處理與設定 snapshot 等 contracts。
 - `DownKyi.Domain` 的 `DownloadTask` 是 durable state transition 的權威。
 - `DownKyi.Infrastructure` 擁有 FFmpeg runtime、資料目錄選擇／舊資料搬移／維護、設定與登入檔持久化、legacy SQLite adapter、SQLite download store、登入 Cookie adapter 與瀏覽器 header 解析、async Bilibili transport、single-flight buvid、physical path resolver 與 private logging sink／retention／exporter。資料位置與既有 JSON／SQLite 相容契約保持不變。
-- `DownKyi.Core` 必須保持 headless，擁有 Bilibili DTO／protocol、內容轉換與檔名組合；不再擁有 FFmpeg runtime、設定持久化或資料目錄相容實作。Core 與 Infrastructure 各自依賴 Application，不得互相 reference。UserSpace 協定由 caller 傳入是否存在已儲存登入資料，不能直接探查本機檔案。彈幕轉換只產生 ASS 文字與 XML 文件，不開啟實體輸出檔案；寫入由 Desktop 既有的產物寫入流程負責。
+- `DownKyi.Core` 必須保持 headless，擁有 Bilibili DTO／protocol 與內容轉換；不再擁有 FFmpeg runtime、設定持久化或資料目錄相容實作。Core 與 Infrastructure 各自依賴 Application，不得互相 reference。UserSpace 協定由 caller 傳入是否存在已儲存登入資料，不能直接探查本機檔案。彈幕轉換只產生 ASS 文字與 XML 文件，不開啟實體輸出檔案；寫入由 Desktop 既有的產物寫入流程負責。
 
 Prism、DryIoc、EventAggregator、RegionManager、ContainerLocator、第二個 router／container 或 service locator 都不得重新引入。否則會產生平行生命週期、導航狀態或依賴解析 owner。
 
@@ -113,6 +113,8 @@ flowchart LR
     Runtime --> App
     App --> Projection["Desktop projection"]
 ```
+
+命名模板只在建立新草稿時由既有 planning owner 展開，直接使用當次 video／section／page；設定 UI 共用的分隔符資料仍由 Core 提供。既有任務及歷史的路徑與 ID 是已持久化資料，恢復／續傳不得依目前命名設定重新計算。
 
 ### Durable state
 
