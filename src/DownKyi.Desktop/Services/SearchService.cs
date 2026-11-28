@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using DownKyi.Application.Desktop;
 using DownKyi.Application.Media;
 using DownKyi.Application.Settings;
@@ -39,7 +40,7 @@ internal class SearchService
         bool suppressDuplicateVideoNavigation = false)
     {
         ArgumentNullException.ThrowIfNull(input);
-        switch (BilibiliInputParser.Parse(input))
+        switch (ParseInput(input))
         {
             case BilibiliMediaInput media:
                 NavigateToVideo(parentRoute, media, suppressDuplicateVideoNavigation);
@@ -70,6 +71,58 @@ internal class SearchService
         }
 
         return true;
+    }
+
+    private static BilibiliInput? ParseInput(string input)
+    {
+        var value = input.Trim();
+        var direct = BilibiliInputParser.Parse(value);
+        if (direct != null && !value.Any(char.IsWhiteSpace))
+        {
+            return direct;
+        }
+
+        string? link = null;
+        for (var offset = 0; offset < value.Length;)
+        {
+            var separator = value.IndexOf("://", offset, StringComparison.Ordinal);
+            if (separator < 0)
+            {
+                break;
+            }
+
+            var start = separator;
+            while (start > offset && (char.IsAsciiLetterOrDigit(value[start - 1])
+                                      || value[start - 1] is '+' or '-' or '.'))
+            {
+                start--;
+            }
+
+            if (start == separator || (start > 0 && !char.IsWhiteSpace(value[start - 1])
+                                                 && value[start - 1] is not ('【' or '】' or '(')))
+            {
+                return null;
+            }
+
+            var end = separator + 3;
+            while (end < value.Length && !char.IsWhiteSpace(value[end]) && value[end] != '】')
+            {
+                end++;
+            }
+
+            // Resolve only after checking every candidate, including unsupported links.
+            var candidate = value.AsSpan(start, end - start);
+            if (link != null && !candidate.SequenceEqual(link.AsSpan()))
+            {
+                return null;
+            }
+
+            link ??= candidate.ToString();
+            offset = end;
+        }
+
+        // Whitespace can belong to a valid URI query; retain its complete parsed identity.
+        return link == null ? null : direct ?? BilibiliInputParser.Parse(link);
     }
 
     private void NavigateToVideo(
