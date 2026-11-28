@@ -68,6 +68,8 @@ public sealed class SimpleNavigationMenuTests
     {
         var navigation = new TestNavigationService();
         using var viewModel = new ToolboxViewModel(new TestDesktopInteractionContext(navigation));
+        viewModel.OnNavigatedTo(new AppNavigationContext(AppNavigationRegion.Main,
+            AppRoute.Toolbox, AppRoute.Index, null, new AppNavigationParameters(new Dictionary<string, object?>())));
         Assert.Equal(3, viewModel.TabHeaders.Count);
         var menuItem = viewModel.TabHeaders[menuIndex];
         Assert.Equal(expectedMenuId, menuItem.Id);

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Presentation;
@@ -11,6 +12,7 @@ namespace DownKyi.ViewModels
     internal class ToolboxViewModel : ViewModelBase
     {
         public const string Tag = "PageToolbox";
+        private CancellationTokenSource? _visibleCancellation;
 
         #region 页面属性申明
 
@@ -79,21 +81,22 @@ namespace DownKyi.ViewModels
         /// <param name="parameter"></param>
         private void ExecuteLeftTabHeadersCommand(object parameter)
         {
-            if (parameter is not TabHeader tabHeader)
+            if (parameter is not TabHeader tabHeader || _visibleCancellation == null)
             {
                 return;
             }
 
+            var lifetime = _visibleCancellation.Token;
             switch (tabHeader.Id)
             {
                 case 0:
-                    Navigation.NavigateRegion(AppNavigationRegion.Toolbox, AppRoute.BiliHelper);
+                    NavigateTool(AppRoute.BiliHelper, lifetime);
                     break;
                 case 1:
-                    Navigation.NavigateRegion(AppNavigationRegion.Toolbox, AppRoute.Delogo);
+                    NavigateTool(AppRoute.Delogo, lifetime);
                     break;
                 case 2:
-                    Navigation.NavigateRegion(AppNavigationRegion.Toolbox, AppRoute.ExtractMedia);
+                    NavigateTool(AppRoute.ExtractMedia, lifetime);
                     break;
             }
         }
@@ -107,11 +110,31 @@ namespace DownKyi.ViewModels
         public override void OnNavigatedTo(AppNavigationContext navigationContext)
         {
             base.OnNavigatedTo(navigationContext);
+            var lifetime = ReplaceCancellationSource(ref _visibleCancellation);
 
             // 进入设置页面时显示的设置项
             SelectTabId = 0;
             PropertyChangeAsync(() =>
-                Navigation.NavigateRegion(AppNavigationRegion.Toolbox, AppRoute.BiliHelper));
+                NavigateTool(AppRoute.BiliHelper, lifetime));
+        }
+
+        private void NavigateTool(AppRoute route, CancellationToken lifetime)
+        {
+            if (lifetime.IsCancellationRequested) return;
+            Navigation.NavigateRegion(AppNavigationRegion.Toolbox, route,
+                new Dictionary<string, object?> { ["lifetime"] = lifetime });
+        }
+
+        public override void OnNavigatedFrom(AppNavigationContext navigationContext)
+        {
+            CancelAndDispose(ref _visibleCancellation);
+            base.OnNavigatedFrom(navigationContext);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing && !IsDisposed) CancelAndDispose(ref _visibleCancellation);
+            base.Dispose(disposing);
         }
     }
 }

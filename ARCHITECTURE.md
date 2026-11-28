@@ -88,6 +88,7 @@ GitHub release 的 HTTP、JSON contract 與解析由 Infrastructure 擁有；Des
 - 裸 `/list/<MID>` 使用 `PublicationNavigationPayload` 表示全部投稿；帶正整數 `sid` 的 URL 使用獨立 `SeriesNavigationPayload` 載入指定系列。無效 `sid`、API failure 或 MID／series identity 不匹配都 fail closed，不得退回全部投稿。
 - 投稿分頁以 WBI `page.count` 為準；收藏的 `media_count` 不是 filtered count，只能依 `has_more` 擴展。返回時保留 query、頁碼與既有 media instances；只有被取消的未完成頁補載。
 - 可變 `PathIconData` geometry 必須由 factory 為各 ViewModel 建立獨立 instance，避免主題更新污染其他頁面。
+- Toolbox 父頁以可見期 token 約束 BiliHelper 的手動反查；父頁離開、子標籤替換與釋放都會結束 lookup，遲到成功或失敗不得修改頁面。排隊中的初始子頁導航也必須核對原可見期。此 token 不控制轉碼、提取或下載等媒體工作的背景生命週期。
 
 ## Download invariant
 

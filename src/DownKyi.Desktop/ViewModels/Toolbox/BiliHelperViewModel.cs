@@ -18,6 +18,7 @@ internal class BiliHelperViewModel : ViewModelBase
     private readonly ILogger<BiliHelperViewModel> _logger;
     private readonly IPlatformLauncher _platformLauncher;
     private CancellationTokenSource? _lookupCancellation;
+    private CancellationToken _pageLifetime;
 
     #region 页面属性申明
 
@@ -137,9 +138,10 @@ internal class BiliHelperViewModel : ViewModelBase
     /// </summary>
     private async Task ExecuteFindDanmakuSenderCommand()
     {
-        var cancellationToken = ReplaceCancellationSource(ref _lookupCancellation);
+        var cancellationToken = ReplaceCancellationSource(ref _lookupCancellation, _pageLifetime);
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var userMid = await _coordinator
                 .FindDanmakuSenderAsync(DanmakuUserId, cancellationToken)
                 .ConfigureAwait(true);
@@ -156,6 +158,7 @@ internal class BiliHelperViewModel : ViewModelBase
         catch (Exception e) when (e is ArgumentException or FormatException
             or InvalidOperationException or OverflowException)
         {
+            if (cancellationToken.IsCancellationRequested) return;
             UserMid = null;
             _logger.LogErrorMessage($"Danmaku sender lookup failed ({e.GetType().Name}).");
         }
@@ -184,6 +187,18 @@ internal class BiliHelperViewModel : ViewModelBase
     }
 
     #endregion
+
+    public override void OnNavigatedTo(AppNavigationContext navigationContext)
+    {
+        base.OnNavigatedTo(navigationContext);
+        _pageLifetime = navigationContext.Parameters.GetValue<CancellationToken>("lifetime");
+    }
+
+    public override void OnNavigatedFrom(AppNavigationContext navigationContext)
+    {
+        CancelAndDispose(ref _lookupCancellation);
+        base.OnNavigatedFrom(navigationContext);
+    }
 
     protected override void Dispose(bool disposing)
     {
