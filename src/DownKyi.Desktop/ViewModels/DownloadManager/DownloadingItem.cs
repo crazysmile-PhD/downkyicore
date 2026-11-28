@@ -57,8 +57,6 @@ namespace DownKyi.ViewModels.DownloadManager
         private Downloading _downloading = null!;
 
 
-        public MovieMetadata? Metadata { get; set; }
-
         public Downloading Downloading
         {
             get => _downloading;

@@ -54,7 +54,7 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
         Assert.Contains("LoadTagsAsync = currentToken =>", videoInfoSource, StringComparison.Ordinal);
         Assert.Contains("Func<CancellationToken, Task<IReadOnlyList<string>>> LoadTagsAsync", pageSource,
             StringComparison.Ordinal);
-        Assert.Contains("Task<MovieMetadata> BuildAsync(", metadataSource, StringComparison.Ordinal);
+        Assert.Contains("Task<DownloadNfoRequest> BuildAsync(", metadataSource, StringComparison.Ordinal);
         Assert.Contains("page.LoadTagsAsync(cancellationToken)", metadataSource, StringComparison.Ordinal);
     }
 
@@ -105,7 +105,9 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
 
         Assert.Contains("ApplicationSettings settings", draftSource, StringComparison.Ordinal);
         Assert.Contains("FileNameBuilder", draftSource, StringComparison.Ordinal);
-        Assert.Contains("new DownloadBase", draftSource, StringComparison.Ordinal);
+        Assert.Contains("new DownloadTaskDraft", draftSource, StringComparison.Ordinal);
+        Assert.Contains("new DownloadTaskMetadata", draftSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("new DownloadingItem", draftSource, StringComparison.Ordinal);
         Assert.DoesNotContain("ISettingsStore", draftSource, StringComparison.Ordinal);
         Assert.DoesNotContain("IAppDialogService", draftSource, StringComparison.Ordinal);
         Assert.DoesNotContain("DownloadListState", draftSource, StringComparison.Ordinal);

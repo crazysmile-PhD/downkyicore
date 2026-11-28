@@ -82,8 +82,7 @@ public sealed class DownloadBootstrapHostedServiceTests
                 new SystemClock());
             using var projections = new DownloadTaskProjectionStore(
                 reopenedTasks,
-                reopenedHistoryService,
-                new SystemClock());
+                reopenedHistoryService);
             var writer = new DownloadTaskStateWriter(reopenedTasks);
             var staging = new DownloadTaskStaging(NullLogger<DownloadTaskStaging>.Instance);
             var fileService = new DownloadTaskFileService(
@@ -139,8 +138,7 @@ public sealed class DownloadBootstrapHostedServiceTests
         using var tasks = new DownloadTaskApplicationService(taskStore, historyService, clock);
         using var storage = new DownloadTaskProjectionStore(
             tasks,
-            historyService,
-            clock);
+            historyService);
         var stateWriter = new DownloadTaskStateWriter(tasks);
         var queueGateway = new DownloadTaskQueueGateway();
         using var service = new DownloadBootstrapHostedService(
@@ -173,8 +171,7 @@ public sealed class DownloadBootstrapHostedServiceTests
         using var tasks = new DownloadTaskApplicationService(taskStore, historyService, clock);
         using var storage = new DownloadTaskProjectionStore(
             tasks,
-            historyService,
-            clock);
+            historyService);
         using var service = new DownloadBootstrapHostedService(
             new DownloadListState(),
             storage,
@@ -216,8 +213,7 @@ public sealed class DownloadBootstrapHostedServiceTests
             using var tasks = new DownloadTaskApplicationService(store, historyService, clock);
             using var projections = new DownloadTaskProjectionStore(
                 tasks,
-                historyService,
-                clock);
+                historyService);
             var stateWriter = new DownloadTaskStateWriter(tasks);
             var queued = CreateTask("queued");
             var interrupted = CreateTask("interrupted");
@@ -295,8 +291,7 @@ public sealed class DownloadBootstrapHostedServiceTests
                 new SystemClock());
             using var projections = new DownloadTaskProjectionStore(
                 tasks,
-                historyService,
-                new SystemClock());
+                historyService);
             var task = CreateTask("legacy-backend", Path.Combine(directory, "output"));
             task = task.UpdateTransferState(
                 DownloadTransferState.LegacyEmpty,
@@ -429,8 +424,7 @@ public sealed class DownloadBootstrapHostedServiceTests
                 new SystemClock());
             using var projections = new DownloadTaskProjectionStore(
                 tasks,
-                historyService,
-                new SystemClock());
+                historyService);
             var task = CreateTask(
                 "canceled-legacy-backend",
                 Path.Combine(directory, "output"));
@@ -515,8 +509,7 @@ public sealed class DownloadBootstrapHostedServiceTests
             clock);
         using var projections = new DownloadTaskProjectionStore(
             tasks,
-            historyService,
-            clock);
+            historyService);
         var task = CreateTask("legacy-cleanup-failure");
         task = task.UpdateTransferState(
             DownloadTransferState.LegacyEmpty,
@@ -572,8 +565,7 @@ public sealed class DownloadBootstrapHostedServiceTests
             clock);
         using var projections = new DownloadTaskProjectionStore(
             tasks,
-            historyService,
-            clock);
+            historyService);
         var task = CreateTask("gidless-legacy");
         task = task.UpdateTransferState(
             new DownloadTransferState(null, [], isLegacyTransfer: true),
@@ -649,8 +641,7 @@ public sealed class DownloadBootstrapHostedServiceTests
             clock);
         using var storage = new DownloadTaskProjectionStore(
             tasks,
-            historyService,
-            clock);
+            historyService);
         using var service = new DownloadBootstrapHostedService(
             new DownloadListState(),
             storage,
@@ -680,8 +671,7 @@ public sealed class DownloadBootstrapHostedServiceTests
             clock);
         using var storage = new DownloadTaskProjectionStore(
             tasks,
-            historyService,
-            clock);
+            historyService);
         var listState = new DownloadListState();
         var queueGateway = new DownloadTaskQueueGateway();
         using var service = new DownloadBootstrapHostedService(
@@ -731,8 +721,7 @@ public sealed class DownloadBootstrapHostedServiceTests
             clock);
         using var storage = new DownloadTaskProjectionStore(
             tasks,
-            historyService,
-            clock);
+            historyService);
         var queueGateway = new DownloadTaskQueueGateway();
         using var service = new DownloadBootstrapHostedService(
             new DownloadListState(),
@@ -777,8 +766,7 @@ public sealed class DownloadBootstrapHostedServiceTests
             clock);
         using var storage = new DownloadTaskProjectionStore(
             tasks,
-            historyService,
-            clock);
+            historyService);
         using var service = new DownloadBootstrapHostedService(
             new DownloadListState(),
             storage,
@@ -830,8 +818,7 @@ public sealed class DownloadBootstrapHostedServiceTests
             clock);
         using var storage = new DownloadTaskProjectionStore(
             tasks,
-            historyService,
-            clock);
+            historyService);
         var stateWriter = new DownloadTaskStateWriter(tasks);
         var listState = new DownloadListState();
         using var service = new DownloadBootstrapHostedService(
@@ -874,8 +861,7 @@ public sealed class DownloadBootstrapHostedServiceTests
             clock);
         using var storage = new DownloadTaskProjectionStore(
             tasks,
-            historyService,
-            clock);
+            historyService);
         var stateWriter = new DownloadTaskStateWriter(tasks);
         var queueGateway = new DownloadTaskQueueGateway();
         using var service = new DownloadBootstrapHostedService(
@@ -920,8 +906,7 @@ public sealed class DownloadBootstrapHostedServiceTests
             clock);
         using var storage = new DownloadTaskProjectionStore(
             tasks,
-            historyService,
-            clock);
+            historyService);
         var stateWriter = new DownloadTaskStateWriter(tasks);
         var queueGateway = new DownloadTaskQueueGateway();
         using var service = new DownloadBootstrapHostedService(

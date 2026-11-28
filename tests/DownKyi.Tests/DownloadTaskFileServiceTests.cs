@@ -46,9 +46,8 @@ public sealed class DownloadTaskFileServiceTests : IDisposable
             using var tasks = new DownloadTaskApplicationService(store, historyService, new SystemClock());
             using var projections = new DownloadTaskProjectionStore(
                 tasks,
-                historyService,
-                new SystemClock());
-            await projections.AddDownloadingAsync(item, TestContext.Current.CancellationToken);
+                historyService);
+            await projections.AddDownloadingAsync(tasks, item, TestContext.Current.CancellationToken);
             var writer = new DownloadTaskStateWriter(tasks);
             await writer.StartAsync(taskId, TestContext.Current.CancellationToken);
             var staging = new DownloadTaskStaging(NullLogger<DownloadTaskStaging>.Instance);
@@ -172,8 +171,7 @@ public sealed class DownloadTaskFileServiceTests : IDisposable
             Downloading = new Downloading
             {
                 Id = taskId.Value,
-                DownloadBase = downloadBase,
-                DownloadFiles = new Dictionary<string, string> { ["media"] = published }
+                DownloadBase = downloadBase
             }
         };
         var service = new DownloadTaskFileService(

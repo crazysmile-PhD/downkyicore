@@ -17,7 +17,6 @@ using DownKyi.Domain.Downloads;
 using DownKyi.Presentation;
 using DownKyi.Services.Video;
 using DownKyi.Utils;
-using DownKyi.ViewModels.DownloadManager;
 using Microsoft.Extensions.Logging;
 
 namespace DownKyi.Services.Download;
@@ -185,7 +184,7 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
             if (review.CompletedDuplicateIds.Count > 0)
             {
                 var completedNames = pending
-                    .Where(download => review.CompletedDuplicateIds.Contains(download.Item.DownloadBase.Id))
+                    .Where(download => review.CompletedDuplicateIds.Contains(download.Item.Id.Value))
                     .Select(download => GetDisplayName(download.Item))
                     .ToArray();
                 redownloadCompleted = await DownloadDuplicateBatchDialogContract.ShowAsync(
@@ -203,17 +202,17 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
 
             foreach (var download in pending)
             {
-                if (review.ActiveDuplicateIds.Contains(download.Item.DownloadBase.Id)
-                    || review.CompletedDuplicateIds.Contains(download.Item.DownloadBase.Id)
+                if (review.ActiveDuplicateIds.Contains(download.Item.Id.Value)
+                    || review.CompletedDuplicateIds.Contains(download.Item.Id.Value)
                     && !redownloadCompleted)
                 {
                     continue;
                 }
 
                 if (settings.Video.Content.GenerateMovieMetadata
-                    && download.Item.DownloadBase.NeedDownloadContent.Video)
+                    && download.Item.RequestedContent.Video)
                 {
-                    download.Item.Metadata = await _metadataBuilder
+                    download.Item.NfoRequest = await _metadataBuilder
                         .BuildAsync(download.Video, download.Page, cancellationToken)
                         .ConfigureAwait(true);
                 }
@@ -224,7 +223,7 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
                             download.Item,
                             cancellationToken,
                             redownloadCompleted
-                            && review.CompletedDuplicateIds.Contains(download.Item.DownloadBase.Id))
+                            && review.CompletedDuplicateIds.Contains(download.Item.Id.Value))
                         .ConfigureAwait(true);
                     if (!admitted)
                     {
@@ -311,15 +310,15 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
                         finalizedPage.AvailableMedia,
                         settings,
                         finalizedPage.FinalizedContent);
-                    if (item.Downloading.PlayStreamType == PlayStreamType.Bangumi)
+                    if ((PlayStreamType)item.StreamType == PlayStreamType.Bangumi)
                     {
                         var ownsMainCover = finalizedPage.FinalizedContent.Cover
                                             && !bangumiMainCoverAssigned;
                         if (!ownsMainCover)
                         {
-                            item.DownloadBase.CoverUrl = string.Empty;
+                            item.Metadata = item.Metadata with { CoverAddress = string.Empty };
                         }
-                        else if (!string.IsNullOrWhiteSpace(item.DownloadBase.CoverUrl))
+                        else if (!string.IsNullOrWhiteSpace(item.Metadata.CoverAddress))
                         {
                             bangumiMainCoverAssigned = true;
                         }
@@ -336,13 +335,13 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
         return pending;
     }
 
-    private static string GetDisplayName(DownloadingItem item) =>
-        string.Equals(item.DownloadBase.MainTitle, item.DownloadBase.Name, StringComparison.Ordinal)
-            ? item.DownloadBase.Name
-            : $"{item.DownloadBase.MainTitle} - {item.DownloadBase.Name}";
+    private static string GetDisplayName(DownloadTaskDraft item) =>
+        string.Equals(item.Metadata.MainTitle, item.Metadata.Name, StringComparison.Ordinal)
+            ? item.Metadata.Name
+            : $"{item.Metadata.MainTitle} - {item.Metadata.Name}";
 
     private sealed record PendingDownload(
-        DownloadingItem Item,
+        DownloadTaskDraft Item,
         VideoInfoView Video,
         VideoPage Page);
 

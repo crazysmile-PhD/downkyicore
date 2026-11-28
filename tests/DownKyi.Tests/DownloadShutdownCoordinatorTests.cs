@@ -123,8 +123,7 @@ public sealed class DownloadShutdownCoordinatorTests
             using var tasks = new DownloadTaskApplicationService(store, historyService, clock);
             using var projections = new DownloadTaskProjectionStore(
                 tasks,
-                historyService,
-                clock);
+                historyService);
             var stateWriter = new DownloadTaskStateWriter(tasks);
             var item = new DownloadingItem
             {
@@ -139,7 +138,7 @@ public sealed class DownloadShutdownCoordinatorTests
                     DownloadStatus = DownloadStatus.WaitForDownload
                 }
             };
-            await projections.AddDownloadingAsync(item, TestContext.Current.CancellationToken);
+            await projections.AddDownloadingAsync(tasks, item, TestContext.Current.CancellationToken);
             var taskId = new DownloadTaskId(item.DownloadBase.Id);
             await stateWriter.StartAsync(taskId, TestContext.Current.CancellationToken);
             await stateWriter.RecordTransferFileAsync(

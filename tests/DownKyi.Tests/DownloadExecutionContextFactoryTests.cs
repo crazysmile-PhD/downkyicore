@@ -76,10 +76,9 @@ public sealed class DownloadExecutionContextFactoryTests : IDisposable
         using var tasks = new DownloadTaskApplicationService(store, historyService, clock);
         using var projections = new DownloadTaskProjectionStore(
             tasks,
-            historyService,
-            clock);
+            historyService);
         var stateWriter = new DownloadTaskStateWriter(tasks);
-        await projections.AddDownloadingAsync(admitted, TestContext.Current.CancellationToken);
+        await projections.AddDownloadingAsync(tasks, admitted, TestContext.Current.CancellationToken);
         var taskId = new DownloadTaskId(downloadBase.Id);
         await stateWriter.StartAsync(taskId, TestContext.Current.CancellationToken);
         await stateWriter.ClaimTransferFileAsync(

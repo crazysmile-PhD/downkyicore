@@ -57,27 +57,27 @@ public sealed class DownloadAddOwnerTests : IDisposable
             settingsStore.Current,
             content);
 
-        Assert.Equal(page.Bvid, item.DownloadBase.Bvid);
-        Assert.Equal(page.Avid, item.DownloadBase.Avid);
-        Assert.Equal(page.Cid, item.DownloadBase.Cid);
-        Assert.Equal(page.EpisodeId, item.DownloadBase.EpisodeId);
-        Assert.Equal(page.Page, item.DownloadBase.Page);
-        Assert.Equal(0, item.Resolution.Id);
-        Assert.Equal(string.Empty, item.Resolution.Name);
-        Assert.Equal(string.Empty, item.VideoCodecName);
+        Assert.Equal(page.Bvid, item.Metadata.Media.Bvid);
+        Assert.Equal(page.Avid, item.Metadata.Media.Avid);
+        Assert.Equal(page.Cid, item.Metadata.Media.Cid);
+        Assert.Equal(page.EpisodeId, item.Metadata.Media.EpisodeId);
+        Assert.Equal(page.Page, item.Metadata.Media.Page);
+        Assert.Equal(0, item.Metadata.Resolution.Id);
+        Assert.Equal(string.Empty, item.Metadata.Resolution.Name);
+        Assert.Equal(string.Empty, item.Metadata.VideoCodecName);
         Assert.Equal(
             DownKyi.Core.BiliApi.VideoStream.PlayStreamType.Cheese,
-            item.Downloading.PlayStreamType);
-        Assert.Equal(DownKyi.Models.DownloadStatus.NotStarted, item.Downloading.DownloadStatus);
+            (DownKyi.Core.BiliApi.VideoStream.PlayStreamType)item.StreamType);
+        Assert.Equal(DownloadPhase.Queued, item.CreateTask(DateTimeOffset.UnixEpoch).Phase);
         Assert.Equal(
             content with
             {
                 MediaKind = DownloadMediaKind.Dash,
                 DanmakuOutputFormat = DownloadDanmakuOutputFormat.Ass
             },
-            item.DownloadBase.NeedDownloadContent);
-        Assert.StartsWith(_directory, item.DownloadBase.FilePath, StringComparison.Ordinal);
-        Assert.Contains("section", item.DownloadBase.FilePath, StringComparison.Ordinal);
+            item.RequestedContent);
+        Assert.StartsWith(_directory, item.BasePath, StringComparison.Ordinal);
+        Assert.Contains("section", item.BasePath, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -108,8 +108,8 @@ public sealed class DownloadAddOwnerTests : IDisposable
             CreateVideoQuality(),
             settings,
             DownloadContentSelection.All);
-        Directory.CreateDirectory(Path.GetDirectoryName(first.DownloadBase.FilePath)!);
-        File.WriteAllText($"{first.DownloadBase.FilePath}.mp4", "occupied");
+        Directory.CreateDirectory(Path.GetDirectoryName(first.BasePath)!);
+        File.WriteAllText($"{first.BasePath}.mp4", "occupied");
 
         var second = CreateDraft(
             _directory,
@@ -121,7 +121,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
             settings,
             DownloadContentSelection.All);
 
-        Assert.Equal(first.DownloadBase.FilePath, second.DownloadBase.FilePath);
+        Assert.Equal(first.BasePath, second.BasePath);
     }
 
     [Fact]
@@ -144,7 +144,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
         var draft = CreateDraft(_directory, video, section, 1, page,
             CreateVideoQuality(), settings, DownloadContentSelection.None with { Video = true });
 
-        Assert.Equal(Path.Combine(_directory, "page"), draft.DownloadBase.FilePath);
+        Assert.Equal(Path.Combine(_directory, "page"), draft.BasePath);
     }
 
     [Fact]
@@ -183,7 +183,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
 
         Assert.Equal(
             Path.Combine(_directory, "42+creator+2024-01-02+main+1-BV1test", "section+BV1test+page-1080P-AVC"),
-            Path.GetFullPath(draft.DownloadBase.FilePath));
+            Path.GetFullPath(draft.BasePath));
     }
 
     [Fact]
@@ -201,7 +201,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
             DownloadContentSelection.None with { Video = true });
 
         Assert.Equal(Path.Combine(_directory, "main", "section", "1-page-1080P-AVC"),
-            Path.GetFullPath(draft.DownloadBase.FilePath));
+            Path.GetFullPath(draft.BasePath));
     }
 
     [Fact]
@@ -274,10 +274,10 @@ public sealed class DownloadAddOwnerTests : IDisposable
             settingsStore.Current,
             DownloadContentSelection.None with { Audio = true });
 
-        Assert.Equal(DownloadMediaKind.Dash, item.DownloadBase.NeedDownloadContent.MediaKind);
-        Assert.Equal(0, item.Resolution.Id);
-        Assert.Equal(string.Empty, item.VideoCodecName);
-        Assert.Equal(30280, item.AudioCodec.Id);
+        Assert.Equal(DownloadMediaKind.Dash, item.RequestedContent.MediaKind);
+        Assert.Equal(0, item.Metadata.Resolution.Id);
+        Assert.Equal(string.Empty, item.Metadata.VideoCodecName);
+        Assert.Equal(30280, item.Metadata.AudioCodec.Id);
     }
 
     [Fact]
@@ -313,10 +313,10 @@ public sealed class DownloadAddOwnerTests : IDisposable
             settingsStore.Current,
             DownloadContentSelection.None with { Audio = true, Video = true });
 
-        Assert.Equal(DownloadMediaKind.Dash, item.DownloadBase.NeedDownloadContent.MediaKind);
-        Assert.Equal(80, item.Resolution.Id);
-        Assert.Equal("H.264/AVC", item.VideoCodecName);
-        Assert.Equal(30280, item.AudioCodec.Id);
+        Assert.Equal(DownloadMediaKind.Dash, item.RequestedContent.MediaKind);
+        Assert.Equal(80, item.Metadata.Resolution.Id);
+        Assert.Equal("H.264/AVC", item.Metadata.VideoCodecName);
+        Assert.Equal(30280, item.Metadata.AudioCodec.Id);
     }
 
     [Fact]
@@ -349,8 +349,8 @@ public sealed class DownloadAddOwnerTests : IDisposable
             settingsStore.Current,
             DownloadContentSelection.None with { Video = true });
 
-        Assert.Equal(DownloadMediaKind.Durl, item.DownloadBase.NeedDownloadContent.MediaKind);
-        Assert.Equal(0, item.AudioCodec.Id);
+        Assert.Equal(DownloadMediaKind.Durl, item.RequestedContent.MediaKind);
+        Assert.Equal(0, item.Metadata.AudioCodec.Id);
         Assert.Contains(
             page.PlaybackAvailability!.Video,
             video => video.StreamKind == PlayUrlStreamKind.Durl);
@@ -386,9 +386,9 @@ public sealed class DownloadAddOwnerTests : IDisposable
             settingsStore.Current,
             DownloadContentSelection.None with { Video = true });
 
-        Assert.Equal(DownloadMediaKind.Durl, item.DownloadBase.NeedDownloadContent.MediaKind);
-        Assert.Equal("H.264/AVC", item.VideoCodecName);
-        Assert.Equal(80, item.Resolution.Id);
+        Assert.Equal(DownloadMediaKind.Durl, item.RequestedContent.MediaKind);
+        Assert.Equal("H.264/AVC", item.Metadata.VideoCodecName);
+        Assert.Equal(80, item.Metadata.Resolution.Id);
     }
 
     public void Dispose()
@@ -399,7 +399,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
         }
     }
 
-    private static DownloadingItem CreateDraft(
+    private static DownloadTaskDraft CreateDraft(
         string directory,
         VideoInfoView video,
         VideoSection section,

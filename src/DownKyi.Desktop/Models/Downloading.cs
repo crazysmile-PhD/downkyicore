@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using DownKyi.Core.BiliApi.VideoStream;
 
 namespace DownKyi.Models;
@@ -8,12 +7,6 @@ internal class Downloading
     public string Id { get; set; } = null!;
 
     // Aria相关
-
-    // 下载的文件
-    public IDictionary<string, string> DownloadFiles { get; internal set; } = new Dictionary<string, string>();
-
-    // 已下载的文件
-    public IList<string> DownloadedFiles { get; internal set; } = new List<string>();
 
     // 视频类别
     public PlayStreamType PlayStreamType { get; set; }

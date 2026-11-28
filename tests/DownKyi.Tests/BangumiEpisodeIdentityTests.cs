@@ -300,10 +300,10 @@ public sealed class BangumiEpisodeIdentityTests
             preparedPage.AvailableMedia,
             settings.Store.Current,
             requestedContent);
-        Assert.Equal(PlayStreamType.Bangumi, item.Downloading.PlayStreamType);
-        Assert.Equal(-1, item.DownloadBase.EpisodeId);
-        Assert.Equal("https://example.test/season.png", item.DownloadBase.CoverUrl);
-        Assert.Equal("https://example.test/entry.jpg", item.DownloadBase.PageCoverUrl);
+        Assert.Equal(PlayStreamType.Bangumi, (PlayStreamType)item.StreamType);
+        Assert.Equal(-1, item.Metadata.Media.EpisodeId);
+        Assert.Equal("https://example.test/season.png", item.Metadata.CoverAddress);
+        Assert.Equal("https://example.test/entry.jpg", item.Metadata.PageCoverAddress);
 
         var resolver = new DownloadPlaybackResolver(
             new TestWbiKeyProvider(),

@@ -4,8 +4,8 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Downloads;
+using DownKyi.Application.Time;
 using DownKyi.Domain.Downloads;
-using DownKyi.ViewModels.DownloadManager;
 
 namespace DownKyi.Services.Download;
 
@@ -17,7 +17,8 @@ internal sealed class DownloadTaskAdmissionService : IDisposable
 {
     private readonly DownloadListState _downloadLists;
     private readonly IDownloadOutputReservationService _outputReservations;
-    private readonly IDownloadTaskLookup _tasks;
+    private readonly IDownloadTaskCatalog _tasks;
+    private readonly IClock _clock;
     private readonly IDownloadHistoryService _history;
     private readonly DownloadTaskProjectionStore _projections;
     private readonly DownloadCommittedTaskDispatcher _committedTaskDispatcher;
@@ -29,17 +30,19 @@ internal sealed class DownloadTaskAdmissionService : IDisposable
     public DownloadTaskAdmissionService(
         DownloadListState downloadLists,
         IDownloadOutputReservationService outputReservations,
-        IDownloadTaskLookup tasks,
+        IDownloadTaskCatalog tasks,
         IDownloadHistoryService history,
         DownloadTaskProjectionStore projections,
         DownloadCommittedTaskDispatcher committedTaskDispatcher,
         IDownloadRuntimeAvailability runtimeAvailability,
-        IPhysicalOutputPathResolver physicalOutputPathResolver)
+        IPhysicalOutputPathResolver physicalOutputPathResolver,
+        IClock clock)
     {
         _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
         _outputReservations = outputReservations
             ?? throw new ArgumentNullException(nameof(outputReservations));
         _tasks = tasks ?? throw new ArgumentNullException(nameof(tasks));
+        _clock = clock ?? throw new ArgumentNullException(nameof(clock));
         _history = history ?? throw new ArgumentNullException(nameof(history));
         _projections = projections ?? throw new ArgumentNullException(nameof(projections));
         _committedTaskDispatcher = committedTaskDispatcher
@@ -51,7 +54,7 @@ internal sealed class DownloadTaskAdmissionService : IDisposable
     }
 
     public async Task<bool> AdmitAsync(
-        DownloadingItem item,
+        DownloadTaskDraft item,
         CancellationToken cancellationToken,
         bool redownloadCompleted = false)
     {
@@ -60,8 +63,8 @@ internal sealed class DownloadTaskAdmissionService : IDisposable
         await _admissionGate.WaitAsync(cancellationToken).ConfigureAwait(true);
         try
         {
-            var cid = item.DownloadBase.Cid;
-            var duplicateKey = DuplicateKey.From(cid, item.DownloadBase.NeedDownloadContent);
+            var cid = item.Metadata.Media.Cid;
+            var duplicateKey = DuplicateKey.From(cid, item.RequestedContent);
             var active = await _tasks
                 .GetUnfinishedByCidAsync(cid, cancellationToken)
                 .ConfigureAwait(true);
@@ -86,15 +89,15 @@ internal sealed class DownloadTaskAdmissionService : IDisposable
             _runtimeAvailability.EnsureAcceptingTasks();
 
             var physicalBasePath = _physicalOutputPathResolver.ResolvePhysicalBasePath(
-                item.DownloadBase.FilePath);
+                item.BasePath);
             var requestedClaims = DownloadActionClaims.From(
-                item.DownloadBase.NeedDownloadContent,
-                includesNfo: item.Metadata != null);
+                item.RequestedContent,
+                includesNfo: item.NfoRequest != null);
             var admittedBasePath = await DownloadOutputPathResolver.ResolveAdmissionCollisionAsync(
                 physicalBasePath,
                 (path, token) => _outputReservations.HasOutputClaimConflictAsync(
                     path,
-                    item.DownloadBase.Cid,
+                    item.Metadata.Media.Cid,
                     requestedClaims,
                     DownloadOutputPathKey.UsesCaseInsensitiveComparison,
                     token),
@@ -103,13 +106,19 @@ internal sealed class DownloadTaskAdmissionService : IDisposable
                     token),
                 cancellationToken,
                 requestedClaims).ConfigureAwait(true);
-            item.DownloadBase.FilePath = admittedBasePath;
-
-            await _projections.AddDownloadingAsync(item, cancellationToken).ConfigureAwait(true);
+            item.BasePath = admittedBasePath;
+            var task = item.CreateTask(_clock.UtcNow);
+            var result = await _tasks.AddAsync(task, cancellationToken).ConfigureAwait(true);
+            if (!result.IsSuccess)
+            {
+                task = await _tasks.FindAsync(task.Id, cancellationToken).ConfigureAwait(true)
+                    ?? throw new InvalidOperationException(result.Error?.Message
+                        ?? "Download storage operation failed.");
+            }
             // Once persisted, admission must finish even if the originating UI operation is canceled.
-            _downloadLists.AddDownloading(item);
-            var taskId = new DownloadTaskId(item.DownloadBase.Id);
-            await _committedTaskDispatcher.EnqueueCommittedAsync(taskId).ConfigureAwait(true);
+            item.BasePath = task.Output.BasePath;
+            _downloadLists.AddDownloading(_projections.Track(task));
+            await _committedTaskDispatcher.EnqueueCommittedAsync(task.Id).ConfigureAwait(true);
             return true;
         }
         finally
@@ -119,7 +128,7 @@ internal sealed class DownloadTaskAdmissionService : IDisposable
     }
 
     public async Task<DownloadDuplicateReview> ReviewDuplicatesAsync(
-        IReadOnlyList<DownloadingItem> items,
+        IReadOnlyList<DownloadTaskDraft> items,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(items);
@@ -130,7 +139,7 @@ internal sealed class DownloadTaskAdmissionService : IDisposable
             return new DownloadDuplicateReview(new HashSet<string>(), new HashSet<string>());
         }
 
-        var cids = items.Select(item => item.DownloadBase.Cid).Distinct().ToArray();
+        var cids = items.Select(item => item.Metadata.Media.Cid).Distinct().ToArray();
         var active = await _tasks
             .GetUnfinishedByCidsAsync(cids, cancellationToken)
             .ConfigureAwait(true);
@@ -146,14 +155,14 @@ internal sealed class DownloadTaskAdmissionService : IDisposable
         var completedDuplicateIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (var item in items)
         {
-            var key = DuplicateKey.From(item.DownloadBase.Cid, item.DownloadBase.NeedDownloadContent);
+            var key = DuplicateKey.From(item.Metadata.Media.Cid, item.RequestedContent);
             if (activeKeys.Contains(key) || !incomingKeys.Add(key))
             {
-                activeDuplicateIds.Add(item.DownloadBase.Id);
+                activeDuplicateIds.Add(item.Id.Value);
             }
             else if (completedKeys.Contains(key))
             {
-                completedDuplicateIds.Add(item.DownloadBase.Id);
+                completedDuplicateIds.Add(item.Id.Value);
             }
         }
 

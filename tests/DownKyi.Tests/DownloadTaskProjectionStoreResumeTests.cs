@@ -122,9 +122,9 @@ public sealed class DownloadTaskProjectionStoreResumeTests : IDisposable
             var clock = new SystemClock();
             var history = DownloadHistoryService.CreateForSharedStore(store);
             using var tasks = new DownloadTaskApplicationService(store, history, clock);
-            using var projections = new DownloadTaskProjectionStore(tasks, history, clock);
+            using var projections = new DownloadTaskProjectionStore(tasks, history);
             var writer = new DownloadTaskStateWriter(tasks);
-            await projections.AddDownloadingAsync(item, TestContext.Current.CancellationToken);
+            await projections.AddDownloadingAsync(tasks, item, TestContext.Current.CancellationToken);
             var id = new DownloadTaskId(item.DownloadBase.Id);
             await writer.StartAsync(id, TestContext.Current.CancellationToken);
             var backend = new PausingTransferBackend();
@@ -155,7 +155,7 @@ public sealed class DownloadTaskProjectionStoreResumeTests : IDisposable
         var reopenedClock = new SystemClock();
         var reopenedHistory = DownloadHistoryService.CreateForSharedStore(reopenedStore);
         using var reopenedTasks = new DownloadTaskApplicationService(reopenedStore, reopenedHistory, reopenedClock);
-        using var reopened = new DownloadTaskProjectionStore(reopenedTasks, reopenedHistory, reopenedClock);
+        using var reopened = new DownloadTaskProjectionStore(reopenedTasks, reopenedHistory);
         var startup = await reopened.GetDownloadingStateAsync(TestContext.Current.CancellationToken);
         var restored = Assert.Single(startup.Projections);
         Assert.Equal(DownloadStatus.Pause, restored.Downloading.DownloadStatus);
@@ -212,10 +212,9 @@ public sealed class DownloadTaskProjectionStoreResumeTests : IDisposable
             using var tasks = new DownloadTaskApplicationService(store, historyService, clock);
             using var storage = new DownloadTaskProjectionStore(
                 tasks,
-                historyService,
-                clock);
+                historyService);
             var stateWriter = new DownloadTaskStateWriter(tasks);
-            await storage.AddDownloadingAsync(item, TestContext.Current.CancellationToken);
+            await storage.AddDownloadingAsync(tasks, item, TestContext.Current.CancellationToken);
             var id = new DownloadTaskId(taskId);
             await stateWriter.StartAsync(id, TestContext.Current.CancellationToken);
             await stateWriter.RecordTransferFileAsync(
@@ -257,14 +256,14 @@ public sealed class DownloadTaskProjectionStoreResumeTests : IDisposable
             using var tasks = new DownloadTaskApplicationService(store, historyService, clock);
             using var reopenedStorage = new DownloadTaskProjectionStore(
                 tasks,
-                historyService,
-                clock);
+                historyService);
             var startup = await reopenedStorage.GetDownloadingStateAsync(
                 TestContext.Current.CancellationToken);
             var restored = Assert.Single(startup.Projections);
-            Assert.Equal("video.m4s", restored.Downloading.DownloadFiles["video"]);
-            Assert.Equal("audio.m4s", restored.Downloading.DownloadFiles["audio"]);
-            Assert.Equal("cover", Assert.Single(restored.Downloading.DownloadedFiles));
+            var restoredTask = Assert.Single(startup.Tasks);
+            Assert.Equal("video.m4s", restoredTask.Plan.TransferFiles["video"]);
+            Assert.Equal("audio.m4s", restoredTask.Plan.TransferFiles["audio"]);
+            Assert.Equal("cover", Assert.Single(restoredTask.Transfer.CompletedFileKeys));
             Assert.Equal(DownloadStatus.Pause, restored.Downloading.DownloadStatus);
             Assert.Equal(42.5f, restored.Downloading.Progress);
             Assert.Equal("6 GB", restored.DownloadBase.FileSize);
@@ -321,10 +320,9 @@ public sealed class DownloadTaskProjectionStoreResumeTests : IDisposable
             using var tasks = new DownloadTaskApplicationService(store, historyService, clock);
             using var storage = new DownloadTaskProjectionStore(
                 tasks,
-                historyService,
-                clock);
+                historyService);
             var stateWriter = new DownloadTaskStateWriter(tasks);
-            await storage.AddDownloadingAsync(downloadingItem, TestContext.Current.CancellationToken);
+            await storage.AddDownloadingAsync(tasks, downloadingItem, TestContext.Current.CancellationToken);
             var id = new DownloadTaskId(downloadingItem.DownloadBase.Id);
             await stateWriter.StartAsync(id, TestContext.Current.CancellationToken);
             await stateWriter.UpdateProgressAsync(
@@ -348,8 +346,7 @@ public sealed class DownloadTaskProjectionStoreResumeTests : IDisposable
             reopenedClock);
         using var reopened = new DownloadTaskProjectionStore(
             reopenedTasks,
-            reopenedHistoryService,
-            reopenedClock);
+            reopenedHistoryService);
         var startup = await reopened.GetDownloadingStateAsync(TestContext.Current.CancellationToken);
         Assert.Empty(startup.Projections);
         var restored = Assert.Single(
@@ -385,10 +382,9 @@ public sealed class DownloadTaskProjectionStoreResumeTests : IDisposable
         using var tasks = new DownloadTaskApplicationService(store, historyService, clock);
         using var storage = new DownloadTaskProjectionStore(
             tasks,
-            historyService,
-            clock);
+            historyService);
         var stateWriter = new DownloadTaskStateWriter(tasks);
-        await storage.AddDownloadingAsync(item, TestContext.Current.CancellationToken);
+        await storage.AddDownloadingAsync(tasks, item, TestContext.Current.CancellationToken);
         var notifications = new List<string?>();
         item.PropertyChanged += (_, args) => notifications.Add(args.PropertyName);
         var id = new DownloadTaskId(item.DownloadBase.Id);
@@ -467,13 +463,13 @@ public sealed class DownloadTaskProjectionStoreResumeTests : IDisposable
                 Path.Combine(directory, "coalesced-progress.db")), clock);
             var history = DownloadHistoryService.CreateForSharedStore(_store);
             _tasks = new DownloadTaskApplicationService(_store, history, clock);
-            Projections = new DownloadTaskProjectionStore(_tasks, history, clock, Dispatcher);
+            Projections = new DownloadTaskProjectionStore(_tasks, history, Dispatcher);
             Writer = new DownloadTaskStateWriter(_tasks);
         }
 
         public async Task InitializeAsync()
         {
-            await Projections.AddDownloadingAsync(Item, TestContext.Current.CancellationToken).ConfigureAwait(false);
+            await Projections.AddDownloadingAsync(_tasks, Item, TestContext.Current.CancellationToken).ConfigureAwait(false);
             await Writer.StartAsync(Id, TestContext.Current.CancellationToken).ConfigureAwait(false);
             await Projections.FlushPresentationAsync().ConfigureAwait(false);
         }

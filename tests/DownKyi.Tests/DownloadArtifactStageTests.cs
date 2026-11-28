@@ -522,17 +522,11 @@ public sealed class DownloadArtifactStageTests
                     Id = taskId.Value,
                     DownloadBase = downloadBase,
                     DownloadStatus = DownloadStatus.WaitForDownload
-                },
-                Metadata = new MovieMetadata
-                {
-                    Title = "Persisted title",
-                    Plot = "Persisted plot",
-                    Year = "2026",
-                    Premiered = "2026-09-09",
-                    BilibiliId = new UniqueId("bilibili", "BV1PERSISTED")
                 }
             };
-            admitted.Metadata.Genres.Add("Persisted genre");
+            var admittedNfo = new DownloadNfoRequest("Persisted title", "Persisted plot", "2026",
+                ["Persisted genre"], [], [], new DownloadNfoUniqueId("bilibili", "BV1PERSISTED"),
+                "2026-09-09", []);
 
             using (var firstStore = CreateSqliteStore(databasePath))
             {
@@ -544,11 +538,11 @@ public sealed class DownloadArtifactStageTests
                     new SystemClock());
                 using var firstProjections = new DownloadTaskProjectionStore(
                     firstTasks,
-                    firstHistoryService,
-                    new SystemClock());
-                await firstProjections.AddDownloadingAsync(
+                    firstHistoryService);
+                await firstProjections.AddDownloadingAsync(firstTasks,
                     admitted,
-                    TestContext.Current.CancellationToken);
+                    TestContext.Current.CancellationToken,
+                    admittedNfo);
                 var firstWriter = new DownloadTaskStateWriter(firstTasks);
                 await firstWriter.StartAsync(taskId, TestContext.Current.CancellationToken);
                 await firstWriter.PauseAsync(taskId, TestContext.Current.CancellationToken);
@@ -571,16 +565,14 @@ public sealed class DownloadArtifactStageTests
                 new SystemClock());
             using var reopenedProjections = new DownloadTaskProjectionStore(
                 reopenedTasks,
-                reopenedHistoryService,
-                new SystemClock());
+                reopenedHistoryService);
             var startup = await reopenedProjections.GetDownloadingStateAsync(
                 TestContext.Current.CancellationToken);
-            var reopenedItem = Assert.Single(startup.Projections);
+            Assert.Single(startup.Projections);
             var stateWriter = new DownloadTaskStateWriter(reopenedTasks);
             await stateWriter.ResumeAsync(taskId, TestContext.Current.CancellationToken);
-            var execution = DownloadExecutionContextTestFactory.Create(
-                reopenedItem,
-                settings.Current);
+            var execution = new DownloadExecutionContextFactory(reopenedProjections, settings)
+                .Create(taskId);
             await stateWriter.StartAsync(taskId, TestContext.Current.CancellationToken);
             var stage = new DownloadArtifactsStage(
                 new DownloadArtifactWriter(
@@ -1970,28 +1962,24 @@ public sealed class DownloadArtifactStageTests
                     DownloadStatus = DownloadStatus.WaitForDownload
                 }
             };
-            if (generateMetadata)
-            {
-                downloading.Metadata = new MovieMetadata
-                {
-                    Title = "Owned metadata",
-                    Plot = "Deterministic ownership fixture"
-                };
-            }
+            var nfoRequest = generateMetadata
+                ? DownloadTaskTestFactory.CreateNfo("Owned metadata", "Deterministic ownership fixture")
+                : null;
             var store = new SingleTaskStore();
             var historyService = DownloadHistoryService.CreateForSharedStore(store);
             var tasks = new DownloadTaskApplicationService(store, historyService, new SystemClock());
             var projections = new DownloadTaskProjectionStore(
                 tasks,
-                historyService,
-                new SystemClock());
+                historyService);
             var stateWriter = new DownloadTaskStateWriter(tasks);
-            await projections.AddDownloadingAsync(
+            await projections.AddDownloadingAsync(tasks,
                 downloading,
-                TestContext.Current.CancellationToken).ConfigureAwait(true);
+                TestContext.Current.CancellationToken,
+                nfoRequest).ConfigureAwait(true);
             var execution = DownloadExecutionContextTestFactory.Create(
                 downloading,
-                settings.Current);
+                settings.Current,
+                nfoRequest: nfoRequest);
             await stateWriter.StartAsync(taskId, TestContext.Current.CancellationToken)
                 .ConfigureAwait(true);
             downloading.Downloading.DownloadStatus = DownloadStatus.Downloading;

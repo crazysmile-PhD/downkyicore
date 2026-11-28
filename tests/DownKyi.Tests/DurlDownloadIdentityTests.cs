@@ -137,12 +137,11 @@ public sealed class DurlDownloadIdentityTests
             using var tasks = new DownloadTaskApplicationService(store, historyService, clock);
             using var projectionStore = new DownloadTaskProjectionStore(
                 tasks,
-                historyService,
-                clock);
+                historyService);
             using var settings = new TestSettingsStore();
             var taskId = new DownloadTaskId(downloadBase.Id);
             var stateWriter = new DownloadTaskStateWriter(tasks);
-            await projectionStore.AddDownloadingAsync(
+            await projectionStore.AddDownloadingAsync(tasks,
                 downloading,
                 TestContext.Current.CancellationToken).ConfigureAwait(true);
             await stateWriter.StartAsync(taskId, TestContext.Current.CancellationToken)
@@ -361,12 +360,11 @@ public sealed class DurlDownloadIdentityTests
             using var tasks = new DownloadTaskApplicationService(store, historyService, clock);
             using var projectionStore = new DownloadTaskProjectionStore(
                 tasks,
-                historyService,
-                clock);
+                historyService);
             using var settings = new TestSettingsStore();
             var taskId = new DownloadTaskId(downloadBase.Id);
             var stateWriter = new DownloadTaskStateWriter(tasks);
-            await projectionStore.AddDownloadingAsync(
+            await projectionStore.AddDownloadingAsync(tasks,
                 downloading,
                 TestContext.Current.CancellationToken).ConfigureAwait(true);
             await stateWriter.StartAsync(taskId, TestContext.Current.CancellationToken)
@@ -439,12 +437,11 @@ public sealed class DurlDownloadIdentityTests
             using var tasks = new DownloadTaskApplicationService(store, historyService, clock);
             using var projectionStore = new DownloadTaskProjectionStore(
                 tasks,
-                historyService,
-                clock);
+                historyService);
             using var settings = new TestSettingsStore();
             var taskId = new DownloadTaskId(downloadBase.Id);
             var stateWriter = new DownloadTaskStateWriter(tasks);
-            await projectionStore.AddDownloadingAsync(
+            await projectionStore.AddDownloadingAsync(tasks,
                 downloading,
                 TestContext.Current.CancellationToken).ConfigureAwait(true);
             await stateWriter.StartAsync(taskId, TestContext.Current.CancellationToken)
@@ -564,7 +561,7 @@ public sealed class DurlDownloadIdentityTests
             var clock = new SystemClock();
             var historyService = DownloadHistoryService.CreateForSharedStore(_store);
             _tasks = new DownloadTaskApplicationService(_store, historyService, clock);
-            _projections = new DownloadTaskProjectionStore(_tasks, historyService, clock);
+            _projections = new DownloadTaskProjectionStore(_tasks, historyService);
             var startup = await _projections.GetDownloadingStateAsync(
                 TestContext.Current.CancellationToken).ConfigureAwait(true);
             Assert.Equal(_taskId, Assert.Single(startup.Tasks).Id);
@@ -659,11 +656,11 @@ public sealed class DurlDownloadIdentityTests
             var clock = new SystemClock();
             var historyService = DownloadHistoryService.CreateForSharedStore(store);
             var tasks = new DownloadTaskApplicationService(store, historyService, clock);
-            var projections = new DownloadTaskProjectionStore(tasks, historyService, clock);
+            var projections = new DownloadTaskProjectionStore(tasks, historyService);
             var settings = new TestSettingsStore();
             var taskId = new DownloadTaskId(downloadBase.Id);
             var stateWriter = new DownloadTaskStateWriter(tasks);
-            await projections.AddDownloadingAsync(
+            await projections.AddDownloadingAsync(tasks,
                 downloading,
                 TestContext.Current.CancellationToken).ConfigureAwait(true);
             await stateWriter.StartAsync(taskId, TestContext.Current.CancellationToken)

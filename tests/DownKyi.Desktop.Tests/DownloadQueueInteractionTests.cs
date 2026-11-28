@@ -41,14 +41,14 @@ public sealed class DownloadQueueInteractionTests
             using var tasks = new DownloadTaskApplicationService(store, history, clock);
             using var applicationCancellation = new ApplicationCancellation();
             var dispatcher = new SuspendedUiDispatcher();
-            var projections = new DownloadTaskProjectionStore(tasks, history, clock, dispatcher,
+            var projections = new DownloadTaskProjectionStore(tasks, history, dispatcher,
                 applicationCancellation: applicationCancellation);
             await using var lifetime = projections.ConfigureAwait(true);
             var item = Item("BV-shutdown", "Part one", DownloadStatus.WaitForDownload);
             item.DownloadBase.FilePath = Path.Combine(directory.FullName, "episode");
             var changes = 0;
             item.PropertyChanged += (_, _) => changes++;
-            await projections.AddDownloadingAsync(item, TestContext.Current.CancellationToken).ConfigureAwait(true);
+            await projections.AddDownloadingAsync(tasks, item, TestContext.Current.CancellationToken).ConfigureAwait(true);
             await dispatcher.Queued.Task.WaitAsync(TestContext.Current.CancellationToken).ConfigureAwait(true);
             await applicationCancellation.RequestShutdownAsync().ConfigureAwait(true);
             try
@@ -100,11 +100,11 @@ public sealed class DownloadQueueInteractionTests
             using var store = new SqliteDownloadTaskStore(new(Path.Combine(directory.FullName, "downloads.db")), clock);
             var history = DownloadHistoryService.CreateForSharedStore(store);
             using var tasks = new DownloadTaskApplicationService(store, history, clock);
-            var projections = new DownloadTaskProjectionStore(tasks, history, clock, new AvaloniaUiDispatcher());
+            var projections = new DownloadTaskProjectionStore(tasks, history, new AvaloniaUiDispatcher());
             await using var projectionLifetime = projections.ConfigureAwait(true);
             var item = Item("BV-source-a", "Part one", DownloadStatus.WaitForDownload);
             item.DownloadBase.FilePath = Path.Combine(directory.FullName, "episode");
-            await projections.AddDownloadingAsync(item, TestContext.Current.CancellationToken).ConfigureAwait(true);
+            await projections.AddDownloadingAsync(tasks, item, TestContext.Current.CancellationToken).ConfigureAwait(true);
             await projections.FlushPresentationAsync().ConfigureAwait(true);
             fixture.State.AddDownloading(item);
             fixture.ViewModel.FailedOnly = true;

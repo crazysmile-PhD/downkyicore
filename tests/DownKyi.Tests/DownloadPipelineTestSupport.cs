@@ -280,8 +280,7 @@ internal static class DownloadPipelineTestSupport
             var tasks = new DownloadTaskApplicationService(store, historyService, new SystemClock());
             var projections = new DownloadTaskProjectionStore(
                 tasks,
-                historyService,
-                new SystemClock());
+                historyService);
             var settings = new TestSettingsStore();
             var stateWriter = new DownloadTaskStateWriter(tasks);
             var taskId = new DownloadTaskId($"media-stage-{Guid.NewGuid():N}");
@@ -320,7 +319,7 @@ internal static class DownloadPipelineTestSupport
                     DownloadStatus = DownloadStatus.WaitForDownload
                 }
             };
-            await projections.AddDownloadingAsync(
+            await projections.AddDownloadingAsync(tasks,
                 downloading,
                 TestContext.Current.CancellationToken).ConfigureAwait(true);
             await stateWriter.StartAsync(taskId, TestContext.Current.CancellationToken)

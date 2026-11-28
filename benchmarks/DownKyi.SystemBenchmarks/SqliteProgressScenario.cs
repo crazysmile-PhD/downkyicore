@@ -25,7 +25,7 @@ internal static class SqliteProgressScenario
         await store.InitializeAsync(cancellationToken).ConfigureAwait(false);
         var history = DownloadHistoryService.CreateForSharedStore(store);
         using var tasks = new DownloadTaskApplicationService(store, history, clock);
-        using var projections = new DownloadTaskProjectionStore(tasks, history, clock);
+        using var projections = new DownloadTaskProjectionStore(tasks, history);
         var writer = new DownloadTaskStateWriter(tasks);
         for (var index = 0; index < taskCount; index++)
         {
