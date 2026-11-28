@@ -84,11 +84,7 @@ internal class LoginViewModel : ViewModelBase
 
     protected internal override void ExecuteBackSpace()
     {
-        // 初始化状态
-        InitStatus();
-
-        // 结束任务
-        _tokenSource?.Cancel();
+        EndLoginAttempt();
         if (TryNavigateBack())
         {
             return;
@@ -108,6 +104,7 @@ internal class LoginViewModel : ViewModelBase
             var loginUrl = await _loginCoordinator
                 .RequestLoginUrlAsync(cancellationToken)
                 .ConfigureAwait(true);
+            cancellationToken.ThrowIfCancellationRequested();
             if (loginUrl == null)
             {
                 return;
@@ -131,7 +128,13 @@ internal class LoginViewModel : ViewModelBase
                 return;
             }
 
-            PropertyChangeAsync(() => { LoginQrCode = _loginQrCodeRenderer.Render(loginUri); });
+            PropertyChangeAsync(() =>
+            {
+                if (!cancellationToken.IsCancellationRequested)
+                {
+                    ReplaceQrCode(_loginQrCodeRenderer.Render(loginUri));
+                }
+            });
 
             await GetLoginStatusAsync(loginUrl.Data.QrcodeKey, cancellationToken).ConfigureAwait(true);
         }
@@ -142,6 +145,7 @@ internal class LoginViewModel : ViewModelBase
         catch (Exception e) when (e is System.Net.Http.HttpRequestException or InvalidOperationException or ArgumentException
             or FormatException or Newtonsoft.Json.JsonException)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             _logger.LogErrorMessage("Login initialization failed.", e);
             Notifications.Show(DictionaryResource.GetString("GetLoginUrlFailed"));
         }
@@ -159,6 +163,7 @@ internal class LoginViewModel : ViewModelBase
             var loginStatus = await _loginCoordinator
                 .GetLoginStatusAsync(oauthKey, cancellationToken)
                 .ConfigureAwait(true);
+            cancellationToken.ThrowIfCancellationRequested();
             if (loginStatus == null)
             {
                 continue;
@@ -184,6 +189,7 @@ internal class LoginViewModel : ViewModelBase
                     // 已扫码，未确认
                     PropertyChangeAsync(() =>
                     {
+                        if (cancellationToken.IsCancellationRequested) return;
                         LoginQrCodeStatus = true;
                         LoginQrCodeOpacity = 0.3;
                     });
@@ -199,11 +205,6 @@ internal class LoginViewModel : ViewModelBase
                         cancellationToken).ConfigureAwait(true);
                     return;
             }
-
-            // 判断是否该结束线程，若为true，跳出while循环
-            if (!cancellationToken.IsCancellationRequested) continue;
-            _logger.LogDebugMessage("Login polling stopped.");
-            break;
         }
     }
 
@@ -255,6 +256,7 @@ internal class LoginViewModel : ViewModelBase
         Func<Task<bool>> commit,
         CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var isSucceed = false;
         try
         {
@@ -268,9 +270,11 @@ internal class LoginViewModel : ViewModelBase
             or System.Net.Http.HttpRequestException or InvalidOperationException
             or ArgumentException or FormatException or Newtonsoft.Json.JsonException)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             _logger.LogErrorMessage("Login cookie persistence failed.", e);
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
         if (isSucceed)
         {
             Notifications.Show(DictionaryResource.GetString("LoginSuccessful"));
@@ -283,12 +287,16 @@ internal class LoginViewModel : ViewModelBase
         }
 
         await Task.Delay(3000, cancellationToken).ConfigureAwait(true);
-        PropertyChange(ExecuteBackSpace);
+        PropertyChange(() =>
+        {
+            if (!cancellationToken.IsCancellationRequested) ExecuteBackSpace();
+        });
     }
 
     private async Task<CancellationToken> ReplaceLoginCancellationAsync()
     {
         var replacement = new CancellationTokenSource();
+        var cancellationToken = replacement.Token;
         var previous = Interlocked.Exchange(ref _tokenSource, replacement);
         if (previous != null)
         {
@@ -296,7 +304,7 @@ internal class LoginViewModel : ViewModelBase
             previous.Dispose();
         }
 
-        return replacement.Token;
+        return cancellationToken;
     }
 
     private async Task RestartLoginAsync()
@@ -311,10 +319,23 @@ internal class LoginViewModel : ViewModelBase
     /// </summary>
     private void InitStatus()
     {
-        LoginQrCode = null;
+        ReplaceQrCode(null);
         LoginQrCodeOpacity = 1;
         LoginQrCodeStatus = false;
         BrowserCookieHeader = string.Empty;
+    }
+
+    private void ReplaceQrCode(Bitmap? replacement)
+    {
+        var preceding = LoginQrCode;
+        LoginQrCode = replacement;
+        preceding?.Dispose();
+    }
+
+    private void EndLoginAttempt()
+    {
+        CancelAndDispose(ref _tokenSource);
+        InitStatus();
     }
 
     public override void OnNavigatedTo(AppNavigationContext navigationContext)
@@ -326,15 +347,17 @@ internal class LoginViewModel : ViewModelBase
         RunFireAndForget(RestartLoginAsync(), $"{Tag}.RestartLoginAsync", _logger);
     }
 
+    public override void OnNavigatedFrom(AppNavigationContext navigationContext)
+    {
+        EndLoginAttempt();
+        base.OnNavigatedFrom(navigationContext);
+    }
+
     protected override void Dispose(bool disposing)
     {
         if (disposing && !IsDisposed)
         {
-            _tokenSource?.Cancel();
-            _tokenSource?.Dispose();
-            _tokenSource = null;
-            LoginQrCode?.Dispose();
-            LoginQrCode = null;
+            EndLoginAttempt();
         }
 
         base.Dispose(disposing);

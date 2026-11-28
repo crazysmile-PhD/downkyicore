@@ -3,6 +3,7 @@ using DownKyi.Application.Bilibili;
 using DownKyi.Application.Desktop;
 using DownKyi.Core.BiliApi.Login.Models;
 using DownKyi.Infrastructure.Storage;
+using DownKyi.Platform;
 using DownKyi.Services.Account;
 using DownKyi.Utils;
 using DownKyi.ViewModels;
@@ -12,6 +13,99 @@ namespace DownKyi.Tests;
 
 public sealed class LoginViewModelTests
 {
+    [Fact]
+    public async Task ForwardNavigationCancelsRetainedLoginAndReturningStartsOneNewAttempt()
+    {
+        var requests = new List<(CancellationToken Token, TaskCompletionSource Exited)>();
+        using var coordinator = new StubLoginCoordinator
+        {
+            LoginUrlHandler = token =>
+            {
+                var exited = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                requests.Add((token, exited));
+                return HoldRequestAsync(exited, token);
+            }
+        };
+        LoginViewModel? login = null;
+        using var navigation = new AvaloniaNavigationService(
+            route => route == AppRoute.Login ? login! : new object(), action => action());
+        using var viewModel = new LoginViewModel(new TestDesktopInteractionContext(navigation), coordinator,
+            new StubLoginQrCodeRenderer(), NullLogger<LoginViewModel>.Instance);
+        login = viewModel;
+
+        navigation.Navigate(new AppNavigationRequest(AppRoute.Login));
+        var first = Assert.Single(requests);
+        navigation.Navigate(new AppNavigationRequest(AppRoute.Toolbox, AppRoute.Login));
+
+        Assert.True(navigation.CanGoBack(AppNavigationRegion.Main));
+        Assert.True(first.Token.IsCancellationRequested);
+        await first.Exited.Task.WaitAsync(TestContext.Current.CancellationToken);
+        navigation.GoBack(AppNavigationRegion.Main);
+
+        Assert.Equal(2, requests.Count);
+        Assert.NotEqual(first.Token, requests[1].Token);
+        Assert.False(requests[1].Token.IsCancellationRequested);
+        navigation.Dispose();
+        Assert.True(requests[1].Token.IsCancellationRequested);
+        await requests[1].Exited.Task.WaitAsync(TestContext.Current.CancellationToken);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task LateCookieCommitAfterLeavingCannotNotifyOrNavigate(bool succeeded)
+    {
+        var result = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var interactions = new TestDesktopInteractionContext();
+        var notifications = new List<string>();
+        interactions.Notifications.NotificationRaised += (_, args) => notifications.Add(args.Message);
+        var observedToken = CancellationToken.None;
+        using var coordinator = new StubLoginCoordinator
+        {
+            CommitHandler = (_, token) =>
+            {
+                observedToken = token;
+                return result.Task;
+            }
+        };
+        using var login = new LoginViewModel(interactions, coordinator,
+            new StubLoginQrCodeRenderer(), NullLogger<LoginViewModel>.Instance)
+        {
+            BrowserCookieHeader = "SESSDATA=fixture%2Fsession"
+        };
+        var finished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var command = login.BrowserCookieLoginCommand;
+        command.CanExecuteChanged += (_, _) =>
+        {
+            if (command.CanExecute(null)) finished.TrySetResult();
+        };
+
+        command.Execute(null);
+        login.OnNavigatedFrom(new AppNavigationContext(AppNavigationRegion.Main, AppRoute.Login,
+            AppRoute.Index, null, new AppNavigationParameters()));
+        Assert.True(observedToken.IsCancellationRequested);
+        result.SetResult(succeeded);
+        await finished.Task.WaitAsync(TestContext.Current.CancellationToken);
+
+        Assert.Empty(notifications);
+        Assert.Empty(((TestNavigationService)interactions.Navigation).Requests);
+    }
+
+    private static async Task<LoginUrlOrigin?> HoldRequestAsync(
+        TaskCompletionSource exited,
+        CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, token).ConfigureAwait(false);
+            return null;
+        }
+        finally
+        {
+            exited.TrySetResult();
+        }
+    }
+
     [Fact]
     public async Task LoginUrlTimeoutShowsFailureInsteadOfLeavingTheQrCodeSilentlyEmpty()
     {
