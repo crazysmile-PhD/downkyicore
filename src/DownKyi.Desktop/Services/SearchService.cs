@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using DownKyi.Application.Desktop;
 using DownKyi.Application.Media;
 using DownKyi.Application.Settings;
@@ -39,7 +40,7 @@ internal class SearchService
         bool suppressDuplicateVideoNavigation = false)
     {
         ArgumentNullException.ThrowIfNull(input);
-        switch (BilibiliInputParser.Parse(input))
+        switch (ParseInput(input))
         {
             case BilibiliMediaInput media:
                 NavigateToVideo(parentRoute, media, suppressDuplicateVideoNavigation);
@@ -69,6 +70,94 @@ internal class SearchService
                 return false;
         }
 
+        return true;
+    }
+
+    private static BilibiliInput? ParseInput(string input)
+    {
+        var value = input.Trim();
+        var direct = BilibiliInputParser.Parse(value);
+        if (direct != null && !value.Any(char.IsWhiteSpace) && !value.Contains('】', StringComparison.Ordinal))
+        {
+            return direct;
+        }
+
+        string? link = null;
+        Range? previous = null;
+        var count = 0;
+        var standalone = false;
+        for (var offset = 0; offset < value.Length;)
+        {
+            var separator = value.IndexOf("://", offset, StringComparison.Ordinal);
+            if (separator < 0)
+            {
+                break;
+            }
+
+            var start = separator;
+            while (start > offset && (char.IsAsciiLetterOrDigit(value[start - 1])
+                                      || value[start - 1] is '+' or '-' or '.'))
+            {
+                start--;
+            }
+
+            if (start == separator || (start > 0 && !char.IsWhiteSpace(value[start - 1])
+                                                 && value[start - 1] is not ('【' or '】' or '(')))
+            {
+                return null;
+            }
+
+            var end = separator + 3;
+            while (end < value.Length && !char.IsWhiteSpace(value[end]) && value[end] != '】')
+            {
+                end++;
+            }
+
+            if (previous is { } prior && !KeepSameLink(value, prior, start, ref link))
+            {
+                return null;
+            }
+
+            if (count++ == 0)
+            {
+                standalone = start == 0;
+            }
+
+            previous = new Range(start, end);
+            offset = end;
+        }
+
+        if (previous is not { } last)
+        {
+            return null;
+        }
+
+        // A standalone URI is accepted or rejected as a whole, never retried as a prefix.
+        if (count == 1 && standalone)
+        {
+            return direct;
+        }
+
+        return KeepSameLink(value, last, value.Length, ref link) ? BilibiliInputParser.Parse(link) : null;
+    }
+
+    private static bool KeepSameLink(string value, Range token, int boundary, ref string? link)
+    {
+        var start = token.Start.Value;
+        var end = token.End.Value;
+        // Query/fragment whitespace belongs to the URI, including potentially invalid suffixes.
+        if (value.AsSpan(start, end - start).IndexOfAny('?', '#') >= 0)
+        {
+            end = boundary;
+        }
+
+        var candidate = value.AsSpan(start, end - start).Trim();
+        if (link != null)
+        {
+            return candidate.SequenceEqual(link.AsSpan());
+        }
+
+        link = candidate.ToString();
         return true;
     }
 

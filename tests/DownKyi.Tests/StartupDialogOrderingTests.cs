@@ -17,8 +17,10 @@ namespace DownKyi.Tests;
 
 public sealed class StartupDialogOrderingTests
 {
-    [Fact]
-    public void StartupClipboardInputAutomaticallyContinuesAfterActivation()
+    [Theory]
+    [InlineData("BV17x411w7KC")]
+    [InlineData("【fixture】https://www.bilibili.com/video/BV17x411w7KC")]
+    public void StartupClipboardInputAutomaticallyContinuesAfterActivation(string input)
     {
         using var settings = new TestSettingsStore();
         settings.Store.Update(current => current with
@@ -46,7 +48,7 @@ public sealed class StartupDialogOrderingTests
             NullLogger<MainWindowViewModel>.Instance);
 
         viewModel.Activate(
-            pendingStartupInput: "BV17x411w7KC",
+            pendingStartupInput: input,
             pendingStartupInputFromClipboard: true);
 
         Assert.Collection(

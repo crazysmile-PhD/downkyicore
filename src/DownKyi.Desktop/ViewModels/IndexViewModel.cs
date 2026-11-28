@@ -1,6 +1,5 @@
 using System;
 using System.IO;
-using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
@@ -203,7 +202,6 @@ internal class IndexViewModel : ViewModelBase, IIndexSurfaceViewModel
         }
 
         _logger.LogDebugMessage("Processing search input.");
-        InputText = Regex.Replace(InputText, @"[【]*[^【]*[^】]*[】 ]", "");
         if (!_searchService.BiliInput(InputText, AppRoute.Index))
         {
             Notifications.Show(DictionaryResource.GetString("TipUnsupportedSearchInput"));
