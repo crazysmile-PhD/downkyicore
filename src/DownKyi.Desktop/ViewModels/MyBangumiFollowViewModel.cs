@@ -9,7 +9,6 @@ using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Application.Diagnostics;
-using DownKyi.Application.Media;
 using DownKyi.Commands;
 using DownKyi.Core.BiliApi.Users.Models;
 using DownKyi.CustomControl;
@@ -269,11 +268,10 @@ internal partial class MyBangumiFollowViewModel : ViewModelBase
     {
         var cancellationToken = ReplaceCancellationSource(ref _downloadCancellation);
         var items = Medias
-            .Where(media => media.MediaId > 0)
-            .Select(media => new ContentDownloadItem(
-                new BilibiliBangumiMediaInput(media.MediaId),
-                media.IsSelected,
-                media.Title))
+            .Select(media => media.Input is { } input
+                ? new ContentDownloadItem(input, media.IsSelected, media.Title)
+                : null)
+            .OfType<ContentDownloadItem>()
             .ToArray();
         try
         {
