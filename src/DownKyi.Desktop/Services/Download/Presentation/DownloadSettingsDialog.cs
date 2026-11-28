@@ -8,7 +8,7 @@ namespace DownKyi.Services.Download;
 
 internal static class DownloadSettingsDialog
 {
-    private const string SubtitleDiscoveryParameter = "subtitleDiscovery", ResultParameter = "result";
+    private const string SubtitleDiscoveryParameter = "subtitleDiscovery", SubtitlePageParameter = "subtitlePage", ResultParameter = "result";
 
     internal enum SubtitleTrackDiscoveryStatus
     {
@@ -19,6 +19,7 @@ internal static class DownloadSettingsDialog
     }
 
     internal sealed record SubtitleTrack(long TrackId, string Language, string DisplayLanguage, int Type, string Url);
+    internal sealed record SubtitlePage(long Avid, string Bvid, long Cid);
     internal sealed record SubtitleTrackDiscovery(
         SubtitleTrackDiscoveryStatus Status,
         IReadOnlyList<SubtitleTrack> Tracks);
@@ -33,6 +34,17 @@ internal static class DownloadSettingsDialog
     public static AppDialogRequest CreateRequest(SubtitleTrackDiscovery discovery) =>
         new(AppDialog.DownloadSettings, new Dictionary<string, object?>(StringComparer.Ordinal)
         { [SubtitleDiscoveryParameter] = discovery });
+
+    public static AppDialogRequest CreateRequestForPage(SubtitlePage? page) =>
+        new(AppDialog.DownloadSettings, new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            [SubtitleDiscoveryParameter] = new SubtitleTrackDiscovery(SubtitleTrackDiscoveryStatus.NotAttempted, []),
+            [SubtitlePageParameter] = page
+        });
+
+    public static SubtitlePage? ReadSubtitlePage(AppDialogRequest request) =>
+        request.Parameters?.TryGetValue(SubtitlePageParameter, out var value) == true && value is SubtitlePage page
+            ? page : null;
 
     public static SubtitleTrackDiscovery ReadSubtitleDiscovery(AppDialogRequest request) =>
         request.Parameters?.TryGetValue(SubtitleDiscoveryParameter, out var value) == true &&

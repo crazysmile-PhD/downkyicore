@@ -22,6 +22,7 @@ using DownKyi.Services.Download;
 using DownKyi.Services.Video;
 using DownKyi.Utils;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Newtonsoft.Json;
 using CoreVideoPage = DownKyi.Core.BiliApi.Video.Models.VideoPage;
 using VideoPage = DownKyi.Presentation.VideoPage;
@@ -225,12 +226,16 @@ public sealed class VideoTagLoadingTests : IDisposable
     }
 
     [Fact]
-    public async Task SubtitleDiscoveryFailureStillOpensDownloadSettings()
+    public async Task SinglePageSelectionOpensWithoutLookingUpSubtitleTracks()
     {
+        var requests = 0;
         var client = new TestBilibiliApiClient
         {
-            GetStringAsyncHandler = (_, _) => Task.FromException<string>(
-                new HttpRequestException("subtitle endpoint unavailable"))
+            GetStringAsyncHandler = (_, _) =>
+            {
+                requests++;
+                throw new InvalidOperationException("Download settings must open before any subtitle lookup.");
+            }
         };
         using var context = CreateContext(generateMetadata: false, client: client);
         var page = CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]));
@@ -243,8 +248,26 @@ public sealed class VideoTagLoadingTests : IDisposable
         Assert.Null(selection.Selection);
         var request = Assert.Single(context.Dialogs.Requests);
         Assert.Equal(
-            DownloadSettingsDialog.SubtitleTrackDiscoveryStatus.Failed,
+            DownloadSettingsDialog.SubtitleTrackDiscoveryStatus.NotAttempted,
             DownloadSettingsDialog.ReadSubtitleDiscovery(request).Status);
+        Assert.Equal(new DownloadSettingsDialog.SubtitlePage(page.Avid, page.Bvid, page.Cid),
+            DownloadSettingsDialog.ReadSubtitlePage(request));
+        Assert.Equal(0, requests);
+    }
+
+    [Fact]
+    public async Task SubtitleDiscoveryFailureIsTypedForDialogRetry()
+    {
+        var client = new TestBilibiliApiClient
+        {
+            GetStringAsyncHandler = (_, _) => Task.FromException<string>(new HttpRequestException("subtitle endpoint unavailable"))
+        };
+        var loader = new SubtitleTrackLoader(new TestWbiKeyProvider(), client, NullLogger<SubtitleTrackLoader>.Instance);
+
+        var discovery = await loader.LoadAsync(new(1, "BV1test", 2), TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.Equal(DownloadSettingsDialog.SubtitleTrackDiscoveryStatus.Failed, discovery.Status);
+        Assert.Empty(discovery.Tracks);
     }
 
     [Fact]
@@ -287,26 +310,19 @@ public sealed class VideoTagLoadingTests : IDisposable
     [Theory]
     [InlineData("{\"code\":0,\"data\":{\"aid\":1,\"bvid\":\"BV1test\",\"cid\":2,\"subtitle\":null}}")]
     [InlineData("{\"code\":0,\"data\":{\"aid\":1,\"bvid\":\"BV1test\",\"cid\":2,\"subtitle\":{\"subtitles\":null}}}")]
-    public async Task MissingSubtitleContainerOpensDownloadSettingsWithNoTracks(string response)
+    public async Task MissingSubtitleContainerReturnsNoResource(string response)
     {
         var client = new TestBilibiliApiClient
         {
             GetStringAsyncHandler = (_, _) => Task.FromResult(response)
         };
-        using var context = CreateContext(generateMetadata: false, client: client);
-        var page = CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]));
+        var loader = new SubtitleTrackLoader(new TestWbiKeyProvider(), client, NullLogger<SubtitleTrackLoader>.Instance);
+        var discovery = await loader.LoadAsync(new(1, "BV1test", 2), TestContext.Current.CancellationToken).ConfigureAwait(true);
 
-        var selection = await context.Service.SelectDownloadAsync(
-            page,
-            TestContext.Current.CancellationToken).ConfigureAwait(true);
-
-        Assert.Equal(DownloadSelectionOutcome.Canceled, selection.Outcome);
-        Assert.Null(selection.Selection);
-        var request = Assert.Single(context.Dialogs.Requests);
-        Assert.Empty(DownloadSettingsDialog.ReadSubtitleTracks(request));
+        Assert.Empty(discovery.Tracks);
         Assert.Equal(
             DownloadSettingsDialog.SubtitleTrackDiscoveryStatus.NoResource,
-            DownloadSettingsDialog.ReadSubtitleDiscovery(request).Status);
+            discovery.Status);
     }
 
     [Fact]
@@ -319,22 +335,30 @@ public sealed class VideoTagLoadingTests : IDisposable
                 {"code":0,"data":{"aid":1,"bvid":"BV1test","cid":2,"subtitle":{"subtitles":[{"id":11,"lan":"zh","lan_doc":"Chinese","subtitle_url":"//example.test/zh.json","type":0}]}}}
                 """)
         };
-        using var context = CreateContext(generateMetadata: false, client: client);
-        var page = CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]));
-        page.PlaybackAvailability = null;
-
-        var selection = await context.Service.SelectDownloadAsync(
-            page,
-            TestContext.Current.CancellationToken).ConfigureAwait(true);
-
-        Assert.Equal(DownloadSelectionOutcome.Canceled, selection.Outcome);
-        Assert.Null(selection.Selection);
-        var discovery = DownloadSettingsDialog.ReadSubtitleDiscovery(
-            Assert.Single(context.Dialogs.Requests));
+        var loader = new SubtitleTrackLoader(new TestWbiKeyProvider(), client, NullLogger<SubtitleTrackLoader>.Instance);
+        var discovery = await loader.LoadAsync(new(1, "BV1test", 2), TestContext.Current.CancellationToken).ConfigureAwait(true);
         Assert.Equal(DownloadSettingsDialog.SubtitleTrackDiscoveryStatus.Available, discovery.Status);
         var track = Assert.Single(discovery.Tracks);
         Assert.Equal(11, track.TrackId);
         Assert.Equal("zh", track.Language);
+    }
+
+    [Fact]
+    public async Task CanceledSubtitleDiscoveryDoesNotBecomeFailureOrNoResource()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var client = new TestBilibiliApiClient
+        {
+            GetStringAsyncHandler = async (_, token) =>
+            {
+                await cancellation.CancelAsync().ConfigureAwait(false);
+                return await Task.FromCanceled<string>(token).ConfigureAwait(false);
+            }
+        };
+        var loader = new SubtitleTrackLoader(new TestWbiKeyProvider(), client, NullLogger<SubtitleTrackLoader>.Instance);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => loader.LoadAsync(new(1, "BV1test", 2), cancellation.Token));
     }
 
     [Fact]

@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Bilibili;
@@ -11,7 +10,6 @@ using DownKyi.Application.Diagnostics;
 using DownKyi.Application.Downloads;
 using DownKyi.Application.Media;
 using DownKyi.Application.Settings;
-using DownKyi.Core.BiliApi;
 using DownKyi.Core.BiliApi.Sign;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Domain.Downloads;
@@ -34,8 +32,6 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
     private readonly IAppDialogService _dialogService;
     private readonly ILogger<AddToDownloadService> _logger;
     private readonly DownloadPreparationService _preparationService;
-    private readonly IWbiKeyProvider _wbiKeyProvider;
-    private readonly IBilibiliApiClient _client;
     public AddToDownloadService(
         PlayStreamType streamType,
         DownloadTaskAdmissionService admission,
@@ -53,8 +49,8 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
         _dialogService = dialogService ?? throw new ArgumentNullException(nameof(dialogService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         ArgumentNullException.ThrowIfNull(tagProvider);
-        _wbiKeyProvider = wbiKeyProvider ?? throw new ArgumentNullException(nameof(wbiKeyProvider));
-        _client = client ?? throw new ArgumentNullException(nameof(client));
+        ArgumentNullException.ThrowIfNull(wbiKeyProvider);
+        ArgumentNullException.ThrowIfNull(client);
         _preparationService = new DownloadPreparationService(
             streamType,
             settingsStore,
@@ -94,41 +90,9 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var subtitleDiscovery = new DownloadSettingsDialog.SubtitleTrackDiscovery(
-            DownloadSettingsDialog.SubtitleTrackDiscoveryStatus.NotAttempted,
-            []);
-        if (subtitlePage != null)
-        {
-            try
-            {
-                var player = await WbiRequestExecutor.ExecuteAsync(
-                    _wbiKeyProvider,
-                    (keys, unixTimeSeconds) => _client.PlayerV2Async(
-                        keys, unixTimeSeconds, subtitlePage.Avid, subtitlePage.Bvid,
-                        subtitlePage.Cid, cancellationToken),
-                    TimeProvider.System,
-                    cancellationToken).ConfigureAwait(false);
-                var subtitleTracks = player?.Subtitle?.Subtitles?.Select(track =>
-                    new DownloadSettingsDialog.SubtitleTrack(
-                        track.Id, track.Lan, track.LanDoc, track.Type, track.SubtitleAddress))
-                    .ToArray() ?? [];
-                subtitleDiscovery = new DownloadSettingsDialog.SubtitleTrackDiscovery(
-                    subtitleTracks.Length > 0
-                        ? DownloadSettingsDialog.SubtitleTrackDiscoveryStatus.Available
-                        : DownloadSettingsDialog.SubtitleTrackDiscoveryStatus.NoResource,
-                    subtitleTracks);
-            }
-            catch (Exception exception) when (exception is HttpRequestException or BilibiliApiResponseException
-                                              || exception is OperationCanceledException && !cancellationToken.IsCancellationRequested)
-            {
-                _logger.LogWarningMessage("Subtitle tracks could not be loaded; opening download settings without them.", exception);
-                subtitleDiscovery = new DownloadSettingsDialog.SubtitleTrackDiscovery(
-                    DownloadSettingsDialog.SubtitleTrackDiscoveryStatus.Failed,
-                    []);
-            }
-        }
         var result = await _dialogService.ShowAsync(
-            DownloadSettingsDialog.CreateRequest(subtitleDiscovery),
+            DownloadSettingsDialog.CreateRequestForPage(subtitlePage is null ? null :
+                new DownloadSettingsDialog.SubtitlePage(subtitlePage.Avid, subtitlePage.Bvid, subtitlePage.Cid)),
             cancellationToken).ConfigureAwait(true);
         if (DownloadSettingsDialog.DecodeResult(result) is not { } dialogSelection)
         {

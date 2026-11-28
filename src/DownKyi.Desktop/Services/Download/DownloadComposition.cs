@@ -67,6 +67,7 @@ internal static class DownloadComposition
         services.AddSingleton<DownloadContentConflictResolver>();
         services.AddSingleton<DownloadActionPlanner>();
         services.AddSingleton<IAddToDownloadServiceFactory, AddToDownloadServiceFactory>();
+        services.AddSingleton<ISubtitleTrackLoader, SubtitleTrackLoader>();
 
         services.AddSingleton<IDownloadEmergencyCleanup, BuiltinDownloadEmergencyCleanup>();
         services.AddSingleton<DownloadDiagnosticLogger>();

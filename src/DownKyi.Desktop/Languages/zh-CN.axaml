@@ -463,6 +463,9 @@
     <system:String x:Key="SubtitleTypeStandard">普通</system:String>
     <system:String x:Key="SubtitleTypeAi">AI</system:String>
     <system:String x:Key="DefaultSubtitle">默认</system:String>
+    <system:String x:Key="SubtitleTracksLoading">正在加载字幕轨道</system:String>
+    <system:String x:Key="SubtitleTracksLoadFailed">无法加载字幕轨道。可以重试，或按语言与类型偏好下载。</system:String>
+    <system:String x:Key="SubtitleTracksRetry">重试加载字幕</system:String>
     <system:String x:Key="SubtitleTrackHelpTitle">为何有两份字幕？</system:String>
     <system:String x:Key="SubtitleTrackHelpLead">勾选“默认”，会复制同一份字幕。</system:String>
     <system:String x:Key="SubtitleTrackHelpType">普通＝非 AI，可选多条</system:String>

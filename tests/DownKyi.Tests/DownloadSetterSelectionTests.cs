@@ -10,7 +10,7 @@ namespace DownKyi.Tests;
 public sealed class DownloadSetterSelectionTests
 {
     [Fact]
-    public void DownloadCommandReturnsSelectedAndDefaultSubtitleTrackIds()
+    public async Task DownloadCommandReturnsSelectedAndDefaultSubtitleTrackIds()
     {
         using var settings = new TestSettingsStore();
         var interaction = new TestDesktopInteractionContext();
@@ -18,11 +18,13 @@ public sealed class DownloadSetterSelectionTests
             interaction.Notifications,
             new StubFilePickerService(),
             settings.Store,
+            new UnusedSubtitleTrackLoader(),
             NullLogger<DownloadSetterViewModel>.Instance)
         {
             Directory = Path.GetTempPath(),
             DownloadSubtitle = true
         };
+        await using var viewModelLifetime = viewModel.ConfigureAwait(true);
         viewModel.OnDialogOpened(DownloadSettingsDialog.CreateRequest(
         [
             new(11, "zh", "中文", 0, "//zh"),
@@ -49,7 +51,7 @@ public sealed class DownloadSetterSelectionTests
     }
 
     [Fact]
-    public void DownloadCommandPreservesSelectionWhenReorderingReentersTheBinding()
+    public async Task DownloadCommandPreservesSelectionWhenReorderingReentersTheBinding()
     {
         using var settings = new TestSettingsStore();
         var interaction = new TestDesktopInteractionContext();
@@ -57,7 +59,9 @@ public sealed class DownloadSetterSelectionTests
             interaction.Notifications,
             new StubFilePickerService(),
             settings.Store,
+            new UnusedSubtitleTrackLoader(),
             NullLogger<DownloadSetterViewModel>.Instance);
+        await using var viewModelLifetime = viewModel.ConfigureAwait(true);
         var selectedDirectory = Path.GetTempPath();
         var reentrantSelection = Path.GetPathRoot(selectedDirectory)!;
         viewModel.DirectoryList.Clear();
@@ -89,7 +93,7 @@ public sealed class DownloadSetterSelectionTests
     }
 
     [Fact]
-    public void DownloadAllSelectsOnlyPreferredSubtitleTrackAndDefault()
+    public async Task DownloadAllSelectsOnlyPreferredSubtitleTrackAndDefault()
     {
         using var settings = new TestSettingsStore();
         var interaction = new TestDesktopInteractionContext();
@@ -97,10 +101,12 @@ public sealed class DownloadSetterSelectionTests
             interaction.Notifications,
             new StubFilePickerService(),
             settings.Store,
+            new UnusedSubtitleTrackLoader(),
             NullLogger<DownloadSetterViewModel>.Instance)
         {
             DownloadSubtitle = false
         };
+        await using var viewModelLifetime = viewModel.ConfigureAwait(true);
         viewModel.OnDialogOpened(DownloadSettingsDialog.CreateRequest(
         [
             new(11, "zh", "中文", 0, "//zh"),
@@ -117,7 +123,7 @@ public sealed class DownloadSetterSelectionTests
     }
 
     [Fact]
-    public void SelectingSubtitleTrackCanDeriveDownloadAll()
+    public async Task SelectingSubtitleTrackCanDeriveDownloadAll()
     {
         using var settings = new TestSettingsStore();
         var interaction = new TestDesktopInteractionContext();
@@ -125,6 +131,7 @@ public sealed class DownloadSetterSelectionTests
             interaction.Notifications,
             new StubFilePickerService(),
             settings.Store,
+            new UnusedSubtitleTrackLoader(),
             NullLogger<DownloadSetterViewModel>.Instance)
         {
             DownloadAudio = false,
@@ -133,6 +140,7 @@ public sealed class DownloadSetterSelectionTests
             DownloadSubtitle = false,
             DownloadCover = false
         };
+        await using var viewModelLifetime = viewModel.ConfigureAwait(true);
         viewModel.OnDialogOpened(DownloadSettingsDialog.CreateRequest(
         [
             new(11, "zh", "中文", 0, "//zh"),
@@ -156,7 +164,7 @@ public sealed class DownloadSetterSelectionTests
     }
 
     [Fact]
-    public void SelectingAvailableTrackDirectlyEnablesSubtitleDownload()
+    public async Task SelectingAvailableTrackDirectlyEnablesSubtitleDownload()
     {
         using var settings = new TestSettingsStore();
         var interaction = new TestDesktopInteractionContext();
@@ -174,7 +182,9 @@ public sealed class DownloadSetterSelectionTests
             interaction.Notifications,
             new StubFilePickerService(),
             settings.Store,
+            new UnusedSubtitleTrackLoader(),
             NullLogger<DownloadSetterViewModel>.Instance);
+        await using var viewModelLifetime = viewModel.ConfigureAwait(true);
         viewModel.OnDialogOpened(DownloadSettingsDialog.CreateRequest(
         [
             new(11, "zh", "中文", 0, "//zh")
@@ -195,7 +205,7 @@ public sealed class DownloadSetterSelectionTests
     }
 
     [Fact]
-    public void DownloadCommandDoesNotReplaceDeselectedDefaultSubtitle()
+    public async Task DownloadCommandDoesNotReplaceDeselectedDefaultSubtitle()
     {
         using var settings = new TestSettingsStore();
         var interaction = new TestDesktopInteractionContext();
@@ -203,11 +213,13 @@ public sealed class DownloadSetterSelectionTests
             interaction.Notifications,
             new StubFilePickerService(),
             settings.Store,
+            new UnusedSubtitleTrackLoader(),
             NullLogger<DownloadSetterViewModel>.Instance)
         {
             Directory = Path.GetTempPath(),
             DownloadSubtitle = true
         };
+        await using var viewModelLifetime = viewModel.ConfigureAwait(true);
         viewModel.OnDialogOpened(DownloadSettingsDialog.CreateRequest(
         [
             new(11, "zh", "中文", 0, "//zh"),
@@ -228,7 +240,7 @@ public sealed class DownloadSetterSelectionTests
     }
 
     [Fact]
-    public void LegacyEnabledSettingWithoutPreferenceStartsSafelyDisabled()
+    public async Task LegacyEnabledSettingWithoutPreferenceStartsSafelyDisabled()
     {
         using var settings = new TestSettingsStore();
         settings.Store.Update(current => current with
@@ -247,7 +259,9 @@ public sealed class DownloadSetterSelectionTests
             interaction.Notifications,
             new StubFilePickerService(),
             settings.Store,
+            new UnusedSubtitleTrackLoader(),
             NullLogger<DownloadSetterViewModel>.Instance);
+        await using var viewModelLifetime = viewModel.ConfigureAwait(true);
 
         viewModel.OnDialogOpened(DownloadSettingsDialog.CreateRequest(
         [
@@ -259,7 +273,7 @@ public sealed class DownloadSetterSelectionTests
     }
 
     [Fact]
-    public void ConfiguredPreferencePreselectsOneTrackWithSameLanguageFallback()
+    public async Task ConfiguredPreferencePreselectsOneTrackWithSameLanguageFallback()
     {
         using var settings = new TestSettingsStore();
         settings.Store.Update(current => current with
@@ -279,7 +293,9 @@ public sealed class DownloadSetterSelectionTests
             interaction.Notifications,
             new StubFilePickerService(),
             settings.Store,
+            new UnusedSubtitleTrackLoader(),
             NullLogger<DownloadSetterViewModel>.Instance);
+        await using var viewModelLifetime = viewModel.ConfigureAwait(true);
 
         viewModel.OnDialogOpened(DownloadSettingsDialog.CreateRequest(
         [
@@ -293,7 +309,7 @@ public sealed class DownloadSetterSelectionTests
     }
 
     [Fact]
-    public void UndiscoveredTracksEncodeFallbackPreferenceWithoutSelectingAllTracks()
+    public async Task UndiscoveredTracksEncodeFallbackPreferenceWithoutSelectingAllTracks()
     {
         using var settings = new TestSettingsStore();
         var interaction = new TestDesktopInteractionContext();
@@ -301,11 +317,13 @@ public sealed class DownloadSetterSelectionTests
             interaction.Notifications,
             new StubFilePickerService(),
             settings.Store,
+            new UnusedSubtitleTrackLoader(),
             NullLogger<DownloadSetterViewModel>.Instance)
         {
             Directory = Path.GetTempPath(),
             DownloadSubtitle = true
         };
+        await using var viewModelLifetime = viewModel.ConfigureAwait(true);
         viewModel.OnDialogOpened(DownloadSettingsDialog.CreateRequest([]));
         AppDialogResult? result = null;
         viewModel.CloseRequested += (_, value) => result = value;
@@ -325,7 +343,7 @@ public sealed class DownloadSetterSelectionTests
     }
 
     [Fact]
-    public void UndiscoveredTrackPreferenceChangesPersistForNextDialog()
+    public async Task UndiscoveredTrackPreferenceChangesPersistForNextDialog()
     {
         using var settings = new TestSettingsStore();
         var interaction = new TestDesktopInteractionContext();
@@ -333,7 +351,9 @@ public sealed class DownloadSetterSelectionTests
             interaction.Notifications,
             new StubFilePickerService(),
             settings.Store,
+            new UnusedSubtitleTrackLoader(),
             NullLogger<DownloadSetterViewModel>.Instance);
+        await using var viewModelLifetime = viewModel.ConfigureAwait(true);
         viewModel.OnDialogOpened(DownloadSettingsDialog.CreateRequest([]));
 
         viewModel.DownloadSubtitle = true;
@@ -359,7 +379,9 @@ public sealed class DownloadSetterSelectionTests
             interaction.Notifications,
             new StubFilePickerService(),
             settings.Store,
+            new UnusedSubtitleTrackLoader(),
             NullLogger<DownloadSetterViewModel>.Instance);
+        await using var nextViewModelLifetime = nextViewModel.ConfigureAwait(true);
         nextViewModel.OnDialogOpened(DownloadSettingsDialog.CreateRequest([]));
 
         Assert.True(nextViewModel.DownloadSubtitle);
@@ -370,7 +392,7 @@ public sealed class DownloadSetterSelectionTests
     }
 
     [Fact]
-    public void CancelDiscardsStagedContentAndSubtitlePreferences()
+    public async Task CancelDiscardsStagedContentAndSubtitlePreferences()
     {
         using var settings = new TestSettingsStore();
         var original = settings.Store.Current.Video;
@@ -379,7 +401,9 @@ public sealed class DownloadSetterSelectionTests
             interaction.Notifications,
             new StubFilePickerService(),
             settings.Store,
+            new UnusedSubtitleTrackLoader(),
             NullLogger<DownloadSetterViewModel>.Instance);
+        await using var viewModelLifetime = viewModel.ConfigureAwait(true);
         viewModel.OnDialogOpened(DownloadSettingsDialog.CreateRequest([]));
 
         viewModel.DownloadSubtitle = true;
@@ -395,7 +419,7 @@ public sealed class DownloadSetterSelectionTests
     }
 
     [Fact]
-    public void CoverOnlyChangeDoesNotSaveDisplayedFallbackSubtitleDefaults()
+    public async Task CoverOnlyChangeDoesNotSaveDisplayedFallbackSubtitleDefaults()
     {
         using var settings = new TestSettingsStore();
         settings.Store.Update(current => current with
@@ -416,10 +440,12 @@ public sealed class DownloadSetterSelectionTests
             interaction.Notifications,
             new StubFilePickerService(),
             settings.Store,
+            new UnusedSubtitleTrackLoader(),
             NullLogger<DownloadSetterViewModel>.Instance)
         {
             Directory = Path.GetTempPath()
         };
+        await using var viewModelLifetime = viewModel.ConfigureAwait(true);
         viewModel.OnDialogOpened(DownloadSettingsDialog.CreateRequest([]));
         viewModel.DownloadCover = !viewModel.DownloadCover;
         viewModel.ContentSelectionChangedCommand.Execute(null);
@@ -434,7 +460,7 @@ public sealed class DownloadSetterSelectionTests
     }
 
     [Fact]
-    public void UnmatchedSubtitlePreferenceSkipsThisVideoWithoutChangingFuturePreference()
+    public async Task UnmatchedSubtitlePreferenceSkipsThisVideoWithoutChangingFuturePreference()
     {
         using var settings = new TestSettingsStore();
         settings.Store.Update(current => current with
@@ -453,10 +479,12 @@ public sealed class DownloadSetterSelectionTests
             interaction.Notifications,
             new StubFilePickerService(),
             settings.Store,
+            new UnusedSubtitleTrackLoader(),
             NullLogger<DownloadSetterViewModel>.Instance)
         {
             Directory = Path.GetTempPath()
         };
+        await using var viewModelLifetime = viewModel.ConfigureAwait(true);
         viewModel.OnDialogOpened(DownloadSettingsDialog.CreateRequest(
         [
             new(22, "en", "English", 0, "//en")
@@ -481,7 +509,9 @@ public sealed class DownloadSetterSelectionTests
             interaction.Notifications,
             new StubFilePickerService(),
             settings.Store,
+            new UnusedSubtitleTrackLoader(),
             NullLogger<DownloadSetterViewModel>.Instance);
+        await using var nextViewModelLifetime = nextViewModel.ConfigureAwait(true);
         nextViewModel.OnDialogOpened(DownloadSettingsDialog.CreateRequest(
         [
             new(11, "zh", "中文", 0, "//zh")
@@ -515,5 +545,11 @@ public sealed class DownloadSetterSelectionTests
 
         public Task<IReadOnlyList<string>> SelectVideosAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<string>>([]);
+    }
+
+    private sealed class UnusedSubtitleTrackLoader : ISubtitleTrackLoader
+    {
+        public Task<DownloadSettingsDialog.SubtitleTrackDiscovery> LoadAsync(
+            DownloadSettingsDialog.SubtitlePage page, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 }

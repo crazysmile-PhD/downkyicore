@@ -463,6 +463,9 @@
     <system:String x:Key="SubtitleTypeStandard">Standard</system:String>
     <system:String x:Key="SubtitleTypeAi">AI</system:String>
     <system:String x:Key="DefaultSubtitle">Default</system:String>
+    <system:String x:Key="SubtitleTracksLoading">Loading subtitle tracks</system:String>
+    <system:String x:Key="SubtitleTracksLoadFailed">Subtitle tracks could not be loaded. Retry, or download using your language and type preferences.</system:String>
+    <system:String x:Key="SubtitleTracksRetry">Retry loading subtitles</system:String>
     <system:String x:Key="SubtitleTrackHelpTitle">Why are there two subtitles?</system:String>
     <system:String x:Key="SubtitleTrackHelpLead">Select “Default” to create a copy of the same subtitle.</system:String>
     <system:String x:Key="SubtitleTrackHelpType">Standard = non-AI; multiple tracks may be available</system:String>
