@@ -332,6 +332,7 @@ public sealed class DownloadSettingsDialogLayoutTests
                 new NotificationServiceStub(),
                 new FilePickerServiceStub(),
                 Settings,
+                new UnusedSubtitleTrackLoader(),
                 NullLogger<DownloadSetterViewModel>.Instance);
         }
 
@@ -356,6 +357,12 @@ public sealed class DownloadSettingsDialogLayoutTests
         public void Show(string message)
         {
         }
+    }
+
+    private sealed class UnusedSubtitleTrackLoader : ISubtitleTrackLoader
+    {
+        public Task<DownloadSettingsDialog.SubtitleTrackDiscovery> LoadAsync(
+            DownloadSettingsDialog.SubtitlePage page, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 
     private sealed class FilePickerServiceStub : IFilePickerService

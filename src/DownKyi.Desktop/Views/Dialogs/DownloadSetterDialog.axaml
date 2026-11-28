@@ -380,6 +380,19 @@
                             IsVisible="{Binding !HasSubtitleTracks}"
                             Grid.Row="1">
                             <StackPanel Spacing="8">
+                                <ProgressBar
+                                    x:Name="SubtitleTrackLoading"
+                                    IsIndeterminate="True"
+                                    IsVisible="{Binding IsSubtitleLoading}"
+                                    AutomationProperties.Name="{DynamicResource SubtitleTracksLoading}" />
+                                <StackPanel IsVisible="{Binding HasSubtitleLoadFailed}" Spacing="4">
+                                    <TextBlock Text="{DynamicResource SubtitleTracksLoadFailed}" TextWrapping="Wrap" />
+                                    <Button
+                                        x:Name="RetrySubtitleTracksButton"
+                                        HorizontalAlignment="Left"
+                                        Command="{Binding RetrySubtitleTracksCommand}"
+                                        Content="{DynamicResource SubtitleTracksRetry}" />
+                                </StackPanel>
                                 <Grid ColumnDefinitions="120,*" RowDefinitions="Auto,Auto,Auto">
                                     <CheckBox
                                         VerticalAlignment="Center"

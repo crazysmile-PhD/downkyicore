@@ -463,6 +463,9 @@
     <system:String x:Key="SubtitleTypeStandard">通常</system:String>
     <system:String x:Key="SubtitleTypeAi">AI</system:String>
     <system:String x:Key="DefaultSubtitle">既定</system:String>
+    <system:String x:Key="SubtitleTracksLoading">字幕トラックを読み込み中</system:String>
+    <system:String x:Key="SubtitleTracksLoadFailed">字幕トラックを読み込めませんでした。再試行するか、言語と種類の設定に従ってダウンロードできます。</system:String>
+    <system:String x:Key="SubtitleTracksRetry">字幕の読み込みを再試行</system:String>
     <system:String x:Key="SubtitleTrackHelpTitle">なぜ字幕ファイルが 2 つあるのですか？</system:String>
     <system:String x:Key="SubtitleTrackHelpLead">「既定」を選ぶと、同じ字幕のコピーを作成します。</system:String>
     <system:String x:Key="SubtitleTrackHelpType">通常 = AI 以外。複数の字幕を選べる場合があります</system:String>

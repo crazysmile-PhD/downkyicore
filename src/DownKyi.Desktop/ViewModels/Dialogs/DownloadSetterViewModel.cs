@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -20,17 +21,49 @@ using Microsoft.Extensions.Logging;
 
 namespace DownKyi.ViewModels.Dialogs;
 
-internal class DownloadSetterViewModel : BaseDialogViewModel
+internal sealed class DownloadSetterViewModel : BaseDialogViewModel, IAsyncDisposable
 {
     public const string Tag = "DialogDownloadSetter";
     private readonly IUserNotificationService _notifications;
     private readonly IFilePickerService _filePickerService;
     private readonly ISettingsStore _settingsStore;
+    private readonly ISubtitleTrackLoader _subtitleTrackLoader;
     private readonly ILogger<DownloadSetterViewModel> _logger;
     private readonly bool _initialDownloadSubtitle;
     private readonly SubtitleLanguagePreference _initialSubtitleLanguagePreference;
     private readonly SubtitleTypePreference _initialSubtitleTypePreference;
     private bool _synchronizingSubtitleTracks;
+    private DownloadSettingsDialog.SubtitlePage? _subtitlePage;
+    private CancellationTokenSource? _subtitleCancellation;
+    private Task? _subtitleLoad;
+    private Task? _stopSubtitleLoad;
+    private bool _isDialogOpen;
+    private bool _isSubtitleLoading;
+    private DownloadSettingsDialog.SubtitleTrackDiscoveryStatus _subtitleDiscoveryStatus;
+
+    public bool IsSubtitleLoading
+    {
+        get => _isSubtitleLoading;
+        private set
+        {
+            if (!SetProperty(ref _isSubtitleLoading, value)) return;
+            _downloadCommand?.NotifyCanExecuteChanged();
+            _retrySubtitleTracksCommand?.NotifyCanExecuteChanged();
+        }
+    }
+
+    public DownloadSettingsDialog.SubtitleTrackDiscoveryStatus SubtitleDiscoveryStatus
+    {
+        get => _subtitleDiscoveryStatus;
+        private set
+        {
+            if (!SetProperty(ref _subtitleDiscoveryStatus, value)) return;
+            OnPropertyChanged(nameof(HasSubtitleLoadFailed));
+            _retrySubtitleTracksCommand?.NotifyCanExecuteChanged();
+        }
+    }
+
+    public bool HasSubtitleLoadFailed => SubtitleDiscoveryStatus == DownloadSettingsDialog.SubtitleTrackDiscoveryStatus.Failed;
 
     // 历史文件夹的数量
     private const int MaxDirectoryListCount = 20;
@@ -161,7 +194,13 @@ internal class DownloadSetterViewModel : BaseDialogViewModel
     public bool DownloadSubtitle
     {
         get => _downloadSubtitle;
-        set => SetProperty(ref _downloadSubtitle, value);
+        set
+        {
+            if (!SetProperty(ref _downloadSubtitle, value)) return;
+            _downloadCommand?.NotifyCanExecuteChanged();
+            _retrySubtitleTracksCommand?.NotifyCanExecuteChanged();
+            if (value) StartSubtitleTrackLoad();
+        }
     }
 
     private bool _downloadCover;
@@ -178,11 +217,13 @@ internal class DownloadSetterViewModel : BaseDialogViewModel
         IUserNotificationService notifications,
         IFilePickerService filePickerService,
         ISettingsStore settingsStore,
+        ISubtitleTrackLoader subtitleTrackLoader,
         ILogger<DownloadSetterViewModel> logger)
     {
         _notifications = notifications ?? throw new ArgumentNullException(nameof(notifications));
         _filePickerService = filePickerService ?? throw new ArgumentNullException(nameof(filePickerService));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _subtitleTrackLoader = subtitleTrackLoader ?? throw new ArgumentNullException(nameof(subtitleTrackLoader));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         #region 属性初始化
@@ -233,7 +274,18 @@ internal class DownloadSetterViewModel : BaseDialogViewModel
 
     public override void OnDialogOpened(AppDialogRequest request)
     {
-        foreach (var track in DownloadSettingsDialog.ReadSubtitleTracks(request))
+        _isDialogOpen = true;
+        _stopSubtitleLoad = null;
+        _subtitlePage = DownloadSettingsDialog.ReadSubtitlePage(request);
+        ApplySubtitleDiscovery(DownloadSettingsDialog.ReadSubtitleDiscovery(request));
+        StartSubtitleTrackLoad();
+    }
+
+    private void ApplySubtitleDiscovery(DownloadSettingsDialog.SubtitleTrackDiscovery discovery)
+    {
+        SubtitleDiscoveryStatus = discovery.Status;
+        SubtitleTracks.Clear();
+        foreach (var track in discovery.Tracks)
         {
             SubtitleTracks.Add(new SubtitleTrackItem(
                 track,
@@ -245,6 +297,74 @@ internal class DownloadSetterViewModel : BaseDialogViewModel
         OnPropertyChanged(nameof(HasSubtitleTracks));
         SynchronizeSubtitleTracksFromDownloadOption();
         UpdateDownloadAll();
+    }
+
+    private RelayCommand? _retrySubtitleTracksCommand;
+    public RelayCommand RetrySubtitleTracksCommand => _retrySubtitleTracksCommand ??= new RelayCommand(
+        () => StartSubtitleTrackLoad(retry: true), () => _isDialogOpen && DownloadSubtitle && HasSubtitleLoadFailed && !IsSubtitleLoading);
+
+    private void StartSubtitleTrackLoad(bool retry = false)
+    {
+        if (!_isDialogOpen || !DownloadSubtitle || _subtitlePage == null || IsSubtitleLoading) return;
+        if (retry)
+        {
+            if (!HasSubtitleLoadFailed) return;
+        }
+        else if (_subtitleLoad != null || SubtitleDiscoveryStatus != DownloadSettingsDialog.SubtitleTrackDiscoveryStatus.NotAttempted)
+        {
+            return;
+        }
+
+        _subtitleCancellation ??= new CancellationTokenSource();
+        // Retained until close so every query, including a failed query, is observed by the dialog lifetime.
+        _subtitleLoad = LoadSubtitleTracksAsync(_subtitlePage, _subtitleCancellation.Token);
+    }
+
+    private async Task LoadSubtitleTracksAsync(DownloadSettingsDialog.SubtitlePage page, CancellationToken cancellationToken)
+    {
+        IsSubtitleLoading = true;
+        SubtitleDiscoveryStatus = DownloadSettingsDialog.SubtitleTrackDiscoveryStatus.NotAttempted;
+        try
+        {
+            var discovery = await _subtitleTrackLoader.LoadAsync(page, cancellationToken).ConfigureAwait(true);
+            if (!cancellationToken.IsCancellationRequested && _isDialogOpen) ApplySubtitleDiscovery(discovery);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return; }
+        finally
+        {
+            if (_isDialogOpen) IsSubtitleLoading = false;
+        }
+    }
+
+    public override async Task OnDialogClosedAsync()
+    {
+        await StopSubtitleLoadAsync().ConfigureAwait(true);
+        await base.OnDialogClosedAsync().ConfigureAwait(true);
+    }
+
+    private Task StopSubtitleLoadAsync() => _stopSubtitleLoad ??= StopSubtitleLoadCoreAsync();
+
+    private async Task StopSubtitleLoadCoreAsync()
+    {
+        _isDialogOpen = false;
+        IsSubtitleLoading = false;
+        var cancellation = _subtitleCancellation;
+        try
+        {
+            await Task.WhenAll(cancellation?.CancelAsync() ?? Task.CompletedTask, _subtitleLoad ?? Task.CompletedTask).ConfigureAwait(true);
+        }
+        finally
+        {
+            cancellation?.Dispose();
+            _subtitleCancellation = null;
+            _subtitleLoad = null;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await StopSubtitleLoadAsync().ConfigureAwait(true);
+        GC.SuppressFinalize(this);
     }
 
     #region 命令申明
@@ -397,13 +517,15 @@ internal class DownloadSetterViewModel : BaseDialogViewModel
     // 确认下载事件
     private RelayCommand? _downloadCommand;
 
-    public RelayCommand DownloadCommand => _downloadCommand ??= new RelayCommand(ExecuteDownloadCommand);
+    public RelayCommand DownloadCommand => _downloadCommand ??= new RelayCommand(ExecuteDownloadCommand,
+        () => !DownloadSubtitle || !IsSubtitleLoading);
 
     /// <summary>
     /// 确认下载事件
     /// </summary>
     private void ExecuteDownloadCommand()
     {
+        if (DownloadSubtitle && IsSubtitleLoading) return;
         if (string.IsNullOrEmpty(Directory))
         {
             return;
@@ -454,12 +576,11 @@ internal class DownloadSetterViewModel : BaseDialogViewModel
                             ? content.DownloadSubtitle
                             : DownloadSubtitle,
                         DownloadCover = DownloadCover,
-                        PreferredSubtitleLanguage = HasSubtitleTracks
-                            || (!changedSubtitleLanguage && !enabledSubtitlesInDialog)
+                        PreferredSubtitleLanguage = !changedSubtitleLanguage
+                            && (HasSubtitleTracks || !enabledSubtitlesInDialog)
                             ? content.PreferredSubtitleLanguage
                             : SelectedSubtitleLanguagePreference.Value,
-                        PreferredSubtitleType = HasSubtitleTracks
-                            || SelectedSubtitleTypePreference.Value == _initialSubtitleTypePreference
+                        PreferredSubtitleType = SelectedSubtitleTypePreference.Value == _initialSubtitleTypePreference
                             ? content.PreferredSubtitleType
                             : SelectedSubtitleTypePreference.Value
                     }

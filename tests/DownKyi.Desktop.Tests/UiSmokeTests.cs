@@ -1510,6 +1510,8 @@ public sealed class UiSmokeTests
                 Assert.NotSame(first.Content, second.Content);
                 Assert.NotSame(first.ViewModel, second.ViewModel);
                 first.Content.DataContext = first.ViewModel;
+                await AvaloniaDialogService.CompleteViewModelLifecycleAsync(first.ViewModel).ConfigureAwait(true);
+                await AvaloniaDialogService.CompleteViewModelLifecycleAsync(second.ViewModel).ConfigureAwait(true);
             }
         }
         finally

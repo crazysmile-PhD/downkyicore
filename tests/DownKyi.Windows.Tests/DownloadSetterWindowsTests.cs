@@ -13,14 +13,16 @@ public sealed class DownloadSetterWindowsTests : IDisposable
         $"downkyi-windows-settings-{Guid.NewGuid():N}");
 
     [Fact]
-    public void UncDownloadDirectoryRemainsSelectableWhenDriveInfoRejectsIt()
+    public async Task UncDownloadDirectoryRemainsSelectableWhenDriveInfoRejectsIt()
     {
         using var settings = new SettingsStore(Path.Combine(_directory, "settings.json"));
         var viewModel = new DownloadSetterViewModel(
             new StubNotificationService(),
             new StubFilePickerService(),
             settings,
+            new UnusedSubtitleTrackLoader(),
             NullLogger<DownloadSetterViewModel>.Instance);
+        await using var viewModelLifetime = viewModel.ConfigureAwait(true);
         viewModel.OnDialogOpened(DownloadSettingsDialog.CreateRequest([]));
         const string directory = @"\\downkyi.invalid\share\downloads";
         AppDialogResult? result = null;
@@ -51,6 +53,12 @@ public sealed class DownloadSetterWindowsTests : IDisposable
         {
             NotificationRaised?.Invoke(this, new UserNotificationEventArgs(message));
         }
+    }
+
+    private sealed class UnusedSubtitleTrackLoader : ISubtitleTrackLoader
+    {
+        public Task<DownloadSettingsDialog.SubtitleTrackDiscovery> LoadAsync(
+            DownloadSettingsDialog.SubtitlePage page, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 
     private sealed class StubFilePickerService : IFilePickerService

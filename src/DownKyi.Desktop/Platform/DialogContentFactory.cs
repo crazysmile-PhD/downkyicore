@@ -17,7 +17,8 @@ internal sealed class DialogContentFactory(IServiceProvider services)
         var (viewType, viewModelType) = GetDialogTypes(dialog);
         var content = _services.GetRequiredService(viewType) as Control
             ?? throw new InvalidOperationException($"Dialog view '{viewType.Name}' is not a Control.");
-        var viewModel = _services.GetRequiredService(viewModelType) as BaseDialogViewModel
+        // The window completes this model's async lifetime; the root provider must not retain it.
+        var viewModel = ActivatorUtilities.CreateInstance(_services, viewModelType) as BaseDialogViewModel
             ?? throw new InvalidOperationException(
                 $"Dialog ViewModel '{viewModelType.Name}' does not derive from BaseDialogViewModel.");
         return (content, viewModel);
