@@ -22,6 +22,7 @@ internal class ExtractMediaViewModel : ViewModelBase
     private readonly IFilePickerService _filePickerService;
     private readonly FfmpegProcessor _ffmpegProcessor;
     private readonly ILogger<ExtractMediaViewModel> _logger;
+    private readonly ToolboxOutputBuffer _output;
 
     #region 页面属性申明
 
@@ -64,6 +65,7 @@ internal class ExtractMediaViewModel : ViewModelBase
         _filePickerService = filePickerService ?? throw new ArgumentNullException(nameof(filePickerService));
         _ffmpegProcessor = ffmpegProcessor ?? throw new ArgumentNullException(nameof(ffmpegProcessor));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _output = new ToolboxOutputBuffer(value => Status = value, PropertyChangeAsync);
         #region 属性初始化
 
         VideoPaths = Array.Empty<string>();
@@ -114,7 +116,7 @@ internal class ExtractMediaViewModel : ViewModelBase
             return;
         }
 
-        Status = string.Empty;
+        var appendOutput = _output.BeginOperation();
 
         _isExtracting = true;
         try
@@ -125,7 +127,7 @@ internal class ExtractMediaViewModel : ViewModelBase
                 await _ffmpegProcessor.ExtractAudioAsync(
                     item,
                     audioFileName,
-                    output => { Status += output + "\n"; }).ConfigureAwait(true);
+                    appendOutput).ConfigureAwait(true);
             }
         }
         finally
@@ -156,7 +158,7 @@ internal class ExtractMediaViewModel : ViewModelBase
             return;
         }
 
-        Status = string.Empty;
+        var appendOutput = _output.BeginOperation();
 
         _isExtracting = true;
         try
@@ -167,7 +169,7 @@ internal class ExtractMediaViewModel : ViewModelBase
                 await _ffmpegProcessor.ExtractVideoAsync(
                     item,
                     videoFileName,
-                    output => { Status += output + "\n"; }).ConfigureAwait(true);
+                    appendOutput).ConfigureAwait(true);
             }
         }
         finally

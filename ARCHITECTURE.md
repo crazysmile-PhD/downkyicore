@@ -79,6 +79,8 @@ GitHub release 的 HTTP、JSON contract 與解析由 Infrastructure 擁有；Des
 
 下載地址的 HTTP 探測、HTTPS redirect 與 Cookie header 決策由 Infrastructure 的 `DownloadAddressResolver` 擁有；每次跳轉重新產生 header，攜帶登入資料時不得跨 origin。Desktop download runtime 消費解析結果，保留 Range 傳輸與調度責任。
 
+FFmpeg 處理命令由共用 base arguments 停用無即時消費者的定期 stats；ffprobe 的 JSON 輸出及進程診斷仍完整交給既有解析與錯誤分類。工具箱的 `ToolboxOutputBuffer` 只保存每次操作最近 64 Ki 字符的畫面預覽，合併待套用的 UI 更新並排除上一操作的 callback；它不擁有媒體作業、進程結果或背景工作的取消。
+
 ## Navigation 與 UserSpace invariant
 
 - ViewModel／caller 只依賴 Application 的 `IAppNavigationService` 與 `IAppDialogService`。只有 local composition 的 factories 可依 typed enum 選擇已註冊的 transient View／ViewModel；adapter 不得持有 container。

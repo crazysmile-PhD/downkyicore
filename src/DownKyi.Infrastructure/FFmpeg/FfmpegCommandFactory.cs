@@ -174,13 +174,8 @@ internal static class FfmpegCommandFactory
         ArgumentException.ThrowIfNullOrWhiteSpace(listFile);
         ArgumentException.ThrowIfNullOrWhiteSpace(outputFile);
 
-        var arguments = new List<string>
-        {
-            "-hide_banner",
-            "-nostdin",
-            "-y",
-            "-xerror",
-        };
+        var arguments = CreateBaseArguments();
+        arguments.Add("-xerror");
         AddRequiredOutputContract(arguments);
         arguments.AddRange([
             "-fflags", "+genpts",
@@ -263,7 +258,7 @@ internal static class FfmpegCommandFactory
 
     private static List<string> CreateBaseArguments()
     {
-        return ["-hide_banner", "-nostdin", "-y"];
+        return ["-hide_banner", "-nostdin", "-nostats", "-y"];
     }
 
     private static void AddRequiredOutputContract(List<string> arguments)
