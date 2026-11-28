@@ -24,6 +24,12 @@ internal class BangumiFollowMedia : ObservableObject
     // season id
     public long SeasonId { get; set; }
 
+    public BilibiliMediaInput? Input => SeasonId > 0
+        ? new BilibiliBangumiSeasonInput(SeasonId)
+        : MediaId > 0
+            ? new BilibiliBangumiMediaInput(MediaId)
+            : null;
+
     #region 页面属性申明
 
     // 是否选中
@@ -122,7 +128,7 @@ internal class BangumiFollowMedia : ObservableObject
     /// </summary>
     private void ExecuteTitleCommand()
     {
-        if (MediaId <= 0)
+        if (Input is not { } input)
         {
             return;
         }
@@ -130,7 +136,7 @@ internal class BangumiFollowMedia : ObservableObject
         _navigationService.Navigate(new AppNavigationRequest(
             AppRoute.VideoDetail,
             _parentRoute,
-            new VideoNavigationPayload(new BilibiliBangumiMediaInput(MediaId))));
+            new VideoNavigationPayload(input)));
     }
 
     #endregion
