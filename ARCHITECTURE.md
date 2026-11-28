@@ -75,6 +75,8 @@ Bilibili transport 是每次嘗試的重試與逾時 owner；deadline 涵蓋取�
 
 GitHub release 的 HTTP、JSON contract 與解析由 Infrastructure 擁有；Desktop composition 提供 repository identity 與 HttpClient 設定，Desktop 決定何時檢查及顯示更新提示。版本比較與 skip-version 等價性共用 Application 的 `SemanticVersionPolicy`；HTTP service 不保存目前應用版本。
 
+`SettingsManager` 在同一 owner 內發布已驗證的 immutable snapshot，`SettingsStore` 直接讀取它；普通同值更新不序列化、不替換快照或發布變更，集合以內容判斷。舊 JSON model 保留為持久化與 legacy accessor 的相容適配，legacy setter 在同一鎖內同步並校驗快照。去抖寫入與 durable commit 沿用既有 write gate／版本檢查；commit 即使值相同仍履行落盤契約，只有原子取代成功後才能發布候選快照。
+
 下載地址的 HTTP 探測、HTTPS redirect 與 Cookie header 決策由 Infrastructure 的 `DownloadAddressResolver` 擁有；每次跳轉重新產生 header，攜帶登入資料時不得跨 origin。Desktop download runtime 消費解析結果，保留 Range 傳輸與調度責任。
 
 ## Navigation 與 UserSpace invariant

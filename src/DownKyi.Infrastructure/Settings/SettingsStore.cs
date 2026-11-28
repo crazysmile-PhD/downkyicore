@@ -9,11 +9,8 @@ namespace DownKyi.Infrastructure.Settings;
 
 public sealed class SettingsStore : ISettingsStore
 {
-    private readonly object _updateLock = new();
     private readonly ILogger<SettingsStore> _logger;
     private readonly SettingsManager _settings;
-    private ApplicationSettings _current;
-    private bool _isNormalizing;
     private int _disposeState;
 
     public SettingsStore(ILoggerFactory loggerFactory)
@@ -39,19 +36,14 @@ public sealed class SettingsStore : ISettingsStore
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _current = settings.CreateInitialSnapshot();
-        _settings.Changed += RefreshSnapshot;
+        _settings.CreateInitialSnapshot();
     }
 
-    public ApplicationSettings Current => Volatile.Read(ref _current);
+    public ApplicationSettings Current => _settings.CurrentSnapshot;
 
     public ApplicationSettings Update(Func<ApplicationSettings, ApplicationSettings> update)
     {
-        lock (_updateLock)
-        {
-            _settings.UpdateSnapshot(update);
-            return Current;
-        }
+        return _settings.UpdateSnapshot(update);
     }
 
     public Task FlushAsync(CancellationToken cancellationToken = default)
@@ -90,7 +82,6 @@ public sealed class SettingsStore : ISettingsStore
             return;
         }
 
-        _settings.Changed -= RefreshSnapshot;
         _settings.Dispose();
     }
 
@@ -101,7 +92,6 @@ public sealed class SettingsStore : ISettingsStore
             return;
         }
 
-        _settings.Changed -= RefreshSnapshot;
         try
         {
             await _settings.FlushAsync().ConfigureAwait(false);
@@ -110,38 +100,6 @@ public sealed class SettingsStore : ISettingsStore
         {
             await _settings.DisposeAsync().ConfigureAwait(false);
         }
-    }
-
-    private void RefreshSnapshot()
-    {
-        lock (_updateLock)
-        {
-            var validation = ApplicationSettingsValidator.Validate(_settings.CreateSnapshot());
-            if (validation.Corrections.Length > 0)
-            {
-                LogCorrections(validation.Corrections);
-                if (!_isNormalizing)
-                {
-                    _isNormalizing = true;
-                    try
-                    {
-                        _settings.ApplySnapshot(validation.Settings);
-                    }
-                    finally
-                    {
-                        _isNormalizing = false;
-                    }
-                }
-            }
-
-            Volatile.Write(ref _current, validation.Settings);
-        }
-    }
-
-    private void LogCorrections(IEnumerable<string> corrections)
-    {
-        _logger.LogInformationMessage(
-            $"Invalid settings were restored to safe defaults: {string.Join(", ", corrections)}");
     }
 
     private static SettingsManager CreateManager(ILoggerFactory loggerFactory)

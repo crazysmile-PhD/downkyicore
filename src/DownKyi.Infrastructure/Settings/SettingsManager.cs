@@ -22,6 +22,8 @@ public sealed partial class SettingsManager : IDisposable, IAsyncDisposable
     private readonly Func<CancellationToken, Task>? _beforeReplaceAsync;
     private readonly string password = "YO1J$4#p";
     private AppSettings _appSettings;
+    private ApplicationSettings _snapshot;
+    private bool _validateSnapshots;
     private CancellationTokenSource? _flushDelayCancellation;
     private Task _scheduledFlushTask = Task.CompletedTask;
     private bool _dirty;
@@ -81,6 +83,7 @@ public sealed partial class SettingsManager : IDisposable, IAsyncDisposable
             _logger.LogErrorMessage(
                 $"Settings schema {_appSettings.SchemaVersion} is newer than supported schema {ApplicationSettingsValidator.CurrentSchemaVersion}; persistence is disabled to preserve the file.");
         }
+        _snapshot = SettingsSnapshotModelMapper.ToSnapshot(_appSettings, _saveVideoRootPath);
     }
 
     private bool SetProperty<T>(T currentValue, T newValue, Action<T> setter)
@@ -92,6 +95,7 @@ public sealed partial class SettingsManager : IDisposable, IAsyncDisposable
             if (!EqualityComparer<T>.Default.Equals(currentValue, newValue))
             {
                 setter(newValue);
+                RefreshLegacySnapshotUnsafe();
                 MarkDirtyUnsafe();
                 changed = true;
             }
@@ -324,6 +328,7 @@ public sealed partial class SettingsManager : IDisposable, IAsyncDisposable
                 AppSettings persisted;
                 string json;
                 long version;
+                bool changed;
                 lock (_settingsLock)
                 {
                     var current = CreateSnapshotCore();
@@ -337,6 +342,8 @@ public sealed partial class SettingsManager : IDisposable, IAsyncDisposable
                     var validation = ApplicationSettingsValidator.Validate(candidate);
                     candidate = validation.Settings;
                     LogCorrections(validation.Corrections);
+                    changed = !SnapshotValuesEqual(current, candidate);
+                    if (!changed) candidate = current;
                     persisted = SettingsSnapshotModelMapper.ToModel(candidate);
                     json = JsonConvert.SerializeObject(persisted);
                     version = _changeVersion;
@@ -348,6 +355,7 @@ public sealed partial class SettingsManager : IDisposable, IAsyncDisposable
                         () =>
                         {
                             _appSettings = persisted;
+                            Volatile.Write(ref _snapshot, candidate);
                             _dirty = false;
                             _changeVersion = checked(_changeVersion + 1);
                         },
@@ -357,7 +365,7 @@ public sealed partial class SettingsManager : IDisposable, IAsyncDisposable
                     continue;
                 }
 
-                Changed?.Invoke();
+                if (changed) Changed?.Invoke();
                 return SettingsCommitFailure.None;
             }
         }
